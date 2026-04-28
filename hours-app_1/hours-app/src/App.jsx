@@ -108,6 +108,34 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+  // PWA install prompt detection
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      // Only show banner if not previously dismissed
+      const dismissed = localStorage.getItem("hours-install-dismissed");
+      if (!dismissed) setShowInstallBanner(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const promptInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+    setShowInstallBanner(false);
+  };
+
+  const dismissInstall = () => {
+    localStorage.setItem("hours-install-dismissed", "1");
+    setShowInstallBanner(false);
+  };
 
   useEffect(() => {
     if (!isConfigured) { setLoading(false); return; }
@@ -138,26 +166,69 @@ export default function App() {
 
   if (!isConfigured) return <ConfigError />;
   if (loading) return <Loading />;
-  if (!session) return <LoginScreen />;
+
+  const installBanner = showInstallBanner && installPrompt && (
+    <InstallBanner onInstall={promptInstall} onDismiss={dismissInstall} />
+  );
+
+  if (!session) return <>{installBanner}<LoginScreen /></>;
   if (!profile) {
     return (
-      <CenterCard>
-        <Loader2 size={24} className="animate-spin mb-4 mx-auto" style={{ color: T.muted }} />
-        <p style={{ color: T.muted }} className="text-sm mb-4">Профайл татаж байна…</p>
-        <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mb-3">
-          Профайл олдсонгүй гэж гарвал админд хандаарай
-        </p>
-        <button onClick={() => supabase.auth.signOut()}
-          style={{ borderColor: T.border, fontFamily: FS }}
-          className="w-full py-2 rounded-xl border text-sm hover:bg-black/5">
-          Гарах
-        </button>
-      </CenterCard>
+      <>
+        {installBanner}
+        <CenterCard>
+          <Loader2 size={24} className="animate-spin mb-4 mx-auto" style={{ color: T.muted }} />
+          <p style={{ color: T.muted }} className="text-sm mb-4">Профайл татаж байна…</p>
+          <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mb-3">
+            Профайл олдсонгүй гэж гарвал админд хандаарай
+          </p>
+          <button onClick={() => supabase.auth.signOut()}
+            style={{ borderColor: T.border, fontFamily: FS }}
+            className="w-full py-2 rounded-xl border text-sm hover:bg-black/5">
+            Гарах
+          </button>
+        </CenterCard>
+      </>
     );
   }
 
-  if (profile.role === "admin") return <AdminDashboard profile={profile} />;
-  return <EmployeeDashboard profile={profile} />;
+  return (
+    <>
+      {installBanner}
+      {profile.role === "admin"
+        ? <AdminDashboard profile={profile} />
+        : <EmployeeDashboard profile={profile} />}
+    </>
+  );
+}
+
+// PWA Install Banner
+function InstallBanner({ onInstall, onDismiss }) {
+  return (
+    <div className="fixed bottom-3 left-3 right-3 z-[100] flex justify-center pointer-events-none">
+      <div style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+           className="pointer-events-auto rounded-2xl shadow-2xl px-4 py-3 max-w-md w-full flex items-center gap-3"
+           role="alert">
+        <div style={{ background: T.highlight }} className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
+          <Download size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium">Утсанд суулгах</div>
+          <div style={{ fontFamily: FM, color: "#a1a1aa" }} className="text-[10px] uppercase tracking-[0.15em] mt-0.5">
+            Hours-г апп шиг ашиглах
+          </div>
+        </div>
+        <button onClick={onInstall} style={{ background: T.highlight }}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90">
+          Суулгах
+        </button>
+        <button onClick={onDismiss} style={{ color: "#a1a1aa" }}
+          className="p-1.5 hover:bg-white/10 rounded-lg">
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ConfigError() {
@@ -231,6 +302,8 @@ function AdminDashboard({ profile }) {
   const [sessions, setSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
   const [approvals, setApprovals] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [employeeSites, setEmployeeSites] = useState([]);
   const [, setTick] = useState(0);
 
   const [formMode, setFormMode] = useState(null);
@@ -238,16 +311,22 @@ function AdminDashboard({ profile }) {
   const [confirmDel, setConfirmDel] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [geoBusyId, setGeoBusyId] = useState(null);
+  const [siteFormMode, setSiteFormMode] = useState(null); // null | 'add' | 'edit'
+  const [siteFormData, setSiteFormData] = useState(null);
+  const [confirmDelSite, setConfirmDelSite] = useState(null);
+  const [chooseSiteFor, setChooseSiteFor] = useState(null); // employee for clock-in site picker
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadAll = async () => {
-    const [emps, sess, active, apps] = await Promise.all([
+    const [emps, sess, active, apps, st, es] = await Promise.all([
       supabase.from("profiles").select("*").eq("role", "employee").order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
       supabase.from("approvals").select("*").order("created_at", { ascending: false }),
+      supabase.from("sites").select("*").order("name"),
+      supabase.from("employee_sites").select("*"),
     ]);
     if (emps.data) setEmployees(emps.data);
     if (sess.data) setSessions(sess.data);
@@ -257,6 +336,8 @@ function AdminDashboard({ profile }) {
       setActiveSessions(map);
     }
     if (apps.data) setApprovals(apps.data);
+    if (st.data) setSites(st.data);
+    if (es.data) setEmployeeSites(es.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -267,13 +348,15 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "active_sessions" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
   const pendingApprovals = approvals.filter((a) => a.status === "pending");
 
-  const upsertEmployee = async ({ formData, password, isNew, existingId }) => {
+  const upsertEmployee = async ({ formData, password, isNew, existingId, siteIds }) => {
     try {
       let userId = existingId;
       if (isNew) {
@@ -311,6 +394,15 @@ function AdminDashboard({ profile }) {
         if (error) throw error;
       }
 
+      // Save site assignments
+      if (Array.isArray(siteIds)) {
+        await supabase.from("employee_sites").delete().eq("employee_id", userId);
+        if (siteIds.length > 0) {
+          const rows = siteIds.map((sid) => ({ employee_id: userId, site_id: sid }));
+          await supabase.from("employee_sites").insert(rows);
+        }
+      }
+
       setFormMode(null); setFormEmp(null);
       setFeedback({ type: "success", msg: isNew ? "Ажилтан нэмэгдлээ" : "Хадгаллаа" });
       await loadAll();
@@ -327,25 +419,63 @@ function AdminDashboard({ profile }) {
     await loadAll();
   };
 
-  const tryClockIn = async (emp) => {
-    if (!hasSite(emp)) { setFeedback({ empId: emp.id, type: "error", msg: "Ажлын байр тогтоогоогүй" }); return; }
+  // Helper: get sites assigned to an employee (multi-site mode)
+  // Returns: array of site objects, or null if employee uses legacy single-site mode
+  const getEmployeeSites = (empId) => {
+    const links = employeeSites.filter((es) => es.employee_id === empId);
+    if (links.length === 0) return null; // no multi-site assigned
+    return links.map((l) => sites.find((s) => s.id === l.site_id)).filter(Boolean);
+  };
+
+  // Resolve which site to use for an employee (returns site object or legacy profile-based site)
+  const resolveSiteForClockIn = (emp, chosenSiteId) => {
+    const empSites = getEmployeeSites(emp.id);
+    if (empSites && empSites.length > 0) {
+      if (empSites.length === 1) return empSites[0];
+      return chosenSiteId ? empSites.find((s) => s.id === chosenSiteId) : null;
+    }
+    // Legacy fallback: use profile.site_*
+    if (hasSite(emp)) {
+      return { id: null, lat: emp.site_lat, lng: emp.site_lng, radius: emp.site_radius || 100, name: emp.site_label || "Ажлын байр" };
+    }
+    return null;
+  };
+
+  const tryClockIn = async (emp, chosenSiteId = null) => {
+    const empSites = getEmployeeSites(emp.id);
+
+    // If multi-site with multiple options and none chosen → open picker
+    if (empSites && empSites.length > 1 && !chosenSiteId) {
+      setChooseSiteFor(emp);
+      return;
+    }
+
+    const site = resolveSiteForClockIn(emp, chosenSiteId);
+    if (!site) {
+      setFeedback({ empId: emp.id, type: "error", msg: "Ажлын байр тогтоогоогүй" });
+      return;
+    }
+
     const sched = checkSchedule(emp);
     if (!sched.ok) { setFeedback({ empId: emp.id, type: "error", msg: sched.reason }); return; }
+
     setGeoBusyId(emp.id);
+    setChooseSiteFor(null);
     try {
       const loc = await getLocation();
-      const d = distanceMeters(loc, siteOf(emp));
-      if (d > emp.site_radius) {
-        setFeedback({ empId: emp.id, type: "error", msg: `Хязгаараас гадуур — ${fmtDist(d)} (${emp.site_radius}m)` });
+      const d = distanceMeters(loc, site);
+      if (d > site.radius) {
+        setFeedback({ empId: emp.id, type: "error", msg: `Хязгаараас гадуур — ${fmtDist(d)} (${site.radius}m)` });
         return;
       }
       const startTime = new Date(capSessionStart(emp, Date.now())).toISOString();
       const { error } = await supabase.from("active_sessions").upsert({
         employee_id: emp.id, start_time: startTime,
         start_lat: loc.lat, start_lng: loc.lng, distance_meters: d,
+        site_id: site.id,
       });
       if (error) throw error;
-      setFeedback({ empId: emp.id, type: "success", msg: `Цаг бүртгэгдлээ · ${fmtDist(d)}` });
+      setFeedback({ empId: emp.id, type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(d)}` });
       await loadAll();
     } catch (e) { setFeedback({ empId: emp.id, type: "error", msg: e.message }); }
     finally { setGeoBusyId(null); }
@@ -354,14 +484,24 @@ function AdminDashboard({ profile }) {
   const tryClockOut = async (emp) => {
     const entry = activeSessions[emp.id];
     if (!entry) return;
+
+    // Find the site they clocked into
+    let activeSite = null;
+    if (entry.site_id) {
+      activeSite = sites.find((s) => s.id === entry.site_id);
+    }
+    if (!activeSite && hasSite(emp)) {
+      activeSite = { id: null, lat: emp.site_lat, lng: emp.site_lng, radius: emp.site_radius || 100 };
+    }
+
     setGeoBusyId(emp.id);
     try {
       let endLoc = null;
-      if (hasSite(emp)) {
+      if (activeSite) {
         try {
           endLoc = await getLocation();
-          const ed = distanceMeters(endLoc, siteOf(emp));
-          if (ed > emp.site_radius) {
+          const ed = distanceMeters(endLoc, activeSite);
+          if (ed > activeSite.radius) {
             setFeedback({ empId: emp.id, type: "error", msg: `Гарах боломжгүй — ${fmtDist(ed)} зайтай` });
             return;
           }
@@ -377,6 +517,7 @@ function AdminDashboard({ profile }) {
         end_time: new Date(endMs).toISOString(),
         start_lat: entry.start_lat, start_lng: entry.start_lng,
         end_lat: endLoc?.lat, end_lng: endLoc?.lng,
+        site_id: entry.site_id || null,
       });
       if (insErr) throw insErr;
       const { error: delErr } = await supabase.from("active_sessions").delete().eq("employee_id", emp.id);
@@ -385,6 +526,56 @@ function AdminDashboard({ profile }) {
       await loadAll();
     } catch (e) { setFeedback({ empId: emp.id, type: "error", msg: e.message }); }
     finally { setGeoBusyId(null); }
+  };
+
+  // ── Site CRUD ──
+  const upsertSite = async (siteData) => {
+    try {
+      if (siteData.id) {
+        const { error } = await supabase.from("sites").update({
+          name: siteData.name, lat: siteData.lat, lng: siteData.lng,
+          radius: siteData.radius, notes: siteData.notes,
+          updated_at: new Date().toISOString(),
+        }).eq("id", siteData.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("sites").insert({
+          name: siteData.name, lat: siteData.lat, lng: siteData.lng,
+          radius: siteData.radius, notes: siteData.notes,
+        });
+        if (error) throw error;
+      }
+      setSiteFormMode(null); setSiteFormData(null);
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+    }
+  };
+
+  const deleteSite = async (siteId) => {
+    const { error } = await supabase.from("sites").delete().eq("id", siteId);
+    if (error) { setFeedback({ type: "error", msg: error.message }); return; }
+    setConfirmDelSite(null);
+    setFeedback({ type: "success", msg: "Байр устгагдлаа" });
+    await loadAll();
+  };
+
+  // Update which sites are assigned to an employee
+  const updateEmployeeSites = async (empId, siteIds) => {
+    try {
+      // Delete existing
+      await supabase.from("employee_sites").delete().eq("employee_id", empId);
+      // Insert new
+      if (siteIds.length > 0) {
+        const rows = siteIds.map((sid) => ({ employee_id: empId, site_id: sid }));
+        const { error } = await supabase.from("employee_sites").insert(rows);
+        if (error) throw error;
+      }
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+    }
   };
 
   const resolveApproval = async (approval, decision) => {
@@ -457,6 +648,7 @@ function AdminDashboard({ profile }) {
 
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
+          <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
           <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
           <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
             Хүсэлт
@@ -469,6 +661,13 @@ function AdminDashboard({ profile }) {
               <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
             </button>
           )}
+          {view === "sites" && (
+            <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
+              style={{ background: T.ink, color: T.surface }}
+              className="px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-90">
+              <Plus size={13} strokeWidth={2.5} /> Байр нэмэх
+            </button>
+          )}
         </nav>
 
         {feedback && !feedback.empId && (
@@ -478,13 +677,21 @@ function AdminDashboard({ profile }) {
         {view === "team" && (
           <TeamView
             employees={employees} sessions={sessions} activeSessions={activeSessions}
+            sites={sites} employeeSites={employeeSites}
             geoBusyId={geoBusyId} feedback={feedback}
             onEdit={(emp) => { setFormEmp(emp); setFormMode("edit"); }}
             onDelete={(id) => setConfirmDel(id)}
             onClockIn={tryClockIn} onClockOut={tryClockOut}
             onAdd={() => { setFormEmp(null); setFormMode("add"); }} />
         )}
-        {view === "ledger" && <LedgerView sessions={sessions} employees={employees} />}
+        {view === "sites" && (
+          <SitesView
+            sites={sites} employeeSites={employeeSites} employees={employees} sessions={sessions}
+            onEdit={(site) => { setSiteFormData(site); setSiteFormMode("edit"); }}
+            onDelete={(id) => setConfirmDelSite(id)}
+            onAdd={() => { setSiteFormData(null); setSiteFormMode("add"); }} />
+        )}
+        {view === "ledger" && <LedgerView sessions={sessions} employees={employees} sites={sites} />}
         {view === "approvals" && (
           <ApprovalsView approvals={approvals} employees={employees} onResolve={resolveApproval} />
         )}
@@ -495,8 +702,33 @@ function AdminDashboard({ profile }) {
       {formMode && (
         <EmployeeFormModal
           mode={formMode} employee={formEmp}
+          sites={sites}
+          assignedSiteIds={formEmp ? employeeSites.filter(es => es.employee_id === formEmp.id).map(es => es.site_id) : []}
           onSave={upsertEmployee}
           onClose={() => { setFormMode(null); setFormEmp(null); }} />
+      )}
+
+      {siteFormMode && (
+        <SiteFormModal
+          mode={siteFormMode} site={siteFormData}
+          onSave={upsertSite}
+          onClose={() => { setSiteFormMode(null); setSiteFormData(null); }} />
+      )}
+
+      {confirmDelSite && (
+        <ConfirmModal
+          title="Байр устгах уу?"
+          message={`"${sites.find(s => s.id === confirmDelSite)?.name}" байрыг устгахад түүнийг ашиглаж байсан ажилтнуудаас холбогдол алдагдана. Хуучин бүртгэлүүд хадгалагдана.`}
+          onCancel={() => setConfirmDelSite(null)}
+          onConfirm={() => deleteSite(confirmDelSite)} />
+      )}
+
+      {chooseSiteFor && (
+        <SitePickerModal
+          employee={chooseSiteFor}
+          sites={getEmployeeSites(chooseSiteFor.id) || []}
+          onPick={(siteId) => tryClockIn(chooseSiteFor, siteId)}
+          onClose={() => setChooseSiteFor(null)} />
       )}
 
       {confirmDel && (
@@ -517,23 +749,29 @@ function EmployeeDashboard({ profile }) {
   const [mySessions, setMySessions] = useState([]);
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
+  const [mySites, setMySites] = useState([]);
   const [feedback, setFeedback] = useState(null);
   const [geoBusy, setGeoBusy] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
+  const [showSitePicker, setShowSitePicker] = useState(false);
   const [, setTick] = useState(0);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps] = await Promise.all([
+    const [sess, active, apps, esResult] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
+      supabase.from("employee_sites").select("site_id, sites(*)").eq("employee_id", profile.id),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
     if (apps.data) setMyApprovals(apps.data);
+    if (esResult.data) {
+      setMySites(esResult.data.map(es => es.sites).filter(Boolean));
+    }
   };
 
   useEffect(() => { loadMy(); }, []);
@@ -543,12 +781,15 @@ function EmployeeDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "sessions", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "active_sessions", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
+      .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadMy())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [profile.id]);
 
   const isActive = !!myActive;
   const liveMs = isActive ? capSessionEnd(profile, Date.now()) - new Date(myActive.start_time).getTime() : 0;
+  const activeSite = isActive && myActive.site_id ? mySites.find(s => s.id === myActive.site_id) : null;
 
   const stats = useMemo(() => {
     const cap = (list) => list.reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0);
@@ -558,15 +799,41 @@ function EmployeeDashboard({ profile }) {
     return { today: cap(today) + live, week: cap(week) + live, total: cap(mySessions) + live };
   }, [mySessions, isActive, liveMs]);
 
-  const onClockIn = async () => {
-    if (!hasSite(profile)) { setFeedback({ type: "error", msg: "Ажлын байр тогтоогоогүй. Админд хандаарай." }); return; }
+  // Resolve which site to use for clock-in
+  // Returns: site object or null
+  const resolveSite = (chosenSiteId) => {
+    if (mySites.length > 0) {
+      if (mySites.length === 1) return mySites[0];
+      return chosenSiteId ? mySites.find(s => s.id === chosenSiteId) : null;
+    }
+    // Legacy
+    if (hasSite(profile)) {
+      return { id: null, lat: profile.site_lat, lng: profile.site_lng, radius: profile.site_radius || 100, name: profile.site_label || "Ажлын байр" };
+    }
+    return null;
+  };
+
+  const onClockIn = async (chosenSiteId = null) => {
+    // If multiple sites assigned and none chosen, show picker
+    if (mySites.length > 1 && !chosenSiteId) {
+      setShowSitePicker(true);
+      return;
+    }
+
+    const site = resolveSite(chosenSiteId);
+    if (!site) {
+      setFeedback({ type: "error", msg: "Ажлын байр тогтоогоогүй. Админд хандаарай." });
+      return;
+    }
+
     const sched = checkSchedule(profile);
     if (!sched.ok) { setFeedback({ type: "error", msg: sched.reason }); return; }
+    setShowSitePicker(false);
     setGeoBusy(true);
     try {
       const loc = await getLocation();
-      const d = distanceMeters(loc, siteOf(profile));
-      if (d > profile.site_radius) {
+      const d = distanceMeters(loc, site);
+      if (d > site.radius) {
         setFeedback({ type: "error", msg: `Хязгаараас гадуур — ${fmtDist(d)}` });
         return;
       }
@@ -574,9 +841,10 @@ function EmployeeDashboard({ profile }) {
       const { error } = await supabase.from("active_sessions").upsert({
         employee_id: profile.id, start_time: startTime,
         start_lat: loc.lat, start_lng: loc.lng, distance_meters: d,
+        site_id: site.id,
       });
       if (error) throw error;
-      setFeedback({ type: "success", msg: `Цаг бүртгэгдлээ · ${fmtDist(d)}` });
+      setFeedback({ type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(d)}` });
       await loadMy();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
     finally { setGeoBusy(false); }
@@ -584,14 +852,21 @@ function EmployeeDashboard({ profile }) {
 
   const onClockOut = async () => {
     if (!myActive) return;
+    // Find which site they clocked into
+    let site = null;
+    if (myActive.site_id) site = mySites.find(s => s.id === myActive.site_id);
+    if (!site && hasSite(profile)) {
+      site = { id: null, lat: profile.site_lat, lng: profile.site_lng, radius: profile.site_radius || 100 };
+    }
+
     setGeoBusy(true);
     try {
       let endLoc = null;
-      if (hasSite(profile)) {
+      if (site) {
         try {
           endLoc = await getLocation();
-          const ed = distanceMeters(endLoc, siteOf(profile));
-          if (ed > profile.site_radius) {
+          const ed = distanceMeters(endLoc, site);
+          if (ed > site.radius) {
             setFeedback({ type: "error", msg: `Гарах боломжгүй — ${fmtDist(ed)} зайтай` });
             return;
           }
@@ -607,6 +882,7 @@ function EmployeeDashboard({ profile }) {
         end_time: new Date(endMs).toISOString(),
         start_lat: myActive.start_lat, start_lng: myActive.start_lng,
         end_lat: endLoc?.lat, end_lng: endLoc?.lng,
+        site_id: myActive.site_id || null,
       });
       if (insErr) throw insErr;
       await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
@@ -630,7 +906,7 @@ function EmployeeDashboard({ profile }) {
   };
 
   const sched = profile ? checkSchedule(profile) : { ok: true };
-  const noSite = !hasSite(profile);
+  const noSite = mySites.length === 0 && !hasSite(profile);
   const cantClock = !isActive && (noSite || !sched.ok);
 
   return (
@@ -677,9 +953,9 @@ function EmployeeDashboard({ profile }) {
                 </span>
               </div>
 
-              <div className="my-5">
+              <div className="my-5 sm:my-6">
                 <div style={{ fontFamily: FM, fontWeight: 500, color: isActive ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
-                     className="text-5xl sm:text-6xl tabular-nums">
+                     className="text-6xl sm:text-7xl tabular-nums">
                   {isActive ? fmtClock(liveMs) : "00:00:00"}
                 </div>
                 {isActive && (
@@ -691,8 +967,13 @@ function EmployeeDashboard({ profile }) {
 
               <div className="space-y-2 mb-5 pb-5 border-b" style={{ borderColor: T.borderSoft }}>
                 <InfoRow icon={MapPin} label="Ажлын байр"
-                  value={hasSite(profile) ? `${profile.site_label || `${fmtCoord(profile.site_lat)}, ${fmtCoord(profile.site_lng)}`} · ${profile.site_radius}m` : "Тогтоогоогүй"}
-                  warn={!hasSite(profile)} />
+                  value={
+                    activeSite ? `${activeSite.name} (одоо)`
+                    : mySites.length > 0 ? mySites.map(s => s.name).join(", ")
+                    : hasSite(profile) ? `${profile.site_label || `${fmtCoord(profile.site_lat)}, ${fmtCoord(profile.site_lng)}`}`
+                    : "Тогтоогоогүй"
+                  }
+                  warn={mySites.length === 0 && !hasSite(profile)} />
                 <InfoRow icon={Clock} label="Цагийн хуваарь"
                   value={profile.schedule_days?.length ? `${profile.schedule_days.map((d) => DAY_LABELS[d]).join("·")} ${profile.schedule_start}–${profile.schedule_end}` : "Хязгааргүй"} />
               </div>
@@ -709,12 +990,12 @@ function EmployeeDashboard({ profile }) {
                   color: T.surface, fontFamily: FS,
                   cursor: cantClock ? "not-allowed" : "pointer", opacity: cantClock ? 0.5 : 1,
                 }}
-                className="w-full py-4 rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-                {geoBusy ? <><Loader2 size={14} className="animate-spin" /> Байршил шалгаж байна…</>
-                  : isActive ? <><Square size={13} fill="currentColor" /> Цаг буулгах</>
-                  : noSite ? <><MapPin size={13} /> Ажлын байр тогтоогоогүй</>
-                  : !sched.ok ? <><Clock size={13} /> Цагийн хязгаараас гадуур</>
-                  : <><Play size={13} fill="currentColor" /> Цаг бүртгүүлэх</>}
+                className="w-full py-5 sm:py-4 rounded-xl text-base sm:text-sm font-medium flex items-center justify-center gap-2.5 hover:opacity-90 transition-opacity active:scale-[0.98]">
+                {geoBusy ? <><Loader2 size={18} className="animate-spin" /> Байршил шалгаж байна…</>
+                  : isActive ? <><Square size={16} fill="currentColor" /> Цаг буулгах</>
+                  : noSite ? <><MapPin size={16} /> Ажлын байр тогтоогоогүй</>
+                  : !sched.ok ? <><Clock size={16} /> Цагийн хязгаараас гадуур</>
+                  : <><Play size={16} fill="currentColor" /> Цаг бүртгүүлэх</>}
               </button>
             </div>
 
@@ -741,6 +1022,14 @@ function EmployeeDashboard({ profile }) {
       {showRequest && (
         <RequestModal profile={profile} onClose={() => setShowRequest(false)} onSubmit={submitRequest} />
       )}
+
+      {showSitePicker && (
+        <SitePickerModal
+          employee={profile}
+          sites={mySites}
+          onPick={(siteId) => onClockIn(siteId)}
+          onClose={() => setShowSitePicker(false)} />
+      )}
     </div>
   );
 }
@@ -748,7 +1037,7 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd }) {
   if (employees.length === 0) {
     return (
       <div style={{ borderColor: T.border, background: T.surface }}
@@ -777,8 +1066,11 @@ function TeamView({ employees, sessions, activeSessions, geoBusyId, feedback, on
           .reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0)
           + (isActive ? Math.max(0, liveMs) : 0);
         const sched = checkSchedule(emp);
-        const noSite = !hasSite(emp);
+        const myAssignedSites = employeeSites.filter(es => es.employee_id === emp.id).map(es => sites.find(s => s.id === es.site_id)).filter(Boolean);
+        const hasAnySite = myAssignedSites.length > 0 || hasSite(emp);
+        const noSite = !hasAnySite;
         const cantClock = !isActive && (noSite || !sched.ok);
+        const activeSite = isActive && active.site_id ? sites.find(s => s.id === active.site_id) : null;
 
         return (
           <article key={emp.id}
@@ -805,12 +1097,20 @@ function TeamView({ employees, sessions, activeSessions, geoBusyId, feedback, on
 
             <div className="text-[10px] flex flex-wrap gap-x-3 gap-y-1 mb-4" style={{ fontFamily: FM, color: T.muted }}>
               <span className="flex items-center gap-1" style={noSite ? { color: T.err } : {}}>
-                <MapPin size={10} />{noSite ? "байргүй" : `${emp.site_radius}m`}
+                <MapPin size={10} />
+                {noSite ? "байргүй"
+                  : myAssignedSites.length > 0 ? `${myAssignedSites.length} байр`
+                  : `${emp.site_radius}m`}
               </span>
               <span className="flex items-center gap-1">
                 <Clock size={10} />
                 {emp.schedule_days?.length ? `${emp.schedule_start}–${emp.schedule_end}` : "хязгааргүй"}
               </span>
+              {activeSite && (
+                <span style={{ color: T.highlight }} className="flex items-center gap-1">
+                  · {activeSite.name}
+                </span>
+              )}
             </div>
 
             <div className="rounded-xl px-4 py-3 mb-4" style={{ background: T.surfaceAlt }}>
@@ -847,7 +1147,7 @@ function TeamView({ employees, sessions, activeSessions, geoBusyId, feedback, on
 // ═══════════════════════════════════════════════════════════════════════════
 //  LEDGER, APPROVALS, HISTORY views
 // ═══════════════════════════════════════════════════════════════════════════
-function LedgerView({ sessions, employees }) {
+function LedgerView({ sessions, employees, sites = [] }) {
   const [filterType, setFilterType] = useState("thisMonth"); // thisMonth | lastMonth | custom | all
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date(); d.setDate(1);
@@ -855,10 +1155,12 @@ function LedgerView({ sessions, employees }) {
   });
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
   const [filterEmpId, setFilterEmpId] = useState("all");
+  const [filterSiteId, setFilterSiteId] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   const empById = (id) => employees.find((e) => e.id === id);
+  const siteById = (id) => sites.find((s) => s.id === id);
 
   // ── filter logic
   const filterRange = useMemo(() => {
@@ -885,9 +1187,10 @@ function LedgerView({ sessions, employees }) {
       const startMs = new Date(s.start_time).getTime();
       if (startMs < filterRange.start || startMs > filterRange.end) return false;
       if (filterEmpId !== "all" && s.employee_id !== filterEmpId) return false;
+      if (filterSiteId !== "all" && s.site_id !== filterSiteId) return false;
       return true;
     });
-  }, [sessions, filterRange, filterEmpId]);
+  }, [sessions, filterRange, filterEmpId, filterSiteId]);
 
   // ── totals
   const totals = useMemo(() => {
@@ -924,10 +1227,12 @@ function LedgerView({ sessions, employees }) {
         const endMs = new Date(s.end_time).getTime();
         const hours = (endMs - startMs) / 3600000;
         const rate = emp?.hourly_rate || 0;
+        const site = s.site_id ? siteById(s.site_id) : null;
         return {
           "Огноо": formatExcelDate(startMs),
           "Ажилтан": emp?.name || "(устсан)",
           "Албан тушаал": emp?.job_title || "",
+          "Ажлын байр": site?.name || "—",
           "Эхэлсэн": formatExcelTime(startMs),
           "Дууссан": formatExcelTime(endMs),
           "Цаг (нийт)": Number(hours.toFixed(2)),
@@ -955,7 +1260,7 @@ function LedgerView({ sessions, employees }) {
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [
-      { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
       { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 18 }
     ];
     const wb = XLSX.utils.book_new();
@@ -1129,6 +1434,22 @@ function LedgerView({ sessions, employees }) {
                 ))}
               </select>
             </div>
+
+            {sites.length > 0 && (
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-2">
+                  Ажлын байр
+                </div>
+                <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)}
+                  style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                  className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black">
+                  <option value="all">Бүх байр</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1161,8 +1482,9 @@ function LedgerView({ sessions, employees }) {
                     <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">
                       {e ? e.name : <span style={{ color: T.muted, fontStyle: "italic" }}>(устсан)</span>}
                     </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 mt-0.5">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span>{fmtTime(startMs)} → {fmtTime(endMs)}</span>
+                      {s.site_id && siteById(s.site_id) && <span>· {siteById(s.site_id).name}</span>}
                       {s.start_lat && <span>· баталгаажсан</span>}
                       {s.from_approval && <span>· гар бичиг</span>}
                     </div>
@@ -1366,13 +1688,18 @@ function PersonalRequests({ approvals, onNew }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE FORM MODAL
 // ═══════════════════════════════════════════════════════════════════════════
-function EmployeeFormModal({ mode, employee, onSave, onClose }) {
+function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], onSave, onClose }) {
   const [name, setName] = useState(employee?.name || "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [jobTitle, setJobTitle] = useState(employee?.job_title || "");
   const [rate, setRate] = useState(employee?.hourly_rate ? String(employee.hourly_rate) : "");
 
+  // Multi-site assignment
+  const [selectedSiteIds, setSelectedSiteIds] = useState(assignedSiteIds);
+  const [siteSearch, setSiteSearch] = useState("");
+
+  // Legacy single-site (still kept as fallback)
   const [site, setSite] = useState(hasSite(employee) ? { lat: employee.site_lat, lng: employee.site_lng, accuracy: null } : null);
   const [siteLabel, setSiteLabel] = useState(employee?.site_label || "");
   const [radius, setRadius] = useState(employee?.site_radius || 100);
@@ -1380,6 +1707,7 @@ function EmployeeFormModal({ mode, employee, onSave, onClose }) {
   const [siteError, setSiteError] = useState("");
   const [showManual, setShowManual] = useState(false);
   const [manLat, setManLat] = useState(""); const [manLng, setManLng] = useState("");
+  const [showLegacy, setShowLegacy] = useState(hasSite(employee));
 
   const [days, setDays] = useState(employee?.schedule_days || ["MO", "TU", "WE", "TH", "FR"]);
   const [startTime, setStartTime] = useState(employee?.schedule_start || "09:00");
@@ -1404,6 +1732,18 @@ function EmployeeFormModal({ mode, employee, onSave, onClose }) {
     setSiteError("");
   };
 
+  const toggleSite = (siteId) => {
+    setSelectedSiteIds((curr) =>
+      curr.includes(siteId) ? curr.filter((id) => id !== siteId) : [...curr, siteId]
+    );
+  };
+
+  const filteredSites = useMemo(() => {
+    if (!siteSearch.trim()) return sites;
+    const q = siteSearch.toLowerCase();
+    return sites.filter((s) => s.name.toLowerCase().includes(q));
+  }, [sites, siteSearch]);
+
   const submit = async () => {
     setErr("");
     if (!name.trim()) return setErr("Нэр оруулна уу");
@@ -1418,15 +1758,20 @@ function EmployeeFormModal({ mode, employee, onSave, onClose }) {
       email: email.trim(), name: name.trim(),
       job_title: jobTitle.trim() || "Ажилтан",
       hourly_rate: parseFloat(rate) || 0,
-      site_lat: site?.lat ?? null, site_lng: site?.lng ?? null,
-      site_radius: site ? radius : null,
-      site_label: site ? (siteLabel.trim() || null) : null,
+      site_lat: showLegacy && site?.lat ? site.lat : null,
+      site_lng: showLegacy && site?.lng ? site.lng : null,
+      site_radius: showLegacy && site ? radius : null,
+      site_label: showLegacy && site ? (siteLabel.trim() || null) : null,
       schedule_days: hasSchedule ? days : null,
       schedule_start: hasSchedule ? startTime : null,
       schedule_end: hasSchedule ? endTime : null,
     };
 
-    await onSave({ formData, password, isNew: mode === "add", existingId: employee?.id });
+    await onSave({
+      formData, password,
+      isNew: mode === "add", existingId: employee?.id,
+      siteIds: selectedSiteIds,
+    });
     setBusy(false);
   };
 
@@ -1460,69 +1805,123 @@ function EmployeeFormModal({ mode, employee, onSave, onClose }) {
           </Field>
         </Section>
 
-        <Section title="Ажлын байр (геофенс)" subtitle="Зөвхөн энэ байршилд цаг бүртгүүлэх боломжтой">
-          {!site ? (
-            <div className="space-y-2">
-              <button onClick={captureSite} disabled={siteBusy}
-                style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
-                {siteBusy ? <><Loader2 size={12} className="animate-spin" /> Тогтоож байна…</>
-                          : <><Crosshair size={12} /> Одоогийн байршил ашиглах</>}
-              </button>
-              <button onClick={() => setShowManual((v) => !v)} style={{ color: T.muted, fontFamily: FM }}
-                className="w-full text-[10px] uppercase tracking-[0.2em] hover:opacity-70 py-1">
-                {showManual ? "− Гар оруулга нуух" : "+ Координат гараар оруулах"}
-              </button>
-              {showManual && (
-                <div style={{ borderColor: T.border }} className="p-3 rounded-lg border-dashed border space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input value={manLat} onChange={(e) => setManLat(e.target.value)} placeholder="Latitude"
-                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
-                      className="px-3 py-2 rounded-md border text-xs outline-none" />
-                    <input value={manLng} onChange={(e) => setManLng(e.target.value)} placeholder="Longitude"
-                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
-                      className="px-3 py-2 rounded-md border text-xs outline-none" />
-                  </div>
-                  <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                    className="w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em] hover:opacity-90">
-                    Координат хэрэглэх
-                  </button>
-                </div>
-              )}
-              {siteError && <ErrorBox>{siteError}</ErrorBox>}
+        <Section title="Ажлын байр" subtitle="Ажилтан зөвхөн оноосон байрандаа цаг бүртгүүлнэ. Олон сонгож болно.">
+          {sites.length === 0 ? (
+            <div style={{ background: T.warnSoft, color: T.warn }} className="px-3 py-2.5 rounded-lg text-xs">
+              Эхлээд "Байрууд" таб дотор ажлын байр үүсгээрэй.
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="px-3 py-2.5 rounded-lg flex items-start gap-2.5" style={{ background: T.okSoft, color: T.ok }}>
-                <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] font-medium">Тогтоогдсон</div>
-                  <div style={{ fontFamily: FM, color: T.ink }} className="text-[11px] mt-0.5 truncate">
-                    {fmtCoord(site.lat)}, {fmtCoord(site.lng)}
-                    {site.accuracy && ` · ±${Math.round(site.accuracy)}m`}
+            <>
+              {sites.length > 5 && (
+                <Input value={siteSearch} onChange={setSiteSearch} placeholder="Байр хайх..." />
+              )}
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {filteredSites.map((s) => {
+                  const checked = selectedSiteIds.includes(s.id);
+                  return (
+                    <button key={s.id} onClick={() => toggleSite(s.id)}
+                      style={{
+                        background: checked ? T.highlightSoft : T.surface,
+                        borderColor: checked ? T.highlight : T.border,
+                      }}
+                      className="w-full text-left px-3 py-2.5 rounded-lg border flex items-center gap-3 hover:bg-black/5 transition-colors">
+                      <div style={{
+                        background: checked ? T.highlight : "transparent",
+                        borderColor: checked ? T.highlight : T.border,
+                      }}
+                        className="w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center">
+                        {checked && <CheckCircle2 size={12} style={{ color: T.surface }} strokeWidth={3} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{s.name}</div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                          {fmtCoord(s.lat)}, {fmtCoord(s.lng)} · {s.radius}m
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedSiteIds.length > 0 && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] pt-1">
+                  {selectedSiteIds.length} байр сонгогдсон
+                </div>
+              )}
+            </>
+          )}
+
+          <details className="mt-3" open={showLegacy}>
+            <summary style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] cursor-pointer hover:opacity-70">
+              Хувийн байр тохируулах (хуучин арга)
+            </summary>
+            <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderSoft }}>
+              <p style={{ color: T.muted }} className="text-[11px] mb-3">
+                Хувийн байрыг зөвхөн нэг ажилтанд хэрэгтэй бол эндээс тохируулна. "Байрууд" таб дахь нийтлэг байруудыг ашиглах нь илүү тохиромжтой.
+              </p>
+              {!site ? (
+                <div className="space-y-2">
+                  <button onClick={captureSite} disabled={siteBusy}
+                    style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+                    className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+                    {siteBusy ? <><Loader2 size={12} className="animate-spin" /> Тогтоож байна…</>
+                              : <><Crosshair size={12} /> Одоогийн байршил ашиглах</>}
+                  </button>
+                  <button onClick={() => setShowManual((v) => !v)} style={{ color: T.muted, fontFamily: FM }}
+                    className="w-full text-[10px] uppercase tracking-[0.2em] hover:opacity-70 py-1">
+                    {showManual ? "− Гар оруулга нуух" : "+ Координат гараар оруулах"}
+                  </button>
+                  {showManual && (
+                    <div style={{ borderColor: T.border }} className="p-3 rounded-lg border-dashed border space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={manLat} onChange={(e) => setManLat(e.target.value)} placeholder="Latitude"
+                          style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                          className="px-3 py-2 rounded-md border text-xs outline-none" />
+                        <input value={manLng} onChange={(e) => setManLng(e.target.value)} placeholder="Longitude"
+                          style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                          className="px-3 py-2 rounded-md border text-xs outline-none" />
+                      </div>
+                      <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+                        className="w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em] hover:opacity-90">
+                        Координат хэрэглэх
+                      </button>
+                    </div>
+                  )}
+                  {siteError && <ErrorBox>{siteError}</ErrorBox>}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="px-3 py-2.5 rounded-lg flex items-start gap-2.5" style={{ background: T.okSoft, color: T.ok }}>
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] font-medium">Тогтоогдсон</div>
+                      <div style={{ fontFamily: FM, color: T.ink }} className="text-[11px] mt-0.5 truncate">
+                        {fmtCoord(site.lat)}, {fmtCoord(site.lng)}
+                        {site.accuracy && ` · ±${Math.round(site.accuracy)}m`}
+                      </div>
+                    </div>
+                    <button onClick={() => { setSite(null); setSiteLabel(""); setShowLegacy(false); }} style={{ color: T.ok }}
+                            className="p-1 hover:opacity-70"><X size={13} /></button>
+                  </div>
+                  <Field label="Байрны нэр (заавал биш)">
+                    <Input value={siteLabel} onChange={setSiteLabel} placeholder="Гол оффис" />
+                  </Field>
+                  <div>
+                    <Label>Зөвшөөрөгдөх радиус</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RADII.map((r) => (
+                        <button key={r} onClick={() => setRadius(r)}
+                          style={{ background: radius === r ? T.ink : "transparent", color: radius === r ? T.surface : T.ink,
+                                   borderColor: radius === r ? T.ink : T.border, fontFamily: FM }}
+                          className="px-3 py-1 text-[10px] uppercase tracking-wider border rounded-full hover:opacity-80">
+                          {r >= 1000 ? `${r/1000}km` : `${r}m`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => { setSite(null); setSiteLabel(""); }} style={{ color: T.ok }}
-                        className="p-1 hover:opacity-70"><X size={13} /></button>
-              </div>
-              <Field label="Байрны нэр (заавал биш)">
-                <Input value={siteLabel} onChange={setSiteLabel} placeholder="Гол оффис" />
-              </Field>
-              <div>
-                <Label>Зөвшөөрөгдөх радиус</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {RADII.map((r) => (
-                    <button key={r} onClick={() => setRadius(r)}
-                      style={{ background: radius === r ? T.ink : "transparent", color: radius === r ? T.surface : T.ink,
-                               borderColor: radius === r ? T.ink : T.border, fontFamily: FM }}
-                      className="px-3 py-1 text-[10px] uppercase tracking-wider border rounded-full hover:opacity-80">
-                      {r >= 1000 ? `${r/1000}km` : `${r}m`}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
-          )}
+          </details>
         </Section>
 
         <Section title="Цагийн хуваарь" subtitle="Зөвхөн энэ хугацаанд цаг бүртгүүлэх, илүү цаг тооцохгүй">
@@ -1853,5 +2252,266 @@ function Loading() {
     <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center">
       <Loader2 size={20} className="animate-spin" style={{ color: T.muted }} />
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SITES VIEW (admin)
+// ═══════════════════════════════════════════════════════════════════════════
+function SitesView({ sites, employeeSites, employees, sessions, onEdit, onDelete, onAdd }) {
+  if (sites.length === 0) {
+    return (
+      <div style={{ borderColor: T.border, background: T.surface }}
+           className="border-2 border-dashed rounded-2xl py-16 px-6 text-center">
+        <MapPin size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
+        <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Ажлын байр алга</h3>
+        <p style={{ color: T.muted }} className="text-sm mb-5">Анхны ажлын байраа үүсгэж эхлээрэй.</p>
+        <button onClick={onAdd} style={{ background: T.ink, color: T.surface }}
+          className="px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2 hover:opacity-90">
+          <Plus size={13} strokeWidth={2.5} /> Эхний байр нэмэх
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {sites.map((site) => {
+        const empCount = employeeSites.filter((es) => es.site_id === site.id).length;
+        const sessionCount = sessions.filter((s) => s.site_id === site.id).length;
+        const totalMs = sessions.filter((s) => s.site_id === site.id)
+          .reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0);
+
+        return (
+          <article key={site.id}
+            style={{ background: T.surface, borderColor: T.border }}
+            className="rounded-2xl border p-5">
+            <div className="flex items-start justify-between mb-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <MapPin size={12} style={{ color: T.highlight }} />
+                  <span style={{ fontFamily: FM, color: T.muted }}
+                        className="text-[9px] uppercase tracking-[0.25em] font-medium">
+                    Ажлын байр
+                  </span>
+                </div>
+                <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-xl truncate">{site.name}</h3>
+                <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 truncate">
+                  {fmtCoord(site.lat)}, {fmtCoord(site.lng)} · {site.radius}m
+                </p>
+                {site.notes && (
+                  <p style={{ color: T.muted }} className="text-xs mt-2 italic line-clamp-2">{site.notes}</p>
+                )}
+              </div>
+              <div className="flex gap-1 -mr-1.5 -mt-1.5">
+                <button onClick={() => onEdit(site)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><Edit3 size={14} /></button>
+                <button onClick={() => onDelete(site.id)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><X size={15} /></button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t" style={{ borderColor: T.borderSoft }}>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-0.5">Ажилтан</div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">{empCount}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-0.5">Сэшн</div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">{sessionCount}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-0.5">Цаг</div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">{fmtHours(totalMs)}</div>
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SITE FORM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function SiteFormModal({ mode, site, onSave, onClose }) {
+  const [name, setName] = useState(site?.name || "");
+  const [coords, setCoords] = useState(site ? { lat: site.lat, lng: site.lng, accuracy: null } : null);
+  const [radius, setRadius] = useState(site?.radius || 100);
+  const [notes, setNotes] = useState(site?.notes || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [showManual, setShowManual] = useState(false);
+  const [manLat, setManLat] = useState(""); const [manLng, setManLng] = useState("");
+
+  const captureLoc = async () => {
+    setBusy(true); setErr("");
+    try {
+      const loc = await getLocation();
+      setCoords({ lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy });
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const applyManual = () => {
+    const lat = parseFloat(manLat), lng = parseFloat(manLng);
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180)
+      return setErr("Зөв координат оруулна уу");
+    setCoords({ lat, lng });
+    setErr("");
+  };
+
+  const submit = async () => {
+    setErr("");
+    if (!name.trim()) return setErr("Байрны нэр оруулна уу");
+    if (!coords) return setErr("Байршил тогтоогоогүй байна");
+    setBusy(true);
+    await onSave({
+      id: site?.id || null,
+      name: name.trim(),
+      lat: coords.lat, lng: coords.lng,
+      radius, notes: notes.trim() || null,
+    });
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title={mode === "add" ? "Шинэ ажлын байр" : "Байр засварлах"}>
+      <div className="space-y-4">
+        <Field label="Байрны нэр" required>
+          <Input value={name} onChange={setName} placeholder="Гол оффис" autoFocus />
+        </Field>
+
+        <div>
+          <Label>Байршил</Label>
+          {!coords ? (
+            <div className="space-y-2">
+              <button onClick={captureLoc} disabled={busy}
+                style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+                className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+                {busy ? <><Loader2 size={12} className="animate-spin" /> Тогтоож байна…</>
+                      : <><Crosshair size={12} /> Одоогийн байршил ашиглах</>}
+              </button>
+              <button onClick={() => setShowManual((v) => !v)} style={{ color: T.muted, fontFamily: FM }}
+                className="w-full text-[10px] uppercase tracking-[0.2em] hover:opacity-70 py-1">
+                {showManual ? "− Гар оруулга нуух" : "+ Координат гараар оруулах"}
+              </button>
+              {showManual && (
+                <div style={{ borderColor: T.border }} className="p-3 rounded-lg border-dashed border space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={manLat} onChange={(e) => setManLat(e.target.value)} placeholder="Latitude"
+                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                      className="px-3 py-2 rounded-md border text-xs outline-none" />
+                    <input value={manLng} onChange={(e) => setManLng(e.target.value)} placeholder="Longitude"
+                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                      className="px-3 py-2 rounded-md border text-xs outline-none" />
+                  </div>
+                  <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+                    className="w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em] hover:opacity-90">
+                    Координат хэрэглэх
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="px-3 py-2.5 rounded-lg flex items-start gap-2.5" style={{ background: T.okSoft, color: T.ok }}>
+              <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] font-medium">Тогтоогдсон</div>
+                <div style={{ fontFamily: FM, color: T.ink }} className="text-[11px] mt-0.5 truncate">
+                  {fmtCoord(coords.lat)}, {fmtCoord(coords.lng)}
+                  {coords.accuracy && ` · ±${Math.round(coords.accuracy)}m`}
+                </div>
+              </div>
+              <button onClick={() => setCoords(null)} style={{ color: T.ok }}
+                      className="p-1 hover:opacity-70"><X size={13} /></button>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <Label>Зөвшөөрөгдөх радиус</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {RADII.map((r) => (
+              <button key={r} onClick={() => setRadius(r)}
+                style={{ background: radius === r ? T.ink : "transparent", color: radius === r ? T.surface : T.ink,
+                         borderColor: radius === r ? T.ink : T.border, fontFamily: FM }}
+                className="px-3 py-1 text-[10px] uppercase tracking-wider border rounded-full hover:opacity-80">
+                {r >= 1000 ? `${r/1000}km` : `${r}m`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Field label="Тэмдэглэл (заавал биш)">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+            placeholder="Жишээ: 3-р давхар, том хаалгаар орох"
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
+        </Field>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 size={13} className="animate-spin" />}
+            {mode === "add" ? "Үүсгэх" : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SITE PICKER MODAL (clock-in site selection)
+// ═══════════════════════════════════════════════════════════════════════════
+function SitePickerModal({ employee, sites, onPick, onClose }) {
+  return (
+    <Modal onClose={onClose} title="Хаа байна вэ?" maxW="max-w-md">
+      <p style={{ color: T.muted }} className="text-sm mb-4">
+        <span style={{ color: T.ink, fontWeight: 500 }}>{employee.name}</span> нь хэд хэдэн ажлын байртай. Одоо аль байранд цаг бүртгүүлэх вэ?
+      </p>
+      <div className="space-y-2">
+        {sites.map((s) => (
+          <button key={s.id} onClick={() => onPick(s.id)}
+            style={{ background: T.surface, borderColor: T.border }}
+            className="w-full text-left px-4 py-3 rounded-xl border flex items-center gap-3 hover:bg-black/5 transition-colors">
+            <div style={{ background: T.highlightSoft, color: T.highlight }}
+                 className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
+              <MapPin size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{s.name}</div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                {s.radius}m радиус
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
+        className="w-full mt-4 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GENERIC CONFIRM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function ConfirmModal({ title, message, onCancel, onConfirm, confirmLabel = "Устгах" }) {
+  return (
+    <Modal onClose={onCancel} title={title} maxW="max-w-sm">
+      <p style={{ color: T.muted }} className="text-sm mb-5">{message}</p>
+      <div className="flex gap-3">
+        <button onClick={onCancel} style={{ borderColor: T.border, fontFamily: FS }}
+          className="flex-1 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+        <button onClick={onConfirm} style={{ background: T.err, color: T.surface, fontFamily: FS }}
+          className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
+          <Trash2 size={12} /> {confirmLabel}
+        </button>
+      </div>
+    </Modal>
   );
 }
