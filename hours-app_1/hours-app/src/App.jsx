@@ -4,7 +4,9 @@ import {
   AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock,
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
+  Download, FileSpreadsheet, Filter,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { supabase, isConfigured } from "./supabaseClient";
 
 // ─────────── constants ───────────
@@ -846,53 +848,344 @@ function TeamView({ employees, sessions, activeSessions, geoBusyId, feedback, on
 //  LEDGER, APPROVALS, HISTORY views
 // ═══════════════════════════════════════════════════════════════════════════
 function LedgerView({ sessions, employees }) {
-  const recent = sessions.slice(0, 50);
+  const [filterType, setFilterType] = useState("thisMonth"); // thisMonth | lastMonth | custom | all
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [filterEmpId, setFilterEmpId] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
   const empById = (id) => employees.find((e) => e.id === id);
+
+  // ── filter logic
+  const filterRange = useMemo(() => {
+    const now = new Date();
+    if (filterType === "all") return { start: 0, end: Date.now() + 86400000 };
+    if (filterType === "thisMonth") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+      return { start, end };
+    }
+    if (filterType === "lastMonth") {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      return { start, end };
+    }
+    // custom
+    const s = new Date(`${customStart}T00:00:00`).getTime();
+    const e = new Date(`${customEnd}T23:59:59`).getTime();
+    return { start: s, end: e };
+  }, [filterType, customStart, customEnd]);
+
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s) => {
+      const startMs = new Date(s.start_time).getTime();
+      if (startMs < filterRange.start || startMs > filterRange.end) return false;
+      if (filterEmpId !== "all" && s.employee_id !== filterEmpId) return false;
+      return true;
+    });
+  }, [sessions, filterRange, filterEmpId]);
+
+  // ── totals
+  const totals = useMemo(() => {
+    let totalMs = 0, totalPay = 0;
+    filteredSessions.forEach((s) => {
+      const ms = new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
+      totalMs += ms;
+      const emp = empById(s.employee_id);
+      const rate = emp?.hourly_rate || 0;
+      totalPay += (ms / 3600000) * rate;
+    });
+    return { totalMs, totalPay };
+  }, [filteredSessions, employees]);
+
+  // ── filter label
+  const filterLabel = useMemo(() => {
+    if (filterType === "thisMonth") return "Энэ сар";
+    if (filterType === "lastMonth") return "Өнгөрсөн сар";
+    if (filterType === "all") return "Бүгд";
+    return `${customStart} – ${customEnd}`;
+  }, [filterType, customStart, customEnd]);
+
+  // ── Excel export functions
+  const formatExcelDate = (ts) => new Date(ts).toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const formatExcelTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  const exportDetailed = () => {
+    const rows = filteredSessions
+      .slice()
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+      .map((s) => {
+        const emp = empById(s.employee_id);
+        const startMs = new Date(s.start_time).getTime();
+        const endMs = new Date(s.end_time).getTime();
+        const hours = (endMs - startMs) / 3600000;
+        const rate = emp?.hourly_rate || 0;
+        return {
+          "Огноо": formatExcelDate(startMs),
+          "Ажилтан": emp?.name || "(устсан)",
+          "Албан тушаал": emp?.job_title || "",
+          "Эхэлсэн": formatExcelTime(startMs),
+          "Дууссан": formatExcelTime(endMs),
+          "Цаг (нийт)": Number(hours.toFixed(2)),
+          "Цалингийн хувь (₮)": rate,
+          "Цалин (₮)": Math.round(hours * rate),
+          "Геофенс баталгаажсан": s.start_lat ? "Тийм" : "Үгүй",
+          "Гар бичиг (хүсэлтээр)": s.from_approval ? "Тийм" : "Үгүй",
+        };
+      });
+
+    if (rows.length === 0) {
+      alert("Сонгосон хугацаанд бүртгэл алга");
+      return;
+    }
+
+    // Add total row
+    const totalHours = rows.reduce((a, r) => a + r["Цаг (нийт)"], 0);
+    const totalPay = rows.reduce((a, r) => a + r["Цалин (₮)"], 0);
+    rows.push({});
+    rows.push({
+      "Огноо": "НИЙТ",
+      "Цаг (нийт)": Number(totalHours.toFixed(2)),
+      "Цалин (₮)": Math.round(totalPay),
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 18 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Дэлгэрэнгүй");
+    const fname = `Hours_дэлгэрэнгүй_${filterLabel.replace(/ /g, "_")}.xlsx`;
+    XLSX.writeFile(wb, fname);
+    setShowExportMenu(false);
+  };
+
+  const exportSummary = () => {
+    // Group by employee
+    const map = {};
+    filteredSessions.forEach((s) => {
+      const emp = empById(s.employee_id);
+      const id = s.employee_id;
+      if (!map[id]) {
+        map[id] = {
+          name: emp?.name || "(устсан)",
+          job: emp?.job_title || "",
+          rate: emp?.hourly_rate || 0,
+          totalMs: 0,
+          sessionCount: 0,
+        };
+      }
+      map[id].totalMs += new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
+      map[id].sessionCount += 1;
+    });
+
+    const rows = Object.values(map).map((e) => {
+      const hours = e.totalMs / 3600000;
+      return {
+        "Ажилтан": e.name,
+        "Албан тушаал": e.job,
+        "Сэшний тоо": e.sessionCount,
+        "Нийт цаг": Number(hours.toFixed(2)),
+        "Цагийн хөлс (₮)": e.rate,
+        "Нийт цалин (₮)": Math.round(hours * e.rate),
+      };
+    }).sort((a, b) => b["Нийт цаг"] - a["Нийт цаг"]);
+
+    if (rows.length === 0) {
+      alert("Сонгосон хугацаанд бүртгэл алга");
+      return;
+    }
+
+    // Total row
+    const totalHours = rows.reduce((a, r) => a + r["Нийт цаг"], 0);
+    const totalPay = rows.reduce((a, r) => a + r["Нийт цалин (₮)"], 0);
+    rows.push({});
+    rows.push({
+      "Ажилтан": "НИЙТ",
+      "Нийт цаг": Number(totalHours.toFixed(2)),
+      "Нийт цалин (₮)": Math.round(totalPay),
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 22 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Нэгтгэсэн");
+    const fname = `Hours_нэгтгэсэн_${filterLabel.replace(/ /g, "_")}.xlsx`;
+    XLSX.writeFile(wb, fname);
+    setShowExportMenu(false);
+  };
+
   return (
-    <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
-      <div className="px-5 sm:px-6 py-4 border-b" style={{ borderColor: T.borderSoft }}>
-        <h2 style={{ fontFamily: FD, fontWeight: 500 }} className="text-xl">Цагийн тэмдэглэл</h2>
-        <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
-          Нийт {sessions.length} бүртгэл
-        </p>
-      </div>
-      {recent.length === 0 ? (
-        <div className="px-6 py-14 text-center" style={{ color: T.muted }}>
-          <p className="text-base">Бүртгэл алга байна</p>
+    <div className="space-y-4">
+      {/* Filter bar */}
+      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setShowFilters((v) => !v)}
+              style={{ borderColor: T.border, fontFamily: FM, background: showFilters ? T.surfaceAlt : "transparent" }}
+              className="px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:bg-black/5">
+              <Filter size={11} /> {filterLabel}
+              {filterEmpId !== "all" && <span style={{ color: T.highlight }}>· {empById(filterEmpId)?.name}</span>}
+            </button>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em]">
+              {filteredSessions.length} бүртгэл · {fmtHours(totals.totalMs)} цаг
+              {totals.totalPay > 0 && ` · ₮${Math.round(totals.totalPay).toLocaleString()}`}
+            </span>
+          </div>
+
+          <div className="relative">
+            <button onClick={() => setShowExportMenu((v) => !v)}
+              disabled={filteredSessions.length === 0}
+              style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+              className="px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-90 disabled:opacity-40">
+              <Download size={11} /> Excel татах
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowExportMenu(false)} />
+                <div style={{ background: T.surface, borderColor: T.border }}
+                     className="absolute right-0 mt-2 w-64 border rounded-xl shadow-xl z-40 overflow-hidden">
+                  <button onClick={exportSummary}
+                    className="w-full px-4 py-3 text-left hover:bg-black/5 flex items-start gap-2.5 border-b"
+                    style={{ borderColor: T.borderSoft }}>
+                    <FileSpreadsheet size={16} style={{ color: T.highlight }} className="mt-0.5 shrink-0" />
+                    <div>
+                      <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs">Нэгтгэсэн тайлан</div>
+                      <div style={{ color: T.muted }} className="text-[10px] mt-0.5">Ажилтан тус бүрийн нийт цаг + цалин</div>
+                    </div>
+                  </button>
+                  <button onClick={exportDetailed}
+                    className="w-full px-4 py-3 text-left hover:bg-black/5 flex items-start gap-2.5">
+                    <FileText size={16} style={{ color: T.highlight }} className="mt-0.5 shrink-0" />
+                    <div>
+                      <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs">Дэлгэрэнгүй тайлан</div>
+                      <div style={{ color: T.muted }} className="text-[10px] mt-0.5">Сэшн бүр мөр болж, бүх тоо орно</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      ) : (
-        <ul>
-          {recent.map((s, i) => {
-            const e = empById(s.employee_id);
-            const startMs = new Date(s.start_time).getTime();
-            const endMs = new Date(s.end_time).getTime();
-            return (
-              <li key={s.id} className="px-5 sm:px-6 py-3.5 flex items-center gap-4 flex-wrap"
-                  style={{ borderTop: i === 0 ? "none" : `1px solid ${T.borderSoft}` }}>
-                <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider w-16 shrink-0">
-                  {fmtDate(startMs)}
+
+        {/* Expanded filter panel */}
+        {showFilters && (
+          <div className="mt-4 pt-4 border-t space-y-3" style={{ borderColor: T.borderSoft }}>
+            <div>
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-2">
+                Хугацаа
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: "thisMonth", label: "Энэ сар" },
+                  { id: "lastMonth", label: "Өнгөрсөн сар" },
+                  { id: "all", label: "Бүгд" },
+                  { id: "custom", label: "Гар сонголт" },
+                ].map((opt) => (
+                  <button key={opt.id} onClick={() => setFilterType(opt.id)}
+                    style={{ background: filterType === opt.id ? T.ink : "transparent",
+                             color: filterType === opt.id ? T.surface : T.ink,
+                             borderColor: filterType === opt.id ? T.ink : T.border,
+                             fontFamily: FM }}
+                    className="px-3 py-1 text-[10px] uppercase tracking-[0.2em] border rounded-full hover:opacity-80">
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filterType === "custom" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Эхлэх</Label>
+                  <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">
-                    {e ? e.name : <span style={{ color: T.muted, fontStyle: "italic" }}>(устсан)</span>}
-                  </div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 mt-0.5">
-                    <span>{fmtTime(startMs)} → {fmtTime(endMs)}</span>
-                    {s.start_lat && <span>· баталгаажсан</span>}
-                    {s.from_approval && <span>· гар бичиг</span>}
-                  </div>
+                <div>
+                  <Label>Дуусах</Label>
+                  <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
                 </div>
-                <div className="text-right">
-                  <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">
-                    {fmtHours(endMs - startMs)}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-2">
+                Ажилтан
+              </div>
+              <select value={filterEmpId} onChange={(e) => setFilterEmpId(e.target.value)}
+                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black">
+                <option value="all">Бүх ажилтан</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sessions list */}
+      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
+        <div className="px-5 sm:px-6 py-4 border-b" style={{ borderColor: T.borderSoft }}>
+          <h2 style={{ fontFamily: FD, fontWeight: 500 }} className="text-xl">Цагийн тэмдэглэл</h2>
+          <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
+            {filteredSessions.length} бүртгэл · {filterLabel}
+          </p>
+        </div>
+        {filteredSessions.length === 0 ? (
+          <div className="px-6 py-14 text-center" style={{ color: T.muted }}>
+            <p className="text-base">Сонгосон хугацаанд бүртгэл алга</p>
+          </div>
+        ) : (
+          <ul>
+            {filteredSessions.slice(0, 100).map((s, i) => {
+              const e = empById(s.employee_id);
+              const startMs = new Date(s.start_time).getTime();
+              const endMs = new Date(s.end_time).getTime();
+              return (
+                <li key={s.id} className="px-5 sm:px-6 py-3.5 flex items-center gap-4 flex-wrap"
+                    style={{ borderTop: i === 0 ? "none" : `1px solid ${T.borderSoft}` }}>
+                  <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider w-16 shrink-0">
+                    {fmtDate(startMs)}
                   </div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">цаг</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">
+                      {e ? e.name : <span style={{ color: T.muted, fontStyle: "italic" }}>(устсан)</span>}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 mt-0.5">
+                      <span>{fmtTime(startMs)} → {fmtTime(endMs)}</span>
+                      {s.start_lat && <span>· баталгаажсан</span>}
+                      {s.from_approval && <span>· гар бичиг</span>}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">
+                      {fmtHours(endMs - startMs)}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">цаг</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {filteredSessions.length > 100 && (
+          <div className="px-6 py-3 text-center border-t" style={{ borderColor: T.borderSoft, color: T.muted, fontFamily: FM }}>
+            <span className="text-[10px] uppercase tracking-[0.2em]">
+              Жагсаалтад 100 / {filteredSessions.length} харагдаж байна · бүгдийг Excel-ээр татна уу
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
