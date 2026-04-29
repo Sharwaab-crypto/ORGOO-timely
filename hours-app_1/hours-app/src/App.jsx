@@ -1091,6 +1091,45 @@ function EmployeeDashboard({ profile }) {
                 )}
               </div>
 
+              {/* Countdown card — only show when active and has schedule */}
+              {isActive && profile.schedule_days?.length && (() => {
+                const now = new Date();
+                const dayKey = DAY_KEYS[now.getDay()];
+                if (!profile.schedule_days.includes(dayKey)) return null;
+                const endMs = setTimeOnDate(now, profile.schedule_end);
+                const remainingMs = endMs - now.getTime();
+                const isPastEnd = remainingMs <= 0;
+
+                return (
+                  <div style={{ background: T.surfaceAlt, borderColor: T.borderSoft }}
+                       className="border rounded-xl p-4 mb-5">
+                    <div style={{ fontFamily: FM, color: T.muted }}
+                         className="text-[9px] uppercase tracking-[0.25em] mb-2 flex items-center gap-1.5">
+                      <Clock size={10} /> {isPastEnd ? "Ажил дуусаад дараах цаг" : "Ажил дуусахад"}
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                      <div>
+                        <div style={{ fontFamily: FM, fontWeight: 500, color: isPastEnd ? T.warn : T.ink, letterSpacing: "-0.02em" }}
+                             className="text-3xl sm:text-4xl tabular-nums">
+                          {isPastEnd ? "+" + fmtClock(-remainingMs) : fmtClock(remainingMs)}
+                        </div>
+                        <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] mt-1">
+                          {isPastEnd ? "илүү цаг ажилласан" : "цаг · минут · секунд"}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.2em] mb-0.5">
+                          Цаг буух
+                        </div>
+                        <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-2xl tabular-nums">
+                          {profile.schedule_end}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-2 mb-5 pb-5 border-b" style={{ borderColor: T.borderSoft }}>
                 <InfoRow icon={MapPin} label="Ажлын байр"
                   value={
