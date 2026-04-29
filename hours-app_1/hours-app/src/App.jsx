@@ -56,6 +56,8 @@ const startOfWeek = () => { const x = new Date(); x.setDate(x.getDate() - x.getD
 const parseTime = (str) => { const [h, m] = (str || "00:00").split(":").map(Number); return { h, m }; };
 const setTimeOnDate = (d, hhmm) => { const x = new Date(d); const { h, m } = parseTime(hhmm); x.setHours(h, m, 0, 0); return x.getTime(); };
 
+const EARLY_ARRIVAL_BUFFER_MS = 2 * 60 * 60 * 1000; // 2 цаг — эрт ирэх хязгаар
+
 const checkSchedule = (profile, when = new Date()) => {
   if (!profile?.schedule_days?.length) return { ok: true, reason: null };
   const dayKey = DAY_KEYS[when.getDay()];
@@ -64,8 +66,9 @@ const checkSchedule = (profile, when = new Date()) => {
   }
   const start = setTimeOnDate(when, profile.schedule_start);
   const end = setTimeOnDate(when, profile.schedule_end);
-  const buffer = 5 * 60 * 1000;
-  if (when.getTime() < start - buffer) return { ok: false, reason: `Ээлж ${profile.schedule_start} цагт эхэлнэ` };
+  if (when.getTime() < start - EARLY_ARRIVAL_BUFFER_MS) {
+    return { ok: false, reason: `Ажил эхлэхээс хэт эрт байна. ${profile.schedule_start} цагаас 2 цагийн өмнөх хүртэл цаг бүртгүүлэх боломжтой` };
+  }
   if (when.getTime() > end) return { ok: false, reason: `Ээлж ${profile.schedule_end} цагт дууссан` };
   return { ok: true, reason: null };
 };
@@ -80,7 +83,12 @@ const capSessionStart = (profile, startTime) => {
   if (!profile?.schedule_days?.length) return startTime;
   const d = new Date(startTime);
   if (!profile.schedule_days.includes(DAY_KEYS[d.getDay()])) return startTime;
-  return Math.max(startTime, setTimeOnDate(d, profile.schedule_start));
+  const scheduledStart = setTimeOnDate(d, profile.schedule_start);
+  // Хэрэв 2 цаг буферийн дотор эрт ирсэн бол жинхэнэ цагаар тоолно
+  if (startTime >= scheduledStart - EARLY_ARRIVAL_BUFFER_MS && startTime < scheduledStart) {
+    return startTime;
+  }
+  return Math.max(startTime, scheduledStart);
 };
 
 const hasSite = (p) => p?.site_lat != null && p?.site_lng != null;
@@ -315,6 +323,7 @@ function AdminDashboard({ profile }) {
   const [siteFormData, setSiteFormData] = useState(null);
   const [confirmDelSite, setConfirmDelSite] = useState(null);
   const [chooseSiteFor, setChooseSiteFor] = useState(null); // employee for clock-in site picker
+  const [editingSession, setEditingSession] = useState(null);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
@@ -603,6 +612,36 @@ function AdminDashboard({ profile }) {
     }
   };
 
+  // Session edit/delete (admin)
+  const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
+    try {
+      const { error } = await supabase.from("sessions").update({
+        start_time, end_time, site_id,
+        edited_at: new Date().toISOString(),
+        edited_by: profile.id,
+        edit_reason,
+      }).eq("id", id);
+      if (error) throw error;
+      setEditingSession(null);
+      setFeedback({ type: "success", msg: "Бүртгэл засагдлаа" });
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+    }
+  };
+
+  const deleteSession = async (id) => {
+    try {
+      const { error } = await supabase.from("sessions").delete().eq("id", id);
+      if (error) throw error;
+      setEditingSession(null);
+      setFeedback({ type: "success", msg: "Бүртгэл устгагдлаа" });
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+    }
+  };
+
   const resolveApproval = async (approval, decision) => {
     const updates = {
       status: decision, resolved_at: new Date().toISOString(), resolved_by: profile.id,
@@ -610,7 +649,8 @@ function AdminDashboard({ profile }) {
     const { error: updErr } = await supabase.from("approvals").update(updates).eq("id", approval.id);
     if (updErr) { setFeedback({ type: "error", msg: updErr.message }); return; }
 
-    if (decision === "approved") {
+    if (decision === "approved" && approval.kind !== "early_leave") {
+      // Зөвхөн "цаг мартсан" хүсэлтэд цэшн оруулна. Эрт явах нь зөвхөн зөвшөөрөл — ажилтан өөрөө цаг буулгана.
       const emp = employees.find((e) => e.id === approval.employee_id);
       const cappedStart = capSessionStart(emp, new Date(approval.proposed_start).getTime());
       const cappedEnd = capSessionEnd(emp, new Date(approval.proposed_end).getTime());
@@ -723,7 +763,11 @@ function AdminDashboard({ profile }) {
             onUpdateAssignments={updateManagerEmployees}
             onAddManager={() => { setFormEmp(null); setFormMode("add"); }} />
         )}
-        {view === "ledger" && <LedgerView sessions={sessions} employees={employees} sites={sites} />}
+        {view === "ledger" && (
+          <LedgerView sessions={sessions} employees={employees} sites={sites}
+            canEdit={true}
+            onEditSession={(s) => setEditingSession(s)} />
+        )}
         {view === "approvals" && (
           <ApprovalsView approvals={approvals} employees={employees} onResolve={resolveApproval} />
         )}
@@ -761,6 +805,16 @@ function AdminDashboard({ profile }) {
           sites={getEmployeeSites(chooseSiteFor.id) || []}
           onPick={(siteId) => tryClockIn(chooseSiteFor, siteId)}
           onClose={() => setChooseSiteFor(null)} />
+      )}
+
+      {editingSession && (
+        <SessionEditModal
+          session={editingSession}
+          employee={[...employees, ...managers].find((e) => e.id === editingSession.employee_id)}
+          sites={sites}
+          onSave={editSession}
+          onDelete={deleteSession}
+          onClose={() => setEditingSession(null)} />
       )}
 
       {confirmDel && (
@@ -884,6 +938,16 @@ function EmployeeDashboard({ profile }) {
 
   const onClockOut = async () => {
     if (!myActive) return;
+
+    // Шалгах: батлагдсан "early_leave" хүсэлт байгаа эсэх (өнөөдрийн)
+    const todayMs = startOfDay();
+    const approvedEarlyLeave = myApprovals.find((a) =>
+      a.kind === "early_leave" &&
+      a.status === "approved" &&
+      new Date(a.proposed_end).getTime() >= todayMs &&
+      new Date(a.proposed_end).getTime() <= todayMs + 86400000
+    );
+
     // Find which site they clocked into
     let site = null;
     if (myActive.site_id) site = mySites.find(s => s.id === myActive.site_id);
@@ -894,18 +958,21 @@ function EmployeeDashboard({ profile }) {
     setGeoBusy(true);
     try {
       let endLoc = null;
-      if (site) {
+      // Хэрэв early_leave батлагдсан бол байршил харгалзахгүй
+      if (site && !approvedEarlyLeave) {
         try {
           endLoc = await getLocation();
           const ed = distanceMeters(endLoc, site);
           if (ed > site.radius) {
-            setFeedback({ type: "error", msg: `Гарах боломжгүй — ${fmtDist(ed)} зайтай` });
+            setFeedback({ type: "error", msg: `Гарах боломжгүй — ${fmtDist(ed)} зайтай. Эрт явах хүсэлт явуулна уу.` });
             return;
           }
         } catch (e) { setFeedback({ type: "error", msg: e.message }); return; }
       }
       const startMs = new Date(myActive.start_time).getTime();
-      const cappedEnd = capSessionEnd(profile, Date.now());
+      // Хэрэв early_leave батлагдсан бол хүсэлт дэх дуусах цагийг ашиглана
+      const proposedEnd = approvedEarlyLeave ? new Date(approvedEarlyLeave.proposed_end).getTime() : Date.now();
+      const cappedEnd = approvedEarlyLeave ? proposedEnd : capSessionEnd(profile, proposedEnd);
       const endMs = Math.max(startMs + 1000, cappedEnd);
 
       const { error: insErr } = await supabase.from("sessions").insert({
@@ -918,24 +985,32 @@ function EmployeeDashboard({ profile }) {
       });
       if (insErr) throw insErr;
       await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
-      setFeedback({ type: "success", msg: "Цаг буулаа" });
+
+      // Approved early_leave хүсэлтийг "ашиглагдсан" гэж тэмдэглэх (resolved үлдээх)
+      setFeedback({
+        type: "success",
+        msg: approvedEarlyLeave ? "Цаг буулаа · эрт явах баталгаажсан" : "Цаг буулаа"
+      });
       await loadMy();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
     finally { setGeoBusy(false); }
   };
 
-  const submitRequest = async ({ start, end, reason }) => {
+  const submitRequest = async ({ start, end, reason, kind }) => {
     const { error } = await supabase.from("approvals").insert({
       employee_id: profile.id,
       proposed_start: new Date(start).toISOString(),
       proposed_end: new Date(end).toISOString(),
-      reason, status: "pending",
+      reason, status: "pending", kind: kind || "forgot_clockin",
     });
     if (error) { setFeedback({ type: "error", msg: error.message }); return; }
     setShowRequest(false);
-    setFeedback({ type: "success", msg: "Хүсэлт админ руу илгээгдлээ" });
+    setShowEarlyLeave(false);
+    setFeedback({ type: "success", msg: "Хүсэлт илгээгдлээ" });
     await loadMy();
   };
+
+  const [showEarlyLeave, setShowEarlyLeave] = useState(false);
 
   const sched = profile ? checkSchedule(profile) : { ok: true };
   const noSite = mySites.length === 0 && !hasSite(profile);
@@ -1037,11 +1112,20 @@ function EmployeeDashboard({ profile }) {
               <SmallStat label="Нийт" value={fmtHours(stats.total)} />
             </div>
 
-            <button onClick={() => setShowRequest(true)}
-              style={{ borderColor: T.border, color: T.muted, fontFamily: FM }}
-              className="w-full py-3 rounded-xl border-dashed border-2 text-[11px] uppercase tracking-[0.2em] hover:bg-black/5 flex items-center justify-center gap-2">
-              <FileText size={12} /> Цагаа мартсан уу? Хүсэлт явуул
-            </button>
+            <div className="space-y-2">
+              <button onClick={() => setShowRequest(true)}
+                style={{ borderColor: T.border, color: T.muted, fontFamily: FM }}
+                className="w-full py-3 rounded-xl border-dashed border-2 text-[11px] uppercase tracking-[0.2em] hover:bg-black/5 flex items-center justify-center gap-2">
+                <FileText size={12} /> Цагаа мартсан уу? Хүсэлт явуул
+              </button>
+              {isActive && (
+                <button onClick={() => setShowEarlyLeave(true)}
+                  style={{ borderColor: T.border, color: T.muted, fontFamily: FM }}
+                  className="w-full py-3 rounded-xl border-dashed border-2 text-[11px] uppercase tracking-[0.2em] hover:bg-black/5 flex items-center justify-center gap-2">
+                  <Send size={12} /> Эрт явах хүсэлт
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1053,6 +1137,11 @@ function EmployeeDashboard({ profile }) {
 
       {showRequest && (
         <RequestModal profile={profile} onClose={() => setShowRequest(false)} onSubmit={submitRequest} />
+      )}
+
+      {showEarlyLeave && (
+        <EarlyLeaveModal profile={profile} myActive={myActive}
+          onClose={() => setShowEarlyLeave(false)} onSubmit={submitRequest} />
       )}
 
       {showSitePicker && (
@@ -1179,7 +1268,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
 // ═══════════════════════════════════════════════════════════════════════════
 //  LEDGER, APPROVALS, HISTORY views
 // ═══════════════════════════════════════════════════════════════════════════
-function LedgerView({ sessions, employees, sites = [] }) {
+function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSession, onDeleteSession }) {
   const [filterType, setFilterType] = useState("thisMonth"); // thisMonth | lastMonth | custom | all
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date(); d.setDate(1);
@@ -1519,6 +1608,7 @@ function LedgerView({ sessions, employees, sites = [] }) {
                       {s.site_id && siteById(s.site_id) && <span>· {siteById(s.site_id).name}</span>}
                       {s.start_lat && <span>· баталгаажсан</span>}
                       {s.from_approval && <span>· гар бичиг</span>}
+                      {s.edited_at && <span style={{ color: T.warn }}>· засагдсан</span>}
                     </div>
                   </div>
                   <div className="text-right">
@@ -1527,6 +1617,13 @@ function LedgerView({ sessions, employees, sites = [] }) {
                     </div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">цаг</div>
                   </div>
+                  {canEdit && onEditSession && (
+                    <button onClick={() => onEditSession(s)}
+                      style={{ color: T.muted }}
+                      className="p-1.5 rounded-lg hover:bg-black/5">
+                      <Edit3 size={14} />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -1582,6 +1679,16 @@ function ApprovalsView({ approvals, employees, onResolve }) {
               <div key={a.id} style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{
+                        background: a.kind === "early_leave" ? T.warnSoft : T.highlightSoft,
+                        color: a.kind === "early_leave" ? T.warn : T.highlight,
+                        fontFamily: FM,
+                      }}
+                        className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em] font-medium">
+                        {a.kind === "early_leave" ? "Эрт явах" : "Цаг мартсан"}
+                      </span>
+                    </div>
                     <div style={{ fontFamily: FD, fontWeight: 500 }} className="text-lg">{emp?.name || "(устсан)"}</div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
                       {fmtFullDate(new Date(a.created_at).getTime())}
@@ -1698,6 +1805,16 @@ function PersonalRequests({ approvals, onNew }) {
               <div key={a.id} style={{ background: T.surface, borderColor: T.border }} className="border rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{
+                        background: a.kind === "early_leave" ? T.warnSoft : T.highlightSoft,
+                        color: a.kind === "early_leave" ? T.warn : T.highlight,
+                        fontFamily: FM,
+                      }}
+                        className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em] font-medium">
+                        {a.kind === "early_leave" ? "Эрт явах" : "Цаг мартсан"}
+                      </span>
+                    </div>
                     <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-sm">
                       {fmtDate(startMs)} · {fmtTime(startMs)}–{fmtTime(endMs)}
                     </div>
@@ -2767,6 +2884,7 @@ function ManagerDashboard({ profile }) {
   const [sites, setSites] = useState([]);
   const [employeeSites, setEmployeeSites] = useState([]);
   const [feedback, setFeedback] = useState(null);
+  const [editingSession, setEditingSession] = useState(null);
   const [, setTick] = useState(0);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
@@ -2815,7 +2933,7 @@ function ManagerDashboard({ profile }) {
     const { error: updErr } = await supabase.from("approvals").update(updates).eq("id", approval.id);
     if (updErr) { setFeedback({ type: "error", msg: updErr.message }); return; }
 
-    if (decision === "approved") {
+    if (decision === "approved" && approval.kind !== "early_leave") {
       const emp = team.find((e) => e.id === approval.employee_id);
       const cappedStart = capSessionStart(emp, new Date(approval.proposed_start).getTime());
       const cappedEnd = capSessionEnd(emp, new Date(approval.proposed_end).getTime());
@@ -2829,6 +2947,31 @@ function ManagerDashboard({ profile }) {
       }
     }
     await loadAll();
+  };
+
+  const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
+    try {
+      const { error } = await supabase.from("sessions").update({
+        start_time, end_time, site_id,
+        edited_at: new Date().toISOString(),
+        edited_by: profile.id,
+        edit_reason,
+      }).eq("id", id);
+      if (error) throw error;
+      setEditingSession(null);
+      setFeedback({ type: "success", msg: "Бүртгэл засагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteSession = async (id) => {
+    try {
+      const { error } = await supabase.from("sessions").delete().eq("id", id);
+      if (error) throw error;
+      setEditingSession(null);
+      setFeedback({ type: "success", msg: "Бүртгэл устгагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
   const teamTodayMs = useMemo(() => {
@@ -2899,7 +3042,9 @@ function ManagerDashboard({ profile }) {
         {view === "ledger" && (
           <LedgerView
             sessions={sessions.filter((s) => team.some((t) => t.id === s.employee_id))}
-            employees={team} sites={sites} />
+            employees={team} sites={sites}
+            canEdit={true}
+            onEditSession={(s) => setEditingSession(s)} />
         )}
         {view === "approvals" && (
           <ApprovalsView
@@ -2909,6 +3054,16 @@ function ManagerDashboard({ profile }) {
 
         <Footer count={sessions.length} />
       </div>
+
+      {editingSession && (
+        <SessionEditModal
+          session={editingSession}
+          employee={team.find((e) => e.id === editingSession.employee_id)}
+          sites={sites}
+          onSave={editSession}
+          onDelete={deleteSession}
+          onClose={() => setEditingSession(null)} />
+      )}
     </div>
   );
 }
@@ -3005,5 +3160,203 @@ function ManagerTeamReadOnly({ team, sessions, activeSessions, sites = [], emplo
         );
       })}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EARLY LEAVE MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function EarlyLeaveModal({ profile, myActive, onClose, onSubmit }) {
+  const [endTime, setEndTime] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0); // 1 цагийн дараа default
+    return d.toTimeString().slice(0, 5);
+  });
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!reason.trim()) return setErr("Шалтгаан бичнэ үү");
+    const today = new Date();
+    const isoDate = today.toISOString().slice(0, 10);
+    const endTs = new Date(`${isoDate}T${endTime}:00`).getTime();
+    if (isNaN(endTs)) return setErr("Цаг буруу");
+
+    // Active session-ний эхлэлээс хойш байх ёстой
+    const startTs = myActive ? new Date(myActive.start_time).getTime() : Date.now();
+    if (endTs <= startTs) return setErr("Дуусах цаг ажил эхлэхээс хойш байх ёстой");
+
+    setBusy(true);
+    await onSubmit({
+      start: startTs,
+      end: endTs,
+      reason: reason.trim(),
+      kind: "early_leave",
+    });
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title="Эрт явах хүсэлт" maxW="max-w-md">
+      <div className="space-y-4">
+        <p style={{ color: T.muted }} className="text-xs leading-relaxed">
+          Хуваарийн өмнө явмаар бол энэ хүсэлтийг ахалсан ахлагч (эсвэл админ) зөвшөөрөх хэрэгтэй. Зөвшөөрөгдсөний дараа байршил харгалзахгүйгээр цаг буух боломжтой болно.
+        </p>
+
+        <Field label="Хэдэн цагт явах вэ?" required>
+          <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+        </Field>
+
+        <Field label="Шалтгаан / тайлбар" required>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+            placeholder="Жишээ: Эмнэлэгт үзлэгтэй, гэр бүлийн ажил, хувийн асуудал гэх мэт"
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
+        </Field>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Илгээх
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SESSION EDIT MODAL (admin & manager — to fix wrong time entries)
+// ═══════════════════════════════════════════════════════════════════════════
+function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onClose }) {
+  const startMs = new Date(session.start_time).getTime();
+  const endMs = new Date(session.end_time).getTime();
+  const dateStr = new Date(startMs).toLocaleDateString("en-CA"); // YYYY-MM-DD
+
+  const [date, setDate] = useState(dateStr);
+  const [start, setStart] = useState(new Date(startMs).toTimeString().slice(0, 5));
+  const [end, setEnd] = useState(new Date(endMs).toTimeString().slice(0, 5));
+  const [siteId, setSiteId] = useState(session.site_id || "");
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!reason.trim()) return setErr("Засварын шалтгаан бичнэ үү");
+    const startTs = new Date(`${date}T${start}:00`).getTime();
+    const endTs = new Date(`${date}T${end}:00`).getTime();
+    if (isNaN(startTs) || isNaN(endTs)) return setErr("Огноо/цаг буруу");
+    if (endTs <= startTs) return setErr("Дуусах цаг эхлэхээс хойш байх ёстой");
+    setBusy(true);
+    await onSave({
+      id: session.id,
+      start_time: new Date(startTs).toISOString(),
+      end_time: new Date(endTs).toISOString(),
+      site_id: siteId || null,
+      edit_reason: reason.trim(),
+    });
+    setBusy(false);
+  };
+
+  if (confirmDel) {
+    return (
+      <Modal onClose={() => setConfirmDel(false)} title="Бүртгэл устгах уу?" maxW="max-w-sm">
+        <p style={{ color: T.muted }} className="text-sm mb-5">
+          <span style={{ color: T.ink, fontWeight: 500 }}>{employee?.name}</span>-ийн{" "}
+          <span style={{ color: T.ink, fontWeight: 500 }}>{fmtDate(startMs)} {fmtTime(startMs)}–{fmtTime(endMs)}</span>{" "}
+          бүртгэл устгагдана. Энэ үйлдлийг буцаах боломжгүй.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={() => setConfirmDel(false)} style={{ borderColor: T.border, fontFamily: FS }}
+            className="flex-1 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+          <button onClick={() => onDelete(session.id)}
+            style={{ background: T.err, color: T.surface, fontFamily: FS }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
+            <Trash2 size={12} /> Устгах
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} title="Цагийн бүртгэл засах" maxW="max-w-md">
+      <div className="space-y-4">
+        <div style={{ background: T.surfaceAlt }} className="rounded-xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-1">
+            Ажилтан
+          </div>
+          <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm">{employee?.name || "—"}</div>
+        </div>
+
+        <Field label="Огноо" required>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Эхэлсэн" required>
+            <input type="time" value={start} onChange={(e) => setStart(e.target.value)}
+              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+          </Field>
+          <Field label="Дууссан" required>
+            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)}
+              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+          </Field>
+        </div>
+
+        {sites.length > 0 && (
+          <Field label="Ажлын байр">
+            <select value={siteId} onChange={(e) => setSiteId(e.target.value)}
+              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black">
+              <option value="">— Сонгоогүй —</option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <Field label="Засварын шалтгаан" required>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+            placeholder="Жишээ: Ажилтан өглөө цаг буруу бүртгүүлсэн"
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
+        </Field>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={() => setConfirmDel(true)}
+            style={{ borderColor: T.err, color: T.err, fontFamily: FS }}
+            className="px-4 py-3 rounded-xl border text-sm font-medium hover:bg-red-50 flex items-center gap-1.5">
+            <Trash2 size={12} />
+          </button>
+          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 size={13} className="animate-spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
