@@ -130,14 +130,34 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  bg: "#fafaf7", surface: "#ffffff", surfaceAlt: "#f4f3ee",
-  ink: "#0a0a0a", inkSoft: "#27272a",
-  muted: "#71717a", mutedSoft: "#a1a1aa",
-  border: "#e7e5de", borderSoft: "#f0eee8",
-  highlight: "#ea580c", highlightSoft: "#fef3ec",
-  ok: "#15803d", okSoft: "#ecfdf3",
-  err: "#b91c1c", errSoft: "#fef1f1",
-  warn: "#b45309", warnSoft: "#fef7e6",
+  // Background — мягхан градиент дэвсгэр
+  bg: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #fef3ec 100%)",
+  bgSolid: "#f8f6ff",
+  // Glassmorphism surfaces
+  surface: "rgba(255, 255, 255, 0.65)",
+  surfaceStrong: "rgba(255, 255, 255, 0.85)",
+  surfaceAlt: "rgba(255, 255, 255, 0.45)",
+  surfaceGlass: "rgba(255, 255, 255, 0.5)",
+  // Text
+  ink: "#1e1b4b", inkSoft: "#312e81",
+  muted: "#6b7280", mutedSoft: "#9ca3af",
+  // Borders
+  border: "rgba(255, 255, 255, 0.6)",
+  borderSoft: "rgba(99, 102, 241, 0.1)",
+  borderStrong: "rgba(99, 102, 241, 0.2)",
+  // Accent — нил ягаан/индиго
+  highlight: "#6366f1",
+  highlightDark: "#4f46e5",
+  highlightSoft: "rgba(99, 102, 241, 0.1)",
+  highlightGlow: "0 8px 32px rgba(99, 102, 241, 0.25)",
+  // Statuses
+  ok: "#10b981", okSoft: "rgba(16, 185, 129, 0.1)",
+  err: "#ef4444", errSoft: "rgba(239, 68, 68, 0.1)",
+  warn: "#f59e0b", warnSoft: "rgba(245, 158, 11, 0.12)",
+  // Glass effect helpers
+  blur: "blur(20px) saturate(180%)",
+  cardShadow: "0 8px 32px rgba(31, 38, 135, 0.08)",
+  cardShadowHover: "0 12px 40px rgba(31, 38, 135, 0.15)",
 };
 const FS = "'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
 const FM = "'JetBrains Mono', ui-monospace, 'SF Mono', monospace";
