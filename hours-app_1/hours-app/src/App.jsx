@@ -57,6 +57,19 @@ const parseTime = (str) => { const [h, m] = (str || "00:00").split(":").map(Numb
 const setTimeOnDate = (d, hhmm) => { const x = new Date(d); const { h, m } = parseTime(hhmm); x.setHours(h, m, 0, 0); return x.getTime(); };
 
 const EARLY_ARRIVAL_BUFFER_MS = 2 * 60 * 60 * 1000; // 2 цаг — эрт ирэх хязгаар
+const DAILY_HOUR_LIMIT_MS = 9 * 60 * 60 * 1000; // 9 цаг — өдрийн дээд лимит
+
+// Сэшний нийт хугацааг өдрийн лимитэд тааруулах
+// startMs, endMs хоёр өгөгдвөл ms-ийн зөрүүг буцаана (лимиттэй)
+const sessionDurationMs = (startMs, endMs) => {
+  const raw = endMs - startMs;
+  return Math.min(raw, DAILY_HOUR_LIMIT_MS);
+};
+
+// Цалин тооцох
+const calcPay = (durationMs, hourlyRate) => {
+  return (durationMs / 3600000) * (hourlyRate || 0);
+};
 
 const checkSchedule = (profile, when = new Date()) => {
   if (!profile?.schedule_days?.length) return { ok: true, reason: null };
@@ -669,13 +682,13 @@ function AdminDashboard({ profile }) {
   const teamTodayMs = useMemo(() => {
     const t = startOfDay();
     const closed = sessions.filter((s) => new Date(s.start_time).getTime() >= t)
-      .reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0);
+      .reduce((a, s) => a + sessionDurationMs(new Date(s.start_time).getTime(), new Date(s.end_time).getTime()), 0);
     const live = Object.entries(activeSessions).reduce((a, [id, e]) => {
       const st = new Date(e.start_time).getTime();
       if (st < t) return a;
       const emp = employees.find((x) => x.id === id);
       const capped = capSessionEnd(emp, Date.now());
-      return a + Math.max(0, capped - st);
+      return a + Math.min(Math.max(0, capped - st), DAILY_HOUR_LIMIT_MS);
     }, 0);
     return closed + live;
   }, [sessions, activeSessions, employees]);
@@ -878,10 +891,15 @@ function EmployeeDashboard({ profile }) {
   const activeSite = isActive && myActive.site_id ? mySites.find(s => s.id === myActive.site_id) : null;
 
   const stats = useMemo(() => {
-    const cap = (list) => list.reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0);
+    // Лимиттэй нийлбэр: сэшн бүрд 9 цагийн дээд лимит
+    const cap = (list) => list.reduce((a, s) => {
+      const ms = sessionDurationMs(new Date(s.start_time).getTime(), new Date(s.end_time).getTime());
+      return a + ms;
+    }, 0);
     const today = mySessions.filter((s) => new Date(s.start_time).getTime() >= startOfDay());
     const week = mySessions.filter((s) => new Date(s.start_time).getTime() >= startOfWeek());
-    const live = isActive ? Math.max(0, liveMs) : 0;
+    // Live ms: одоогийн идэвхтэй сэшнийг 9 цагт хүртэл л тоолоно
+    const live = isActive ? Math.min(Math.max(0, liveMs), DAILY_HOUR_LIMIT_MS) : 0;
     return { today: cap(today) + live, week: cap(week) + live, total: cap(mySessions) + live };
   }, [mySessions, isActive, liveMs]);
 
@@ -1042,6 +1060,7 @@ function EmployeeDashboard({ profile }) {
 
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap">
           <Tab active={view === "home"} onClick={() => setView("home")} icon={Clock}>Цаг</Tab>
+          <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
           <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
           <Tab active={view === "requests"} onClick={() => setView("requests")} icon={ClipboardCheck}
                badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</Tab>
@@ -1129,6 +1148,7 @@ function EmployeeDashboard({ profile }) {
           </div>
         )}
 
+        {view === "salary" && <SalaryView sessions={mySessions} profile={profile} />}
         {view === "history" && <PersonalHistory sessions={mySessions} />}
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
@@ -1317,7 +1337,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
   const totals = useMemo(() => {
     let totalMs = 0, totalPay = 0;
     filteredSessions.forEach((s) => {
-      const ms = new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
+      const ms = sessionDurationMs(new Date(s.start_time).getTime(), new Date(s.end_time).getTime());
       totalMs += ms;
       const emp = empById(s.employee_id);
       const rate = emp?.hourly_rate || 0;
@@ -1346,7 +1366,9 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
         const emp = empById(s.employee_id);
         const startMs = new Date(s.start_time).getTime();
         const endMs = new Date(s.end_time).getTime();
-        const hours = (endMs - startMs) / 3600000;
+        const rawMs = endMs - startMs;
+        const cappedMs = sessionDurationMs(startMs, endMs);
+        const hours = cappedMs / 3600000;
         const rate = emp?.hourly_rate || 0;
         const site = s.site_id ? siteById(s.site_id) : null;
         return {
@@ -1357,8 +1379,9 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
           "Эхэлсэн": formatExcelTime(startMs),
           "Дууссан": formatExcelTime(endMs),
           "Цаг (нийт)": Number(hours.toFixed(2)),
-          "Цалингийн хувь (₮)": rate,
+          "Цагийн хөлс (₮)": rate,
           "Цалин (₮)": Math.round(hours * rate),
+          "9ц лимит хүрсэн": rawMs > DAILY_HOUR_LIMIT_MS ? "Тийм" : "Үгүй",
           "Геофенс баталгаажсан": s.start_lat ? "Тийм" : "Үгүй",
           "Гар бичиг (хүсэлтээр)": s.from_approval ? "Тийм" : "Үгүй",
         };
@@ -1406,7 +1429,8 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
           sessionCount: 0,
         };
       }
-      map[id].totalMs += new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
+      // Лимиттэй цаг тооцох
+      map[id].totalMs += sessionDurationMs(new Date(s.start_time).getTime(), new Date(s.end_time).getTime());
       map[id].sessionCount += 1;
     });
 
@@ -2979,14 +3003,14 @@ function ManagerDashboard({ profile }) {
     const teamIds = new Set(team.map((e) => e.id));
     const closed = sessions
       .filter((s) => teamIds.has(s.employee_id) && new Date(s.start_time).getTime() >= t)
-      .reduce((a, s) => a + (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()), 0);
+      .reduce((a, s) => a + sessionDurationMs(new Date(s.start_time).getTime(), new Date(s.end_time).getTime()), 0);
     const live = Object.entries(activeSessions).reduce((a, [id, e]) => {
       if (!teamIds.has(id)) return a;
       const st = new Date(e.start_time).getTime();
       if (st < t) return a;
       const emp = team.find((x) => x.id === id);
       const capped = capSessionEnd(emp, Date.now());
-      return a + Math.max(0, capped - st);
+      return a + Math.min(Math.max(0, capped - st), DAILY_HOUR_LIMIT_MS);
     }, 0);
     return closed + live;
   }, [sessions, activeSessions, team]);
@@ -3358,5 +3382,210 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SALARY VIEW (employee — own salary)
+// ═══════════════════════════════════════════════════════════════════════════
+function SalaryView({ sessions, profile }) {
+  const [filterType, setFilterType] = useState("thisMonth"); // thisMonth | lastMonth | custom
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+
+  const filterRange = useMemo(() => {
+    const now = new Date();
+    if (filterType === "thisMonth") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+      return { start, end };
+    }
+    if (filterType === "lastMonth") {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      return { start, end };
+    }
+    const s = new Date(`${customStart}T00:00:00`).getTime();
+    const e = new Date(`${customEnd}T23:59:59`).getTime();
+    return { start: s, end: e };
+  }, [filterType, customStart, customEnd]);
+
+  const filtered = useMemo(() => {
+    return sessions.filter((s) => {
+      const t = new Date(s.start_time).getTime();
+      return t >= filterRange.start && t < filterRange.end;
+    });
+  }, [sessions, filterRange]);
+
+  // Өдрүүдээр бүлэглэх
+  const byDay = useMemo(() => {
+    const map = {};
+    filtered.forEach((s) => {
+      const startMs = new Date(s.start_time).getTime();
+      const endMs = new Date(s.end_time).getTime();
+      const dayKey = new Date(startMs).toLocaleDateString("en-CA"); // YYYY-MM-DD
+      if (!map[dayKey]) map[dayKey] = { dayKey, sessions: [], totalMs: 0 };
+      const ms = sessionDurationMs(startMs, endMs);
+      map[dayKey].sessions.push({ s, ms });
+      map[dayKey].totalMs += ms;
+    });
+    // Өдөр бүрд 9 цагийн дээд лимит дахин шалгана
+    Object.values(map).forEach((d) => {
+      d.totalMs = Math.min(d.totalMs, DAILY_HOUR_LIMIT_MS);
+    });
+    return Object.values(map).sort((a, b) => b.dayKey.localeCompare(a.dayKey));
+  }, [filtered]);
+
+  const totals = useMemo(() => {
+    const totalMs = byDay.reduce((a, d) => a + d.totalMs, 0);
+    const rate = profile.hourly_rate || 0;
+    const totalPay = calcPay(totalMs, rate);
+    return { totalMs, totalPay, days: byDay.length };
+  }, [byDay, profile]);
+
+  const filterLabel = filterType === "thisMonth" ? "Энэ сар"
+    : filterType === "lastMonth" ? "Өнгөрсөн сар"
+    : `${customStart} – ${customEnd}`;
+
+  const noRate = !profile.hourly_rate || profile.hourly_rate === 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Big totals card */}
+      <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <FileSpreadsheet size={14} style={{ color: T.highlight }} />
+          <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] font-medium">
+            {filterLabel}
+          </span>
+        </div>
+
+        {noRate ? (
+          <div style={{ background: T.warnSoft, color: T.warn }} className="px-3 py-2.5 rounded-lg text-xs">
+            Танд цагийн хөлс тогтоогоогүй байна. Админд хандана уу.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1">Нийт цаг</div>
+                <div style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.03em" }} className="text-3xl sm:text-4xl tabular-nums">
+                  {fmtHours(totals.totalMs)}
+                  <span style={{ color: T.muted, fontSize: "0.5em", marginLeft: 6, fontFamily: FM }}>цаг</span>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1">Цалин</div>
+                <div style={{ fontFamily: FD, fontWeight: 500, color: T.highlight, letterSpacing: "-0.03em" }} className="text-3xl sm:text-4xl tabular-nums">
+                  ₮{Math.round(totals.totalPay).toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t" style={{ borderColor: T.borderSoft }}>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-0.5">Ажилласан өдөр</div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">{totals.days}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-0.5">Цагийн хөлс</div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-base tabular-nums">₮{(profile.hourly_rate || 0).toLocaleString()}/ц</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Period filter */}
+      <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-4">
+        <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-2">
+          Хугацаа
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {[
+            { id: "thisMonth", label: "Энэ сар" },
+            { id: "lastMonth", label: "Өнгөрсөн сар" },
+            { id: "custom", label: "Гар сонголт" },
+          ].map((opt) => (
+            <button key={opt.id} onClick={() => setFilterType(opt.id)}
+              style={{ background: filterType === opt.id ? T.ink : "transparent",
+                       color: filterType === opt.id ? T.surface : T.ink,
+                       borderColor: filterType === opt.id ? T.ink : T.border,
+                       fontFamily: FM }}
+              className="px-3 py-1 text-[10px] uppercase tracking-[0.2em] border rounded-full hover:opacity-80">
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {filterType === "custom" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Эхлэх</Label>
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
+            </div>
+            <div>
+              <Label>Дуусах</Label>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Daily breakdown */}
+      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
+        <div className="px-5 py-4 border-b" style={{ borderColor: T.borderSoft }}>
+          <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-lg">Өдрөөр</h3>
+          <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
+            {byDay.length} өдөр
+          </p>
+        </div>
+        {byDay.length === 0 ? (
+          <div className="px-6 py-12 text-center" style={{ color: T.muted }}>
+            <p className="text-sm">Сонгосон хугацаанд бүртгэл алга</p>
+          </div>
+        ) : (
+          <ul>
+            {byDay.map((d, i) => {
+              const dayDate = new Date(d.dayKey + "T00:00:00");
+              const dayPay = calcPay(d.totalMs, profile.hourly_rate || 0);
+              const isCapped = d.sessions.reduce((a, x) => a + (new Date(x.s.end_time).getTime() - new Date(x.s.start_time).getTime()), 0) > DAILY_HOUR_LIMIT_MS;
+              return (
+                <li key={d.dayKey} className="px-5 py-3.5 flex items-center gap-4"
+                    style={{ borderTop: i === 0 ? "none" : `1px solid ${T.borderSoft}` }}>
+                  <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider w-20 shrink-0">
+                    {dayDate.toLocaleDateString("mn-MN", { month: "short", day: "numeric", weekday: "short" })}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-sm tabular-nums">
+                      {fmtHours(d.totalMs)} цаг
+                      {isCapped && <span style={{ color: T.warn, fontSize: "0.75em", marginLeft: 6 }}>· 9ц лимит</span>}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                      {d.sessions.length} сэшн
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div style={{ fontFamily: FM, fontWeight: 500, color: T.highlight }} className="text-sm tabular-nums">
+                      ₮{Math.round(dayPay).toLocaleString()}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] text-center pt-2">
+        Тэмдэглэл: Өдөрт 9 цагийн дээд хязгаартай · ирсэн цагаас тоологдоно
+      </p>
+    </div>
   );
 }
