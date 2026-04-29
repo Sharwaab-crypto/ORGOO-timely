@@ -1021,24 +1021,90 @@ function EmployeeDashboard({ profile }) {
           endLoc = await getLocation();
           const ed = distanceMeters(endLoc, site);
           if (ed > site.radius) {
-            setFeedback({ type: "error", msg: `Гарах боломжгүй — ${fmtDist(ed)} зайтай. Эрт явах хүсэлт явуулна уу.` });
+            // Байршил гадуур — UnverifiedClockOutModal нээх
+            setUnverifiedDistance(ed);
+            setUnverifiedSite(site);
+            setUnverifiedEndLoc(endLoc);
+            setShowUnverifiedClockOut(true);
+            setGeoBusy(false);
             return;
           }
         } catch (e) { setFeedback({ type: "error", msg: e.message }); return; }
       }
+      await finalizeClockOut({ endLoc, approvedEarlyLeave, verified: true });
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+    finally { setGeoBusy(false); }
+  };
+
+  // Шинэ state-ууд UnverifiedClockOutModal-н хувьд
+  const [showUnverifiedClockOut, setShowUnverifiedClockOut] = useState(false);
+  const [unverifiedDistance, setUnverifiedDistance] = useState(null);
+  const [unverifiedSite, setUnverifiedSite] = useState(null);
+  const [unverifiedEndLoc, setUnverifiedEndLoc] = useState(null);
+
+  const finalizeClockOut = async ({ endLoc, approvedEarlyLeave, verified, reason }) => {
+    if (!myActive) return;
+    const site = myActive.site_id ? mySites.find(s => s.id === myActive.site_id) : null;
+    const startMs = new Date(myActive.start_time).getTime();
+    const proposedEnd = approvedEarlyLeave ? new Date(approvedEarlyLeave.proposed_end).getTime() : Date.now();
+    let cappedEnd;
+    if (approvedEarlyLeave) {
+      cappedEnd = proposedEnd;
+    } else if (site?.is_flexible && site.shift_hours) {
+      const flexEnd = flexibleSessionEnd(site, startMs);
+      cappedEnd = Math.min(proposedEnd, flexEnd);
+    } else {
+      cappedEnd = capSessionEnd(profile, proposedEnd);
+    }
+    const endMs = Math.max(startMs + 1000, cappedEnd);
+
+    const { error: insErr } = await supabase.from("sessions").insert({
+      employee_id: profile.id,
+      start_time: new Date(startMs).toISOString(),
+      end_time: new Date(endMs).toISOString(),
+      start_lat: myActive.start_lat, start_lng: myActive.start_lng,
+      end_lat: endLoc?.lat, end_lng: endLoc?.lng,
+      site_id: myActive.site_id || null,
+      out_verified: verified,
+      out_verification_status: verified ? "verified" : "pending",
+      out_reason: reason || null,
+    });
+    if (insErr) throw insErr;
+    await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
+
+    setFeedback({
+      type: verified ? "success" : "warning",
+      msg: !verified
+        ? "Хүсэлт явуулагдлаа · ахлагч баталгаажуулахыг хүлээж байна"
+        : approvedEarlyLeave ? "Цаг буулаа · эрт явах баталгаажсан" : "Цаг буулаа"
+    });
+    setShowUnverifiedClockOut(false);
+    setUnverifiedDistance(null);
+    setUnverifiedSite(null);
+    setUnverifiedEndLoc(null);
+    await loadMy();
+  };
+
+  const submitUnverifiedClockOut = async (reason) => {
+    try {
+      await finalizeClockOut({
+        endLoc: unverifiedEndLoc,
+        approvedEarlyLeave: null,
+        verified: false,
+        reason,
+      });
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+    }
+  };
+
+  const _onClockOut_legacy_unused = async () => {
+    if (!myActive) return;
+    setGeoBusy(true);
+    try {
       const startMs = new Date(myActive.start_time).getTime();
-      // Хэрэв early_leave батлагдсан бол хүсэлт дэх дуусах цагийг ашиглана
-      const proposedEnd = approvedEarlyLeave ? new Date(approvedEarlyLeave.proposed_end).getTime() : Date.now();
-      // Уян хатан байр — ирсэн цагаас shift_hours хүртэл л зөвшөөрнө
-      let cappedEnd;
-      if (approvedEarlyLeave) {
-        cappedEnd = proposedEnd;
-      } else if (site?.is_flexible && site.shift_hours) {
-        const flexEnd = flexibleSessionEnd(site, startMs);
-        cappedEnd = Math.min(proposedEnd, flexEnd);
-      } else {
-        cappedEnd = capSessionEnd(profile, proposedEnd);
-      }
+      const proposedEnd = Date.now();
+      const cappedEnd = capSessionEnd(profile, proposedEnd);
       const endMs = Math.max(startMs + 1000, cappedEnd);
 
       const { error: insErr } = await supabase.from("sessions").insert({
@@ -1046,17 +1112,11 @@ function EmployeeDashboard({ profile }) {
         start_time: new Date(startMs).toISOString(),
         end_time: new Date(endMs).toISOString(),
         start_lat: myActive.start_lat, start_lng: myActive.start_lng,
-        end_lat: endLoc?.lat, end_lng: endLoc?.lng,
         site_id: myActive.site_id || null,
       });
       if (insErr) throw insErr;
       await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
-
-      // Approved early_leave хүсэлтийг "ашиглагдсан" гэж тэмдэглэх (resolved үлдээх)
-      setFeedback({
-        type: "success",
-        msg: approvedEarlyLeave ? "Цаг буулаа · эрт явах баталгаажсан" : "Цаг буулаа"
-      });
+      setFeedback({ type: "success", msg: "Цаг буулаа" });
       await loadMy();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
     finally { setGeoBusy(false); }
@@ -1266,6 +1326,19 @@ function EmployeeDashboard({ profile }) {
       {showEarlyLeave && (
         <EarlyLeaveModal profile={profile} myActive={myActive}
           onClose={() => setShowEarlyLeave(false)} onSubmit={submitRequest} />
+      )}
+
+      {showUnverifiedClockOut && unverifiedSite && (
+        <UnverifiedClockOutModal
+          distance={unverifiedDistance}
+          siteName={unverifiedSite.name || "Ажлын байр"}
+          onClose={() => {
+            setShowUnverifiedClockOut(false);
+            setUnverifiedDistance(null);
+            setUnverifiedSite(null);
+            setUnverifiedEndLoc(null);
+          }}
+          onSubmit={submitUnverifiedClockOut} />
       )}
 
       {showSitePicker && (
@@ -1737,6 +1810,12 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
                       {s.start_lat && <span>· баталгаажсан</span>}
                       {s.from_approval && <span>· гар бичиг</span>}
                       {s.edited_at && <span style={{ color: T.warn }}>· засагдсан</span>}
+                      {s.out_verification_status === "pending" && (
+                        <span style={{ color: T.warn, fontWeight: 500 }}>· ⚠ баталгаажуулаагүй</span>
+                      )}
+                      {s.out_verification_status === "rejected" && (
+                        <span style={{ color: T.err, fontWeight: 500 }}>· ❌ татгалзсан</span>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
@@ -3365,6 +3444,68 @@ function ManagerTeamReadOnly({ team, sessions, activeSessions, sites = [], emplo
 // ═══════════════════════════════════════════════════════════════════════════
 //  EARLY LEAVE MODAL
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  UNVERIFIED CLOCK-OUT MODAL (when employee outside geofence)
+// ═══════════════════════════════════════════════════════════════════════════
+function UnverifiedClockOutModal({ distance, siteName, onClose, onSubmit }) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!reason.trim()) return setErr("Шалтгаан бичнэ үү");
+    if (reason.trim().length < 5) return setErr("Илүү тодорхой шалтгаан бичнэ үү");
+    setBusy(true);
+    await onSubmit(reason.trim());
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title="Байршил гадуур" maxW="max-w-md">
+      <div className="space-y-4">
+        <div style={{ background: T.warnSoft, borderColor: T.warn }}
+             className="border rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={18} style={{ color: T.warn }} className="shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div style={{ fontFamily: FM, fontWeight: 500, color: T.warn }} className="text-sm mb-1">
+                {siteName}-аас {fmtDist(distance)} зайтай
+              </div>
+              <p style={{ color: T.muted }} className="text-xs leading-relaxed">
+                Та ажлын байрнаас гадуур байгаа учраас цаг автомат бүртгэгдэхгүй. Хэрэв та үнэхээр ажил тарж байгаа бол шалтгаан бичиж явуулна уу. Энэ нь ахлагч/админ руу мэдэгдэж очино, тэд баталгаажуулна.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Field label="Яагаад байршлаас гадуур байгаа вэ?" required>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+            placeholder="Жишээ: Гадагшаа уулзалтад гарсан, ачаа аваачихаар явсан, зочинтой гэх мэт"
+            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
+        </Field>
+
+        <p style={{ color: T.muted }} className="text-[11px] leading-relaxed">
+          ⚠️ Цаг тань <strong>"баталгаажуулагдсан биш"</strong> гэсэн тэмдэгтэйгээр бүртгэгдэнэ. Ахлагч/админ шалгасны дараа баталгаажна.
+        </p>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            style={{ background: T.warn, color: T.surface, fontFamily: FS }}
+            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Цаг буулгах
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function EarlyLeaveModal({ profile, myActive, onClose, onSubmit }) {
   const [endTime, setEndTime] = useState(() => {
     const d = new Date();
