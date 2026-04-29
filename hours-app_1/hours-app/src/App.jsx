@@ -71,6 +71,27 @@ const calcPay = (durationMs, hourlyRate) => {
   return (durationMs / 3600000) * (hourlyRate || 0);
 };
 
+// Уян хатан байрны цаг шалгах: ирэх боломжтой эсэх
+const checkFlexibleArrival = (site, when = new Date()) => {
+  if (!site?.is_flexible) return { ok: true };
+  if (!site.arrival_window_start || !site.arrival_window_end) return { ok: true };
+  const start = setTimeOnDate(when, site.arrival_window_start);
+  const end = setTimeOnDate(when, site.arrival_window_end);
+  if (when.getTime() < start) {
+    return { ok: false, reason: `Ирэх цаг ${site.arrival_window_start}-аас эхэлнэ` };
+  }
+  if (when.getTime() > end) {
+    return { ok: false, reason: `Ирэх хугацаа дууссан (${site.arrival_window_end}). Эрт явах хүсэлт явуулах эсвэл маргааш дахин ирээрэй` };
+  }
+  return { ok: true };
+};
+
+// Уян хатан байранд ажилласан end time тооцоолох (ирсэн цагаас N цагийн дараа)
+const flexibleSessionEnd = (site, startMs) => {
+  if (!site?.is_flexible || !site.shift_hours) return null;
+  return startMs + site.shift_hours * 3600000;
+};
+
 const checkSchedule = (profile, when = new Date()) => {
   if (!profile?.schedule_days?.length) return { ok: true, reason: null };
   const dayKey = DAY_KEYS[when.getDay()];
@@ -562,18 +583,22 @@ function AdminDashboard({ profile }) {
   // ── Site CRUD ──
   const upsertSite = async (siteData) => {
     try {
+      const payload = {
+        name: siteData.name, lat: siteData.lat, lng: siteData.lng,
+        radius: siteData.radius, notes: siteData.notes,
+        is_flexible: siteData.is_flexible || false,
+        arrival_window_start: siteData.arrival_window_start || null,
+        arrival_window_end: siteData.arrival_window_end || null,
+        shift_hours: siteData.shift_hours || null,
+      };
       if (siteData.id) {
         const { error } = await supabase.from("sites").update({
-          name: siteData.name, lat: siteData.lat, lng: siteData.lng,
-          radius: siteData.radius, notes: siteData.notes,
+          ...payload,
           updated_at: new Date().toISOString(),
         }).eq("id", siteData.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("sites").insert({
-          name: siteData.name, lat: siteData.lat, lng: siteData.lng,
-          radius: siteData.radius, notes: siteData.notes,
-        });
+        const { error } = await supabase.from("sites").insert(payload);
         if (error) throw error;
       }
       setSiteFormMode(null); setSiteFormData(null);
@@ -930,8 +955,19 @@ function EmployeeDashboard({ profile }) {
       return;
     }
 
-    const sched = checkSchedule(profile);
-    if (!sched.ok) { setFeedback({ type: "error", msg: sched.reason }); return; }
+    // Уян хатан байр — өөрийн ирэх хугацааг шалгана
+    if (site.is_flexible) {
+      const arrCheck = checkFlexibleArrival(site);
+      if (!arrCheck.ok) {
+        setFeedback({ type: "error", msg: arrCheck.reason });
+        return;
+      }
+    } else {
+      // Хатуу хуваарь — profile schedule
+      const sched = checkSchedule(profile);
+      if (!sched.ok) { setFeedback({ type: "error", msg: sched.reason }); return; }
+    }
+
     setShowSitePicker(false);
     setGeoBusy(true);
     try {
@@ -941,7 +977,10 @@ function EmployeeDashboard({ profile }) {
         setFeedback({ type: "error", msg: `Хязгаараас гадуур — ${fmtDist(d)}` });
         return;
       }
-      const startTime = new Date(capSessionStart(profile, Date.now())).toISOString();
+      // Уян хатан байранд ирсэн цагаараа бүртгэнэ (capSessionStart хэрэглэхгүй)
+      const startTime = site.is_flexible
+        ? new Date().toISOString()
+        : new Date(capSessionStart(profile, Date.now())).toISOString();
       const { error } = await supabase.from("active_sessions").upsert({
         employee_id: profile.id, start_time: startTime,
         start_lat: loc.lat, start_lng: loc.lng, distance_meters: d,
@@ -990,7 +1029,16 @@ function EmployeeDashboard({ profile }) {
       const startMs = new Date(myActive.start_time).getTime();
       // Хэрэв early_leave батлагдсан бол хүсэлт дэх дуусах цагийг ашиглана
       const proposedEnd = approvedEarlyLeave ? new Date(approvedEarlyLeave.proposed_end).getTime() : Date.now();
-      const cappedEnd = approvedEarlyLeave ? proposedEnd : capSessionEnd(profile, proposedEnd);
+      // Уян хатан байр — ирсэн цагаас shift_hours хүртэл л зөвшөөрнө
+      let cappedEnd;
+      if (approvedEarlyLeave) {
+        cappedEnd = proposedEnd;
+      } else if (site?.is_flexible && site.shift_hours) {
+        const flexEnd = flexibleSessionEnd(site, startMs);
+        cappedEnd = Math.min(proposedEnd, flexEnd);
+      } else {
+        cappedEnd = capSessionEnd(profile, proposedEnd);
+      }
       const endMs = Math.max(startMs + 1000, cappedEnd);
 
       const { error: insErr } = await supabase.from("sessions").insert({
@@ -1091,12 +1139,28 @@ function EmployeeDashboard({ profile }) {
                 )}
               </div>
 
-              {/* Countdown card — only show when active and has schedule */}
-              {isActive && profile.schedule_days?.length && (() => {
+              {/* Countdown card — show when active and has either flexible site or schedule */}
+              {isActive && (() => {
                 const now = new Date();
-                const dayKey = DAY_KEYS[now.getDay()];
-                if (!profile.schedule_days.includes(dayKey)) return null;
-                const endMs = setTimeOnDate(now, profile.schedule_end);
+                let endMs = null;
+                let endLabel = null;
+
+                // 1) Уян хатан байр — ирсэн цагаас shift_hours дараа
+                if (activeSite?.is_flexible && activeSite.shift_hours) {
+                  const startMs = new Date(myActive.start_time).getTime();
+                  endMs = flexibleSessionEnd(activeSite, startMs);
+                  const endDate = new Date(endMs);
+                  endLabel = endDate.toTimeString().slice(0, 5);
+                }
+                // 2) Хатуу хуваарь — profile.schedule_end
+                else if (profile.schedule_days?.length) {
+                  const dayKey = DAY_KEYS[now.getDay()];
+                  if (!profile.schedule_days.includes(dayKey)) return null;
+                  endMs = setTimeOnDate(now, profile.schedule_end);
+                  endLabel = profile.schedule_end;
+                }
+
+                if (!endMs) return null;
                 const remainingMs = endMs - now.getTime();
                 const isPastEnd = remainingMs <= 0;
 
@@ -1106,6 +1170,7 @@ function EmployeeDashboard({ profile }) {
                     <div style={{ fontFamily: FM, color: T.muted }}
                          className="text-[9px] uppercase tracking-[0.25em] mb-2 flex items-center gap-1.5">
                       <Clock size={10} /> {isPastEnd ? "Ажил дуусаад дараах цаг" : "Ажил дуусахад"}
+                      {activeSite?.is_flexible && <span style={{ color: T.highlight, fontWeight: 600 }}>· Уян хатан</span>}
                     </div>
                     <div className="flex items-baseline justify-between gap-3 flex-wrap">
                       <div>
@@ -1122,7 +1187,7 @@ function EmployeeDashboard({ profile }) {
                           Цаг буух
                         </div>
                         <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-2xl tabular-nums">
-                          {profile.schedule_end}
+                          {endLabel}
                         </div>
                       </div>
                     </div>
@@ -2534,11 +2599,22 @@ function SitesView({ sites, employeeSites, employees, sessions, onEdit, onDelete
                         className="text-[9px] uppercase tracking-[0.25em] font-medium">
                     Ажлын байр
                   </span>
+                  {site.is_flexible && (
+                    <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }}
+                          className="text-[8px] uppercase tracking-[0.2em] font-medium px-2 py-0.5 rounded-full">
+                      Уян хатан
+                    </span>
+                  )}
                 </div>
                 <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-xl truncate">{site.name}</h3>
                 <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 truncate">
                   {fmtCoord(site.lat)}, {fmtCoord(site.lng)} · {site.radius}m
                 </p>
+                {site.is_flexible && site.arrival_window_start && (
+                  <p style={{ color: T.highlight, fontFamily: FM }} className="text-[10px] mt-1">
+                    Ирэх: {site.arrival_window_start}–{site.arrival_window_end} · {site.shift_hours}ц ажил
+                  </p>
+                )}
                 {site.notes && (
                   <p style={{ color: T.muted }} className="text-xs mt-2 italic line-clamp-2">{site.notes}</p>
                 )}
@@ -2578,6 +2654,10 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
   const [coords, setCoords] = useState(site ? { lat: site.lat, lng: site.lng, accuracy: null } : null);
   const [radius, setRadius] = useState(site?.radius || 100);
   const [notes, setNotes] = useState(site?.notes || "");
+  const [isFlexible, setIsFlexible] = useState(site?.is_flexible || false);
+  const [arrivalStart, setArrivalStart] = useState(site?.arrival_window_start || "07:00");
+  const [arrivalEnd, setArrivalEnd] = useState(site?.arrival_window_end || "10:00");
+  const [shiftHours, setShiftHours] = useState(site?.shift_hours ? String(site.shift_hours) : "9");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [showManual, setShowManual] = useState(false);
@@ -2602,12 +2682,21 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
     setErr("");
     if (!name.trim()) return setErr("Байрны нэр оруулна уу");
     if (!coords) return setErr("Байршил тогтоогоогүй байна");
+    if (isFlexible) {
+      if (!arrivalStart || !arrivalEnd) return setErr("Ирэх цагийн хүрээ оруулна уу");
+      const sh = parseFloat(shiftHours);
+      if (isNaN(sh) || sh <= 0 || sh > 24) return setErr("Ажлын урт зөв бус (1–24 цаг)");
+    }
     setBusy(true);
     await onSave({
       id: site?.id || null,
       name: name.trim(),
       lat: coords.lat, lng: coords.lng,
       radius, notes: notes.trim() || null,
+      is_flexible: isFlexible,
+      arrival_window_start: isFlexible ? arrivalStart : null,
+      arrival_window_end: isFlexible ? arrivalEnd : null,
+      shift_hours: isFlexible ? parseFloat(shiftHours) : null,
     });
     setBusy(false);
   };
@@ -2678,6 +2767,53 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Flexible schedule */}
+        <div className="pt-3 border-t" style={{ borderColor: T.borderSoft }}>
+          <label className="flex items-center gap-2 cursor-pointer mb-2">
+            <input type="checkbox" checked={isFlexible} onChange={(e) => setIsFlexible(e.target.checked)} />
+            <span style={{ fontFamily: FM, fontWeight: 500 }} className="text-sm">Уян хатан хуваарь</span>
+          </label>
+          <p style={{ color: T.muted }} className="text-[11px] leading-relaxed mb-3">
+            Энэ ажлын байранд ажилтан тогтсон цагт ирэх ёсгүй. Тодорхой хугацаанд ирж, ирсэн цагаас N цаг ажиллана.
+          </p>
+          {isFlexible && (
+            <div className="space-y-3">
+              <div>
+                <Label>Ирэх цагийн хүрээ</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                      Эхлэх
+                    </div>
+                    <input type="time" value={arrivalStart} onChange={(e) => setArrivalStart(e.target.value)}
+                      style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                      className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+                  </div>
+                  <div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                      Дуусах
+                    </div>
+                    <input type="time" value={arrivalEnd} onChange={(e) => setArrivalEnd(e.target.value)}
+                      style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                      className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+                  </div>
+                </div>
+              </div>
+              <Field label="Ажлын ээлжийн урт (цаг)">
+                <input type="number" step="0.5" min="1" max="24" value={shiftHours}
+                  onChange={(e) => setShiftHours(e.target.value)}
+                  placeholder="9"
+                  style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                  className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
+              </Field>
+              <p style={{ color: T.muted }} className="text-[11px] leading-relaxed">
+                <strong style={{ color: T.ink }}>Жишээ:</strong> Ирэх 07:00–10:00, Урт 9 цаг → 08:00 ирвэл 17:00 буух.
+                Тогтсон ирэх цаг (Ажилтны хуваарь) тохирхон бол түүнийг алгасна.
+              </p>
+            </div>
+          )}
         </div>
 
         <Field label="Тэмдэглэл (заавал биш)">
