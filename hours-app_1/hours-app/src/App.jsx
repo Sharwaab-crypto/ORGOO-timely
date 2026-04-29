@@ -323,18 +323,18 @@ function LoginScreen() {
   };
 
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
-      <div className="w-full max-w-md">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
+      <div className="w-full max-w-md scale-up">
         <div className="text-center mb-8">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.3em] mb-3">
-            Time Ledger
+            Цаг бүртгэл
           </div>
           <h1 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.04em", lineHeight: 0.95 }} className="text-6xl">
-            Hours<span style={{ color: T.highlight }}>.</span>
+            ORGOO<span style={{ color: T.highlight }}>.</span>
           </h1>
         </div>
 
-        <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-6 space-y-4">
+        <div className="glass-strong rounded-3xl p-6 space-y-4 slide-up-delay-1">
           <Field label="Имэйл">
             <Input value={email} onChange={setEmail} placeholder="you@example.com" autoFocus
               onEnter={() => document.getElementById("lpw")?.focus()} />
@@ -344,9 +344,8 @@ function LoginScreen() {
           </Field>
           {err && <ErrorBox>{err}</ErrorBox>}
           <button onClick={submit} disabled={busy || !email.trim() || !password}
-            style={{ background: T.ink, color: T.surface }}
-            className="w-full py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2">
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+            className="glow-primary press-btn w-full py-3 rounded-2xl text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2">
+            {busy ? <Loader2 size={14} className="spin" /> : <Lock size={14} />}
             Нэвтрэх
           </button>
         </div>
@@ -741,7 +740,7 @@ function AdminDashboard({ profile }) {
   const activeCount = Object.keys(activeSessions).length;
 
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
@@ -1163,12 +1162,16 @@ function EmployeeDashboard({ profile }) {
   const cantClock = !isActive && (noSite || !sched.ok);
 
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
       <div className="max-w-2xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 slide-up">
           <div className="flex items-center gap-3">
-            <div style={{ background: isActive ? T.highlight : T.ink, color: T.surface }}
-                 className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors">
+            <div style={{
+              background: isActive ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "linear-gradient(135deg, #1e1b4b, #312e81)",
+              color: "white",
+              boxShadow: isActive ? "0 4px 16px rgba(99, 102, 241, 0.4)" : "0 4px 16px rgba(30, 27, 75, 0.2)",
+            }}
+                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all">
               <UserIcon size={16} />
             </div>
             <div>
@@ -1195,13 +1198,15 @@ function EmployeeDashboard({ profile }) {
         </nav>
 
         {view === "home" && (
-          <div className="space-y-5">
-            <div style={{ background: T.surface, borderColor: isActive ? T.highlight : T.border, borderWidth: isActive ? 2 : 1 }}
-                 className="rounded-2xl p-6 sm:p-8 transition-all">
+          <div className="space-y-5 fade-in">
+            <div className={`${isActive ? "glass-strong pulse-halo" : "glass"} rounded-3xl p-6 sm:p-8 slide-up`}>
               <div className="flex items-center gap-2 mb-1">
-                <span style={{ background: isActive ? T.highlight : T.muted, boxShadow: isActive ? `0 0 0 5px ${T.highlight}1a` : "none" }}
-                      className="inline-block w-2 h-2 rounded-full" />
-                <span style={{ fontFamily: FM, color: isActive ? T.highlight : T.muted }}
+                <span style={{
+                  background: isActive ? T.ok : T.muted,
+                  boxShadow: isActive ? `0 0 0 5px rgba(16, 185, 129, 0.2)` : "none",
+                }}
+                      className={`inline-block w-2 h-2 rounded-full ${isActive ? "pulse-dot" : ""}`} />
+                <span style={{ fontFamily: FM, color: isActive ? T.ok : T.muted }}
                       className="text-[10px] uppercase tracking-[0.25em] font-medium">
                   {isActive ? "Ажиллаж байна" : "Цагтай биш"}
                 </span>
@@ -1295,13 +1300,17 @@ function EmployeeDashboard({ profile }) {
 
               <button onClick={() => isActive ? onClockOut() : onClockIn()}
                 disabled={geoBusy || cantClock}
+                className={`w-full py-5 sm:py-4 rounded-2xl text-base sm:text-sm font-medium flex items-center justify-center gap-2.5 press-btn ${
+                  geoBusy ? "" : isActive ? "glow-danger" : cantClock ? "" : "glow-primary"
+                }`}
                 style={{
-                  background: geoBusy ? T.muted : isActive ? T.ink : cantClock ? T.muted : T.highlight,
-                  color: T.surface, fontFamily: FS,
-                  cursor: cantClock ? "not-allowed" : "pointer", opacity: cantClock ? 0.5 : 1,
-                }}
-                className="w-full py-5 sm:py-4 rounded-xl text-base sm:text-sm font-medium flex items-center justify-center gap-2.5 hover:opacity-90 transition-opacity active:scale-[0.98]">
-                {geoBusy ? <><Loader2 size={18} className="animate-spin" /> Байршил шалгаж байна…</>
+                  fontFamily: FS,
+                  background: geoBusy ? T.muted : cantClock ? T.muted : undefined,
+                  color: "white",
+                  cursor: cantClock ? "not-allowed" : "pointer",
+                  opacity: cantClock ? 0.6 : 1,
+                }}>
+                {geoBusy ? <><Loader2 size={18} className="spin" /> Байршил шалгаж байна…</>
                   : isActive ? <><Square size={16} fill="currentColor" /> Цаг буулгах</>
                   : noSite ? <><MapPin size={16} /> Ажлын байр тогтоогоогүй</>
                   : !sched.ok ? <><Clock size={16} /> Цагийн хязгаараас гадуур</>
@@ -1309,7 +1318,7 @@ function EmployeeDashboard({ profile }) {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3 slide-up-delay-1">
               <SmallStat label="Өнөөдөр" value={fmtHours(stats.today)} />
               <SmallStat label="Энэ долоо хоног" value={fmtHours(stats.week)} />
               <SmallStat label="Нийт" value={fmtHours(stats.total)} />
@@ -1751,13 +1760,13 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
                 <div>
                   <Label>Эхлэх</Label>
                   <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                     className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
                 </div>
                 <div>
                   <Label>Дуусах</Label>
                   <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                     className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
                 </div>
               </div>
@@ -1768,7 +1777,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
                 Ажилтан
               </div>
               <select value={filterEmpId} onChange={(e) => setFilterEmpId(e.target.value)}
-                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black">
                 <option value="all">Бүх ажилтан</option>
                 {employees.map((e) => (
@@ -1783,7 +1792,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
                   Ажлын байр
                 </div>
                 <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)}
-                  style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                  style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                   className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black">
                   <option value="all">Бүх байр</option>
                   {sites.map((s) => (
@@ -2203,7 +2212,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
             <div className="relative">
               <span style={{ color: T.muted, fontFamily: FM }} className="absolute left-3 top-1/2 -translate-y-1/2 text-sm">₮</span>
               <input value={rate} type="number" step="100" onChange={(e) => setRate(e.target.value)} placeholder="0"
-                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="w-full pl-8 pr-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
             </div>
           </Field>
@@ -2278,10 +2287,10 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
                     <div style={{ borderColor: T.border }} className="p-3 rounded-lg border-dashed border space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <input value={manLat} onChange={(e) => setManLat(e.target.value)} placeholder="Latitude"
-                          style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                           className="px-3 py-2 rounded-md border text-xs outline-none" />
                         <input value={manLng} onChange={(e) => setManLng(e.target.value)} placeholder="Longitude"
-                          style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                           className="px-3 py-2 rounded-md border text-xs outline-none" />
                       </div>
                       <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
@@ -2354,12 +2363,12 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Эхлэх">
                   <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
-                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                     className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
                 </Field>
                 <Field label="Дуусах">
                   <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
-                    style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                    style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                     className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
                 </Field>
               </div>
@@ -2415,25 +2424,25 @@ function RequestModal({ profile, onClose, onSubmit }) {
         </p>
         <Field label="Огноо">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={isoDate}
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Эхэлсэн цаг">
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)}
-              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
           </Field>
           <Field label="Дууссан цаг">
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)}
-              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
           </Field>
         </div>
         <Field label="Шалтгаан / тайлбар" required>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
             placeholder="Жишээ: Утас цэнэглэгдээгүй байсан тул цаг бүртгүүлж амжсангүй"
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
         {err && <ErrorBox>{err}</ErrorBox>}
@@ -2474,13 +2483,15 @@ function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function Modal({ children, onClose, title, maxW = "max-w-lg" }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(10,10,10,0.4)" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: T.surface, borderColor: T.border }}
-           className={`border rounded-2xl p-6 w-full ${maxW} shadow-xl max-h-[92vh] overflow-y-auto`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"
+         style={{ background: "rgba(30, 27, 75, 0.4)" }}
+         onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           className={`glass-strong modal-content rounded-3xl p-6 w-full ${maxW} max-h-[92vh] overflow-y-auto`}>
         {title && (
           <div className="flex items-center justify-between mb-5">
             <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-2xl">{title}</h3>
-            <button onClick={onClose} style={{ color: T.muted }} className="p-1.5 rounded-full hover:bg-black/5">
+            <button onClick={onClose} style={{ color: T.muted }} className="p-1.5 rounded-full hover:bg-black/10 press-btn">
               <X size={17} />
             </button>
           </div>
@@ -2523,7 +2534,7 @@ function Input({ value, onChange, placeholder, autoFocus, onEnter, id }) {
     <input id={id} value={value} onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
       placeholder={placeholder} autoFocus={autoFocus}
-      style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+      style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
       className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
   );
 }
@@ -2534,7 +2545,7 @@ function PwInput({ value, onChange, onEnter, id }) {
     <div className="relative">
       <input id={id} type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
-        style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+        style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
         className="w-full px-3 py-2.5 pr-10 rounded-lg border text-sm outline-none focus:border-black" />
       <button onClick={() => setShow((v) => !v)} type="button" style={{ color: T.muted }}
         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-black/5">
@@ -2584,13 +2595,16 @@ function StatusBadge({ status }) {
 function Tab({ active, onClick, icon: Icon, badge, children }) {
   return (
     <button onClick={onClick}
-      style={{ background: active ? T.ink : "transparent", color: active ? T.surface : T.ink,
-               borderColor: active ? T.ink : T.border, fontFamily: FM }}
-      className="px-3.5 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-80">
+      className={`${active ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3.5 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5`}
+      style={{ fontFamily: FM, borderColor: active ? "transparent" : T.borderSoft }}>
       <Icon size={11} strokeWidth={2} />
       {children}
       {badge > 0 && (
-        <span style={{ background: active ? T.surface : T.highlight, color: active ? T.ink : T.surface }}
+        <span style={{
+          background: active ? "rgba(255,255,255,0.95)" : T.highlight,
+          color: active ? T.highlight : "white",
+          boxShadow: active ? "none" : "0 2px 8px rgba(99,102,241,0.4)",
+        }}
               className="ml-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold tabular-nums">{badge}</span>
       )}
     </button>
@@ -2599,7 +2613,7 @@ function Tab({ active, onClick, icon: Icon, badge, children }) {
 
 function BigStat({ label, value, suffix, accent }) {
   return (
-    <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl px-5 py-4">
+    <div className="glass lift rounded-2xl px-5 py-4">
       <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1.5">{label}</div>
       <div className="flex items-baseline gap-1.5">
         <span style={{ fontFamily: FD, fontWeight: 500, color: accent ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
@@ -2612,7 +2626,7 @@ function BigStat({ label, value, suffix, accent }) {
 
 function SmallStat({ label, value }) {
   return (
-    <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-xl p-3">
+    <div className="glass-soft rounded-xl p-3">
       <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.2em] mb-1">{label}</div>
       <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-lg tabular-nums">
         {value}<span style={{ color: T.muted, fontSize: "0.55em", marginLeft: 3 }}>ц</span>
@@ -2643,7 +2657,7 @@ function Footer({ count }) {
 
 function CenterCard({ children }) {
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
       <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-7 w-full max-w-md text-center">
         {children}
       </div>
@@ -2653,7 +2667,7 @@ function CenterCard({ children }) {
 
 function Loading() {
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center">
       <Loader2 size={20} className="animate-spin" style={{ color: T.muted }} />
     </div>
   );
@@ -2825,10 +2839,10 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
                 <div style={{ borderColor: T.border }} className="p-3 rounded-lg border-dashed border space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <input value={manLat} onChange={(e) => setManLat(e.target.value)} placeholder="Latitude"
-                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                      style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                       className="px-3 py-2 rounded-md border text-xs outline-none" />
                     <input value={manLng} onChange={(e) => setManLng(e.target.value)} placeholder="Longitude"
-                      style={{ borderColor: T.border, background: T.bg, fontFamily: FM }}
+                      style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                       className="px-3 py-2 rounded-md border text-xs outline-none" />
                   </div>
                   <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
@@ -2887,7 +2901,7 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
                       Эхлэх
                     </div>
                     <input type="time" value={arrivalStart} onChange={(e) => setArrivalStart(e.target.value)}
-                      style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                      style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                       className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
                   </div>
                   <div>
@@ -2895,7 +2909,7 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
                       Дуусах
                     </div>
                     <input type="time" value={arrivalEnd} onChange={(e) => setArrivalEnd(e.target.value)}
-                      style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                      style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                       className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
                   </div>
                 </div>
@@ -2904,7 +2918,7 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
                 <input type="number" step="0.5" min="1" max="24" value={shiftHours}
                   onChange={(e) => setShiftHours(e.target.value)}
                   placeholder="9"
-                  style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                  style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                   className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
               </Field>
               <p style={{ color: T.muted }} className="text-[11px] leading-relaxed">
@@ -2918,7 +2932,7 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
         <Field label="Тэмдэглэл (заавал биш)">
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
             placeholder="Жишээ: 3-р давхар, том хаалгаар орох"
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
 
@@ -3292,7 +3306,7 @@ function ManagerDashboard({ profile }) {
   const activeCount = team.filter((e) => activeSessions[e.id]).length;
 
   return (
-    <div style={{ background: T.bg, color: T.ink, fontFamily: FS }} className="min-h-screen">
+    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
@@ -3502,7 +3516,7 @@ function UnverifiedClockOutModal({ distance, siteName, onClose, onSubmit }) {
         <Field label="Яагаад байршлаас гадуур байгаа вэ?" required>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
             placeholder="Жишээ: Гадагшаа уулзалтад гарсан, ачаа аваачихаар явсан, зочинтой гэх мэт"
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
 
@@ -3567,14 +3581,14 @@ function EarlyLeaveModal({ profile, myActive, onClose, onSubmit }) {
 
         <Field label="Хэдэн цагт явах вэ?" required>
           <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
         </Field>
 
         <Field label="Шалтгаан / тайлбар" required>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
             placeholder="Жишээ: Эмнэлэгт үзлэгтэй, гэр бүлийн ажил, хувийн асуудал гэх мэт"
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
 
@@ -3662,19 +3676,19 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
 
         <Field label="Огноо" required>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Эхэлсэн" required>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)}
-              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
           </Field>
           <Field label="Дууссан" required>
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)}
-              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black" />
           </Field>
         </div>
@@ -3682,7 +3696,7 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
         {sites.length > 0 && (
           <Field label="Ажлын байр">
             <select value={siteId} onChange={(e) => setSiteId(e.target.value)}
-              style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black">
               <option value="">— Сонгоогүй —</option>
               {sites.map((s) => (
@@ -3695,7 +3709,7 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
         <Field label="Засварын шалтгаан" required>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
             placeholder="Жишээ: Ажилтан өглөө цаг буруу бүртгүүлсэн"
-            style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FS }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
 
@@ -3861,13 +3875,13 @@ function SalaryView({ sessions, profile }) {
             <div>
               <Label>Эхлэх</Label>
               <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
             </div>
             <div>
               <Label>Дуусах</Label>
               <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                style={{ borderColor: T.border, background: T.bg, color: T.ink, fontFamily: FM }}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:border-black" />
             </div>
           </div>
