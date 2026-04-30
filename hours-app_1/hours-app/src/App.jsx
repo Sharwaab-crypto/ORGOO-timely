@@ -245,8 +245,8 @@ export default function App() {
             Профайл олдсонгүй гэж гарвал админд хандаарай
           </p>
           <button onClick={() => supabase.auth.signOut()}
-            style={{ borderColor: T.border, fontFamily: FS }}
-            className="w-full py-2 rounded-xl border text-sm hover:bg-black/5">
+            style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn w-full py-2 rounded-xl text-sm">
             Гарах
           </button>
         </CenterCard>
@@ -268,8 +268,8 @@ export default function App() {
 function InstallBanner({ onInstall, onDismiss }) {
   return (
     <div className="fixed bottom-3 left-3 right-3 z-[100] flex justify-center pointer-events-none">
-      <div style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-           className="pointer-events-auto rounded-2xl shadow-2xl px-4 py-3 max-w-md w-full flex items-center gap-3"
+      <div style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn pointer-events-auto rounded-2xl shadow-2xl px-4 py-3 max-w-md w-full flex items-center gap-3"
            role="alert">
         <div style={{ background: T.highlight }} className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
           <Download size={16} />
@@ -742,33 +742,36 @@ function AdminDashboard({ profile }) {
   return (
     <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
-        <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center justify-between mb-10 slide-up">
           <div className="flex items-center gap-3">
-            <div style={{ background: T.ink, color: T.surface }} className="w-9 h-9 rounded-xl flex items-center justify-center">
+            <div style={{
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              color: "white",
+              boxShadow: "0 4px 16px rgba(99, 102, 241, 0.4)",
+            }} className="w-10 h-10 rounded-xl flex items-center justify-center">
               <ShieldCheck size={16} />
             </div>
             <div>
               <div style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.03em" }} className="text-2xl leading-none">
-                Hours<span style={{ color: T.highlight }}>.</span>
+                ORGOO<span style={{ color: T.highlight }}>.</span>
               </div>
               <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] mt-1">
                 Admin · {profile.name}
               </div>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} style={{ borderColor: T.border, fontFamily: FM }}
-            className="px-3 py-2 rounded-lg border text-[11px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-black/5">
+          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
             <LogOut size={12} /> Гарах
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10 slide-up-delay-1">
           <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
           <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
           <BigStat label="Ажилтан" value={employees.length} />
         </div>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap">
+        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
           <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
           <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
@@ -779,15 +782,13 @@ function AdminDashboard({ profile }) {
           <div className="flex-1" />
           {view === "team" && (
             <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
-              style={{ background: T.ink, color: T.surface }}
-              className="px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-90">
+              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
               <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
             </button>
           )}
           {view === "sites" && (
             <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
-              style={{ background: T.ink, color: T.surface }}
-              className="px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-90">
+              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
               <Plus size={13} strokeWidth={2.5} /> Байр нэмэх
             </button>
           )}
@@ -1183,13 +1184,12 @@ function EmployeeDashboard({ profile }) {
               </div>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} style={{ borderColor: T.border, fontFamily: FM }}
-            className="px-3 py-2 rounded-lg border text-[11px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-black/5">
+          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
             <LogOut size={12} /> Гарах
           </button>
         </div>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap">
+        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "home"} onClick={() => setView("home")} icon={Clock}>Цаг</Tab>
           <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
           <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
@@ -1213,12 +1213,17 @@ function EmployeeDashboard({ profile }) {
               </div>
 
               <div className="my-5 sm:my-6">
-                <div style={{ fontFamily: FM, fontWeight: 500, color: isActive ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
+                <div style={{
+                  fontFamily: FM, fontWeight: 500,
+                  color: isActive ? T.highlight : T.ink,
+                  letterSpacing: "-0.03em",
+                  textShadow: isActive ? `0 0 24px rgba(99, 102, 241, 0.4)` : "none",
+                }}
                      className="text-6xl sm:text-7xl tabular-nums">
                   {isActive ? fmtClock(liveMs) : "00:00:00"}
                 </div>
                 {isActive && (
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-2">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-2 fade-in">
                     {fmtTime(new Date(myActive.start_time).getTime())}-аас эхэлсэн
                   </div>
                 )}
@@ -1250,8 +1255,8 @@ function EmployeeDashboard({ profile }) {
                 const isPastEnd = remainingMs <= 0;
 
                 return (
-                  <div style={{ background: T.surfaceAlt, borderColor: T.borderSoft }}
-                       className="border rounded-xl p-4 mb-5">
+                  <div className="glass-soft scale-up rounded-2xl p-4 mb-5"
+                       style={{ borderColor: isPastEnd ? T.warn : T.borderSoft }}>
                     <div style={{ fontFamily: FM, color: T.muted }}
                          className="text-[9px] uppercase tracking-[0.25em] mb-2 flex items-center gap-1.5">
                       <Clock size={10} /> {isPastEnd ? "Ажил дуусаад дараах цаг" : "Ажил дуусахад"}
@@ -1392,8 +1397,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
         <Users size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
         <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Багт ажилтан байхгүй байна</h3>
         <p style={{ color: T.muted }} className="text-sm mb-5">Анхны ажилтнаа нэмж тэмдэглэлийг эхлүүлээрэй.</p>
-        <button onClick={onAdd} style={{ background: T.ink, color: T.surface }}
-          className="px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2 hover:opacity-90">
+        <button onClick={onAdd} className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
           <Plus size={13} strokeWidth={2.5} /> Эхний ажилтан нэмэх
         </button>
       </div>
@@ -1699,8 +1703,8 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
           <div className="relative">
             <button onClick={() => setShowExportMenu((v) => !v)}
               disabled={filteredSessions.length === 0}
-              style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-              className="px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:opacity-90 disabled:opacity-40">
+              style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 disabled:opacity-40">
               <Download size={11} /> Excel татах
             </button>
             {showExportMenu && (
@@ -1912,7 +1916,7 @@ function ApprovalsView({ approvals, employees, onResolve }) {
             const startMs = new Date(a.proposed_start).getTime();
             const endMs = new Date(a.proposed_end).getTime();
             return (
-              <div key={a.id} className="glass rounded-2xl p-5">
+              <div key={a.id} className="glass lift rounded-3xl p-5 slide-up">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -1957,13 +1961,13 @@ function ApprovalsView({ approvals, employees, onResolve }) {
                 {a.status === "pending" ? (
                   <div className="flex gap-2">
                     <button onClick={() => onResolve(a, "denied")}
-                      style={{ borderColor: T.border, fontFamily: FS }}
-                      className="flex-1 py-2.5 rounded-xl border text-xs font-medium hover:bg-black/5">
+                      className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-xs font-medium"
+                      style={{ fontFamily: FS, color: T.ink }}>
                       Татгалзах
                     </button>
                     <button onClick={() => onResolve(a, "approved")}
-                      style={{ background: T.ok, color: T.surface, fontFamily: FS }}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
+                      className="glow-success press-btn flex-1 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5"
+                      style={{ fontFamily: FS }}>
                       <CheckCircle2 size={13} /> Зөвшөөрөх
                     </button>
                   </div>
@@ -2023,8 +2027,8 @@ function PersonalHistory({ sessions }) {
 function PersonalRequests({ approvals, onNew }) {
   return (
     <div className="space-y-4">
-      <button onClick={onNew} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-        className="w-full py-3 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-2">
+      <button onClick={onNew} style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2">
         <Plus size={14} /> Шинэ хүсэлт явуулах
       </button>
       {approvals.length === 0 ? (
@@ -2037,7 +2041,7 @@ function PersonalRequests({ approvals, onNew }) {
             const startMs = new Date(a.proposed_start).getTime();
             const endMs = new Date(a.proposed_end).getTime();
             return (
-              <div key={a.id} className="glass rounded-xl p-4">
+              <div key={a.id} className="glass lift rounded-2xl p-4 slide-up">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -2273,8 +2277,8 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
               {!site ? (
                 <div className="space-y-2">
                   <button onClick={captureSite} disabled={siteBusy}
-                    style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                    className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+                    style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50">
                     {siteBusy ? <><Loader2 size={12} className="animate-spin" /> Тогтоож байна…</>
                               : <><Crosshair size={12} /> Одоогийн байршил ашиглах</>}
                   </button>
@@ -2292,8 +2296,8 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
                           style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                           className="px-3 py-2 rounded-md border text-xs outline-none" />
                       </div>
-                      <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                        className="w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em] hover:opacity-90">
+                      <button onClick={applyManual} style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em]">
                         Координат хэрэглэх
                       </button>
                     </div>
@@ -2378,11 +2382,11 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
         {err && <ErrorBox>{err}</ErrorBox>}
 
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
-            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
             {busy && <Loader2 size={13} className="animate-spin" />}
             {mode === "add" ? "Нэмэх" : "Хадгалах"}
           </button>
@@ -2446,11 +2450,11 @@ function RequestModal({ profile, onClose, onSubmit }) {
         </Field>
         {err && <ErrorBox>{err}</ErrorBox>}
         <div className="flex gap-3">
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
-            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Илгээх
           </button>
         </div>
@@ -2466,8 +2470,8 @@ function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
         <span style={{ color: T.ink, fontWeight: 500 }}>{name}</span>-ийн профайл болон бүртгэлүүд устах болно.
       </p>
       <div className="flex gap-3">
-        <button onClick={onCancel} style={{ borderColor: T.border, fontFamily: FS }}
-          className="flex-1 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+        <button onClick={onCancel} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Цуцлах</button>
         <button onClick={onConfirm} style={{ background: T.err, color: T.surface, fontFamily: FS }}
           className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
           <Trash2 size={12} /> Устгах
@@ -2556,7 +2560,12 @@ function PwInput({ value, onChange, onEnter, id }) {
 
 function ErrorBox({ children }) {
   return (
-    <div style={{ background: T.errSoft, color: T.err }} className="px-3 py-2 rounded-lg flex items-start gap-2">
+    <div className="glass-soft scale-up px-4 py-2.5 rounded-xl flex items-start gap-2"
+         style={{
+           background: "rgba(239, 68, 68, 0.12)",
+           color: T.err,
+           borderColor: "rgba(239, 68, 68, 0.25)",
+         }}>
       <AlertCircle size={13} className="mt-0.5 shrink-0" />
       <span style={{ fontFamily: FM }} className="text-[11px] leading-snug">{children}</span>
     </div>
@@ -2564,12 +2573,18 @@ function ErrorBox({ children }) {
 }
 
 function FeedbackBox({ type, children }) {
-  const colors = type === "error" ? { bg: T.errSoft, fg: T.err, Icon: AlertCircle }
-              : type === "warn"  ? { bg: T.warnSoft, fg: T.warn, Icon: AlertCircle }
-              : { bg: T.okSoft, fg: T.ok, Icon: CheckCircle2 };
+  const colors = type === "error" ? { bg: "rgba(239, 68, 68, 0.12)", fg: T.err, Icon: AlertCircle }
+              : type === "warn"  ? { bg: "rgba(245, 158, 11, 0.15)", fg: T.warn, Icon: AlertCircle }
+              : { bg: "rgba(16, 185, 129, 0.12)", fg: T.ok, Icon: CheckCircle2 };
   const { Icon } = colors;
   return (
-    <div style={{ background: colors.bg, color: colors.fg }} className="px-3 py-2.5 rounded-lg flex items-start gap-2 mb-3">
+    <div className="slide-up px-4 py-2.5 rounded-xl flex items-start gap-2 mb-3 backdrop-blur-md"
+         style={{
+           background: colors.bg,
+           color: colors.fg,
+           border: `1px solid ${colors.fg}22`,
+           boxShadow: `0 4px 16px ${colors.fg}15`,
+         }}>
       <Icon size={14} className="mt-0.5 shrink-0" />
       <span style={{ fontFamily: FM }} className="text-[11px] leading-snug">{children}</span>
     </div>
@@ -2824,8 +2839,8 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
           {!coords ? (
             <div className="space-y-2">
               <button onClick={captureLoc} disabled={busy}
-                style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                className="w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+                style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50">
                 {busy ? <><Loader2 size={12} className="animate-spin" /> Тогтоож байна…</>
                       : <><Crosshair size={12} /> Одоогийн байршил ашиглах</>}
               </button>
@@ -2843,8 +2858,8 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
                       style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", fontFamily: FM }}
                       className="px-3 py-2 rounded-md border text-xs outline-none" />
                   </div>
-                  <button onClick={applyManual} style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-                    className="w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em] hover:opacity-90">
+                  <button onClick={applyManual} style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn w-full py-1.5 rounded-md text-[10px] uppercase tracking-[0.2em]">
                     Координат хэрэглэх
                   </button>
                 </div>
@@ -2937,11 +2952,11 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
         {err && <ErrorBox>{err}</ErrorBox>}
 
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
-            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
             {busy && <Loader2 size={13} className="animate-spin" />}
             {mode === "add" ? "Үүсгэх" : "Хадгалах"}
           </button>
@@ -2977,8 +2992,8 @@ function SitePickerModal({ employee, sites, onPick, onClose }) {
           </button>
         ))}
       </div>
-      <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-        className="w-full mt-4 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+      <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn w-full mt-4 py-2.5 rounded-xl text-sm">Цуцлах</button>
     </Modal>
   );
 }
@@ -2991,8 +3006,8 @@ function ConfirmModal({ title, message, onCancel, onConfirm, confirmLabel = "У�
     <Modal onClose={onCancel} title={title} maxW="max-w-sm">
       <p style={{ color: T.muted }} className="text-sm mb-5">{message}</p>
       <div className="flex gap-3">
-        <button onClick={onCancel} style={{ borderColor: T.border, fontFamily: FS }}
-          className="flex-1 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+        <button onClick={onCancel} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Цуцлах</button>
         <button onClick={onConfirm} style={{ background: T.err, color: T.surface, fontFamily: FS }}
           className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
           <Trash2 size={12} /> {confirmLabel}
@@ -3021,8 +3036,7 @@ function ManagersView({ managers, employees, managerEmployees, onUpdateAssignmen
         <p style={{ color: T.muted }} className="text-sm mb-5 max-w-sm mx-auto">
           "Баг" таб дотроос ажилтан нэмэхдээ "Ахлагч" эрх сонгоход ахлагч үүсэнэ.
         </p>
-        <button onClick={onAddManager} style={{ background: T.ink, color: T.surface }}
-          className="px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2 hover:opacity-90">
+        <button onClick={onAddManager} className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
           <Plus size={13} strokeWidth={2.5} /> Ахлагч нэмэх
         </button>
       </div>
@@ -3068,8 +3082,8 @@ function ManagersView({ managers, employees, managerEmployees, onUpdateAssignmen
               </div>
 
               <button onClick={() => setEditingManagerId(mgr.id)}
-                style={{ borderColor: T.border, fontFamily: FS }}
-                className="w-full py-2.5 rounded-xl border text-xs font-medium hover:bg-black/5 flex items-center justify-center gap-2">
+                style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn w-full py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2">
                 <Edit3 size={12} /> Багийн ажилтнуудыг тохируулах
               </button>
             </article>
@@ -3167,11 +3181,11 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
       </div>
 
       <div className="flex gap-3 pt-4 mt-4 border-t" style={{ borderColor: T.borderSoft }}>
-        <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-          className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+        <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
         <button onClick={submit} disabled={busy}
-          style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-          className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+          style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
           {busy && <Loader2 size={13} className="animate-spin" />}
           Хадгалах
         </button>
@@ -3318,19 +3332,18 @@ function ManagerDashboard({ profile }) {
               </div>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} style={{ borderColor: T.border, fontFamily: FM }}
-            className="px-3 py-2 rounded-lg border text-[11px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-black/5">
+          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
             <LogOut size={12} /> Гарах
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10 slide-up-delay-1">
           <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
           <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
           <BigStat label="Ажилтан" value={team.length} />
         </div>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap">
+        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
           <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
           <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
@@ -3525,8 +3538,8 @@ function UnverifiedClockOutModal({ distance, siteName, onClose, onSubmit }) {
         {err && <ErrorBox>{err}</ErrorBox>}
 
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
             style={{ background: T.warn, color: T.surface, fontFamily: FS }}
             className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
@@ -3593,11 +3606,11 @@ function EarlyLeaveModal({ profile, myActive, onClose, onSubmit }) {
         {err && <ErrorBox>{err}</ErrorBox>}
 
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
-            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Илгээх
           </button>
         </div>
@@ -3650,8 +3663,8 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
           бүртгэл устгагдана. Энэ үйлдлийг буцаах боломжгүй.
         </p>
         <div className="flex gap-3">
-          <button onClick={() => setConfirmDel(false)} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-2.5 rounded-xl border text-sm hover:bg-black/5">Цуцлах</button>
+          <button onClick={() => setConfirmDel(false)} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Цуцлах</button>
           <button onClick={() => onDelete(session.id)}
             style={{ background: T.err, color: T.surface, fontFamily: FS }}
             className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
@@ -3719,11 +3732,11 @@ function SessionEditModal({ session, employee, sites = [], onSave, onDelete, onC
             className="px-4 py-3 rounded-xl border text-sm font-medium hover:bg-red-50 flex items-center gap-1.5">
             <Trash2 size={12} />
           </button>
-          <button onClick={onClose} style={{ borderColor: T.border, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl border text-sm font-medium hover:bg-black/5">Цуцлах</button>
+          <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium">Цуцлах</button>
           <button onClick={submit} disabled={busy}
-            style={{ background: T.ink, color: T.surface, fontFamily: FS }}
-            className="flex-1 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            style={{ fontFamily: FS, color: "white" }}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
             {busy && <Loader2 size={13} className="animate-spin" />}
             Хадгалах
           </button>
