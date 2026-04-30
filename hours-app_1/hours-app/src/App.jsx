@@ -152,34 +152,34 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — Stripe-ийн blue-gray
-  bg: "#f6f9fc",
-  bgSolid: "#f6f9fc",
-  // Surfaces (Stripe = цагаан карт)
-  surface: "#ffffff",
-  surfaceStrong: "#ffffff",
-  surfaceAlt: "#f6f9fc",
-  surfaceGlass: "#ffffff",
-  // Text — Stripe ink
-  ink: "#1a1f36", inkSoft: "#3c4257",
-  muted: "#697386", mutedSoft: "#8898aa",
-  // Borders
-  border: "#e3e8ee",
-  borderSoft: "#e7ebf0",
-  borderStrong: "#c1c9d2",
-  // Accent — Stripe purple #635bff
-  highlight: "#635bff",
-  highlightDark: "#5851ec",
-  highlightSoft: "#f0eeff",
-  highlightGlow: "0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15)",
+  // Background — Soft gradient (peach → pink → violet)
+  bg: "linear-gradient(135deg, #fef3ec 0%, #ffe5e5 50%, #e8e3f8 100%)",
+  bgSolid: "#fef3ec",
+  // Surfaces — frosted glass
+  surface: "rgba(255, 255, 255, 0.7)",
+  surfaceStrong: "rgba(255, 255, 255, 0.85)",
+  surfaceAlt: "rgba(255, 255, 255, 0.45)",
+  surfaceGlass: "rgba(255, 255, 255, 0.55)",
+  // Text — warm slate
+  ink: "#44403c", inkSoft: "#57534e",
+  muted: "#78716c", mutedSoft: "#a8a29e",
+  // Borders — translucent white
+  border: "rgba(255, 255, 255, 0.7)",
+  borderSoft: "rgba(255, 255, 255, 0.5)",
+  borderStrong: "rgba(244, 114, 182, 0.25)",
+  // Accent — Pink → Orange gradient
+  highlight: "#ec4899",
+  highlightDark: "#db2777",
+  highlightSoft: "rgba(244, 114, 182, 0.12)",
+  highlightGlow: "0 8px 24px rgba(244, 114, 182, 0.25)",
   // Statuses
-  ok: "#10b981", okSoft: "#d4f7e0",
-  err: "#ef4444", errSoft: "#fbe4e4",
-  warn: "#f59e0b", warnSoft: "#fff4e0",
+  ok: "#10b981", okSoft: "rgba(16,185,129,0.12)",
+  err: "#ef4444", errSoft: "rgba(239,68,68,0.12)",
+  warn: "#f59e0b", warnSoft: "rgba(245,158,11,0.12)",
   // Helpers
-  blur: "none",
-  cardShadow: "0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-  cardShadowHover: "0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05)",
+  blur: "blur(20px) saturate(180%)",
+  cardShadow: "0 8px 24px rgba(244, 114, 182, 0.08)",
+  cardShadowHover: "0 12px 32px rgba(244, 114, 182, 0.15)",
 };
 const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
 const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
@@ -417,7 +417,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "#635bff",
+              background: "#ec4899",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -451,7 +451,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "#635bff",
+              background: "#ec4899",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1130,7 +1130,9 @@ function AdminDashboard({ profile }) {
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
         <aside style={{
-          background: "#ffffff",
+          background: "rgba(255,255,255,0.6)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderRight: `1px solid ${T.border}`,
           width: 240,
         }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
@@ -1138,7 +1140,7 @@ function AdminDashboard({ profile }) {
           {/* Logo header */}
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -1180,7 +1182,7 @@ function AdminDashboard({ profile }) {
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1208,7 +1210,7 @@ function AdminDashboard({ profile }) {
         {/* MAIN CONTENT */}
         <main className="flex-1 min-w-0">
           {/* Mobile top bar */}
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
@@ -1823,7 +1825,9 @@ function EmployeeDashboard({ profile }) {
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
         <aside style={{
-          background: "#ffffff",
+          background: "rgba(255,255,255,0.6)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderRight: `1px solid ${T.border}`,
           width: 240,
         }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
@@ -1831,7 +1835,7 @@ function EmployeeDashboard({ profile }) {
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
               <div style={{
-                background: isActive ? "#10b981" : "#635bff",
+                background: isActive ? "#10b981" : "#ec4899",
                 color: "white",
               }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
                 <UserIcon size={14} />
@@ -1870,7 +1874,7 @@ function EmployeeDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1896,7 +1900,7 @@ function EmployeeDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
@@ -4334,14 +4338,16 @@ function ManagerDashboard({ profile }) {
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
         <aside style={{
-          background: "#ffffff",
+          background: "rgba(255,255,255,0.6)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderRight: `1px solid ${T.border}`,
           width: 240,
         }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
 
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -4373,7 +4379,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -4399,7 +4405,7 @@ function ManagerDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
@@ -6660,7 +6666,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "#635bff",
+                              background: "#ec4899",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -6997,7 +7003,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "#635bff",
+                                background: "#ec4899",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
