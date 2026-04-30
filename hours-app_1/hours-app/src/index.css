@@ -222,3 +222,73 @@ input:focus, select:focus, textarea:focus {
 .vuexy-stat-icon.bg-warn { background: rgba(255,159,67,0.16); color: #ff9f43; }
 .vuexy-stat-icon.bg-danger { background: rgba(234,84,85,0.16); color: #ea5455; }
 .vuexy-stat-icon.bg-info { background: rgba(0,207,232,0.16); color: #00cfe8; }
+
+/* DARK MODE */
+.dark-mode {
+  color-scheme: dark;
+}
+
+.dark-mode body {
+  background: #25293c;
+  color: #cfd3ec;
+}
+
+.dark-mode .glass {
+  background: #2f3349;
+  border-color: #3f4258;
+}
+
+.dark-mode .glass-strong {
+  background: #2f3349;
+  border-color: #3f4258;
+}
+
+.dark-mode .glass-soft {
+  background: #25293c;
+  border-color: #3f4258;
+}
+
+.dark-mode .lift:hover {
+  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+
+.dark-mode .modal-content {
+  background: #2f3349;
+  border-color: #3f4258;
+}
+
+.dark-mode .tab-inactive:hover {
+  background: rgba(115,103,240,0.15);
+}
+
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+  background: rgba(255,255,255,0.05) !important;
+  color: #cfd3ec !important;
+  border-color: #3f4258 !important;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: #3f4258;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #555a72;
+}
+
+/* Sidebar dark */
+.dark-mode aside {
+  background: #2f3349 !important;
+  border-color: #3f4258 !important;
+}
+
+.dark-mode .border-t,
+.dark-mode .border-b {
+  border-color: #3f4258 !important;
+}
+
+.dark-mode button:hover.hover\:bg-gray-50,
+.dark-mode button:hover.hover\:bg-gray-100 {
+  background: rgba(255,255,255,0.05) !important;
+}
