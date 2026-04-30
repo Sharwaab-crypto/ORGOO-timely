@@ -5504,6 +5504,117 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI DASHBOARD VIEW
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  KPI Excel Export
+// ═══════════════════════════════════════════════════════════════════════════
+function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
+  const wb = XLSX.utils.book_new();
+
+  // ============== Хуудас 1: ХУРААНГУЙ ==============
+  const summaryRows = [
+    ["ORGOO · KPI Хураангуй тайлан"],
+    [`Хугацаа: ${periodRange.label}`],
+    [`Огноо: ${periodRange.start} → ${periodRange.end}`],
+    [],
+    ["Хэлтэс", "KPI", "Нэгж", "Нийт утга", "Цэлэт", "Биеэлэлт %", "Тренд"],
+  ];
+
+  departments.forEach((dept) => {
+    const deptKpis = kpiDefs.filter(k => k.department_id === dept.id);
+    deptKpis.forEach((kpi) => {
+      const entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
+      const total = entries.reduce((sum, e) => sum + Number(e.value), 0);
+
+      // Target tailbar
+      let targetTotal = "";
+      let percent = "";
+      if (kpi.target) {
+        let tt = Number(kpi.target);
+        if (kpi.target_period === "daily") {
+          const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
+          tt = Number(kpi.target) * days;
+        } else if (kpi.target_period === "weekly") {
+          const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
+          tt = Number(kpi.target) * weeks;
+        }
+        targetTotal = tt;
+        percent = tt > 0 ? `${((total / tt) * 100).toFixed(1)}%` : "";
+      }
+
+      summaryRows.push([
+        dept.name,
+        kpi.name,
+        kpi.unit || "",
+        total,
+        targetTotal,
+        percent,
+        "", // тренд хоосон
+      ]);
+    });
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  ws1["!cols"] = [{ wch: 18 }, { wch: 24 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws1, "Хураангуй");
+
+  // ============== Хуудас 2: ӨДРИЙН ДЭЛГЭРЭНГҮЙ ==============
+  // Огнооны массив
+  const dateList = [];
+  const start = new Date(periodRange.start);
+  const end = new Date(periodRange.end);
+  const cur = new Date(start);
+  while (cur <= end) {
+    dateList.push(cur.toISOString().slice(0, 10));
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const detailRows = [
+    ["ORGOO · KPI Өдрийн дэлгэрэнгүй"],
+    [`Хугацаа: ${periodRange.label}`],
+    [],
+  ];
+
+  departments.forEach((dept) => {
+    const deptKpis = kpiDefs.filter(k => k.department_id === dept.id);
+    if (deptKpis.length === 0) return;
+
+    // Хэлтсийн гарчиг
+    detailRows.push([`▸ ${dept.name}`]);
+
+    // Header: Огноо | KPI1 | KPI2 | ...
+    const header = ["Огноо", ...deptKpis.map(k => `${k.name}${k.unit ? ` (${k.unit})` : ""}`)];
+    detailRows.push(header);
+
+    // Өдөр бүрд мөр
+    dateList.forEach((date) => {
+      const row = [date];
+      deptKpis.forEach((kpi) => {
+        const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
+        row.push(entry ? Number(entry.value) : "");
+      });
+      detailRows.push(row);
+    });
+
+    // Нийт мөр
+    const totalRow = ["НИЙТ"];
+    deptKpis.forEach((kpi) => {
+      const entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
+      const total = entries.reduce((sum, e) => sum + Number(e.value), 0);
+      totalRow.push(total);
+    });
+    detailRows.push(totalRow);
+    detailRows.push([]);  // хоосон мөр
+  });
+
+  const ws2 = XLSX.utils.aoa_to_sheet(detailRows);
+  ws2["!cols"] = [{ wch: 12 }, ...Array(20).fill({ wch: 16 })];
+  XLSX.utils.book_append_sheet(wb, ws2, "Өдрийн дэлгэрэнгүй");
+
+  // Файл татах
+  const fileName = `ORGOO-KPI-${periodRange.start}-${periodRange.end}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
 function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUserId, onAddKpi, onEditKpi, onDeleteKpi, onOpenInputForm }) {
   const [period, setPeriod] = useState("month"); // day | week | month | year | custom
   const [selectedDept, setSelectedDept] = useState("all");
@@ -5677,6 +5788,12 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
               <option value="area">Талбай</option>
             </select>
           )}
+
+          <button onClick={() => exportKpiToExcel(visibleDepts, kpiDefs, filteredEntries, periodRange)}
+            className="glass-soft press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:bg-white"
+            style={{ fontFamily: FM, color: T.ok, border: `1px solid ${T.borderSoft}` }}>
+            <FileSpreadsheet size={11} /> Excel
+          </button>
         </div>
       </div>
 
