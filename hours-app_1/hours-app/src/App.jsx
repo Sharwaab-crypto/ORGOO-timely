@@ -7,6 +7,11 @@ import {
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { supabase, isConfigured } from "./supabaseClient";
 
 // VAPID public key (Push Notifications)
@@ -5204,28 +5209,53 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
 //  KPI DASHBOARD VIEW
 // ═══════════════════════════════════════════════════════════════════════════
 function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUserId, onAddKpi, onEditKpi, onDeleteKpi, onOpenInputForm }) {
-  const [period, setPeriod] = useState("today"); // today | week | month
-  const [selectedDept, setSelectedDept] = useState("all"); // all | dept_id
+  const [period, setPeriod] = useState("month"); // day | week | month | year | custom
+  const [selectedDept, setSelectedDept] = useState("all");
   const [confirmDelKpi, setConfirmDelKpi] = useState(null);
+  const [viewMode, setViewMode] = useState("cards"); // cards | charts
+  const [chartType, setChartType] = useState("bar"); // bar | line | area
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const [selectedDate, setSelectedDate] = useState(today.toISOString().slice(0, 10));
+  const [selectedMonth, setSelectedMonth] = useState(today.toISOString().slice(0, 7)); // YYYY-MM
+  const [selectedYear, setSelectedYear] = useState(String(today.getFullYear()));
+  const [customStart, setCustomStart] = useState(today.toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(today.toISOString().slice(0, 10));
 
   const periodRange = useMemo(() => {
-    const now = new Date();
-    if (period === "today") {
-      const d = now.toISOString().slice(0, 10);
-      return { start: d, end: d, label: "Өнөөдөр" };
+    if (period === "day") {
+      return { start: selectedDate, end: selectedDate, label: selectedDate };
     }
     if (period === "week") {
-      const start = new Date(now); start.setDate(now.getDate() - 6);
-      return { start: start.toISOString().slice(0, 10), end: now.toISOString().slice(0, 10), label: "Сүүлийн 7 хоног" };
+      const end = new Date(selectedDate);
+      const start = new Date(end); start.setDate(end.getDate() - 6);
+      return {
+        start: start.toISOString().slice(0, 10),
+        end: end.toISOString().slice(0, 10),
+        label: `7 хоног (${start.toISOString().slice(5, 10)}–${end.toISOString().slice(5, 10)})`,
+      };
     }
     if (period === "month") {
-      const start = new Date(now); start.setDate(now.getDate() - 29);
-      return { start: start.toISOString().slice(0, 10), end: now.toISOString().slice(0, 10), label: "Сүүлийн 30 хоног" };
+      // Сонгосон сар
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const start = `${selectedMonth}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const end = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+      const monthName = new Date(year, month - 1, 1).toLocaleDateString("mn-MN", { month: "long", year: "numeric" });
+      return { start, end, label: monthName };
     }
-    return null;
-  }, [period]);
+    if (period === "year") {
+      return {
+        start: `${selectedYear}-01-01`,
+        end: `${selectedYear}-12-31`,
+        label: `${selectedYear} он`,
+      };
+    }
+    if (period === "custom") {
+      return { start: customStart, end: customEnd, label: `${customStart} – ${customEnd}` };
+    }
+    return { start: "", end: "", label: "" };
+  }, [period, selectedDate, selectedMonth, selectedYear, customStart, customEnd]);
 
   const filteredEntries = useMemo(() => {
     return kpiEntries.filter((e) => e.entry_date >= periodRange.start && e.entry_date <= periodRange.end);
@@ -5241,40 +5271,117 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 
   return (
     <div className="space-y-4 fade-in">
-      {/* Filter bar */}
-      <div className="glass rounded-2xl p-4 slide-up flex items-center gap-3 flex-wrap">
-        <div className="flex gap-1.5">
-          {[
-            { id: "today", label: "Өнөөдөр" },
-            { id: "week", label: "7 хоног" },
-            { id: "month", label: "30 хоног" },
-          ].map((p) => (
-            <button key={p.id} onClick={() => setPeriod(p.id)}
-              className={`${period === p.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em]`}
-              style={{ fontFamily: FM, borderColor: period === p.id ? "transparent" : T.borderSoft, border: "1px solid" }}>
-              {p.label}
+      {/* Period type tabs */}
+      <div className="glass rounded-2xl p-4 slide-up space-y-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap">
+            {[
+              { id: "day", label: "Өдөр" },
+              { id: "week", label: "7 хоног" },
+              { id: "month", label: "Сар" },
+              { id: "year", label: "Жил" },
+              { id: "custom", label: "Гар" },
+            ].map((p) => (
+              <button key={p.id} onClick={() => setPeriod(p.id)}
+                className={`${period === p.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em]`}
+                style={{ fontFamily: FM, borderColor: period === p.id ? "transparent" : T.borderSoft, border: "1px solid" }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Хэлтэс шүүлт */}
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="px-3 py-2 rounded-lg border text-xs outline-none">
+            <option value="all">Бүх хэлтэс</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+
+          {isAdmin && (
+            <button onClick={onAddKpi}
+              className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+              style={{ fontFamily: FM }}>
+              <Plus size={11} /> KPI нэмэх
             </button>
-          ))}
+          )}
         </div>
 
-        <div className="flex-1" />
+        {/* Огноо сонгогчид + view mode */}
+        <div className="flex items-center gap-3 flex-wrap pt-1 border-t" style={{ borderColor: T.borderSoft }}>
+          {period === "day" && (
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-xs outline-none" />
+          )}
+          {period === "week" && (
+            <>
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Дуусах өдөр:</span>
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-3 py-2 rounded-lg border text-xs outline-none" />
+            </>
+          )}
+          {period === "month" && (
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-xs outline-none" />
+          )}
+          {period === "year" && (
+            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-xs outline-none">
+              {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                <option key={y} value={y}>{y} он</option>
+              ))}
+            </select>
+          )}
+          {period === "custom" && (
+            <>
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-3 py-2 rounded-lg border text-xs outline-none" />
+              <span style={{ color: T.muted }} className="text-xs">→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-3 py-2 rounded-lg border text-xs outline-none" />
+            </>
+          )}
 
-        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
-          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-          className="px-3 py-2 rounded-lg border text-xs outline-none">
-          <option value="all">Бүх хэлтэс</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            {periodRange.label}
+          </span>
 
-        {isAdmin && (
-          <button onClick={onAddKpi}
-            className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
-            style={{ fontFamily: FM }}>
-            <Plus size={11} /> KPI нэмэх
-          </button>
-        )}
+          <div className="flex-1" />
+
+          {/* View mode toggle */}
+          <div className="flex gap-1 glass-soft rounded-lg p-0.5">
+            <button onClick={() => setViewMode("cards")}
+              className={`${viewMode === "cards" ? "bg-white shadow-sm" : ""} press-btn px-3 py-1.5 rounded text-[10px] uppercase tracking-wider`}
+              style={{ fontFamily: FM, color: viewMode === "cards" ? T.highlight : T.muted }}>
+              Карт
+            </button>
+            <button onClick={() => setViewMode("charts")}
+              className={`${viewMode === "charts" ? "bg-white shadow-sm" : ""} press-btn px-3 py-1.5 rounded text-[10px] uppercase tracking-wider flex items-center gap-1`}
+              style={{ fontFamily: FM, color: viewMode === "charts" ? T.highlight : T.muted }}>
+              <BarChart3 size={10} /> График
+            </button>
+          </div>
+
+          {viewMode === "charts" && (
+            <select value={chartType} onChange={(e) => setChartType(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-xs outline-none">
+              <option value="bar">Багана</option>
+              <option value="line">Шугам</option>
+              <option value="area">Талбай</option>
+            </select>
+          )}
+        </div>
       </div>
 
       {visibleDepts.length === 0 || kpiDefs.length === 0 ? (
@@ -5317,7 +5424,15 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                 )}
               </div>
 
-              {/* KPI cards */}
+              {/* KPI cards or Charts */}
+              {viewMode === "charts" ? (
+                <KpiChartView
+                  deptKpis={deptKpis}
+                  filteredEntries={filteredEntries}
+                  periodRange={periodRange}
+                  chartType={chartType}
+                />
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {deptKpis.map((kpi) => {
                   const entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
@@ -5325,11 +5440,11 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 
                   // Trend: Хэрэв 7 хоног мөн өнгөрсөн 7 хоног харьцуулах
                   let trend = null;
-                  if (period === "week" || period === "today") {
+                  if (period === "week" || period === "day") {
                     const prevStart = new Date(periodRange.start);
-                    prevStart.setDate(prevStart.getDate() - (period === "today" ? 1 : 7));
+                    prevStart.setDate(prevStart.getDate() - (period === "day" ? 1 : 7));
                     const prevEnd = new Date(periodRange.end);
-                    prevEnd.setDate(prevEnd.getDate() - (period === "today" ? 1 : 7));
+                    prevEnd.setDate(prevEnd.getDate() - (period === "day" ? 1 : 7));
                     const prevEntries = kpiEntries.filter(e =>
                       e.kpi_id === kpi.id &&
                       e.entry_date >= prevStart.toISOString().slice(0,10) &&
@@ -5375,7 +5490,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                           <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">vs өмнөх</span>
                         </div>
                       )}
-                      {entries.length > 0 && period !== "today" && (
+                      {entries.length > 0 && period !== "day" && (
                         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1.5">
                           {entries.length} өдрийн нийт
                         </div>
@@ -5384,6 +5499,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })
@@ -5563,5 +5679,118 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KPI CHART VIEW — Чартаар харах
+// ═══════════════════════════════════════════════════════════════════════════
+function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
+  const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+  // Огнооны массив (start-аас end хүртэл)
+  const dateList = useMemo(() => {
+    const list = [];
+    const start = new Date(periodRange.start);
+    const end = new Date(periodRange.end);
+    const cur = new Date(start);
+    while (cur <= end) {
+      list.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return list;
+  }, [periodRange]);
+
+  // Огноо тус бүрд KPI утгуудыг буулгах
+  const chartData = useMemo(() => {
+    return dateList.map((date) => {
+      const row = { date: date.slice(5) }; // MM-DD
+      deptKpis.forEach((kpi) => {
+        const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
+        row[kpi.name] = entry ? Number(entry.value) : 0;
+      });
+      return row;
+    });
+  }, [dateList, deptKpis, filteredEntries]);
+
+  // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд)
+  const isSingleDay = dateList.length === 1;
+
+  if (deptKpis.length === 0) {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">KPI байхгүй</p>
+      </div>
+    );
+  }
+
+  if (filteredEntries.length === 0) {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">Сонгосон хугацаанд тоо оруулаагүй байна</p>
+      </div>
+    );
+  }
+
+  // Single day → 1 bar chart with all KPIs as bars
+  if (isSingleDay) {
+    const singleDayData = deptKpis.map((kpi, i) => {
+      const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+      return {
+        name: kpi.name,
+        value: entry ? Number(entry.value) : 0,
+        unit: kpi.unit,
+        color: COLORS[i % COLORS.length],
+      };
+    });
+
+    return (
+      <div className="glass-soft rounded-2xl p-4">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={singleDayData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
+            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+              {singleDayData.map((entry, i) => (
+                <Cell key={i} fill={entry.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  // Multi-day — line/bar/area chart with date axis
+  const ChartComponent = chartType === "line" ? LineChart : chartType === "area" ? AreaChart : BarChart;
+  const DataComponent = chartType === "line" ? Line : chartType === "area" ? Area : Bar;
+
+  return (
+    <div className="glass-soft rounded-2xl p-4">
+      <ResponsiveContainer width="100%" height={350}>
+        <ChartComponent data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+          <YAxis tick={{ fontSize: 11 }} />
+          <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {deptKpis.map((kpi, i) => (
+            <DataComponent
+              key={kpi.id}
+              type="monotone"
+              dataKey={kpi.name}
+              stroke={COLORS[i % COLORS.length]}
+              fill={COLORS[i % COLORS.length]}
+              fillOpacity={chartType === "area" ? 0.3 : 1}
+              radius={chartType === "bar" ? [4, 4, 0, 0] : 0}
+              strokeWidth={chartType === "line" ? 2.5 : 1}
+              dot={chartType === "line" ? { r: 3 } : false}
+            />
+          ))}
+        </ChartComponent>
+      </ResponsiveContainer>
+    </div>
   );
 }
