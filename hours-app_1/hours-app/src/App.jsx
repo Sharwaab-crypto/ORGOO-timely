@@ -1247,9 +1247,9 @@ function AdminDashboard({ profile }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-              <BigStat label="Ажилтан" value={employees.length} />
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Play} iconColor="success" />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Clock} iconColor="warn" />
+              <BigStat label="Ажилтан" value={employees.length} icon={Users} iconColor="pink" />
             </div>
 
             {view === "team" && (
@@ -3518,10 +3518,29 @@ function SidebarSection({ label, children }) {
 }
 
 
-function BigStat({ label, value, suffix, accent }) {
+function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" }) {
+  const iconBg = {
+    pink: "linear-gradient(135deg, #f97316, #ec4899)",
+    success: "linear-gradient(135deg, #10b981, #14b8a6)",
+    warn: "linear-gradient(135deg, #f59e0b, #f97316)",
+    info: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+    purple: "linear-gradient(135deg, #8b5cf6, #ec4899)",
+  }[iconColor] || "linear-gradient(135deg, #f97316, #ec4899)";
+
   return (
     <div className="glass lift rounded-2xl px-5 py-4">
-      <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1.5">{label}</div>
+      <div className="flex items-start justify-between mb-2">
+        <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em]">{label}</div>
+        {Icon && (
+          <div style={{
+            background: iconBg,
+            color: "white",
+            boxShadow: "0 4px 12px rgba(244,114,182,0.25)",
+          }} className="w-9 h-9 rounded-xl flex items-center justify-center">
+            <Icon size={16} strokeWidth={2.2} />
+          </div>
+        )}
+      </div>
       <div className="flex items-baseline gap-1.5">
         <span style={{ fontFamily: FD, fontWeight: 500, color: accent ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
               className="text-3xl tabular-nums">{value}</span>
@@ -4422,9 +4441,9 @@ function ManagerDashboard({ profile }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-              <BigStat label="Ажилтан" value={team.length} />
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Play} iconColor="success" />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Clock} iconColor="warn" />
+              <BigStat label="Ажилтан" value={team.length} icon={Users} iconColor="pink" />
             </div>
 
         {feedback && (
