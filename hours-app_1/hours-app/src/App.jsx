@@ -152,38 +152,38 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — мягхан градиент дэвсгэр
-  bg: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #fef3ec 100%)",
-  bgSolid: "#f8f6ff",
-  // Glassmorphism surfaces
-  surface: "rgba(255, 255, 255, 0.65)",
-  surfaceStrong: "rgba(255, 255, 255, 0.85)",
-  surfaceAlt: "rgba(255, 255, 255, 0.45)",
-  surfaceGlass: "rgba(255, 255, 255, 0.5)",
-  // Text
-  ink: "#1e1b4b", inkSoft: "#312e81",
-  muted: "#6b7280", mutedSoft: "#9ca3af",
+  // Background — Stripe-ийн blue-gray
+  bg: "#f6f9fc",
+  bgSolid: "#f6f9fc",
+  // Surfaces (Stripe = цагаан карт)
+  surface: "#ffffff",
+  surfaceStrong: "#ffffff",
+  surfaceAlt: "#f6f9fc",
+  surfaceGlass: "#ffffff",
+  // Text — Stripe ink
+  ink: "#1a1f36", inkSoft: "#3c4257",
+  muted: "#697386", mutedSoft: "#8898aa",
   // Borders
-  border: "rgba(255, 255, 255, 0.6)",
-  borderSoft: "rgba(99, 102, 241, 0.1)",
-  borderStrong: "rgba(99, 102, 241, 0.2)",
-  // Accent — нил ягаан/индиго
-  highlight: "#6366f1",
-  highlightDark: "#4f46e5",
-  highlightSoft: "rgba(99, 102, 241, 0.1)",
-  highlightGlow: "0 8px 32px rgba(99, 102, 241, 0.25)",
+  border: "#e3e8ee",
+  borderSoft: "#e7ebf0",
+  borderStrong: "#c1c9d2",
+  // Accent — Stripe purple #635bff
+  highlight: "#635bff",
+  highlightDark: "#5851ec",
+  highlightSoft: "#f0eeff",
+  highlightGlow: "0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15)",
   // Statuses
-  ok: "#10b981", okSoft: "rgba(16, 185, 129, 0.1)",
-  err: "#ef4444", errSoft: "rgba(239, 68, 68, 0.1)",
-  warn: "#f59e0b", warnSoft: "rgba(245, 158, 11, 0.12)",
-  // Glass effect helpers
-  blur: "blur(20px) saturate(180%)",
-  cardShadow: "0 8px 32px rgba(31, 38, 135, 0.08)",
-  cardShadowHover: "0 12px 40px rgba(31, 38, 135, 0.15)",
+  ok: "#10b981", okSoft: "#d4f7e0",
+  err: "#ef4444", errSoft: "#fbe4e4",
+  warn: "#f59e0b", warnSoft: "#fff4e0",
+  // Helpers
+  blur: "none",
+  cardShadow: "0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  cardShadowHover: "0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05)",
 };
-const FS = "'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
-const FM = "'JetBrains Mono', ui-monospace, 'SF Mono', monospace";
-const FD = "'Fraunces', Georgia, serif";
+const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+const FD = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ROOT
@@ -417,7 +417,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              background: "#635bff",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -451,7 +451,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              background: "#635bff",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1130,7 +1130,7 @@ function AdminDashboard({ profile }) {
         <div className="flex items-center justify-between mb-10 slide-up">
           <div className="flex items-center gap-3">
             <div style={{
-              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              background: "#635bff",
               color: "white",
               boxShadow: "0 4px 16px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center">
@@ -1729,7 +1729,7 @@ function EmployeeDashboard({ profile }) {
         <div className="flex items-center justify-between mb-8 slide-up">
           <div className="flex items-center gap-3">
             <div style={{
-              background: isActive ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "linear-gradient(135deg, #1e1b4b, #312e81)",
+              background: isActive ? "#635bff" : "linear-gradient(135deg, #1e1b4b, #312e81)",
               color: "white",
               boxShadow: isActive ? "0 4px 16px rgba(99, 102, 241, 0.4)" : "0 4px 16px rgba(30, 27, 75, 0.2)",
             }}
@@ -6386,7 +6386,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                              background: "#635bff",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -6723,7 +6723,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                                background: "#635bff",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
