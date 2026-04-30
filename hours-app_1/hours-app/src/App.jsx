@@ -9,6 +9,23 @@ import {
 import * as XLSX from "xlsx";
 import { supabase, isConfigured } from "./supabaseClient";
 
+// VAPID public key (Push Notifications)
+// Энэ түлхүүрийг үүсгэж .env эсвэл шууд энд оруулна
+// Үүсгэх: https://vapidkeys.com эсвэл `npx web-push generate-vapid-keys`
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
+
+// Helper: VAPID түлхүүрийг Uint8Array болгох
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 // ─────────── constants ───────────
 const DAY_KEYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const DAY_LABELS = { SU: "Ня", MO: "Да", TU: "Мя", WE: "Лх", TH: "Пү", FR: "Ба", SA: "Бя" };
@@ -257,9 +274,194 @@ export default function App() {
   return (
     <>
       {installBanner}
+      <NotificationManager profile={profile} />
       {profile.role === "admin" ? <AdminDashboard profile={profile} />
         : profile.role === "manager" ? <ManagerDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  NOTIFICATION MANAGER — Push subscription + in-app realtime toast
+// ═══════════════════════════════════════════════════════════════════════════
+function NotificationManager({ profile }) {
+  const [toast, setToast] = useState(null); // { title, body, link }
+  const [permState, setPermState] = useState(typeof Notification !== "undefined" ? Notification.permission : "default");
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  // Push subscription
+  useEffect(() => {
+    if (!profile?.id) return;
+    if (typeof Notification === "undefined") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+
+    // Хэрэглэгч хараахан зөвшөөрөл өгөөгүй бол → 5 секундын дараа prompt
+    if (Notification.permission === "default") {
+      const dismissed = localStorage.getItem("orgoo-notif-dismissed");
+      if (!dismissed) {
+        const timer = setTimeout(() => setShowPrompt(true), 5000);
+        return () => clearTimeout(timer);
+      }
+    } else if (Notification.permission === "granted") {
+      subscribeUser(profile.id);
+    }
+  }, [profile?.id]);
+
+  // Realtime in-app notifications listener
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    // Initial: read latest unread
+    supabase.from("notifications")
+      .select("*")
+      .eq("user_id", profile.id)
+      .eq("read", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data[0]) {
+          // Last-shown ID-г localStorage-д хадгалж дараа дараагүй болгоно
+          const lastShown = localStorage.getItem("orgoo-last-notif-id");
+          if (lastShown !== data[0].id) {
+            // Анхны нэвтрэн орох үед дахин гаргахгүй
+          }
+        }
+      });
+
+    const ch = supabase.channel(`notif-${profile.id}`)
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "notifications",
+        filter: `user_id=eq.${profile.id}`,
+      }, (payload) => {
+        const n = payload.new;
+        setToast({ title: n.title, body: n.body, link: n.link, id: n.id });
+        // Sound
+        try {
+          const audio = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQBPAAA=");
+          audio.volume = 0.3;
+          audio.play().catch(() => {});
+        } catch {}
+        // Auto dismiss
+        setTimeout(() => setToast((t) => (t?.id === n.id ? null : t)), 6000);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [profile?.id]);
+
+  // Subscribe to push (after user grants permission)
+  const subscribeUser = async (userId) => {
+    if (!VAPID_PUBLIC_KEY) {
+      console.warn("VAPID_PUBLIC_KEY байхгүй — push subscription алгасъя");
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+      }
+
+      const subJson = sub.toJSON();
+      // Хадгалах
+      await supabase.from("push_subscriptions").upsert({
+        user_id: userId,
+        endpoint: subJson.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+        user_agent: navigator.userAgent,
+        last_used_at: new Date().toISOString(),
+      }, { onConflict: "user_id,endpoint" });
+    } catch (e) {
+      console.error("Push subscribe error:", e);
+    }
+  };
+
+  const requestPermission = async () => {
+    setShowPrompt(false);
+    try {
+      const result = await Notification.requestPermission();
+      setPermState(result);
+      if (result === "granted") {
+        await subscribeUser(profile.id);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const dismissPrompt = () => {
+    setShowPrompt(false);
+    localStorage.setItem("orgoo-notif-dismissed", "1");
+  };
+
+  const markRead = async (id) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+  };
+
+  return (
+    <>
+      {/* Permission prompt */}
+      {showPrompt && permState === "default" && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[95%] slide-up">
+          <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
+               style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
+            <div style={{
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
+            }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+              <span style={{ fontSize: 18 }}>🔔</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm mb-1">Мэдэгдэл идэвхжүүлэх үү?</div>
+              <p style={{ color: T.muted }} className="text-[11px] leading-relaxed mb-3">
+                Чөлөө/хүсэлт зөвшөөрөгдсөн үед автомат мэдэгдэл хүлээж авна
+              </p>
+              <div className="flex gap-2">
+                <button onClick={dismissPrompt}
+                  className="glass-soft press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-[0.15em]"
+                  style={{ fontFamily: FM, color: T.muted }}>
+                  Үгүй
+                </button>
+                <button onClick={requestPermission}
+                  className="glow-primary press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-[0.15em] font-medium"
+                  style={{ fontFamily: FM }}>
+                  Зөвшөөрөх
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-app toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm w-[95%] sm:w-auto slide-up">
+          <button onClick={() => { markRead(toast.id); setToast(null); }}
+            className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
+            style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
+            <div style={{
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
+            }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+              <span style={{ fontSize: 18 }}>🔔</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm mb-0.5">{toast.title}</div>
+              {toast.body && <p style={{ color: T.muted }} className="text-xs leading-relaxed line-clamp-2">{toast.body}</p>}
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); setToast(null); }}
+              style={{ color: T.muted }} className="p-1 rounded-full hover:bg-black/10 shrink-0">
+              <X size={14} />
+            </button>
+          </button>
+        </div>
+      )}
     </>
   );
 }
