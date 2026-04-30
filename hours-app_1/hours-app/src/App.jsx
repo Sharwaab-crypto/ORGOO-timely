@@ -1364,10 +1364,10 @@ function AdminDashboard({ profile }) {
         )}
 
             <Footer count={sessions.length} />
-            </div>
           </div>
         </main>
       </div>
+    </div>
 
       {formMode && (
         <EmployeeFormModal
@@ -2121,10 +2121,10 @@ function EmployeeDashboard({ profile }) {
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
         <Footer count={mySessions.length} />
-            </div>
           </div>
         </main>
       </div>
+    </div>
 
       {showRequest && (
         <RequestModal profile={profile} onClose={() => setShowRequest(false)} onSubmit={submitRequest} />
@@ -4470,10 +4470,10 @@ function ManagerDashboard({ profile }) {
         )}
 
             <Footer count={sessions.length} />
-            </div>
           </div>
         </main>
       </div>
+    </div>
 
       {editingSession && (
         <SessionEditModal
