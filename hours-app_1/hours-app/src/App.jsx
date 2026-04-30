@@ -5,6 +5,7 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
+  Search, Bell, Moon, Sun, Globe, Settings, Menu,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -1208,13 +1209,12 @@ function AdminDashboard({ profile }) {
 
         {/* MAIN CONTENT */}
         <main className="flex-1 min-w-0">
-          {/* Mobile top bar */}
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
-            </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
-          </div>
+          <TopToolbar
+            profile={profile}
+            onMenuClick={() => setSidebarOpen(true)}
+            notificationCount={pendingApprovals.length + leaves.filter(l => l.status === "pending").length}
+            onSignOut={() => supabase.auth.signOut()}
+          />
 
           <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             {/* Page header */}
@@ -1918,20 +1918,21 @@ function EmployeeDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
-            </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
-            {isActive && (
-              <div className="ml-auto flex items-center gap-1.5">
-                <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
-                <span style={{ color: T.ok, fontFamily: FS }} className="text-[10px] uppercase tracking-wider font-medium">
-                  Ажиллаж буй
-                </span>
-              </div>
-            )}
-          </div>
+          <TopToolbar
+            profile={profile}
+            onMenuClick={() => setSidebarOpen(true)}
+            notificationCount={myAnnouncements.filter(a => a.pinned).length}
+            onSignOut={() => supabase.auth.signOut()}
+          />
+
+          {isActive && (
+            <div className="px-4 py-2 flex items-center gap-1.5" style={{ background: T.okSoft, borderBottom: `1px solid ${T.borderSoft}` }}>
+              <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
+              <span style={{ color: T.ok, fontFamily: FS }} className="text-xs font-medium">
+                Та одоо ажиллаж байна
+              </span>
+            </div>
+          )}
 
           <div className="max-w-2xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
@@ -3544,6 +3545,127 @@ function SidebarSection({ label, children }) {
   );
 }
 
+function TopToolbar({ profile, onMenuClick, notificationCount = 0, onSignOut }) {
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("orgoo-dark") === "1";
+  });
+  const [showProfile, setShowProfile] = useState(false);
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add("dark-mode");
+      localStorage.setItem("orgoo-dark", "1");
+    } else {
+      document.documentElement.classList.remove("dark-mode");
+      localStorage.setItem("orgoo-dark", "0");
+    }
+  }, [darkMode]);
+
+  return (
+    <div className="sticky top-0 z-30" style={{ background: T.surface, borderBottom: `1px solid ${T.borderSoft}` }}>
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-3">
+        {/* Mobile menu button */}
+        <button onClick={onMenuClick} className="lg:hidden" style={{ color: T.ink }}>
+          <Menu size={20} />
+        </button>
+
+        {/* Search */}
+        <div className="hidden sm:flex items-center gap-2 flex-1 max-w-md">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md w-full"
+               style={{ background: T.surfaceAlt }}>
+            <Search size={14} style={{ color: T.muted }} />
+            <input type="text" placeholder="Хайх..."
+              style={{ background: "transparent", color: T.ink, fontFamily: FS, border: "none", outline: "none" }}
+              className="text-sm w-full" />
+            <span style={{
+              background: T.surface,
+              border: `1px solid ${T.borderSoft}`,
+              color: T.muted,
+              fontFamily: FS,
+            }} className="text-[10px] px-1.5 py-0.5 rounded">⌘K</span>
+          </div>
+        </div>
+
+        <div className="flex-1 sm:flex-none" />
+
+        {/* Toolbar buttons */}
+        <div className="flex items-center gap-1">
+          {/* Dark mode toggle */}
+          <button onClick={() => setDarkMode(!darkMode)}
+            className="press-btn p-2 rounded-md hover:bg-gray-100"
+            style={{ color: T.ink }}
+            title={darkMode ? "Дэлгэцийн өнгө цайвар" : "Дэлгэцийн өнгө бараан"}>
+            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+
+          {/* Notifications */}
+          <div className="relative">
+            <button onClick={() => setShowNotifs(!showNotifs)}
+              className="press-btn p-2 rounded-md hover:bg-gray-100 relative"
+              style={{ color: T.ink }}>
+              <Bell size={18} />
+              {notificationCount > 0 && (
+                <span style={{
+                  background: T.err,
+                  color: "white",
+                  fontFamily: FS,
+                  fontWeight: 600,
+                  border: `2px solid ${T.surface}`,
+                }}
+                  className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px]">
+                  {notificationCount > 9 ? "9+" : notificationCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Profile */}
+          <div className="relative">
+            <button onClick={() => setShowProfile(!showProfile)}
+              className="press-btn flex items-center gap-2 ml-2 p-1 rounded-md hover:bg-gray-100">
+              <div style={{
+                background: "#7367f0",
+                color: "white",
+                border: `2px solid ${T.surface}`,
+                boxShadow: "0 0 0 1px #7367f0",
+              }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+                {profile?.name?.[0]}
+              </div>
+            </button>
+
+            {showProfile && (
+              <div style={{
+                background: T.surface,
+                border: `1px solid ${T.borderSoft}`,
+                boxShadow: "0 4px 18px rgba(47,43,61,0.1)",
+              }} className="absolute right-0 mt-2 w-56 rounded-lg overflow-hidden z-40">
+                <div className="p-3 border-b" style={{ borderColor: T.borderSoft }}>
+                  <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                    {profile?.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-0.5">
+                    {profile?.role === "admin" ? "Админ" : profile?.role === "manager" ? "Ахлагч" : "Ажилтан"}
+                  </div>
+                </div>
+                <div className="py-1">
+                  <button onClick={() => { setShowProfile(false); onSignOut(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50"
+                    style={{ color: T.err, fontFamily: FS }}>
+                    <LogOut size={14} />
+                    Гарах
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "purple", trend }) {
   return (
     <div className="glass lift rounded-xl p-5">
@@ -4435,12 +4557,12 @@ function ManagerDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
-            </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
-          </div>
+          <TopToolbar
+            profile={profile}
+            onMenuClick={() => setSidebarOpen(true)}
+            notificationCount={pendingApprovals.length}
+            onSignOut={() => supabase.auth.signOut()}
+          />
 
           <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
@@ -7382,5 +7504,90 @@ function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VUEXY · Mini Chart Card (Profit/Expense)
+// ═══════════════════════════════════════════════════════════════════════════
+function MiniChartCard({ label, sublabel, value, suffix, trend, data, color = "#7367f0", type = "bar" }) {
+  // data = массив тоо, жишээ [50, 70, 60, 85, 75, 90, 100]
+  const max = Math.max(...data, 1);
+
+  return (
+    <div className="glass lift rounded-xl p-5">
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-1">{label}</div>
+      {sublabel && (
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">{sublabel}</div>
+      )}
+      <div className="flex items-end justify-between gap-3 mt-2">
+        <div>
+          <div className="flex items-baseline gap-1">
+            <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink, letterSpacing: "-0.02em" }}
+                  className="text-2xl tabular-nums">
+              {value}
+            </span>
+            {suffix && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{suffix}</span>}
+          </div>
+          {trend && (
+            <div style={{ color: trend.up ? T.ok : T.err, fontFamily: FS, fontWeight: 500 }}
+                 className="text-[11px] mt-1">
+              {trend.up ? "+" : ""}{trend.value}%
+            </div>
+          )}
+        </div>
+        {/* Mini bar chart */}
+        <div className="flex items-end gap-1" style={{ height: 40 }}>
+          {data.map((v, i) => (
+            <div key={i} style={{
+              width: 6,
+              height: `${(v / max) * 100}%`,
+              background: color,
+              borderRadius: "3px 3px 0 0",
+              opacity: i === data.length - 1 ? 1 : 0.7 - (data.length - 1 - i) * 0.05,
+            }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Donut progress карт
+function DonutCard({ label, percentage, total, current, color = "#7367f0" }) {
+  const circumference = 2 * Math.PI * 28;
+  const offset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <div className="glass lift rounded-xl p-5">
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">{label}</div>
+      <div className="flex items-center gap-4">
+        <div style={{ width: 80, height: 80, position: "relative" }}>
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="28" fill="none" stroke="#ebe9f1" strokeWidth="6" />
+            <circle cx="40" cy="40" r="28" fill="none" stroke={color} strokeWidth="6"
+              strokeDasharray={circumference} strokeDashoffset={offset}
+              strokeLinecap="round" transform="rotate(-90 40 40)"
+              style={{ transition: "stroke-dashoffset 0.5s ease" }} />
+          </svg>
+          <div style={{
+            position: "absolute", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            fontFamily: FS, fontWeight: 600,
+            color: T.ink,
+          }} className="text-base">
+            {percentage}%
+          </div>
+        </div>
+        <div>
+          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-lg">
+            {current} / {total}
+          </div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+            идэвхтэй
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
