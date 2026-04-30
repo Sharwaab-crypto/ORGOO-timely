@@ -977,6 +977,7 @@ function EmployeeDashboard({ profile }) {
   const [myApprovals, setMyApprovals] = useState([]);
   const [myLeaves, setMyLeaves] = useState([]);
   const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [nearestDistances, setNearestDistances] = useState(null);
   const [mySites, setMySites] = useState([]);
   const [feedback, setFeedback] = useState(null);
   const [geoBusy, setGeoBusy] = useState(false);
@@ -1050,10 +1051,35 @@ function EmployeeDashboard({ profile }) {
   };
 
   const onClockIn = async (chosenSiteId = null) => {
-    // If multiple sites assigned and none chosen, show picker
+    // If multiple sites assigned and none chosen, try auto-detect nearest first
     if (mySites.length > 1 && !chosenSiteId) {
-      setShowSitePicker(true);
-      return;
+      setGeoBusy(true);
+      try {
+        const loc = await getLocation();
+        // Олон байрнаас хамгийн ойрыг олох
+        const distances = mySites.map((s) => ({
+          site: s,
+          distance: distanceMeters(loc, s),
+        })).sort((a, b) => a.distance - b.distance);
+
+        const nearest = distances[0];
+        // Хэрэв хамгийн ойр байр радиус дотор бол → шууд ашиглана
+        if (nearest && nearest.distance <= nearest.site.radius) {
+          setGeoBusy(false);
+          return await onClockIn(nearest.site.id);
+        }
+        // Хэрэв бүх байрнаас гадуур бол → picker нээж "ойр зайтай" гэсэн мэдээлэлтэй
+        setNearestDistances(distances);
+        setShowSitePicker(true);
+        setGeoBusy(false);
+        return;
+      } catch (e) {
+        setGeoBusy(false);
+        setFeedback({ type: "error", msg: e.message });
+        // GPS алдаа гарвал picker нээж байна
+        setShowSitePicker(true);
+        return;
+      }
     }
 
     const site = resolveSite(chosenSiteId);
@@ -1501,8 +1527,9 @@ function EmployeeDashboard({ profile }) {
         <SitePickerModal
           employee={profile}
           sites={mySites}
-          onPick={(siteId) => onClockIn(siteId)}
-          onClose={() => setShowSitePicker(false)} />
+          distances={nearestDistances}
+          onPick={(siteId) => { setNearestDistances(null); onClockIn(siteId); }}
+          onClose={() => { setShowSitePicker(false); setNearestDistances(null); }} />
       )}
     </div>
   );
@@ -3110,28 +3137,61 @@ function SiteFormModal({ mode, site, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SITE PICKER MODAL (clock-in site selection)
 // ═══════════════════════════════════════════════════════════════════════════
-function SitePickerModal({ employee, sites, onPick, onClose }) {
+function SitePickerModal({ employee, sites, distances, onPick, onClose }) {
+  // distances байвал хамгийн ойроос дараалж жагсаана
+  const orderedSites = distances
+    ? distances.map((d) => ({ ...d.site, _distance: d.distance }))
+    : sites;
+  const allOutOfRange = distances && distances.every((d) => d.distance > d.site.radius);
+
   return (
     <Modal onClose={onClose} title="Хаа байна вэ?" maxW="max-w-md">
-      <p style={{ color: T.muted }} className="text-sm mb-4">
-        <span style={{ color: T.ink, fontWeight: 500 }}>{employee.name}</span> нь хэд хэдэн ажлын байртай. Одоо аль байранд цаг бүртгүүлэх вэ?
-      </p>
+      {distances ? (
+        <p style={{ color: T.muted }} className="text-sm mb-4">
+          {allOutOfRange
+            ? "Та одоогоор аль ч ажлын байрны радиус дотор байхгүй байна. Хамгийн ойр байгаа байраа сонгоно уу:"
+            : "Олон сонголт байна. Та аль ажлын байранд байгаа вэ?"}
+        </p>
+      ) : (
+        <p style={{ color: T.muted }} className="text-sm mb-4">
+          <span style={{ color: T.ink, fontWeight: 500 }}>{employee.name}</span> нь хэд хэдэн ажлын байртай. Одоо аль байранд цаг бүртгүүлэх вэ?
+        </p>
+      )}
       <div className="space-y-2">
-        {sites.map((s) => (
-          <button key={s.id} onClick={() => onPick(s.id)}
-            className="glass-soft press-btn w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all hover:translate-x-1">
-            <div style={{ background: T.highlight, color: "white", boxShadow: "0 4px 12px rgba(99,102,241,0.3)" }}
-                 className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
-              <MapPin size={16} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{s.name}</div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-                {s.radius}m радиус
+        {orderedSites.map((s, i) => {
+          const inRange = s._distance != null && s._distance <= s.radius;
+          const isClosest = i === 0 && distances;
+          return (
+            <button key={s.id} onClick={() => onPick(s.id)}
+              className="glass-soft press-btn w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all hover:translate-x-1"
+              style={{ borderColor: isClosest ? T.highlight : undefined }}>
+              <div style={{
+                background: isClosest ? "linear-gradient(135deg, #10b981, #14b8a6)" : T.highlight,
+                color: "white",
+                boxShadow: `0 4px 12px ${isClosest ? "rgba(16,185,129,0.4)" : "rgba(99,102,241,0.3)"}`,
+              }}
+                   className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
+                <MapPin size={16} />
               </div>
-            </div>
-          </button>
-        ))}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{s.name}</div>
+                  {isClosest && (
+                    <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FM }}
+                          className="px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider font-bold">
+                      Хамгийн ойр
+                    </span>
+                  )}
+                </div>
+                <div style={{ color: inRange ? T.ok : T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                  {s._distance != null
+                    ? `${fmtDist(s._distance)} зайтай · ${s.radius}m радиус${inRange ? " · ✓ дотор" : " · гадуур"}`
+                    : `${s.radius}m радиус`}
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
       <button onClick={onClose} style={{ fontFamily: FS, color: "#1e1b4b" }}
             className="glass-soft press-btn w-full mt-4 py-2.5 rounded-xl text-sm">Цуцлах</button>
