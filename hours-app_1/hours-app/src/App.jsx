@@ -4,7 +4,7 @@ import {
   AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock,
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
-  Download, FileSpreadsheet, Filter,
+  Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, isConfigured } from "./supabaseClient";
@@ -588,9 +588,13 @@ function AdminDashboard({ profile }) {
   const [departments, setDepartments] = useState([]);
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
   const [leaves, setLeaves] = useState([]);
+  const [kpiDefs, setKpiDefs] = useState([]);
+  const [kpiEntries, setKpiEntries] = useState([]);
+  const [editingKpi, setEditingKpi] = useState(null); // null | 'add' | kpi obj
+  const [kpiInputDept, setKpiInputDept] = useState(null); // department for KPI entry form
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me, dept, lvs] = await Promise.all([
+    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE] = await Promise.all([
       supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -600,6 +604,8 @@ function AdminDashboard({ profile }) {
       supabase.from("manager_employees").select("*"),
       supabase.from("departments").select("*").order("name"),
       supabase.from("leaves").select("*").order("created_at", { ascending: false }),
+      supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
+      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
     ]);
     if (emps.data) {
       setEmployees(emps.data.filter((p) => p.role === "employee"));
@@ -617,6 +623,8 @@ function AdminDashboard({ profile }) {
     if (me.data) setManagerEmployees(me.data);
     if (dept.data) setDepartments(dept.data);
     if (lvs.data) setLeaves(lvs.data);
+    if (kpiD.data) setKpiDefs(kpiD.data);
+    if (kpiE.data) setKpiEntries(kpiE.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -632,6 +640,8 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "manager_employees" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_definitions" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_entries" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -924,6 +934,60 @@ function AdminDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
+  // KPI CRUD
+  const upsertKpiDef = async (data) => {
+    try {
+      if (data.id) {
+        const { error } = await supabase.from("kpi_definitions").update({
+          name: data.name, unit: data.unit, category: data.category,
+          display_order: data.display_order, is_active: data.is_active ?? true,
+        }).eq("id", data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("kpi_definitions").insert({
+          department_id: data.department_id,
+          name: data.name, unit: data.unit, category: data.category,
+          display_order: data.display_order || 0,
+        });
+        if (error) throw error;
+      }
+      setEditingKpi(null);
+      setFeedback({ type: "success", msg: "KPI хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteKpiDef = async (id) => {
+    try {
+      const { error } = await supabase.from("kpi_definitions").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "KPI устгагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const upsertKpiEntries = async (deptId, date, entries) => {
+    // entries = [{ kpi_id, value, note }]
+    try {
+      const rows = entries.map((e) => ({
+        kpi_id: e.kpi_id,
+        department_id: deptId,
+        entry_date: date,
+        value: e.value,
+        note: e.note || null,
+        entered_by: profile.id,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("kpi_entries").upsert(rows, {
+        onConflict: "kpi_id,entry_date",
+      });
+      if (error) throw error;
+      setKpiInputDept(null);
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
   // Session edit/delete (admin)
   const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
     try {
@@ -1028,6 +1092,7 @@ function AdminDashboard({ profile }) {
 
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
+          <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
           <Tab active={view === "departments"} onClick={() => setView("departments")} icon={Users}>Хэлтсүүд</Tab>
           <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
           <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
@@ -1104,6 +1169,19 @@ function AdminDashboard({ profile }) {
         {view === "leaves" && (
           <LeavesView leaves={leaves} employees={[...employees, ...managers]} onResolve={resolveLeave} />
         )}
+        {view === "dashboard" && (
+          <KPIDashboardView
+            departments={departments}
+            kpiDefs={kpiDefs}
+            kpiEntries={kpiEntries}
+            isAdmin={true}
+            currentUserId={profile.id}
+            onAddKpi={() => setEditingKpi("add")}
+            onEditKpi={(k) => setEditingKpi(k)}
+            onDeleteKpi={deleteKpiDef}
+            onOpenInputForm={(deptId) => setKpiInputDept(deptId)}
+          />
+        )}
 
         <Footer count={sessions.length} />
       </div>
@@ -1124,6 +1202,24 @@ function AdminDashboard({ profile }) {
           managers={managers}
           onSave={upsertDepartment}
           onClose={() => setEditingDept(null)} />
+      )}
+
+      {editingKpi && (
+        <KpiDefFormModal
+          mode={editingKpi === "add" ? "add" : "edit"}
+          kpi={editingKpi === "add" ? null : editingKpi}
+          departments={departments}
+          onSave={upsertKpiDef}
+          onClose={() => setEditingKpi(null)} />
+      )}
+
+      {kpiInputDept && (
+        <KpiEntryFormModal
+          department={departments.find(d => d.id === kpiInputDept)}
+          kpiDefs={kpiDefs.filter(k => k.department_id === kpiInputDept)}
+          existingEntries={kpiEntries}
+          onSave={upsertKpiEntries}
+          onClose={() => setKpiInputDept(null)} />
       )}
 
       {siteFormMode && (
@@ -3608,6 +3704,10 @@ function ManagerDashboard({ profile }) {
   const [approvals, setApprovals] = useState([]);
   const [sites, setSites] = useState([]);
   const [employeeSites, setEmployeeSites] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [kpiDefs, setKpiDefs] = useState([]);
+  const [kpiEntries, setKpiEntries] = useState([]);
+  const [kpiInputDept, setKpiInputDept] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
   const [, setTick] = useState(0);
@@ -3616,14 +3716,16 @@ function ManagerDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadAll = async () => {
-    // RLS automatically filters to manager's team
-    const [me, sess, active, apps, st, es] = await Promise.all([
+    const [me, sess, active, apps, st, es, dept, kpiD, kpiE] = await Promise.all([
       supabase.from("manager_employees").select("employee_id, profiles!manager_employees_employee_id_fkey(*)").eq("manager_id", profile.id),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
       supabase.from("approvals").select("*").order("created_at", { ascending: false }),
       supabase.from("sites").select("*").order("name"),
       supabase.from("employee_sites").select("*"),
+      supabase.from("departments").select("*").order("name"),
+      supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
+      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
     ]);
     if (me.data) setTeam(me.data.map((m) => m.profiles).filter(Boolean));
     if (sess.data) setSessions(sess.data);
@@ -3635,6 +3737,30 @@ function ManagerDashboard({ profile }) {
     if (apps.data) setApprovals(apps.data);
     if (st.data) setSites(st.data);
     if (es.data) setEmployeeSites(es.data);
+    if (dept.data) setDepartments(dept.data);
+    if (kpiD.data) setKpiDefs(kpiD.data);
+    if (kpiE.data) setKpiEntries(kpiE.data);
+  };
+
+  const upsertKpiEntries = async (deptId, date, entries) => {
+    try {
+      const rows = entries.map((e) => ({
+        kpi_id: e.kpi_id,
+        department_id: deptId,
+        entry_date: date,
+        value: e.value,
+        note: e.note || null,
+        entered_by: profile.id,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("kpi_entries").upsert(rows, {
+        onConflict: "kpi_id,entry_date",
+      });
+      if (error) throw error;
+      setKpiInputDept(null);
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -3748,6 +3874,7 @@ function ManagerDashboard({ profile }) {
 
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
+          <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
           <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
           <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
             Хүсэлт
@@ -3762,6 +3889,17 @@ function ManagerDashboard({ profile }) {
           <ManagerTeamReadOnly
             team={team} sessions={sessions} activeSessions={activeSessions}
             sites={sites} employeeSites={employeeSites} />
+        )}
+
+        {view === "dashboard" && (
+          <KPIDashboardView
+            departments={departments}
+            kpiDefs={kpiDefs}
+            kpiEntries={kpiEntries}
+            isAdmin={false}
+            currentUserId={profile.id}
+            onOpenInputForm={(deptId) => setKpiInputDept(deptId)}
+          />
         )}
         {view === "ledger" && (
           <LedgerView
@@ -3787,6 +3925,15 @@ function ManagerDashboard({ profile }) {
           onSave={editSession}
           onDelete={deleteSession}
           onClose={() => setEditingSession(null)} />
+      )}
+
+      {kpiInputDept && (
+        <KpiEntryFormModal
+          department={departments.find(d => d.id === kpiInputDept)}
+          kpiDefs={kpiDefs.filter(k => k.department_id === kpiInputDept)}
+          existingEntries={kpiEntries}
+          onSave={upsertKpiEntries}
+          onClose={() => setKpiInputDept(null)} />
       )}
     </div>
   );
@@ -4220,11 +4367,33 @@ function SalaryView({ sessions, profile }) {
     <div className="space-y-4 fade-in">
       {/* Big totals card */}
       <div className="glass-strong rounded-3xl p-5 sm:p-6 slide-up">
-        <div className="flex items-center gap-2 mb-3">
-          <FileSpreadsheet size={14} style={{ color: T.highlight }} />
-          <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] font-medium">
-            {filterLabel}
-          </span>
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet size={14} style={{ color: T.highlight }} />
+            <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] font-medium">
+              {filterLabel}
+            </span>
+          </div>
+          {!noRate && totals.totalMs > 0 && (
+            <button onClick={async () => {
+              try {
+                await generateSalaryPDF({
+                  employee: profile,
+                  sessions: sessions,
+                  periodStart: filterRange.start,
+                  periodEnd: filterRange.end,
+                  periodLabel: filterLabel,
+                });
+              } catch (e) {
+                console.error(e);
+                alert("PDF үүсгэхэд алдаа гарлаа: " + e.message);
+              }
+            }}
+              className="glow-primary press-btn px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 font-medium"
+              style={{ fontFamily: FM }}>
+              <FileSpreadsheet size={12} /> PDF татах
+            </button>
+          )}
         </div>
 
         {noRate ? (
@@ -4848,5 +5017,551 @@ function LeavesView({ leaves, employees, onResolve }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PDF SALARY REPORT GENERATOR
+// ═══════════════════════════════════════════════════════════════════════════
+async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, periodLabel }) {
+  const { default: jsPDF } = await import("jspdf");
+  const { default: autoTable } = await import("jspdf-autotable");
+
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  // ── Header — ORGOO brand
+  doc.setFillColor(99, 102, 241); // indigo
+  doc.rect(0, 0, pageW, 32, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(28);
+  doc.setFont("helvetica", "bold");
+  doc.text("ORGOO", 14, 18);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("SALARY REPORT", 14, 26);
+
+  // Дата
+  doc.setFontSize(9);
+  const today = new Date().toLocaleDateString("en-GB");
+  doc.text(`Generated: ${today}`, pageW - 14, 18, { align: "right" });
+  doc.text(`Period: ${periodLabel}`, pageW - 14, 26, { align: "right" });
+
+  // ── Body — Employee info
+  doc.setTextColor(30, 27, 75);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Employee Information", 14, 48);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(75, 85, 99);
+
+  const infoY = 56;
+  doc.text("Name:", 14, infoY);
+  doc.setTextColor(30, 27, 75);
+  doc.setFont("helvetica", "bold");
+  doc.text(employee.name || "—", 40, infoY);
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(75, 85, 99);
+  doc.text("Position:", 14, infoY + 6);
+  doc.setTextColor(30, 27, 75);
+  doc.setFont("helvetica", "bold");
+  doc.text(employee.job_title || "—", 40, infoY + 6);
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(75, 85, 99);
+  doc.text("Hourly Rate:", 14, infoY + 12);
+  doc.setTextColor(30, 27, 75);
+  doc.setFont("helvetica", "bold");
+  doc.text(`${(employee.hourly_rate || 0).toLocaleString()} MNT/hr`, 40, infoY + 12);
+
+  // ── Calculate totals
+  const startMs = periodStart;
+  const endMs = periodEnd;
+  const filtered = sessions.filter((s) => {
+    const t = new Date(s.start_time).getTime();
+    return t >= startMs && t < endMs;
+  });
+
+  // Group by day
+  const byDay = {};
+  filtered.forEach((s) => {
+    const day = new Date(s.start_time).toISOString().slice(0, 10);
+    const ms = new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
+    if (!byDay[day]) byDay[day] = 0;
+    byDay[day] += ms;
+  });
+
+  const days = Object.keys(byDay).sort();
+  const totalMs = Object.values(byDay).reduce((a, b) => a + b, 0);
+  const totalHours = totalMs / 3600000;
+  const rate = employee.hourly_rate || 0;
+  const totalSalary = totalHours * rate;
+
+  // ── Big totals card
+  const cardY = 82;
+  doc.setFillColor(243, 244, 246);
+  doc.roundedRect(14, cardY, pageW - 28, 28, 3, 3, "F");
+
+  doc.setTextColor(107, 114, 128);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.text("TOTAL HOURS", 22, cardY + 8);
+  doc.text("WORKING DAYS", 80, cardY + 8);
+  doc.text("TOTAL SALARY (MNT)", 138, cardY + 8);
+
+  doc.setTextColor(30, 27, 75);
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.text(`${totalHours.toFixed(1)}`, 22, cardY + 20);
+  doc.text(`${days.length}`, 80, cardY + 20);
+
+  doc.setTextColor(99, 102, 241);
+  doc.text(totalSalary.toLocaleString(), 138, cardY + 20);
+
+  // ── Table — Daily breakdown
+  doc.setTextColor(30, 27, 75);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Daily Breakdown", 14, 122);
+
+  const tableData = days.map((d) => {
+    const ms = byDay[d];
+    const hours = ms / 3600000;
+    const earnings = hours * rate;
+    const dateObj = new Date(d);
+    const weekday = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dateObj.getDay()];
+    return [
+      d,
+      weekday,
+      hours.toFixed(2),
+      earnings.toLocaleString(),
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 128,
+    head: [["Date", "Day", "Hours", "Earnings (MNT)"]],
+    body: tableData,
+    foot: [["", "Total", totalHours.toFixed(2), totalSalary.toLocaleString()]],
+    theme: "striped",
+    headStyles: {
+      fillColor: [99, 102, 241],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 10,
+    },
+    footStyles: {
+      fillColor: [237, 233, 254],
+      textColor: [99, 102, 241],
+      fontStyle: "bold",
+    },
+    bodyStyles: { textColor: [30, 27, 75], fontSize: 10 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 40 },
+      1: { cellWidth: 30, halign: "center" },
+      2: { cellWidth: 35, halign: "right" },
+      3: { halign: "right" },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ── Signatures
+  const finalY = doc.lastAutoTable.finalY || 200;
+  let sigY = finalY + 25;
+  if (sigY > pageH - 50) {
+    doc.addPage();
+    sigY = 30;
+  }
+
+  doc.setDrawColor(200, 200, 200);
+  doc.line(20, sigY, 80, sigY);
+  doc.line(pageW - 80, sigY, pageW - 20, sigY);
+
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.setFont("helvetica", "normal");
+  doc.text("Employee signature", 50, sigY + 6, { align: "center" });
+  doc.text("Authorized signature", pageW - 50, sigY + 6, { align: "center" });
+
+  // ── Footer
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.text(`ORGOO Time Tracking · ${today}`, pageW / 2, pageH - 8, { align: "center" });
+
+  // Save
+  const filename = `salary_${employee.name?.replace(/\s+/g, "_") || "report"}_${periodLabel.replace(/\s+/g, "_")}.pdf`;
+  doc.save(filename);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KPI DASHBOARD VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUserId, onAddKpi, onEditKpi, onDeleteKpi, onOpenInputForm }) {
+  const [period, setPeriod] = useState("today"); // today | week | month
+  const [selectedDept, setSelectedDept] = useState("all"); // all | dept_id
+  const [confirmDelKpi, setConfirmDelKpi] = useState(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const periodRange = useMemo(() => {
+    const now = new Date();
+    if (period === "today") {
+      const d = now.toISOString().slice(0, 10);
+      return { start: d, end: d, label: "Өнөөдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(now); start.setDate(now.getDate() - 6);
+      return { start: start.toISOString().slice(0, 10), end: now.toISOString().slice(0, 10), label: "Сүүлийн 7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(now); start.setDate(now.getDate() - 29);
+      return { start: start.toISOString().slice(0, 10), end: now.toISOString().slice(0, 10), label: "Сүүлийн 30 хоног" };
+    }
+    return null;
+  }, [period]);
+
+  const filteredEntries = useMemo(() => {
+    return kpiEntries.filter((e) => e.entry_date >= periodRange.start && e.entry_date <= periodRange.end);
+  }, [kpiEntries, periodRange]);
+
+  const visibleDepts = selectedDept === "all" ? departments : departments.filter(d => d.id === selectedDept);
+
+  // Department-ийн ахлагч мөн үү?
+  const isDeptManager = (deptId) => {
+    const dept = departments.find(d => d.id === deptId);
+    return dept?.manager_id === currentUserId;
+  };
+
+  return (
+    <div className="space-y-4 fade-in">
+      {/* Filter bar */}
+      <div className="glass rounded-2xl p-4 slide-up flex items-center gap-3 flex-wrap">
+        <div className="flex gap-1.5">
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "30 хоног" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className={`${period === p.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em]`}
+              style={{ fontFamily: FM, borderColor: period === p.id ? "transparent" : T.borderSoft, border: "1px solid" }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1" />
+
+        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
+          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+          className="px-3 py-2 rounded-lg border text-xs outline-none">
+          <option value="all">Бүх хэлтэс</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+
+        {isAdmin && (
+          <button onClick={onAddKpi}
+            className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+            style={{ fontFamily: FM }}>
+            <Plus size={11} /> KPI нэмэх
+          </button>
+        )}
+      </div>
+
+      {visibleDepts.length === 0 || kpiDefs.length === 0 ? (
+        <div className="glass rounded-3xl py-12 px-6 text-center" style={{ color: T.muted }}>
+          <BarChart3 size={32} className="mx-auto mb-3" strokeWidth={1.5} />
+          <p className="text-sm mb-2">{kpiDefs.length === 0 ? "KPI-ууд тохируулаагүй байна" : "Хэлтэс байхгүй байна"}</p>
+          {isAdmin && kpiDefs.length === 0 && (
+            <button onClick={onAddKpi}
+              className="glow-primary press-btn mt-3 px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.2em] inline-flex items-center gap-1.5"
+              style={{ fontFamily: FM }}>
+              <Plus size={11} /> Эхний KPI нэмэх
+            </button>
+          )}
+        </div>
+      ) : (
+        visibleDepts.map((dept, deptIdx) => {
+          const deptKpis = kpiDefs.filter(k => k.department_id === dept.id);
+          if (deptKpis.length === 0) return null;
+          const canEnter = isAdmin || isDeptManager(dept.id);
+
+          return (
+            <div key={dept.id} className={`glass-strong rounded-3xl p-5 ${deptIdx < 4 ? `slide-up-delay-${deptIdx + 1}` : "slide-up"}`}>
+              {/* Department header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <Users size={12} style={{ color: T.highlight }} />
+                    <span style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em]">
+                      Хэлтэс
+                    </span>
+                  </div>
+                  <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl">{dept.name}</h3>
+                </div>
+                {canEnter && (
+                  <button onClick={() => onOpenInputForm(dept.id)}
+                    className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+                    style={{ fontFamily: FM }}>
+                    <Plus size={11} /> Тоо оруулах
+                  </button>
+                )}
+              </div>
+
+              {/* KPI cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {deptKpis.map((kpi) => {
+                  const entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
+                  const total = entries.reduce((sum, e) => sum + Number(e.value), 0);
+
+                  // Trend: Хэрэв 7 хоног мөн өнгөрсөн 7 хоног харьцуулах
+                  let trend = null;
+                  if (period === "week" || period === "today") {
+                    const prevStart = new Date(periodRange.start);
+                    prevStart.setDate(prevStart.getDate() - (period === "today" ? 1 : 7));
+                    const prevEnd = new Date(periodRange.end);
+                    prevEnd.setDate(prevEnd.getDate() - (period === "today" ? 1 : 7));
+                    const prevEntries = kpiEntries.filter(e =>
+                      e.kpi_id === kpi.id &&
+                      e.entry_date >= prevStart.toISOString().slice(0,10) &&
+                      e.entry_date <= prevEnd.toISOString().slice(0,10)
+                    );
+                    const prevTotal = prevEntries.reduce((s, e) => s + Number(e.value), 0);
+                    if (prevTotal > 0) {
+                      const change = ((total - prevTotal) / prevTotal) * 100;
+                      trend = { change, up: change > 0 };
+                    }
+                  }
+
+                  return (
+                    <div key={kpi.id} className="glass lift rounded-2xl p-4 group relative">
+                      <div className="flex items-start justify-between mb-1">
+                        <span style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.2em] line-clamp-2">
+                          {kpi.name}
+                        </span>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => onEditKpi(kpi)} style={{ color: T.muted }} className="hover:text-black">
+                              <Edit3 size={11} />
+                            </button>
+                            <button onClick={() => setConfirmDelKpi(kpi)} style={{ color: T.err }}>
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span style={{ fontFamily: FD, fontWeight: 500, color: T.ink, letterSpacing: "-0.02em" }}
+                              className="text-2xl tabular-nums">
+                          {total.toLocaleString()}
+                        </span>
+                        {kpi.unit && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{kpi.unit}</span>}
+                      </div>
+                      {trend && (
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {trend.up ? <TrendingUp size={11} style={{ color: T.ok }} /> : <TrendingDown size={11} style={{ color: T.err }} />}
+                          <span style={{ color: trend.up ? T.ok : T.err, fontFamily: FM }} className="text-[10px] font-medium">
+                            {trend.up ? "+" : ""}{trend.change.toFixed(1)}%
+                          </span>
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">vs өмнөх</span>
+                        </div>
+                      )}
+                      {entries.length > 0 && period !== "today" && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1.5">
+                          {entries.length} өдрийн нийт
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      {confirmDelKpi && (
+        <Modal onClose={() => setConfirmDelKpi(null)} title="KPI устгах уу?" maxW="max-w-sm">
+          <p style={{ color: T.muted }} className="text-sm mb-5">
+            <strong style={{ color: T.ink }}>{confirmDelKpi.name}</strong> KPI болон бүх оруулсан тоонууд устгагдана.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDelKpi(null)}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm"
+              style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+            <button onClick={() => { onDeleteKpi(confirmDelKpi.id); setConfirmDelKpi(null); }}
+              className="glow-danger press-btn flex-1 py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS }}>Устгах</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KPI DEFINITION FORM (admin)
+// ═══════════════════════════════════════════════════════════════════════════
+function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
+  const [name, setName] = useState(kpi?.name || "");
+  const [unit, setUnit] = useState(kpi?.unit || "");
+  const [departmentId, setDepartmentId] = useState(kpi?.department_id || (departments[0]?.id || ""));
+  const [category, setCategory] = useState(kpi?.category || "");
+  const [order, setOrder] = useState(kpi?.display_order || 0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!name.trim()) return setErr("KPI-ийн нэр оруулна уу");
+    if (!departmentId) return setErr("Хэлтэс сонгоно уу");
+    setBusy(true);
+    await onSave({
+      id: kpi?.id || null,
+      department_id: departmentId,
+      name: name.trim(),
+      unit: unit.trim(),
+      category: category.trim() || null,
+      display_order: parseInt(order) || 0,
+    });
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title={mode === "add" ? "KPI нэмэх" : "KPI засах"}>
+      <div className="space-y-4">
+        <Field label="Хэлтэс" required>
+          <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+            disabled={mode === "edit"}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none disabled:opacity-60">
+            <option value="">— Сонгох —</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="KPI нэр" required>
+          <Input value={name} onChange={setName} placeholder="Жишээ: Хандалт, Захиалга" autoFocus />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Хэмжих нэгж">
+            <Input value={unit} onChange={setUnit} placeholder="₮, тоо, %" />
+          </Field>
+          <Field label="Дараалал">
+            <Input value={String(order)} onChange={setOrder} type="number" placeholder="0" />
+          </Field>
+        </div>
+
+        <Field label="Бүлэг (заавал биш)">
+          <Input value={category} onChange={setCategory} placeholder="sales, operations" />
+        </Field>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy && <Loader2 size={13} className="spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KPI ENTRY FORM (manager / admin daily input)
+// ═══════════════════════════════════════════════════════════════════════════
+function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(today);
+  const [values, setValues] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Date солигдох тоолон утгуудыг ачаалах
+  useEffect(() => {
+    const initial = {};
+    kpiDefs.forEach((k) => {
+      const existing = existingEntries.find(e => e.kpi_id === k.id && e.entry_date === date);
+      initial[k.id] = existing ? String(existing.value) : "";
+    });
+    setValues(initial);
+  }, [date, kpiDefs.length]);
+
+  const submit = async () => {
+    setErr("");
+    const entries = Object.entries(values)
+      .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
+      .map(([kpi_id, v]) => ({ kpi_id, value: Number(v) }));
+    if (entries.length === 0) return setErr("Ядаж нэг тоо оруулна уу");
+    setBusy(true);
+    await onSave(department.id, date, entries);
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title={`${department.name} · KPI оруулах`} maxW="max-w-lg">
+      <div className="space-y-4">
+        <Field label="Огноо" required>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
+        </Field>
+
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+          {kpiDefs.length === 0 ? (
+            <div className="glass-soft rounded-xl p-4 text-center">
+              <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
+            </div>
+          ) : (
+            kpiDefs.map((k) => (
+              <div key={k.id} className="glass-soft rounded-xl p-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{k.name}</div>
+                  {k.unit && <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{k.unit}</div>}
+                </div>
+                <input type="number" step="any" value={values[k.id] || ""}
+                  onChange={(e) => setValues({ ...values, [k.id]: e.target.value })}
+                  placeholder="0"
+                  style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                  className="w-32 px-3 py-2 rounded-lg border text-sm outline-none text-right tabular-nums" />
+              </div>
+            ))
+          )}
+        </div>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy || kpiDefs.length === 0}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy && <Loader2 size={13} className="spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
