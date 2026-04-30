@@ -1123,61 +1123,141 @@ function AdminDashboard({ profile }) {
   }, [sessions, activeSessions, employees]);
 
   const activeCount = Object.keys(activeSessions).length;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
-        <div className="flex items-center justify-between mb-10 slide-up">
-          <div className="flex items-center gap-3">
-            <div style={{
-              background: "#635bff",
-              color: "white",
-              boxShadow: "0 4px 16px rgba(99, 102, 241, 0.4)",
-            }} className="w-10 h-10 rounded-xl flex items-center justify-center">
-              <ShieldCheck size={16} />
-            </div>
-            <div>
-              <div style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.03em" }} className="text-2xl leading-none">
-                ORGOO<span style={{ color: T.highlight }}>.</span>
+    <div style={{ color: T.ink, fontFamily: FS, background: T.bg }} className="min-h-screen">
+      <div className="flex min-h-screen">
+        {/* SIDEBAR */}
+        <aside style={{
+          background: "#ffffff",
+          borderRight: `1px solid ${T.border}`,
+          width: 240,
+        }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+
+          {/* Logo header */}
+          <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2.5">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+                <ShieldCheck size={14} />
               </div>
-              <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] mt-1">
-                Admin · {profile.name}
+              <div className="flex-1">
+                <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
+                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                  Admin
+                </div>
               </div>
+              <button onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{ color: T.muted }}>
+                <X size={16} />
+              </button>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
-            <LogOut size={12} /> Гарах
-          </button>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10 slide-up-delay-1">
-          <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-          <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-          <BigStat label="Ажилтан" value={employees.length} />
-        </div>
+          {/* Nav */}
+          <nav className="flex-1 overflow-y-auto px-2 py-3">
+            <SidebarSection label="Хяналт">
+              <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
+              <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
+              <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
+              <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox}>Зарлал</SidebarTab>
+            </SidebarSection>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
-          <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
-          <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
-          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
-          <Tab active={view === "announcements"} onClick={() => setView("announcements")} icon={Inbox}>Зарлал</Tab>
-          <Tab active={view === "departments"} onClick={() => setView("departments")} icon={Users}>Хэлтсүүд</Tab>
-          <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
-          <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
-          <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
-          <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
-            Хүсэлт
-          </Tab>
-          <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>
-            Чөлөө
-          </Tab>
-          <div className="flex-1" />
-          {view === "team" && (
-            <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
-              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
-              <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
+            <SidebarSection label="Ажилтнууд">
+              <SidebarTab active={view === "departments"} onClick={() => { setView("departments"); setSidebarOpen(false); }} icon={Users}>Хэлтсүүд</SidebarTab>
+              <SidebarTab active={view === "managers"} onClick={() => { setView("managers"); setSidebarOpen(false); }} icon={ShieldCheck}>Ахлагчид</SidebarTab>
+              <SidebarTab active={view === "sites"} onClick={() => { setView("sites"); setSidebarOpen(false); }} icon={MapPin}>Байрууд</SidebarTab>
+            </SidebarSection>
+
+            <SidebarSection label="Хүсэлтүүд">
+              <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
+              <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>Чөлөө</SidebarTab>
+              <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
+            </SidebarSection>
+          </nav>
+
+          {/* Footer · User card */}
+          <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+                {profile.name?.[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
+                  {profile.name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
+                  Админ
+                </div>
+              </div>
+              <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
+                className="press-btn p-1.5 rounded hover:bg-gray-100" title="Гарах">
+                <LogOut size={14} />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile backdrop */}
+        {sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)}
+               className="fixed inset-0 bg-black/30 z-30 lg:hidden" />
+        )}
+
+        {/* MAIN CONTENT */}
+        <main className="flex-1 min-w-0">
+          {/* Mobile top bar */}
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
             </button>
-          )}
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+          </div>
+
+          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+            {/* Page header */}
+            <div className="mb-6 slide-up">
+              <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
+                {view === "team" && "Баг"}
+                {view === "dashboard" && "Дашборд"}
+                {view === "tasks" && "Даалгавар"}
+                {view === "announcements" && "Зарлал"}
+                {view === "departments" && "Хэлтсүүд"}
+                {view === "managers" && "Ахлагчид"}
+                {view === "sites" && "Байрууд"}
+                {view === "approvals" && "Хүсэлт"}
+                {view === "leaves" && "Чөлөө"}
+                {view === "ledger" && "Тэмдэглэл"}
+              </h1>
+              <p style={{ color: T.muted }} className="text-sm">
+                {view === "team" && `${employees.length} ажилтан · ${activeCount} ажиллаж байна`}
+                {view === "dashboard" && "Хэлтсийн KPI болон тоон үзүүлэлтүүд"}
+                {view === "tasks" && "Даалгаврын Kanban самбар"}
+                {view === "announcements" && "Бүх ажилтанд хүрэх мэдээлэл"}
+                {view === "departments" && "Хэлтсийн жагсаалт"}
+                {view === "managers" && "Хэлтсийн ахлагчид"}
+                {view === "sites" && "Цаг бүртгэлийн байршлууд"}
+                {view === "approvals" && `${pendingApprovals.length} хариу хүлээж буй хүсэлт`}
+                {view === "leaves" && `${leaves.filter(l => l.status === "pending").length} хариу хүлээж буй чөлөө`}
+                {view === "ledger" && "Цаг бүртгэлийн нарийвчилсан түүх"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
+              <BigStat label="Ажилтан" value={employees.length} />
+            </div>
+
+            {view === "team" && (
+              <div className="flex justify-end mb-4">
+                <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
+                  className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
+                  <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
+                </button>
+              </div>
+            )}
           {view === "sites" && (
             <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
               className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
@@ -1281,6 +1361,8 @@ function AdminDashboard({ profile }) {
         )}
 
         <Footer count={sessions.length} />
+          </div>
+        </main>
       </div>
 
       {formMode && (
@@ -3312,6 +3394,45 @@ function Tab({ active, onClick, icon: Icon, badge, children }) {
               className="ml-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold tabular-nums">{badge}</span>
       )}
     </button>
+  );
+}
+
+function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
+  return (
+    <button onClick={onClick}
+      className={`press-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all ${active ? "" : ""}`}
+      style={{
+        fontFamily: FS,
+        background: active ? T.highlightSoft : "transparent",
+        color: active ? T.highlight : T.inkSoft,
+        fontWeight: active ? 500 : 400,
+        textAlign: "left",
+      }}>
+      <Icon size={15} strokeWidth={2} style={{ color: active ? T.highlight : T.muted, flexShrink: 0 }} />
+      <span className="flex-1 truncate">{children}</span>
+      {badge > 0 && (
+        <span style={{
+          background: T.highlight,
+          color: "white",
+        }} className="px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SidebarSection({ label, children }) {
+  return (
+    <div className="mb-4">
+      {label && (
+        <div style={{ fontFamily: FS, color: T.mutedSoft }}
+             className="text-[10px] uppercase tracking-[0.15em] font-medium px-3 mb-1.5">
+          {label}
+        </div>
+      )}
+      <div className="space-y-0.5">{children}</div>
+    </div>
   );
 }
 
