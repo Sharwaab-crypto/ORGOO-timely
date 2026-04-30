@@ -1367,7 +1367,6 @@ function AdminDashboard({ profile }) {
           </div>
         </main>
       </div>
-    </div>
 
       {formMode && (
         <EmployeeFormModal
@@ -2124,7 +2123,6 @@ function EmployeeDashboard({ profile }) {
           </div>
         </main>
       </div>
-    </div>
 
       {showRequest && (
         <RequestModal profile={profile} onClose={() => setShowRequest(false)} onSubmit={submitRequest} />
@@ -4473,7 +4471,6 @@ function ManagerDashboard({ profile }) {
           </div>
         </main>
       </div>
-    </div>
 
       {editingSession && (
         <SessionEditModal
