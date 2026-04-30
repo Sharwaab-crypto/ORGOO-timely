@@ -1258,19 +1258,22 @@ function AdminDashboard({ profile }) {
                 </button>
               </div>
             )}
-          {view === "sites" && (
-            <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
-              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
-              <Plus size={13} strokeWidth={2.5} /> Байр нэмэх
-            </button>
-          )}
-          {view === "departments" && (
-            <button onClick={() => setEditingDept("add")}
-              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
-              <Plus size={13} strokeWidth={2.5} /> Хэлтэс нэмэх
-            </button>
-          )}
-        </nav>
+            {view === "sites" && (
+              <div className="flex justify-end mb-4">
+                <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
+                  className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
+                  <Plus size={13} strokeWidth={2.5} /> Байр нэмэх
+                </button>
+              </div>
+            )}
+            {view === "departments" && (
+              <div className="flex justify-end mb-4">
+                <button onClick={() => setEditingDept("add")}
+                  className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
+                  <Plus size={13} strokeWidth={2.5} /> Хэлтэс нэмэх
+                </button>
+              </div>
+            )}
 
         {feedback && !feedback.empId && (
           <div className="mb-4"><FeedbackBox type={feedback.type}>{feedback.msg}</FeedbackBox></div>
@@ -1360,7 +1363,8 @@ function AdminDashboard({ profile }) {
           />
         )}
 
-        <Footer count={sessions.length} />
+            <Footer count={sessions.length} />
+            </div>
           </div>
         </main>
       </div>
@@ -2117,6 +2121,7 @@ function EmployeeDashboard({ profile }) {
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
         <Footer count={mySessions.length} />
+            </div>
           </div>
         </main>
       </div>
@@ -4464,7 +4469,8 @@ function ManagerDashboard({ profile }) {
             employees={team} onResolve={resolveApproval} />
         )}
 
-        <Footer count={sessions.length} />
+            <Footer count={sessions.length} />
+            </div>
           </div>
         </main>
       </div>
