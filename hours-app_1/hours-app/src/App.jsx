@@ -1260,15 +1260,6 @@ function AdminDashboard({ profile }) {
                 </button>
               </div>
             )}
-
-            {view === "team" && (
-              <div className="flex justify-end mb-4">
-                <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
-                  className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
-                  <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
-                </button>
-              </div>
-            )}
             {view === "sites" && (
               <div className="flex justify-end mb-4">
                 <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
