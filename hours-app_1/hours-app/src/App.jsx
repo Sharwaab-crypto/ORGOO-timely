@@ -1804,44 +1804,116 @@ function EmployeeDashboard({ profile }) {
   const sched = profile ? checkSchedule(profile) : { ok: true };
   const noSite = mySites.length === 0 && !hasSite(profile);
   const cantClock = !isActive && (noSite || !sched.ok);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
-      <div className="max-w-2xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
-        <div className="flex items-center justify-between mb-8 slide-up">
-          <div className="flex items-center gap-3">
-            <div style={{
-              background: isActive ? "#635bff" : "linear-gradient(135deg, #1e1b4b, #312e81)",
-              color: "white",
-              boxShadow: isActive ? "0 4px 16px rgba(99, 102, 241, 0.4)" : "0 4px 16px rgba(30, 27, 75, 0.2)",
-            }}
-                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all">
-              <UserIcon size={16} />
-            </div>
-            <div>
-              <div style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.03em" }} className="text-2xl leading-none">
-                {profile.name}
+    <div style={{ color: T.ink, fontFamily: FS, background: T.bg }} className="min-h-screen">
+      <div className="flex min-h-screen">
+        {/* SIDEBAR */}
+        <aside style={{
+          background: "#ffffff",
+          borderRight: `1px solid ${T.border}`,
+          width: 240,
+        }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+
+          <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2.5">
+              <div style={{
+                background: isActive ? "#10b981" : "#635bff",
+                color: "white",
+              }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
+                <UserIcon size={14} />
               </div>
-              <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] mt-1">
-                {profile.job_title}
+              <div className="flex-1">
+                <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
+                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                </div>
+                <div style={{ color: isActive ? T.ok : T.muted, fontFamily: FS, fontWeight: 500 }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                  {isActive ? "● Ажиллаж байна" : "Ажилтан"}
+                </div>
               </div>
+              <button onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{ color: T.muted }}>
+                <X size={16} />
+              </button>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
-            <LogOut size={12} /> Гарах
-          </button>
-        </div>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
-          <Tab active={view === "home"} onClick={() => setView("home")} icon={Clock}>Цаг</Tab>
-          <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
-          <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
-          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
-          <Tab active={view === "announcements"} onClick={() => setView("announcements")} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</Tab>
-          <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar}>Чөлөө</Tab>
-          <Tab active={view === "requests"} onClick={() => setView("requests")} icon={ClipboardCheck}
-               badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</Tab>
-        </nav>
+          <nav className="flex-1 overflow-y-auto px-2 py-3">
+            <SidebarSection label="Үндсэн">
+              <SidebarTab active={view === "home"} onClick={() => { setView("home"); setSidebarOpen(false); }} icon={Clock}>Цаг бүртгэл</SidebarTab>
+              <SidebarTab active={view === "salary"} onClick={() => { setView("salary"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Цалин</SidebarTab>
+              <SidebarTab active={view === "history"} onClick={() => { setView("history"); setSidebarOpen(false); }} icon={Calendar}>Түүх</SidebarTab>
+            </SidebarSection>
+
+            <SidebarSection label="Ажил">
+              <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
+              <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</SidebarTab>
+            </SidebarSection>
+
+            <SidebarSection label="Хүсэлтүүд">
+              <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar}>Чөлөө</SidebarTab>
+              <SidebarTab active={view === "requests"} onClick={() => { setView("requests"); setSidebarOpen(false); }} icon={ClipboardCheck} badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</SidebarTab>
+            </SidebarSection>
+          </nav>
+
+          <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+                {profile.name?.[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
+                  {profile.name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider truncate">
+                  {profile.job_title}
+                </div>
+              </div>
+              <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
+                className="press-btn p-1.5 rounded hover:bg-gray-100">
+                <LogOut size={14} />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)}
+               className="fixed inset-0 bg-black/30 z-30 lg:hidden" />
+        )}
+
+        {/* MAIN */}
+        <main className="flex-1 min-w-0">
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
+            </button>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            {isActive && (
+              <div className="ml-auto flex items-center gap-1.5">
+                <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
+                <span style={{ color: T.ok, fontFamily: FS }} className="text-[10px] uppercase tracking-wider font-medium">
+                  Ажиллаж буй
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="max-w-2xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+            <div className="mb-6 slide-up">
+              <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
+                {view === "home" && "Цаг бүртгэл"}
+                {view === "salary" && "Цалин"}
+                {view === "history" && "Ажилласан түүх"}
+                {view === "tasks" && "Даалгавар"}
+                {view === "announcements" && "Зарлал"}
+                {view === "leaves" && "Чөлөө"}
+                {view === "requests" && "Хүсэлт"}
+              </h1>
+              <p style={{ color: T.muted }} className="text-sm">
+                Сайн байна уу, {profile.name}!
+              </p>
+            </div>
 
         {view === "home" && (
           <div className="space-y-5 fade-in">
@@ -2045,6 +2117,8 @@ function EmployeeDashboard({ profile }) {
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
         <Footer count={mySessions.length} />
+          </div>
+        </main>
       </div>
 
       {showRequest && (
@@ -4240,44 +4314,108 @@ function ManagerDashboard({ profile }) {
   }, [sessions, activeSessions, team]);
 
   const activeCount = team.filter((e) => activeSessions[e.id]).length;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-10">
-        <div className="flex items-center justify-between mb-10">
-          <div className="flex items-center gap-3">
-            <div style={{ background: T.highlight, color: T.surface }} className="w-9 h-9 rounded-xl flex items-center justify-center">
-              <ShieldCheck size={16} />
-            </div>
-            <div>
-              <div style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.03em" }} className="text-2xl leading-none">
-                {profile.name}
+    <div style={{ color: T.ink, fontFamily: FS, background: T.bg }} className="min-h-screen">
+      <div className="flex min-h-screen">
+        {/* SIDEBAR */}
+        <aside style={{
+          background: "#ffffff",
+          borderRight: `1px solid ${T.border}`,
+          width: 240,
+        }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+
+          <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2.5">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+                <ShieldCheck size={14} />
               </div>
-              <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] mt-1">
-                Ахлагч · {team.length} ажилтан
+              <div className="flex-1">
+                <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
+                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                  Ахлагч
+                </div>
               </div>
+              <button onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{ color: T.muted }}>
+                <X size={16} />
+              </button>
             </div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="glass-soft press-btn px-3 py-2 rounded-lg text-[11px] uppercase tracking-[0.2em] flex items-center gap-2" style={{ fontFamily: FM, color: "#1e1b4b" }}>
-            <LogOut size={12} /> Гарах
-          </button>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10 slide-up-delay-1">
-          <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-          <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-          <BigStat label="Ажилтан" value={team.length} />
-        </div>
+          <nav className="flex-1 overflow-y-auto px-2 py-3">
+            <SidebarSection label="Хяналт">
+              <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
+              <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
+              <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
+            </SidebarSection>
 
-        <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
-          <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
-          <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
-          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
-          <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
-          <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
-            Хүсэлт
-          </Tab>
-        </nav>
+            <SidebarSection label="Хүсэлтүүд">
+              <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
+              <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
+            </SidebarSection>
+          </nav>
+
+          <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+                {profile.name?.[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
+                  {profile.name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
+                  {team.length} ажилтан
+                </div>
+              </div>
+              <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
+                className="press-btn p-1.5 rounded hover:bg-gray-100">
+                <LogOut size={14} />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)}
+               className="fixed inset-0 bg-black/30 z-30 lg:hidden" />
+        )}
+
+        {/* MAIN */}
+        <main className="flex-1 min-w-0">
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
+            </button>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+          </div>
+
+          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+            <div className="mb-6 slide-up">
+              <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
+                {view === "team" && "Багийн гишүүд"}
+                {view === "dashboard" && "Дашборд"}
+                {view === "tasks" && "Даалгавар"}
+                {view === "approvals" && "Хүсэлт"}
+                {view === "ledger" && "Тэмдэглэл"}
+              </h1>
+              <p style={{ color: T.muted }} className="text-sm">
+                {view === "team" && `${team.length} ажилтан · ${activeCount} ажиллаж байна`}
+                {view === "dashboard" && "KPI мониторинг"}
+                {view === "tasks" && "Багийн даалгавар"}
+                {view === "approvals" && `${pendingApprovals.length} шалгагдаагүй`}
+                {view === "ledger" && "Цаг бүртгэлийн түүх"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
+              <BigStat label="Ажилтан" value={team.length} />
+            </div>
 
         {feedback && (
           <div className="mb-4"><FeedbackBox type={feedback.type}>{feedback.msg}</FeedbackBox></div>
@@ -4327,6 +4465,8 @@ function ManagerDashboard({ profile }) {
         )}
 
         <Footer count={sessions.length} />
+          </div>
+        </main>
       </div>
 
       {editingSession && (
