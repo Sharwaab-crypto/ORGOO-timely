@@ -599,9 +599,11 @@ function AdminDashboard({ profile }) {
   const [kpiInputDept, setKpiInputDept] = useState(null); // department for KPI entry form
   const [tasks, setTasks] = useState([]);
   const [editingTask, setEditingTask] = useState(null); // null | 'add' | task obj
+  const [announcements, setAnnouncements] = useState([]);
+  const [editingAnn, setEditingAnn] = useState(null);
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk] = await Promise.all([
+    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
       supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -614,6 +616,7 @@ function AdminDashboard({ profile }) {
       supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
       supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
       supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+      supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
     if (emps.data) {
       setEmployees(emps.data.filter((p) => p.role === "employee"));
@@ -634,6 +637,7 @@ function AdminDashboard({ profile }) {
     if (kpiD.data) setKpiDefs(kpiD.data);
     if (kpiE.data) setKpiEntries(kpiE.data);
     if (tsk.data) setTasks(tsk.data);
+    if (ann.data) setAnnouncements(ann.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -652,6 +656,7 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "kpi_definitions" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "kpi_entries" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -951,6 +956,7 @@ function AdminDashboard({ profile }) {
         const { error } = await supabase.from("kpi_definitions").update({
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
+          target: data.target, target_period: data.target_period,
         }).eq("id", data.id);
         if (error) throw error;
       } else {
@@ -958,6 +964,7 @@ function AdminDashboard({ profile }) {
           department_id: data.department_id,
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
+          target: data.target, target_period: data.target_period || 'daily',
         });
         if (error) throw error;
       }
@@ -1153,6 +1160,7 @@ function AdminDashboard({ profile }) {
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
           <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
           <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
+          <Tab active={view === "announcements"} onClick={() => setView("announcements")} icon={Inbox}>Зарлал</Tab>
           <Tab active={view === "departments"} onClick={() => setView("departments")} icon={Users}>Хэлтсүүд</Tab>
           <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
           <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
@@ -1256,6 +1264,22 @@ function AdminDashboard({ profile }) {
           />
         )}
 
+        {view === "announcements" && (
+          <AnnouncementsView
+            announcements={announcements}
+            isAdmin={true}
+            onAdd={() => setEditingAnn("add")}
+            onEdit={(a) => setEditingAnn(a)}
+            onDelete={async (id) => {
+              try {
+                await supabase.from("announcements").delete().eq("id", id);
+                setFeedback({ type: "success", msg: "Устгагдлаа" });
+                await loadAll();
+              } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+            }}
+          />
+        )}
+
         <Footer count={sessions.length} />
       </div>
 
@@ -1303,6 +1327,32 @@ function AdminDashboard({ profile }) {
           employees={[...employees, ...managers]}
           onSave={upsertTask}
           onClose={() => setEditingTask(null)} />
+      )}
+
+      {editingAnn && (
+        <AnnouncementFormModal
+          mode={editingAnn === "add" ? "add" : "edit"}
+          announcement={editingAnn === "add" ? null : editingAnn}
+          onSave={async (data) => {
+            try {
+              if (data.id) {
+                await supabase.from("announcements").update({
+                  title: data.title, body: data.body, priority: data.priority,
+                  pinned: data.pinned, expires_at: data.expires_at,
+                }).eq("id", data.id);
+              } else {
+                await supabase.from("announcements").insert({
+                  title: data.title, body: data.body, priority: data.priority,
+                  pinned: data.pinned, expires_at: data.expires_at,
+                  created_by: profile.id,
+                });
+              }
+              setEditingAnn(null);
+              setFeedback({ type: "success", msg: "Хадгаллаа" });
+              await loadAll();
+            } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+          }}
+          onClose={() => setEditingAnn(null)} />
       )}
 
       {siteFormMode && (
@@ -1362,6 +1412,7 @@ function EmployeeDashboard({ profile }) {
   const [editingTask, setEditingTask] = useState(null);
   const [allDepartments, setAllDepartments] = useState([]);
   const [deptColleagues, setDeptColleagues] = useState([]);
+  const [myAnnouncements, setMyAnnouncements] = useState([]);
   const [nearestDistances, setNearestDistances] = useState(null);
   const [mySites, setMySites] = useState([]);
   const [feedback, setFeedback] = useState(null);
@@ -1374,7 +1425,7 @@ function EmployeeDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues] = await Promise.all([
+    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues, ann] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
@@ -1385,6 +1436,7 @@ function EmployeeDashboard({ profile }) {
       profile.department_id
         ? supabase.from("profiles").select("id, name, role, department_id").eq("department_id", profile.department_id)
         : Promise.resolve({ data: [] }),
+      supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
@@ -1396,6 +1448,7 @@ function EmployeeDashboard({ profile }) {
     if (tsk.data) setMyTasks(tsk.data);
     if (depts.data) setAllDepartments(depts.data);
     if (colleagues.data) setDeptColleagues(colleagues.data);
+    if (ann.data) setMyAnnouncements(ann.data);
   };
 
   useEffect(() => { loadMy(); }, []);
@@ -1408,6 +1461,7 @@ function EmployeeDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "leaves", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadMy())
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadMy())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -1701,6 +1755,7 @@ function EmployeeDashboard({ profile }) {
           <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
           <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
           <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
+          <Tab active={view === "announcements"} onClick={() => setView("announcements")} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</Tab>
           <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar}>Чөлөө</Tab>
           <Tab active={view === "requests"} onClick={() => setView("requests")} icon={ClipboardCheck}
                badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</Tab>
@@ -1897,6 +1952,13 @@ function EmployeeDashboard({ profile }) {
                 await loadMy();
               } catch (e) { setFeedback({ type: "error", msg: e.message }); }
             }} />
+        )}
+
+        {view === "announcements" && (
+          <AnnouncementsView
+            announcements={myAnnouncements}
+            isAdmin={false}
+          />
         )}
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
@@ -5715,6 +5777,42 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                         </span>
                         {kpi.unit && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{kpi.unit}</span>}
                       </div>
+
+                      {/* Target progress */}
+                      {kpi.target && entries.length > 0 && (() => {
+                        // Цэлэт хугацаагаар нь тооцох
+                        let targetTotal = Number(kpi.target);
+                        if (kpi.target_period === "daily") {
+                          // Хэрэв period нь 7 хоног бол 7 өдрийн target нийт
+                          const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
+                          targetTotal = Number(kpi.target) * days;
+                        } else if (kpi.target_period === "weekly") {
+                          const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
+                          targetTotal = Number(kpi.target) * weeks;
+                        }
+                        const percent = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
+                        const colorBar = percent >= 100 ? T.ok : percent >= 70 ? T.warn : T.err;
+
+                        return (
+                          <div className="mt-2">
+                            <div className="flex items-center justify-between text-[9px] mb-1">
+                              <span style={{ color: T.muted, fontFamily: FM }}>🎯 {targetTotal.toLocaleString()}</span>
+                              <span style={{ color: colorBar, fontFamily: FM, fontWeight: 600 }}>
+                                {percent.toFixed(0)}%
+                              </span>
+                            </div>
+                            <div style={{ background: "rgba(99,102,241,0.1)", height: 4, borderRadius: 999, overflow: "hidden" }}>
+                              <div style={{
+                                width: `${Math.min(percent, 100)}%`,
+                                height: "100%",
+                                background: `linear-gradient(90deg, ${colorBar}, ${colorBar}dd)`,
+                                transition: "width 0.5s ease",
+                              }} />
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {trend && (
                         <div className="flex items-center gap-1 mt-1.5">
                           {trend.up ? <TrendingUp size={11} style={{ color: T.ok }} /> : <TrendingDown size={11} style={{ color: T.err }} />}
@@ -5767,6 +5865,8 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
   const [departmentId, setDepartmentId] = useState(kpi?.department_id || (departments[0]?.id || ""));
   const [category, setCategory] = useState(kpi?.category || "");
   const [order, setOrder] = useState(kpi?.display_order || 0);
+  const [target, setTarget] = useState(kpi?.target ? String(kpi.target) : "");
+  const [targetPeriod, setTargetPeriod] = useState(kpi?.target_period || "daily");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -5782,6 +5882,8 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
       unit: unit.trim(),
       category: category.trim() || null,
       display_order: parseInt(order) || 0,
+      target: target ? Number(target) : null,
+      target_period: targetPeriod,
     });
     setBusy(false);
   };
@@ -5811,6 +5913,21 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
           </Field>
           <Field label="Дараалал">
             <Input value={String(order)} onChange={setOrder} type="number" placeholder="0" />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="🎯 Цэлэт (заавал биш)">
+            <Input value={target} onChange={setTarget} type="number" placeholder="14581" />
+          </Field>
+          <Field label="Цэлэтийн хугацаа">
+            <select value={targetPeriod} onChange={(e) => setTargetPeriod(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+              <option value="daily">Өдөр бүр</option>
+              <option value="weekly">7 хоног бүр</option>
+              <option value="monthly">Сар бүр</option>
+            </select>
           </Field>
         </div>
 
@@ -6642,5 +6759,201 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
         </Modal>
       )}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ANNOUNCEMENTS VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+const ANN_PRIORITY = {
+  normal: { label: "Энгийн", color: T.muted, bg: "rgba(107,114,128,0.1)", emoji: "📢" },
+  important: { label: "Чухал", color: T.highlight, bg: T.highlightSoft, emoji: "⭐" },
+  urgent: { label: "Яаралтай", color: T.err, bg: "rgba(239,68,68,0.12)", emoji: "🚨" },
+};
+
+function AnnouncementsView({ announcements, isAdmin, onAdd, onEdit, onDelete }) {
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  return (
+    <div className="space-y-4 fade-in">
+      {isAdmin && (
+        <div className="flex justify-end slide-up">
+          <button onClick={onAdd}
+            className="glow-primary press-btn px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2"
+            style={{ fontFamily: FS }}>
+            <Plus size={14} /> Зарлал нэмэх
+          </button>
+        </div>
+      )}
+
+      {announcements.length === 0 ? (
+        <div className="glass rounded-3xl py-12 px-6 text-center slide-up-delay-1" style={{ color: T.muted }}>
+          <Inbox size={28} className="mx-auto mb-3" strokeWidth={1.5} />
+          <p className="text-sm">Зарлал алга</p>
+        </div>
+      ) : (
+        <div className="space-y-3 slide-up-delay-1">
+          {announcements.map((a, i) => {
+            const p = ANN_PRIORITY[a.priority] || ANN_PRIORITY.normal;
+            const isExpired = a.expires_at && new Date(a.expires_at) < new Date();
+            return (
+              <article key={a.id}
+                className={`${a.pinned ? "glass-strong" : "glass"} lift rounded-3xl p-5 slide-up ${isExpired ? "opacity-50" : ""}`}
+                style={a.pinned ? { borderColor: p.color, borderWidth: 2 } : {}}>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {a.pinned && (
+                      <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }}
+                            className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold">
+                        📌 Бэхэлсэн
+                      </span>
+                    )}
+                    <span style={{ background: p.bg, color: p.color, fontFamily: FM }}
+                          className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold">
+                      {p.emoji} {p.label}
+                    </span>
+                    {isExpired && (
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+                        Хугацаа дууссан
+                      </span>
+                    )}
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => onEdit(a)} style={{ color: T.muted }}
+                        className="hover:text-black p-1">
+                        <Edit3 size={12} />
+                      </button>
+                      <button onClick={() => setConfirmDel(a)} style={{ color: T.err }} className="p-1">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }}
+                    className="text-xl mb-2">
+                  {a.title}
+                </h3>
+
+                <p style={{ color: T.ink, fontFamily: FS }} className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {a.body}
+                </p>
+
+                <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: T.borderSoft }}>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                    {new Date(a.created_at).toLocaleString("mn-MN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {a.expires_at && (
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      ⏰ {new Date(a.expires_at).toLocaleDateString("mn-MN")} хүртэл
+                    </span>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {confirmDel && (
+        <Modal onClose={() => setConfirmDel(null)} title="Зарлал устгах?" maxW="max-w-sm">
+          <p style={{ color: T.muted }} className="text-sm mb-5">
+            <strong style={{ color: T.ink }}>{confirmDel.title}</strong> устгагдана.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDel(null)}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm"
+              style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+            <button onClick={() => { onDelete(confirmDel.id); setConfirmDel(null); }}
+              className="glow-danger press-btn flex-1 py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS }}>Устгах</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ANNOUNCEMENT FORM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
+  const [title, setTitle] = useState(announcement?.title || "");
+  const [body, setBody] = useState(announcement?.body || "");
+  const [priority, setPriority] = useState(announcement?.priority || "normal");
+  const [pinned, setPinned] = useState(announcement?.pinned || false);
+  const [expiresAt, setExpiresAt] = useState(announcement?.expires_at ? announcement.expires_at.slice(0, 10) : "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!title.trim()) return setErr("Гарчиг бичнэ үү");
+    if (!body.trim()) return setErr("Агуулга бичнэ үү");
+    setBusy(true);
+    await onSave({
+      id: announcement?.id || null,
+      title: title.trim(),
+      body: body.trim(),
+      priority,
+      pinned,
+      expires_at: expiresAt ? new Date(expiresAt + "T23:59:59").toISOString() : null,
+    });
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title={mode === "add" ? "Шинэ зарлал" : "Зарлал засах"}>
+      <div className="space-y-4">
+        <Field label="Гарчиг" required>
+          <Input value={title} onChange={setTitle} placeholder="Жишээ: Маргааш баяр өдөр" autoFocus />
+        </Field>
+
+        <Field label="Агуулга" required>
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5}
+            placeholder="Зарлалын дэлгэрэнгүй мэдээлэл"
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none resize-none" />
+        </Field>
+
+        <Field label="Зэрэг">
+          <div className="flex gap-1.5">
+            {Object.entries(ANN_PRIORITY).map(([k, v]) => (
+              <button key={k} onClick={() => setPriority(k)}
+                className={`${priority === k ? "tab-active" : "tab-inactive glass-soft"} press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-wider`}
+                style={{ fontFamily: FM, borderColor: priority === k ? "transparent" : T.borderSoft, border: "1px solid" }}>
+                {v.emoji} {v.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Дуусах огноо (заавал биш)">
+          <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
+        </Field>
+
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+          <span style={{ fontFamily: FM }} className="text-sm">📌 Дээр бэхлэх</span>
+        </label>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy && <Loader2 size={13} className="spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
