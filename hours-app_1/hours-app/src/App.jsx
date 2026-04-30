@@ -383,9 +383,11 @@ function AdminDashboard({ profile }) {
 
   const [managers, setManagers] = useState([]);
   const [managerEmployees, setManagerEmployees] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me] = await Promise.all([
+    const [emps, sess, active, apps, st, es, me, dept] = await Promise.all([
       supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -393,6 +395,7 @@ function AdminDashboard({ profile }) {
       supabase.from("sites").select("*").order("name"),
       supabase.from("employee_sites").select("*"),
       supabase.from("manager_employees").select("*"),
+      supabase.from("departments").select("*").order("name"),
     ]);
     if (emps.data) {
       setEmployees(emps.data.filter((p) => p.role === "employee"));
@@ -408,6 +411,7 @@ function AdminDashboard({ profile }) {
     if (st.data) setSites(st.data);
     if (es.data) setEmployeeSites(es.data);
     if (me.data) setManagerEmployees(me.data);
+    if (dept.data) setDepartments(dept.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -421,6 +425,7 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "manager_employees" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -447,6 +452,7 @@ function AdminDashboard({ profile }) {
         name: formData.name,
         job_title: formData.job_title,
         hourly_rate: formData.hourly_rate,
+        department_id: formData.department_id || null,
         site_lat: formData.site_lat,
         site_lng: formData.site_lng,
         site_radius: formData.site_radius,
@@ -669,6 +675,35 @@ function AdminDashboard({ profile }) {
     }
   };
 
+  // Department CRUD
+  const upsertDepartment = async (data) => {
+    try {
+      if (data.id) {
+        const { error } = await supabase.from("departments").update({
+          name: data.name, description: data.description, manager_id: data.manager_id,
+        }).eq("id", data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("departments").insert({
+          name: data.name, description: data.description, manager_id: data.manager_id,
+        });
+        if (error) throw error;
+      }
+      setEditingDept(null);
+      setFeedback({ type: "success", msg: "Хэлтэс хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteDepartment = async (id) => {
+    try {
+      const { error } = await supabase.from("departments").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "Хэлтэс устгагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
   // Session edit/delete (admin)
   const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
     try {
@@ -773,6 +808,7 @@ function AdminDashboard({ profile }) {
 
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
+          <Tab active={view === "departments"} onClick={() => setView("departments")} icon={Users}>Хэлтсүүд</Tab>
           <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
           <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
           <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
@@ -790,6 +826,12 @@ function AdminDashboard({ profile }) {
             <button onClick={() => { setSiteFormData(null); setSiteFormMode("add"); }}
               className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
               <Plus size={13} strokeWidth={2.5} /> Байр нэмэх
+            </button>
+          )}
+          {view === "departments" && (
+            <button onClick={() => setEditingDept("add")}
+              className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
+              <Plus size={13} strokeWidth={2.5} /> Хэлтэс нэмэх
             </button>
           )}
         </nav>
@@ -821,6 +863,13 @@ function AdminDashboard({ profile }) {
             onUpdateAssignments={updateManagerEmployees}
             onAddManager={() => { setFormEmp(null); setFormMode("add"); }} />
         )}
+        {view === "departments" && (
+          <DepartmentsView
+            departments={departments} employees={employees} managers={managers}
+            onEdit={(d) => setEditingDept(d)}
+            onDelete={deleteDepartment}
+            onAdd={() => setEditingDept("add")} />
+        )}
         {view === "ledger" && (
           <LedgerView sessions={sessions} employees={employees} sites={sites}
             canEdit={true}
@@ -836,10 +885,19 @@ function AdminDashboard({ profile }) {
       {formMode && (
         <EmployeeFormModal
           mode={formMode} employee={formEmp}
-          sites={sites}
+          sites={sites} departments={departments}
           assignedSiteIds={formEmp ? employeeSites.filter(es => es.employee_id === formEmp.id).map(es => es.site_id) : []}
           onSave={upsertEmployee}
           onClose={() => { setFormMode(null); setFormEmp(null); }} />
+      )}
+
+      {editingDept && (
+        <DepartmentFormModal
+          mode={editingDept === "add" ? "add" : "edit"}
+          dept={editingDept === "add" ? null : editingDept}
+          managers={managers}
+          onSave={upsertDepartment}
+          onClose={() => setEditingDept(null)} />
       )}
 
       {siteFormMode && (
@@ -2076,13 +2134,14 @@ function PersonalRequests({ approvals, onNew }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE FORM MODAL
 // ═══════════════════════════════════════════════════════════════════════════
-function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], onSave, onClose }) {
+function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], departments = [], onSave, onClose }) {
   const [name, setName] = useState(employee?.name || "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [jobTitle, setJobTitle] = useState(employee?.job_title || "");
   const [rate, setRate] = useState(employee?.hourly_rate ? String(employee.hourly_rate) : "");
   const [role, setRole] = useState(employee?.role || "employee"); // employee | manager
+  const [departmentId, setDepartmentId] = useState(employee?.department_id || "");
 
   // Multi-site assignment
   const [selectedSiteIds, setSelectedSiteIds] = useState(assignedSiteIds);
@@ -2146,6 +2205,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
     const formData = {
       email: email.trim(), name: name.trim(),
       role, // employee | manager
+      department_id: departmentId || null,
       job_title: jobTitle.trim() || (role === "manager" ? "Ахлагч" : "Ажилтан"),
       hourly_rate: parseFloat(rate) || 0,
       site_lat: showLegacy && site?.lat ? site.lat : null,
@@ -2207,6 +2267,23 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], o
               </p>
             )}
           </div>
+
+          {departments.length > 0 && (
+            <div>
+              <Label>Хэлтэс</Label>
+              <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black">
+                <option value="">— Сонгоогүй —</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
+                Хэлтэст оруулсны дараа тэр хэлтсийн ахлагч автомат хариуцна
+              </p>
+            </div>
+          )}
 
           <Field label="Албан тушаал">
             <Input value={jobTitle} onChange={setJobTitle} placeholder="Дизайнер" />
@@ -3945,5 +4022,198 @@ function SalaryView({ sessions, profile }) {
         Тэмдэглэл: Өдөрт 9 цагийн дээд хязгаартай · ирсэн цагаас тоологдоно
       </p>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEPARTMENTS VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+function DepartmentsView({ departments, employees, managers, onEdit, onDelete, onAdd }) {
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  if (departments.length === 0) {
+    return (
+      <div className="glass rounded-3xl py-16 px-6 text-center scale-up">
+        <Users size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
+        <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Хэлтэс алга</h3>
+        <p style={{ color: T.muted }} className="text-sm mb-5 max-w-sm mx-auto">
+          Эхний хэлтсээ үүсгээд ажилтнуудыг зохион байгуулна уу. Хэлтэст ахлагч оноох боломжтой.
+        </p>
+        <button onClick={onAdd}
+          className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
+          <Plus size={13} strokeWidth={2.5} /> Эхний хэлтэс нэмэх
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
+        {departments.map((dept, i) => {
+          const manager = dept.manager_id ? managers.find((m) => m.id === dept.manager_id) : null;
+          const empCount = employees.filter((e) => e.department_id === dept.id).length;
+          const sampleEmps = employees.filter((e) => e.department_id === dept.id).slice(0, 5);
+
+          return (
+            <article key={dept.id}
+              className={`glass lift rounded-3xl p-5 ${i < 4 ? `slide-up-delay-${i + 1}` : "slide-up"}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Users size={12} style={{ color: T.highlight }} />
+                    <span style={{ fontFamily: FM, color: T.muted }}
+                          className="text-[9px] uppercase tracking-[0.25em] font-medium">
+                      Хэлтэс
+                    </span>
+                  </div>
+                  <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-xl truncate">
+                    {dept.name}
+                  </h3>
+                  {dept.description && (
+                    <p style={{ color: T.muted }} className="text-xs mt-1 line-clamp-2">{dept.description}</p>
+                  )}
+                </div>
+              </div>
+
+              {manager ? (
+                <div className="glass-soft rounded-xl px-3 py-2.5 mb-3 flex items-center gap-2">
+                  <ShieldCheck size={12} style={{ color: T.highlight }} />
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+                      Ахлагч
+                    </div>
+                    <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">
+                      {manager.name}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="glass-soft rounded-xl px-3 py-2.5 mb-3" style={{ color: T.warn }}>
+                  <span style={{ fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                    Ахлагч оноогоогүй
+                  </span>
+                </div>
+              )}
+
+              <div className="glass-soft rounded-xl px-4 py-3 mb-4">
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1">
+                  Ажилтны тоо
+                </div>
+                <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-2xl tabular-nums mb-1">
+                  {empCount}
+                </div>
+                {sampleEmps.length > 0 && (
+                  <div style={{ color: T.muted }} className="text-[11px] line-clamp-2">
+                    {sampleEmps.map((e) => e.name).join(", ")}
+                    {empCount > 5 && ` · +${empCount - 5}`}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => onEdit(dept)}
+                  className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5"
+                  style={{ fontFamily: FS, color: T.ink }}>
+                  <Edit3 size={12} /> Засах
+                </button>
+                <button onClick={() => setConfirmDel(dept)}
+                  className="glass-soft press-btn px-4 py-2.5 rounded-xl text-xs font-medium"
+                  style={{ fontFamily: FS, color: T.err }}>
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {confirmDel && (
+        <Modal onClose={() => setConfirmDel(null)} title="Хэлтэс устгах уу?" maxW="max-w-sm">
+          <p style={{ color: T.muted }} className="text-sm mb-5">
+            <strong style={{ color: T.ink }}>{confirmDel.name}</strong> хэлтэс устгагдана. Энэ хэлтсэд харьяалагдаж байсан ажилтнуудын <strong>хэлтэс хоосон</strong> болно (ажилтнууд устгагдахгүй).
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDel(null)}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm"
+              style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+            <button onClick={() => { onDelete(confirmDel.id); setConfirmDel(null); }}
+              className="glow-danger press-btn flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5"
+              style={{ fontFamily: FS }}>
+              <Trash2 size={12} /> Устгах
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEPARTMENT FORM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function DepartmentFormModal({ mode, dept, managers, onSave, onClose }) {
+  const [name, setName] = useState(dept?.name || "");
+  const [description, setDescription] = useState(dept?.description || "");
+  const [managerId, setManagerId] = useState(dept?.manager_id || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!name.trim()) return setErr("Хэлтсийн нэр оруулна уу");
+    setBusy(true);
+    await onSave({
+      id: dept?.id || null,
+      name: name.trim(),
+      description: description.trim() || null,
+      manager_id: managerId || null,
+    });
+    setBusy(false);
+  };
+
+  return (
+    <Modal onClose={onClose} title={mode === "add" ? "Хэлтэс нэмэх" : "Хэлтэс засах"}>
+      <div className="space-y-4">
+        <Field label="Хэлтсийн нэр" required>
+          <Input value={name} onChange={setName} placeholder="Жишээ: Маркетинг, Худалдаа" autoFocus />
+        </Field>
+
+        <Field label="Тайлбар (заавал биш)">
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+            placeholder="Хэлтсийн үндсэн чиг үүрэг"
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
+        </Field>
+
+        <Field label="Хэлтсийн ахлагч (заавал биш)">
+          <select value={managerId} onChange={(e) => setManagerId(e.target.value)}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black">
+            <option value="">— Сонгоогүй —</option>
+            {managers.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+          <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
+            Ахлагч сонгосон үед тэр хэлтсийн бүх ажилтныг автомат хариуцна
+          </p>
+        </Field>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy && <Loader2 size={13} className="spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
