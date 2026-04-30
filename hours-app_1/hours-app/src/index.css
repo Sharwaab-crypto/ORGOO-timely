@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap');
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -17,43 +19,40 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
-  background: #f6f9fc;
-  color: #1a1f36;
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  background: #f8f7fa;
+  color: #5d596c;
+  font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* CARDS & SURFACES */
 .glass {
   background: #ffffff;
-  border: 1px solid #e3e8ee;
-  box-shadow: 0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 6px rgba(47,43,61,0.06);
+  transition: all 0.2s ease;
 }
 
 .glass-strong {
   background: #ffffff;
-  border: 1px solid #d6dde6;
-  box-shadow: 0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05);
+  border: 1px solid transparent;
+  box-shadow: 0 4px 18px rgba(47,43,61,0.1);
 }
 
 .glass-soft {
-  background: #f6f9fc;
-  border: 1px solid #e3e8ee;
+  background: #f8f7fa;
+  border: 1px solid #e7e7e9;
 }
 
 .lift {
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .lift:hover {
-  border-color: #c1c9d2;
-  box-shadow: 0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05);
-  transform: translateY(-1px);
+  box-shadow: 0 4px 18px rgba(47,43,61,0.1);
+  transform: translateY(-2px);
 }
 
-/* BUTTONS */
 .press-btn {
-  transition: all 0.1s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
 }
 
@@ -62,86 +61,83 @@ body {
 }
 
 .glow-primary {
-  background: #635bff;
+  background: #7367f0;
   color: white;
-  box-shadow: 0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15);
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(115,103,240,0.3);
+  transition: all 0.2s ease;
 }
 
 .glow-primary:hover:not(:disabled) {
-  background: #5851ec;
-  box-shadow: 0 2px 4px rgba(99,91,255,0.3), 0 4px 8px rgba(99,91,255,0.2);
+  background: #6256e6;
+  box-shadow: 0 4px 8px rgba(115,103,240,0.4);
 }
 
 .glow-success {
-  background: #10b981;
+  background: #28c76f;
   color: white;
-  box-shadow: 0 1px 2px rgba(16,185,129,0.25);
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(40,199,111,0.3);
+  transition: all 0.2s ease;
 }
 
 .glow-success:hover:not(:disabled) {
-  background: #0ea776;
-  box-shadow: 0 2px 4px rgba(16,185,129,0.3);
+  background: #1faa5c;
+  box-shadow: 0 4px 8px rgba(40,199,111,0.4);
 }
 
 .glow-danger {
-  background: #ef4444;
+  background: #ea5455;
   color: white;
-  box-shadow: 0 1px 2px rgba(239,68,68,0.25);
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(234,84,85,0.3);
+  transition: all 0.2s ease;
 }
 
 .glow-danger:hover:not(:disabled) {
-  background: #dc2626;
-  box-shadow: 0 2px 4px rgba(239,68,68,0.3);
+  background: #d94545;
+  box-shadow: 0 4px 8px rgba(234,84,85,0.4);
 }
 
 .glow-warn {
-  background: #f59e0b;
+  background: #ff9f43;
   color: white;
-  box-shadow: 0 1px 2px rgba(245,158,11,0.25);
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(255,159,67,0.3);
+  transition: all 0.2s ease;
 }
 
 .glow-warn:hover:not(:disabled) {
-  background: #d97706;
-  box-shadow: 0 2px 4px rgba(245,158,11,0.3);
+  background: #f08a2e;
+  box-shadow: 0 4px 8px rgba(255,159,67,0.4);
 }
 
-/* TABS */
 .tab-active {
-  background: #ffffff;
-  color: #635bff;
-  border: 1px solid #d8dee6 !important;
-  box-shadow: 0 1px 2px rgba(50,50,93,0.05);
+  background: linear-gradient(72.47deg, #7367f0 22.16%, rgba(115,103,240,0.7) 76.47%);
+  color: white;
+  border: 1px solid transparent !important;
+  box-shadow: 0 2px 6px rgba(115,103,240,0.3);
 }
 
 .tab-inactive {
   background: transparent;
-  color: #697386;
+  color: #6f6b7d;
 }
 
 .tab-inactive:hover {
-  color: #1a1f36;
-  background: rgba(231,235,240,0.5);
+  color: #5d596c;
+  background: rgba(115,103,240,0.06);
 }
 
-/* MODAL */
 .modal-content {
   background: #ffffff;
-  border: 1px solid #e3e8ee;
-  box-shadow: 0 24px 48px rgba(50,50,93,0.18), 0 8px 16px rgba(0,0,0,0.08);
-  animation: scale-up 0.18s ease-out;
+  border: 1px solid transparent;
+  box-shadow: 0 12px 24px rgba(47,43,61,0.18);
+  animation: scale-up 0.2s ease-out;
 }
 
 .modal-backdrop {
-  background: rgba(26,31,54,0.5);
+  background: rgba(47,43,61,0.5);
   backdrop-filter: blur(4px);
   animation: fade-in 0.2s ease-out;
 }
 
-/* ANIMATIONS */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -178,22 +174,20 @@ body {
 .slide-up-delay-2 { animation: slide-up 0.3s ease-out 0.1s both; }
 .slide-up-delay-3 { animation: slide-up 0.3s ease-out 0.15s both; }
 .slide-up-delay-4 { animation: slide-up 0.3s ease-out 0.2s both; }
-.scale-up { animation: scale-up 0.18s ease-out; }
+.scale-up { animation: scale-up 0.2s ease-out; }
 .spin { animation: spin 1s linear infinite; }
 .pulse-halo { animation: pulse-halo 2s ease-in-out infinite; }
 .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
 
-/* FORMS */
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: #635bff !important;
-  box-shadow: 0 0 0 3px rgba(99,91,255,0.12);
+  border-color: #7367f0 !important;
+  box-shadow: 0 0 0 3px rgba(115,103,240,0.15);
 }
 
-/* SCROLLBAR */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -201,10 +195,30 @@ input:focus, select:focus, textarea:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c9d2;
+  background: #d8d6de;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8898aa;
+  background: #b9b9c3;
 }
+
+/* Vuexy specific styles */
+.vuexy-hero {
+  background: linear-gradient(72.47deg, #7367f0 22.16%, rgba(115,103,240,0.7) 76.47%);
+}
+
+.vuexy-stat-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vuexy-stat-icon.bg-purple { background: rgba(115,103,240,0.16); color: #7367f0; }
+.vuexy-stat-icon.bg-success { background: rgba(40,199,111,0.16); color: #28c76f; }
+.vuexy-stat-icon.bg-warn { background: rgba(255,159,67,0.16); color: #ff9f43; }
+.vuexy-stat-icon.bg-danger { background: rgba(234,84,85,0.16); color: #ea5455; }
+.vuexy-stat-icon.bg-info { background: rgba(0,207,232,0.16); color: #00cfe8; }
