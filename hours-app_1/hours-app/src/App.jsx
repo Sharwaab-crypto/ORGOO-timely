@@ -5,7 +5,6 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
-  Search, Bell, Moon, Sun, Globe, Settings, Menu,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -153,39 +152,38 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — Vuexy soft cream-purple
-  bg: "#f8f7fa",
-  bgSolid: "#f8f7fa",
-  // Surfaces — цагаан карт + жижиг сүүдэр
+  // Background — Stripe-ийн blue-gray
+  bg: "#f6f9fc",
+  bgSolid: "#f6f9fc",
+  // Surfaces (Stripe = цагаан карт)
   surface: "#ffffff",
   surfaceStrong: "#ffffff",
-  surfaceAlt: "#f8f7fa",
+  surfaceAlt: "#f6f9fc",
   surfaceGlass: "#ffffff",
-  // Text — Vuexy slate
-  ink: "#5d596c", inkSoft: "#6f6b7d",
-  muted: "#a8aaae", mutedSoft: "#b9b9c3",
+  // Text — Stripe ink
+  ink: "#1a1f36", inkSoft: "#3c4257",
+  muted: "#697386", mutedSoft: "#8898aa",
   // Borders
-  border: "#dbdade",
-  borderSoft: "#e7e7e9",
-  borderStrong: "#b9b9c3",
-  // Accent — Vuexy purple
-  highlight: "#7367f0",
-  highlightDark: "#6256e6",
-  highlightSoft: "#ebe9f1",
-  highlightGlow: "0 2px 6px rgba(115,103,240,0.3)",
-  // Statuses — Vuexy палет
-  ok: "#28c76f", okSoft: "#d6f4e3",
-  err: "#ea5455", errSoft: "#ffe0e0",
-  warn: "#ff9f43", warnSoft: "#fdf3d4",
-  info: "#00cfe8", infoSoft: "#d4f4f9",
+  border: "#e3e8ee",
+  borderSoft: "#e7ebf0",
+  borderStrong: "#c1c9d2",
+  // Accent — Stripe purple #635bff
+  highlight: "#635bff",
+  highlightDark: "#5851ec",
+  highlightSoft: "#f0eeff",
+  highlightGlow: "0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15)",
+  // Statuses
+  ok: "#10b981", okSoft: "#d4f7e0",
+  err: "#ef4444", errSoft: "#fbe4e4",
+  warn: "#f59e0b", warnSoft: "#fff4e0",
   // Helpers
   blur: "none",
-  cardShadow: "0 2px 6px rgba(47,43,61,0.06)",
-  cardShadowHover: "0 4px 18px rgba(47,43,61,0.1)",
+  cardShadow: "0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  cardShadowHover: "0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05)",
 };
-const FS = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-const FM = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-const FD = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+const FD = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ROOT
@@ -419,7 +417,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "#7367f0",
+              background: "#635bff",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -453,7 +451,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "#7367f0",
+              background: "#635bff",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1140,7 +1138,7 @@ function AdminDashboard({ profile }) {
           {/* Logo header */}
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -1182,7 +1180,7 @@ function AdminDashboard({ profile }) {
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors">
-              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1209,12 +1207,13 @@ function AdminDashboard({ profile }) {
 
         {/* MAIN CONTENT */}
         <main className="flex-1 min-w-0">
-          <TopToolbar
-            profile={profile}
-            onMenuClick={() => setSidebarOpen(true)}
-            notificationCount={pendingApprovals.length + leaves.filter(l => l.status === "pending").length}
-            onSignOut={() => supabase.auth.signOut()}
-          />
+          {/* Mobile top bar */}
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
+            </button>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+          </div>
 
           <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             {/* Page header */}
@@ -1245,39 +1244,18 @@ function AdminDashboard({ profile }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Clock} iconColor="success" />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Calendar} iconColor="purple" />
-              <BigStat label="Ажилтан" value={employees.length} icon={Users} iconColor="info" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
+              <BigStat label="Ажилтан" value={employees.length} />
             </div>
 
             {view === "team" && (
-              <div className="vuexy-hero rounded-xl p-6 mb-5 slide-up text-white relative overflow-hidden">
-                <div className="relative z-10">
-                  <h2 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.01em" }} className="text-xl mb-1">
-                    Сайн уу, {profile.name}! 👋
-                  </h2>
-                  <p style={{ fontFamily: FS, opacity: 0.9 }} className="text-sm mb-3">
-                    Өнөөдөр {activeCount} ажилтан идэвхтэй ажиллаж байна
-                  </p>
-                  <div className="flex gap-2 flex-wrap">
-                    <div style={{ background: "rgba(255,255,255,0.2)" }}
-                         className="px-3 py-1.5 rounded-md text-xs font-medium">
-                      📊 {employees.length} ажилтан
-                    </div>
-                    <div style={{ background: "rgba(255,255,255,0.2)" }}
-                         className="px-3 py-1.5 rounded-md text-xs font-medium">
-                      ⚡ {pendingApprovals.length} хүсэлт
-                    </div>
-                    <div style={{ background: "rgba(255,255,255,0.2)" }}
-                         className="px-3 py-1.5 rounded-md text-xs font-medium">
-                      🏢 {departments.length} хэлтэс
-                    </div>
-                  </div>
-                </div>
-                <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "30%",
-                              background: "radial-gradient(circle at right, rgba(255,255,255,0.15), transparent)",
-                              opacity: 0.6 }} />
+              <div className="flex justify-end mb-4">
+                <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
+                  className="glow-primary press-btn px-4 py-2 rounded-full text-[11px] uppercase tracking-[0.2em] flex items-center gap-1.5">
+                  <Plus size={13} strokeWidth={2.5} /> Ажилтан нэмэх
+                </button>
               </div>
             )}
 
@@ -1853,7 +1831,7 @@ function EmployeeDashboard({ profile }) {
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
               <div style={{
-                background: isActive ? "#10b981" : "#7367f0",
+                background: isActive ? "#10b981" : "#635bff",
                 color: "white",
               }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
                 <UserIcon size={14} />
@@ -1892,7 +1870,7 @@ function EmployeeDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1918,21 +1896,20 @@ function EmployeeDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <TopToolbar
-            profile={profile}
-            onMenuClick={() => setSidebarOpen(true)}
-            notificationCount={myAnnouncements.filter(a => a.pinned).length}
-            onSignOut={() => supabase.auth.signOut()}
-          />
-
-          {isActive && (
-            <div className="px-4 py-2 flex items-center gap-1.5" style={{ background: T.okSoft, borderBottom: `1px solid ${T.borderSoft}` }}>
-              <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
-              <span style={{ color: T.ok, fontFamily: FS }} className="text-xs font-medium">
-                Та одоо ажиллаж байна
-              </span>
-            </div>
-          )}
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
+            </button>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            {isActive && (
+              <div className="ml-auto flex items-center gap-1.5">
+                <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
+                <span style={{ color: T.ok, fontFamily: FS }} className="text-[10px] uppercase tracking-wider font-medium">
+                  Ажиллаж буй
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="max-w-2xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
@@ -3545,151 +3522,16 @@ function SidebarSection({ label, children }) {
   );
 }
 
-function TopToolbar({ profile, onMenuClick, notificationCount = 0, onSignOut }) {
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("orgoo-dark") === "1";
-  });
-  const [showProfile, setShowProfile] = useState(false);
-  const [showNotifs, setShowNotifs] = useState(false);
 
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark-mode");
-      localStorage.setItem("orgoo-dark", "1");
-    } else {
-      document.documentElement.classList.remove("dark-mode");
-      localStorage.setItem("orgoo-dark", "0");
-    }
-  }, [darkMode]);
-
+function BigStat({ label, value, suffix, accent }) {
   return (
-    <div className="sticky top-0 z-30" style={{ background: T.surface, borderBottom: `1px solid ${T.borderSoft}` }}>
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-3">
-        {/* Mobile menu button */}
-        <button onClick={onMenuClick} className="lg:hidden" style={{ color: T.ink }}>
-          <Menu size={20} />
-        </button>
-
-        {/* Search */}
-        <div className="hidden sm:flex items-center gap-2 flex-1 max-w-md">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md w-full"
-               style={{ background: T.surfaceAlt }}>
-            <Search size={14} style={{ color: T.muted }} />
-            <input type="text" placeholder="Хайх..."
-              style={{ background: "transparent", color: T.ink, fontFamily: FS, border: "none", outline: "none" }}
-              className="text-sm w-full" />
-            <span style={{
-              background: T.surface,
-              border: `1px solid ${T.borderSoft}`,
-              color: T.muted,
-              fontFamily: FS,
-            }} className="text-[10px] px-1.5 py-0.5 rounded">⌘K</span>
-          </div>
-        </div>
-
-        <div className="flex-1 sm:flex-none" />
-
-        {/* Toolbar buttons */}
-        <div className="flex items-center gap-1">
-          {/* Dark mode toggle */}
-          <button onClick={() => setDarkMode(!darkMode)}
-            className="press-btn p-2 rounded-md hover:bg-gray-100"
-            style={{ color: T.ink }}
-            title={darkMode ? "Дэлгэцийн өнгө цайвар" : "Дэлгэцийн өнгө бараан"}>
-            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-
-          {/* Notifications */}
-          <div className="relative">
-            <button onClick={() => setShowNotifs(!showNotifs)}
-              className="press-btn p-2 rounded-md hover:bg-gray-100 relative"
-              style={{ color: T.ink }}>
-              <Bell size={18} />
-              {notificationCount > 0 && (
-                <span style={{
-                  background: T.err,
-                  color: "white",
-                  fontFamily: FS,
-                  fontWeight: 600,
-                  border: `2px solid ${T.surface}`,
-                }}
-                  className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px]">
-                  {notificationCount > 9 ? "9+" : notificationCount}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Profile */}
-          <div className="relative">
-            <button onClick={() => setShowProfile(!showProfile)}
-              className="press-btn flex items-center gap-2 ml-2 p-1 rounded-md hover:bg-gray-100">
-              <div style={{
-                background: "#7367f0",
-                color: "white",
-                border: `2px solid ${T.surface}`,
-                boxShadow: "0 0 0 1px #7367f0",
-              }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
-                {profile?.name?.[0]}
-              </div>
-            </button>
-
-            {showProfile && (
-              <div style={{
-                background: T.surface,
-                border: `1px solid ${T.borderSoft}`,
-                boxShadow: "0 4px 18px rgba(47,43,61,0.1)",
-              }} className="absolute right-0 mt-2 w-56 rounded-lg overflow-hidden z-40">
-                <div className="p-3 border-b" style={{ borderColor: T.borderSoft }}>
-                  <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                    {profile?.name}
-                  </div>
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-0.5">
-                    {profile?.role === "admin" ? "Админ" : profile?.role === "manager" ? "Ахлагч" : "Ажилтан"}
-                  </div>
-                </div>
-                <div className="py-1">
-                  <button onClick={() => { setShowProfile(false); onSignOut(); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50"
-                    style={{ color: T.err, fontFamily: FS }}>
-                    <LogOut size={14} />
-                    Гарах
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="glass lift rounded-2xl px-5 py-4">
+      <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1.5">{label}</div>
+      <div className="flex items-baseline gap-1.5">
+        <span style={{ fontFamily: FD, fontWeight: 500, color: accent ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
+              className="text-3xl tabular-nums">{value}</span>
+        {suffix && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{suffix}</span>}
       </div>
-    </div>
-  );
-}
-
-function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "purple", trend }) {
-  return (
-    <div className="glass lift rounded-xl p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }} className="text-xs">
-          {label}
-        </div>
-        {Icon && (
-          <div className={`vuexy-stat-icon bg-${iconColor}`}>
-            <Icon size={18} strokeWidth={2} />
-          </div>
-        )}
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink, letterSpacing: "-0.02em" }}
-              className="text-2xl tabular-nums">{value}</span>
-        {suffix && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{suffix}</span>}
-      </div>
-      {trend && (
-        <div style={{ color: trend.up ? T.ok : T.err, fontFamily: FS, fontWeight: 500 }}
-             className="text-[10px] mt-1.5">
-          {trend.up ? "↑" : "↓"} {trend.text}
-        </div>
-      )}
     </div>
   );
 }
@@ -4499,7 +4341,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -4531,7 +4373,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -4557,12 +4399,12 @@ function ManagerDashboard({ profile }) {
 
         {/* MAIN */}
         <main className="flex-1 min-w-0">
-          <TopToolbar
-            profile={profile}
-            onMenuClick={() => setSidebarOpen(true)}
-            notificationCount={pendingApprovals.length}
-            onSignOut={() => supabase.auth.signOut()}
-          />
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "#ffffff", borderColor: T.border }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
+              <Inbox size={18} />
+            </button>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+          </div>
 
           <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
@@ -4582,10 +4424,10 @@ function ManagerDashboard({ profile }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Clock} iconColor="success" />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Calendar} iconColor="purple" />
-              <BigStat label="Ажилтан" value={team.length} icon={Users} iconColor="info" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
+              <BigStat label="Ажилтан" value={team.length} />
             </div>
 
         {feedback && (
@@ -6818,7 +6660,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "#7367f0",
+                              background: "#635bff",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -7155,7 +6997,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "#7367f0",
+                                background: "#635bff",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
@@ -7504,90 +7346,5 @@ function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
         </div>
       </div>
     </Modal>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  VUEXY · Mini Chart Card (Profit/Expense)
-// ═══════════════════════════════════════════════════════════════════════════
-function MiniChartCard({ label, sublabel, value, suffix, trend, data, color = "#7367f0", type = "bar" }) {
-  // data = массив тоо, жишээ [50, 70, 60, 85, 75, 90, 100]
-  const max = Math.max(...data, 1);
-
-  return (
-    <div className="glass lift rounded-xl p-5">
-      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-1">{label}</div>
-      {sublabel && (
-        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">{sublabel}</div>
-      )}
-      <div className="flex items-end justify-between gap-3 mt-2">
-        <div>
-          <div className="flex items-baseline gap-1">
-            <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink, letterSpacing: "-0.02em" }}
-                  className="text-2xl tabular-nums">
-              {value}
-            </span>
-            {suffix && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{suffix}</span>}
-          </div>
-          {trend && (
-            <div style={{ color: trend.up ? T.ok : T.err, fontFamily: FS, fontWeight: 500 }}
-                 className="text-[11px] mt-1">
-              {trend.up ? "+" : ""}{trend.value}%
-            </div>
-          )}
-        </div>
-        {/* Mini bar chart */}
-        <div className="flex items-end gap-1" style={{ height: 40 }}>
-          {data.map((v, i) => (
-            <div key={i} style={{
-              width: 6,
-              height: `${(v / max) * 100}%`,
-              background: color,
-              borderRadius: "3px 3px 0 0",
-              opacity: i === data.length - 1 ? 1 : 0.7 - (data.length - 1 - i) * 0.05,
-            }} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Donut progress карт
-function DonutCard({ label, percentage, total, current, color = "#7367f0" }) {
-  const circumference = 2 * Math.PI * 28;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <div className="glass lift rounded-xl p-5">
-      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">{label}</div>
-      <div className="flex items-center gap-4">
-        <div style={{ width: 80, height: 80, position: "relative" }}>
-          <svg width="80" height="80" viewBox="0 0 80 80">
-            <circle cx="40" cy="40" r="28" fill="none" stroke="#ebe9f1" strokeWidth="6" />
-            <circle cx="40" cy="40" r="28" fill="none" stroke={color} strokeWidth="6"
-              strokeDasharray={circumference} strokeDashoffset={offset}
-              strokeLinecap="round" transform="rotate(-90 40 40)"
-              style={{ transition: "stroke-dashoffset 0.5s ease" }} />
-          </svg>
-          <div style={{
-            position: "absolute", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            fontFamily: FS, fontWeight: 600,
-            color: T.ink,
-          }} className="text-base">
-            {percentage}%
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-lg">
-            {current} / {total}
-          </div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-            идэвхтэй
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
