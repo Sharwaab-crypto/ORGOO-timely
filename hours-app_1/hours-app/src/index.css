@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap');
-
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -19,40 +17,41 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
-  background: #f8f7fa;
-  color: #5d596c;
-  font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f6f9fc;
+  color: #1a1f36;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
 }
 
 .glass {
   background: #ffffff;
-  border: 1px solid transparent;
-  box-shadow: 0 2px 6px rgba(47,43,61,0.06);
-  transition: all 0.2s ease;
+  border: 1px solid #e3e8ee;
+  box-shadow: 0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  transition: all 0.15s ease;
 }
 
 .glass-strong {
   background: #ffffff;
-  border: 1px solid transparent;
-  box-shadow: 0 4px 18px rgba(47,43,61,0.1);
+  border: 1px solid #d6dde6;
+  box-shadow: 0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .glass-soft {
-  background: #f8f7fa;
-  border: 1px solid #e7e7e9;
+  background: #f6f9fc;
+  border: 1px solid #e3e8ee;
 }
 
 .lift {
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .lift:hover {
-  box-shadow: 0 4px 18px rgba(47,43,61,0.1);
-  transform: translateY(-2px);
+  border-color: #c1c9d2;
+  box-shadow: 0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05);
+  transform: translateY(-1px);
 }
 
 .press-btn {
-  transition: all 0.15s ease;
+  transition: all 0.1s ease;
   cursor: pointer;
 }
 
@@ -61,79 +60,79 @@ body {
 }
 
 .glow-primary {
-  background: #7367f0;
+  background: #635bff;
   color: white;
-  box-shadow: 0 2px 6px rgba(115,103,240,0.3);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15);
+  transition: all 0.15s ease;
 }
 
 .glow-primary:hover:not(:disabled) {
-  background: #6256e6;
-  box-shadow: 0 4px 8px rgba(115,103,240,0.4);
+  background: #5851ec;
+  box-shadow: 0 2px 4px rgba(99,91,255,0.3), 0 4px 8px rgba(99,91,255,0.2);
 }
 
 .glow-success {
-  background: #28c76f;
+  background: #10b981;
   color: white;
-  box-shadow: 0 2px 6px rgba(40,199,111,0.3);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(16,185,129,0.25);
+  transition: all 0.15s ease;
 }
 
 .glow-success:hover:not(:disabled) {
-  background: #1faa5c;
-  box-shadow: 0 4px 8px rgba(40,199,111,0.4);
+  background: #0ea776;
+  box-shadow: 0 2px 4px rgba(16,185,129,0.3);
 }
 
 .glow-danger {
-  background: #ea5455;
+  background: #ef4444;
   color: white;
-  box-shadow: 0 2px 6px rgba(234,84,85,0.3);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(239,68,68,0.25);
+  transition: all 0.15s ease;
 }
 
 .glow-danger:hover:not(:disabled) {
-  background: #d94545;
-  box-shadow: 0 4px 8px rgba(234,84,85,0.4);
+  background: #dc2626;
+  box-shadow: 0 2px 4px rgba(239,68,68,0.3);
 }
 
 .glow-warn {
-  background: #ff9f43;
+  background: #f59e0b;
   color: white;
-  box-shadow: 0 2px 6px rgba(255,159,67,0.3);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(245,158,11,0.25);
+  transition: all 0.15s ease;
 }
 
 .glow-warn:hover:not(:disabled) {
-  background: #f08a2e;
-  box-shadow: 0 4px 8px rgba(255,159,67,0.4);
+  background: #d97706;
+  box-shadow: 0 2px 4px rgba(245,158,11,0.3);
 }
 
 .tab-active {
-  background: linear-gradient(72.47deg, #7367f0 22.16%, rgba(115,103,240,0.7) 76.47%);
-  color: white;
-  border: 1px solid transparent !important;
-  box-shadow: 0 2px 6px rgba(115,103,240,0.3);
+  background: #ffffff;
+  color: #635bff;
+  border: 1px solid #d8dee6 !important;
+  box-shadow: 0 1px 2px rgba(50,50,93,0.05);
 }
 
 .tab-inactive {
   background: transparent;
-  color: #6f6b7d;
+  color: #697386;
 }
 
 .tab-inactive:hover {
-  color: #5d596c;
-  background: rgba(115,103,240,0.06);
+  color: #1a1f36;
+  background: rgba(231,235,240,0.5);
 }
 
 .modal-content {
   background: #ffffff;
-  border: 1px solid transparent;
-  box-shadow: 0 12px 24px rgba(47,43,61,0.18);
-  animation: scale-up 0.2s ease-out;
+  border: 1px solid #e3e8ee;
+  box-shadow: 0 24px 48px rgba(50,50,93,0.18), 0 8px 16px rgba(0,0,0,0.08);
+  animation: scale-up 0.18s ease-out;
 }
 
 .modal-backdrop {
-  background: rgba(47,43,61,0.5);
+  background: rgba(26,31,54,0.5);
   backdrop-filter: blur(4px);
   animation: fade-in 0.2s ease-out;
 }
@@ -174,20 +173,20 @@ body {
 .slide-up-delay-2 { animation: slide-up 0.3s ease-out 0.1s both; }
 .slide-up-delay-3 { animation: slide-up 0.3s ease-out 0.15s both; }
 .slide-up-delay-4 { animation: slide-up 0.3s ease-out 0.2s both; }
-.scale-up { animation: scale-up 0.2s ease-out; }
+.scale-up { animation: scale-up 0.18s ease-out; }
 .spin { animation: spin 1s linear infinite; }
 .pulse-halo { animation: pulse-halo 2s ease-in-out infinite; }
 .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: #7367f0 !important;
-  box-shadow: 0 0 0 3px rgba(115,103,240,0.15);
+  border-color: #635bff !important;
+  box-shadow: 0 0 0 3px rgba(99,91,255,0.12);
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -195,100 +194,10 @@ input:focus, select:focus, textarea:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d8d6de;
+  background: #c1c9d2;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #b9b9c3;
-}
-
-/* Vuexy specific styles */
-.vuexy-hero {
-  background: linear-gradient(72.47deg, #7367f0 22.16%, rgba(115,103,240,0.7) 76.47%);
-}
-
-.vuexy-stat-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vuexy-stat-icon.bg-purple { background: rgba(115,103,240,0.16); color: #7367f0; }
-.vuexy-stat-icon.bg-success { background: rgba(40,199,111,0.16); color: #28c76f; }
-.vuexy-stat-icon.bg-warn { background: rgba(255,159,67,0.16); color: #ff9f43; }
-.vuexy-stat-icon.bg-danger { background: rgba(234,84,85,0.16); color: #ea5455; }
-.vuexy-stat-icon.bg-info { background: rgba(0,207,232,0.16); color: #00cfe8; }
-
-/* DARK MODE */
-.dark-mode {
-  color-scheme: dark;
-}
-
-.dark-mode body {
-  background: #25293c;
-  color: #cfd3ec;
-}
-
-.dark-mode .glass {
-  background: #2f3349;
-  border-color: #3f4258;
-}
-
-.dark-mode .glass-strong {
-  background: #2f3349;
-  border-color: #3f4258;
-}
-
-.dark-mode .glass-soft {
-  background: #25293c;
-  border-color: #3f4258;
-}
-
-.dark-mode .lift:hover {
-  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
-}
-
-.dark-mode .modal-content {
-  background: #2f3349;
-  border-color: #3f4258;
-}
-
-.dark-mode .tab-inactive:hover {
-  background: rgba(115,103,240,0.15);
-}
-
-.dark-mode input,
-.dark-mode select,
-.dark-mode textarea {
-  background: rgba(255,255,255,0.05) !important;
-  color: #cfd3ec !important;
-  border-color: #3f4258 !important;
-}
-
-.dark-mode ::-webkit-scrollbar-thumb {
-  background: #3f4258;
-}
-
-.dark-mode ::-webkit-scrollbar-thumb:hover {
-  background: #555a72;
-}
-
-/* Sidebar dark */
-.dark-mode aside {
-  background: #2f3349 !important;
-  border-color: #3f4258 !important;
-}
-
-.dark-mode .border-t,
-.dark-mode .border-b {
-  border-color: #3f4258 !important;
-}
-
-.dark-mode button:hover.hover\:bg-gray-50,
-.dark-mode button:hover.hover\:bg-gray-100 {
-  background: rgba(255,255,255,0.05) !important;
+  background: #8898aa;
 }
