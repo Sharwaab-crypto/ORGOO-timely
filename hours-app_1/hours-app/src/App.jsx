@@ -385,9 +385,10 @@ function AdminDashboard({ profile }) {
   const [managerEmployees, setManagerEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
+  const [leaves, setLeaves] = useState([]);
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me, dept] = await Promise.all([
+    const [emps, sess, active, apps, st, es, me, dept, lvs] = await Promise.all([
       supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -396,6 +397,7 @@ function AdminDashboard({ profile }) {
       supabase.from("employee_sites").select("*"),
       supabase.from("manager_employees").select("*"),
       supabase.from("departments").select("*").order("name"),
+      supabase.from("leaves").select("*").order("created_at", { ascending: false }),
     ]);
     if (emps.data) {
       setEmployees(emps.data.filter((p) => p.role === "employee"));
@@ -412,6 +414,7 @@ function AdminDashboard({ profile }) {
     if (es.data) setEmployeeSites(es.data);
     if (me.data) setManagerEmployees(me.data);
     if (dept.data) setDepartments(dept.data);
+    if (lvs.data) setLeaves(lvs.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -426,6 +429,7 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "manager_employees" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -704,6 +708,20 @@ function AdminDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
+  const resolveLeave = async (leave, decision, note = null) => {
+    try {
+      const { error } = await supabase.from("leaves").update({
+        status: decision,
+        resolved_at: new Date().toISOString(),
+        resolved_by: profile.id,
+        admin_note: note,
+      }).eq("id", leave.id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: decision === "approved" ? "Зөвшөөрлөө" : "Татгалзлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
   // Session edit/delete (admin)
   const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
     try {
@@ -815,6 +833,9 @@ function AdminDashboard({ profile }) {
           <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
             Хүсэлт
           </Tab>
+          <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>
+            Чөлөө
+          </Tab>
           <div className="flex-1" />
           {view === "team" && (
             <button onClick={() => { setFormEmp(null); setFormMode("add"); }}
@@ -877,6 +898,9 @@ function AdminDashboard({ profile }) {
         )}
         {view === "approvals" && (
           <ApprovalsView approvals={approvals} employees={employees} onResolve={resolveApproval} />
+        )}
+        {view === "leaves" && (
+          <LeavesView leaves={leaves} employees={[...employees, ...managers]} onResolve={resolveLeave} />
         )}
 
         <Footer count={sessions.length} />
@@ -951,6 +975,8 @@ function EmployeeDashboard({ profile }) {
   const [mySessions, setMySessions] = useState([]);
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
+  const [myLeaves, setMyLeaves] = useState([]);
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [mySites, setMySites] = useState([]);
   const [feedback, setFeedback] = useState(null);
   const [geoBusy, setGeoBusy] = useState(false);
@@ -962,11 +988,12 @@ function EmployeeDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps, esResult] = await Promise.all([
+    const [sess, active, apps, esResult, lvs] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
       supabase.from("employee_sites").select("site_id, sites(*)").eq("employee_id", profile.id),
+      supabase.from("leaves").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
@@ -974,6 +1001,7 @@ function EmployeeDashboard({ profile }) {
     if (esResult.data) {
       setMySites(esResult.data.map(es => es.sites).filter(Boolean));
     }
+    if (lvs.data) setMyLeaves(lvs.data);
   };
 
   useEffect(() => { loadMy(); }, []);
@@ -984,6 +1012,7 @@ function EmployeeDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "active_sessions", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaves", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadMy())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -1251,6 +1280,7 @@ function EmployeeDashboard({ profile }) {
           <Tab active={view === "home"} onClick={() => setView("home")} icon={Clock}>Цаг</Tab>
           <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
           <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
+          <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar}>Чөлөө</Tab>
           <Tab active={view === "requests"} onClick={() => setView("requests")} icon={ClipboardCheck}
                badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</Tab>
         </nav>
@@ -1406,6 +1436,18 @@ function EmployeeDashboard({ profile }) {
 
         {view === "salary" && <SalaryView sessions={mySessions} profile={profile} />}
         {view === "history" && <PersonalHistory sessions={mySessions} />}
+        {view === "leaves" && (
+          <MyLeavesView
+            leaves={myLeaves}
+            onNew={() => setShowLeaveForm(true)}
+            onCancel={async (id) => {
+              try {
+                await supabase.from("leaves").update({ status: "cancelled" }).eq("id", id);
+                setFeedback({ type: "success", msg: "Цуцлагдлаа" });
+                await loadMy();
+              } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+            }} />
+        )}
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
         <Footer count={mySessions.length} />
@@ -1431,6 +1473,28 @@ function EmployeeDashboard({ profile }) {
             setUnverifiedEndLoc(null);
           }}
           onSubmit={submitUnverifiedClockOut} />
+      )}
+
+      {showLeaveForm && (
+        <LeaveFormModal
+          onClose={() => setShowLeaveForm(false)}
+          onSubmit={async (data) => {
+            try {
+              const { error } = await supabase.from("leaves").insert({
+                employee_id: profile.id,
+                leave_type: data.leave_type,
+                start_date: data.start_date,
+                end_date: data.end_date,
+                reason: data.reason,
+                paid: data.paid,
+                status: "pending",
+              });
+              if (error) throw error;
+              setShowLeaveForm(false);
+              setFeedback({ type: "success", msg: "Чөлөөний хүсэлт илгээгдлээ" });
+              await loadMy();
+            } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+          }} />
       )}
 
       {showSitePicker && (
@@ -4215,5 +4279,312 @@ function DepartmentFormModal({ mode, dept, managers, onSave, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LEAVES — helpers
+// ═══════════════════════════════════════════════════════════════════════════
+const LEAVE_TYPES = {
+  sick: "Өвчний чөлөө",
+  personal: "Хувийн чөлөө",
+  vacation: "Амралт",
+  maternity: "Жирэмсний / Хүүхдийн",
+  unpaid: "Цалингүй чөлөө",
+  other: "Бусад",
+};
+
+const LEAVE_STATUS = {
+  pending: { label: "Хүлээгдэж буй", color: T.warn, soft: T.warnSoft },
+  approved: { label: "Зөвшөөрсөн", color: T.ok, soft: T.okSoft },
+  denied: { label: "Татгалзсан", color: T.err, soft: T.errSoft },
+  cancelled: { label: "Цуцалсан", color: T.muted, soft: "rgba(107,114,128,0.1)" },
+};
+
+function diffDays(start, end) {
+  const s = new Date(start + "T00:00:00").getTime();
+  const e = new Date(end + "T00:00:00").getTime();
+  return Math.round((e - s) / 86400000) + 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MY LEAVES VIEW (employee)
+// ═══════════════════════════════════════════════════════════════════════════
+function MyLeavesView({ leaves, onNew, onCancel }) {
+  return (
+    <div className="space-y-4 fade-in">
+      <button onClick={onNew}
+        className="glow-primary press-btn w-full py-3 rounded-2xl text-sm font-medium flex items-center justify-center gap-2 slide-up"
+        style={{ fontFamily: FS }}>
+        <Plus size={14} /> Чөлөөний хүсэлт явуулах
+      </button>
+
+      {leaves.length === 0 ? (
+        <div className="glass rounded-3xl py-12 px-6 text-center slide-up-delay-1" style={{ color: T.muted }}>
+          <Calendar size={28} className="mx-auto mb-3" strokeWidth={1.5} />
+          <p className="text-sm">Илгээсэн чөлөөний хүсэлт алга</p>
+        </div>
+      ) : (
+        <div className="space-y-3 slide-up-delay-1">
+          {leaves.map((l) => {
+            const status = LEAVE_STATUS[l.status] || LEAVE_STATUS.pending;
+            const days = diffDays(l.start_date, l.end_date);
+            return (
+              <div key={l.id} className="glass lift rounded-2xl p-4 slide-up">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{
+                        background: T.highlightSoft, color: T.highlight, fontFamily: FM,
+                      }} className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em] font-medium">
+                        {LEAVE_TYPES[l.leave_type] || l.leave_type}
+                      </span>
+                      {!l.paid && (
+                        <span style={{ background: "rgba(107,114,128,0.1)", color: T.muted, fontFamily: FM }}
+                              className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em]">
+                          Цалингүй
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontFamily: FM, fontWeight: 500 }} className="text-sm">
+                      {l.start_date} – {l.end_date}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                      {days} өдөр
+                    </div>
+                  </div>
+                  <span style={{ background: status.soft, color: status.color, fontFamily: FM }}
+                        className="px-2.5 py-1 rounded-full text-[9px] uppercase tracking-[0.2em] font-medium">
+                    {status.label}
+                  </span>
+                </div>
+                {l.reason && <p style={{ color: T.muted }} className="text-xs leading-relaxed mb-2">{l.reason}</p>}
+                {l.admin_note && (
+                  <div className="glass-soft rounded-lg p-2.5 mb-2">
+                    <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
+                      Админы тэмдэглэл
+                    </div>
+                    <p style={{ fontFamily: FS }} className="text-xs">{l.admin_note}</p>
+                  </div>
+                )}
+                {l.status === "pending" && (
+                  <button onClick={() => onCancel(l.id)}
+                    className="glass-soft press-btn w-full py-2 rounded-lg text-[11px] uppercase tracking-[0.2em]"
+                    style={{ fontFamily: FM, color: T.err }}>
+                    Цуцлах
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LEAVE FORM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function LeaveFormModal({ onClose, onSubmit }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [leaveType, setLeaveType] = useState("personal");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [reason, setReason] = useState("");
+  const [paid, setPaid] = useState(true);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!startDate || !endDate) return setErr("Огноо сонгоно уу");
+    if (new Date(endDate) < new Date(startDate)) return setErr("Дуусах огноо эхлэхээс өмнө байж болохгүй");
+    if (!reason.trim()) return setErr("Шалтгаан бичнэ үү");
+    setBusy(true);
+    await onSubmit({
+      leave_type: leaveType,
+      start_date: startDate,
+      end_date: endDate,
+      reason: reason.trim(),
+      paid,
+    });
+    setBusy(false);
+  };
+
+  const days = startDate && endDate ? diffDays(startDate, endDate) : 0;
+
+  return (
+    <Modal onClose={onClose} title="Чөлөөний хүсэлт">
+      <div className="space-y-4">
+        <Field label="Чөлөөний төрөл" required>
+          <select value={leaveType} onChange={(e) => {
+            setLeaveType(e.target.value);
+            setPaid(e.target.value !== "unpaid");
+          }}
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+            {Object.entries(LEAVE_TYPES).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Эхлэх огноо" required>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
+          </Field>
+          <Field label="Дуусах огноо" required>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
+          </Field>
+        </div>
+
+        {days > 0 && (
+          <div className="glass-soft rounded-xl px-4 py-3 flex items-baseline justify-between">
+            <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider">
+              Нийт өдөр
+            </span>
+            <span style={{ fontFamily: FM, fontWeight: 500, color: T.highlight }} className="text-2xl tabular-nums">
+              {days}
+            </span>
+          </div>
+        )}
+
+        <Field label="Шалтгаан" required>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+            placeholder="Жишээ: Эмнэлэгт үзлэгтэй, гэр бүлийн ажил гэх мэт"
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none resize-none" />
+        </Field>
+
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+          <span style={{ fontFamily: FM }} className="text-sm">Цалинтай чөлөө</span>
+        </label>
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy ? <Loader2 size={13} className="spin" /> : <Send size={13} />}
+            Илгээх
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LEAVES VIEW (admin/manager)
+// ═══════════════════════════════════════════════════════════════════════════
+function LeavesView({ leaves, employees, onResolve }) {
+  const [tab, setTab] = useState("pending");
+  const list = leaves.filter((l) => l.status === tab);
+  const empById = (id) => employees.find((e) => e.id === id);
+
+  const counts = {
+    pending: leaves.filter((l) => l.status === "pending").length,
+    approved: leaves.filter((l) => l.status === "approved").length,
+    denied: leaves.filter((l) => l.status === "denied").length,
+  };
+
+  return (
+    <div className="space-y-4 fade-in">
+      <div className="flex gap-1.5 slide-up">
+        {[
+          { id: "pending", label: "Хүлээгдэж буй", count: counts.pending },
+          { id: "approved", label: "Зөвшөөрсөн", count: counts.approved },
+          { id: "denied", label: "Татгалзсан", count: counts.denied },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`${tab === t.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3.5 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5`}
+            style={{ fontFamily: FM, borderColor: tab === t.id ? "transparent" : T.borderSoft }}>
+            {t.label}
+            {t.count > 0 && (
+              <span style={{
+                background: tab === t.id ? "rgba(255,255,255,0.95)" : T.highlight,
+                color: tab === t.id ? T.highlight : "white",
+              }} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold tabular-nums">{t.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 ? (
+        <div className="glass rounded-3xl py-12 px-6 text-center slide-up-delay-1" style={{ color: T.muted }}>
+          <Calendar size={28} className="mx-auto mb-3" strokeWidth={1.5} />
+          <p className="text-sm">{tab === "pending" ? "Хүлээгдэж буй чөлөө алга" : tab === "approved" ? "Зөвшөөрсөн чөлөө алга" : "Татгалзсан чөлөө алга"}</p>
+        </div>
+      ) : (
+        <div className="space-y-3 slide-up-delay-1">
+          {list.map((l) => {
+            const emp = empById(l.employee_id);
+            const days = diffDays(l.start_date, l.end_date);
+            return (
+              <div key={l.id} className="glass lift rounded-2xl p-5 slide-up">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }}
+                            className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em] font-medium">
+                        {LEAVE_TYPES[l.leave_type]}
+                      </span>
+                      {!l.paid && (
+                        <span style={{ background: "rgba(107,114,128,0.1)", color: T.muted, fontFamily: FM }}
+                              className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-[0.2em]">
+                          Цалингүй
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 500 }} className="text-lg">{emp?.name || "(устсан)"}</div>
+                    <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                      {l.start_date} – {l.end_date} · {days} өдөр
+                    </div>
+                  </div>
+                </div>
+
+                {l.reason && (
+                  <div className="glass-soft rounded-lg p-3 mb-3">
+                    <p style={{ fontFamily: FS }} className="text-xs leading-relaxed">{l.reason}</p>
+                  </div>
+                )}
+
+                {l.status === "pending" ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => onResolve(l, "denied")}
+                      className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-xs font-medium"
+                      style={{ fontFamily: FS, color: T.ink }}>
+                      Татгалзах
+                    </button>
+                    <button onClick={() => onResolve(l, "approved")}
+                      className="glow-success press-btn flex-1 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5"
+                      style={{ fontFamily: FS }}>
+                      <CheckCircle2 size={13} /> Зөвшөөрөх
+                    </button>
+                  </div>
+                ) : l.admin_note && (
+                  <div className="glass-soft rounded-lg p-2.5">
+                    <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
+                      Тэмдэглэл
+                    </div>
+                    <p style={{ fontFamily: FS }} className="text-xs">{l.admin_note}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
