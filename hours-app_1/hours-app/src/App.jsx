@@ -1421,14 +1421,16 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
 
         return (
           <article key={emp.id}
-            style={{ background: T.surface, borderColor: isActive ? T.highlight : T.border, borderWidth: isActive ? 2 : 1 }}
-            className="rounded-2xl p-5 transition-all">
+            className={`${isActive ? "glass-strong pulse-halo" : "glass lift"} rounded-3xl p-5 slide-up`}>
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span style={{ background: isActive ? T.highlight : T.mutedSoft, boxShadow: isActive ? `0 0 0 4px ${T.highlight}1a` : "none" }}
-                        className="inline-block w-1.5 h-1.5 rounded-full" />
-                  <span style={{ fontFamily: FM, color: isActive ? T.highlight : T.muted }}
+                  <span style={{
+                    background: isActive ? T.ok : T.mutedSoft,
+                    boxShadow: isActive ? `0 0 0 4px rgba(16, 185, 129, 0.2)` : "none",
+                  }}
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${isActive ? "pulse-dot" : ""}`} />
+                  <span style={{ fontFamily: FM, color: isActive ? T.ok : T.muted }}
                         className="text-[9px] uppercase tracking-[0.25em] font-medium">
                     {isActive ? "Ажиллаж байна" : "Цагтай биш"}
                   </span>
@@ -1679,7 +1681,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
   return (
     <div className="space-y-4">
       {/* Filter bar */}
-      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border p-4">
+      <div className="glass rounded-2xl p-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setShowFilters((v) => !v)}
@@ -1704,8 +1706,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
             {showExportMenu && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setShowExportMenu(false)} />
-                <div style={{ background: T.surface, borderColor: T.border }}
-                     className="absolute right-0 mt-2 w-64 border rounded-xl shadow-xl z-40 overflow-hidden">
+                <div className="glass-strong absolute right-0 mt-2 w-64 rounded-2xl z-40 overflow-hidden scale-up">
                   <button onClick={exportSummary}
                     className="w-full px-4 py-3 text-left hover:bg-black/5 flex items-start gap-2.5 border-b"
                     style={{ borderColor: T.borderSoft }}>
@@ -1806,7 +1807,7 @@ function LedgerView({ sessions, employees, sites = [], canEdit = false, onEditSe
       </div>
 
       {/* Sessions list */}
-      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
+      <div className="glass rounded-2xl overflow-hidden">
         <div className="px-5 sm:px-6 py-4 border-b" style={{ borderColor: T.borderSoft }}>
           <h2 style={{ fontFamily: FD, fontWeight: 500 }} className="text-xl">Цагийн тэмдэглэл</h2>
           <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
@@ -1900,8 +1901,7 @@ function ApprovalsView({ approvals, employees, onResolve }) {
       </div>
 
       {list.length === 0 ? (
-        <div style={{ background: T.surface, borderColor: T.border, color: T.muted }}
-             className="border rounded-2xl py-12 px-6 text-center">
+        <div className="glass rounded-3xl py-12 px-6 text-center" style={{ color: T.muted }}>
           <Inbox size={28} className="mx-auto mb-3" strokeWidth={1.5} />
           <p className="text-sm">{tab === "pending" ? "Хүлээгдэж буй хүсэлт алга" : "Шийдэгдсэн хүсэлт алга"}</p>
         </div>
@@ -1912,7 +1912,7 @@ function ApprovalsView({ approvals, employees, onResolve }) {
             const startMs = new Date(a.proposed_start).getTime();
             const endMs = new Date(a.proposed_end).getTime();
             return (
-              <div key={a.id} style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-5">
+              <div key={a.id} className="glass rounded-2xl p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -1983,7 +1983,7 @@ function ApprovalsView({ approvals, employees, onResolve }) {
 
 function PersonalHistory({ sessions }) {
   return (
-    <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
+    <div className="glass rounded-2xl overflow-hidden">
       <div className="px-5 py-4 border-b" style={{ borderColor: T.borderSoft }}>
         <h2 style={{ fontFamily: FD, fontWeight: 500 }} className="text-lg">Ажилласан түүх</h2>
         <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
@@ -2028,8 +2028,7 @@ function PersonalRequests({ approvals, onNew }) {
         <Plus size={14} /> Шинэ хүсэлт явуулах
       </button>
       {approvals.length === 0 ? (
-        <div style={{ background: T.surface, borderColor: T.border, color: T.muted }}
-             className="border rounded-2xl py-10 px-6 text-center">
+        <div className="glass rounded-3xl py-10 px-6 text-center" style={{ color: T.muted }}>
           <p className="text-sm">Илгээсэн хүсэлт алга</p>
         </div>
       ) : (
@@ -2038,7 +2037,7 @@ function PersonalRequests({ approvals, onNew }) {
             const startMs = new Date(a.proposed_start).getTime();
             const endMs = new Date(a.proposed_end).getTime();
             return (
-              <div key={a.id} style={{ background: T.surface, borderColor: T.border }} className="border rounded-xl p-4">
+              <div key={a.id} className="glass rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -2658,7 +2657,7 @@ function Footer({ count }) {
 function CenterCard({ children }) {
   return (
     <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
-      <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-7 w-full max-w-md text-center">
+      <div className="glass rounded-2xl p-7 w-full max-w-md text-center">
         {children}
       </div>
     </div>
@@ -2684,8 +2683,8 @@ function SitesView({ sites, employeeSites, employees, sessions, onEdit, onDelete
         <MapPin size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
         <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Ажлын байр алга</h3>
         <p style={{ color: T.muted }} className="text-sm mb-5">Анхны ажлын байраа үүсгэж эхлээрэй.</p>
-        <button onClick={onAdd} style={{ background: T.ink, color: T.surface }}
-          className="px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2 hover:opacity-90">
+        <button onClick={onAdd}
+          className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
           <Plus size={13} strokeWidth={2.5} /> Эхний байр нэмэх
         </button>
       </div>
@@ -2693,8 +2692,8 @@ function SitesView({ sites, employeeSites, employees, sessions, onEdit, onDelete
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {sites.map((site) => {
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
+      {sites.map((site, i) => {
         const empCount = employeeSites.filter((es) => es.site_id === site.id).length;
         const sessionCount = sessions.filter((s) => s.site_id === site.id).length;
         const totalMs = sessions.filter((s) => s.site_id === site.id)
@@ -2702,8 +2701,7 @@ function SitesView({ sites, employeeSites, employees, sessions, onEdit, onDelete
 
         return (
           <article key={site.id}
-            style={{ background: T.surface, borderColor: T.border }}
-            className="rounded-2xl border p-5">
+            className={`glass lift rounded-3xl p-5 ${i < 4 ? `slide-up-delay-${i + 1}` : "slide-up"}`}>
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
@@ -2965,9 +2963,8 @@ function SitePickerModal({ employee, sites, onPick, onClose }) {
       <div className="space-y-2">
         {sites.map((s) => (
           <button key={s.id} onClick={() => onPick(s.id)}
-            style={{ background: T.surface, borderColor: T.border }}
-            className="w-full text-left px-4 py-3 rounded-xl border flex items-center gap-3 hover:bg-black/5 transition-colors">
-            <div style={{ background: T.highlightSoft, color: T.highlight }}
+            className="glass-soft press-btn w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition-all hover:translate-x-1">
+            <div style={{ background: T.highlight, color: "white", boxShadow: "0 4px 12px rgba(99,102,241,0.3)" }}
                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
               <MapPin size={16} />
             </div>
@@ -3040,8 +3037,7 @@ function ManagersView({ managers, employees, managerEmployees, onUpdateAssignmen
           const assignedNames = assigned.map((id) => employees.find((e) => e.id === id)?.name).filter(Boolean);
           return (
             <article key={mgr.id}
-              style={{ background: T.surface, borderColor: T.border }}
-              className="rounded-2xl border p-5">
+              className="glass lift rounded-3xl p-5 slide-up">
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
@@ -3056,7 +3052,7 @@ function ManagersView({ managers, employees, managerEmployees, onUpdateAssignmen
                 </div>
               </div>
 
-              <div className="rounded-xl px-4 py-3 mb-4" style={{ background: T.surfaceAlt }}>
+              <div className="glass-soft rounded-xl px-4 py-3 mb-4">
                 <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1">
                   Багийн ажилтан
                 </div>
@@ -3415,14 +3411,16 @@ function ManagerTeamReadOnly({ team, sessions, activeSessions, sites = [], emplo
 
         return (
           <article key={emp.id}
-            style={{ background: T.surface, borderColor: isActive ? T.highlight : T.border, borderWidth: isActive ? 2 : 1 }}
-            className="rounded-2xl p-5 transition-all">
+            className={`${isActive ? "glass-strong pulse-halo" : "glass lift"} rounded-3xl p-5 slide-up`}>
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span style={{ background: isActive ? T.highlight : T.mutedSoft, boxShadow: isActive ? `0 0 0 4px ${T.highlight}1a` : "none" }}
-                        className="inline-block w-1.5 h-1.5 rounded-full" />
-                  <span style={{ fontFamily: FM, color: isActive ? T.highlight : T.muted }}
+                  <span style={{
+                    background: isActive ? T.ok : T.mutedSoft,
+                    boxShadow: isActive ? `0 0 0 4px rgba(16, 185, 129, 0.2)` : "none",
+                  }}
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${isActive ? "pulse-dot" : ""}`} />
+                  <span style={{ fontFamily: FM, color: isActive ? T.ok : T.muted }}
                         className="text-[9px] uppercase tracking-[0.25em] font-medium">
                     {isActive ? "Ажиллаж байна" : "Цагтай биш"}
                   </span>
@@ -3803,9 +3801,9 @@ function SalaryView({ sessions, profile }) {
   const noRate = !profile.hourly_rate || profile.hourly_rate === 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fade-in">
       {/* Big totals card */}
-      <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-5 sm:p-6">
+      <div className="glass-strong rounded-3xl p-5 sm:p-6 slide-up">
         <div className="flex items-center gap-2 mb-3">
           <FileSpreadsheet size={14} style={{ color: T.highlight }} />
           <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.25em] font-medium">
@@ -3850,7 +3848,7 @@ function SalaryView({ sessions, profile }) {
       </div>
 
       {/* Period filter */}
-      <div style={{ background: T.surface, borderColor: T.border }} className="border rounded-2xl p-4">
+      <div className="glass rounded-2xl p-4 slide-up-delay-1">
         <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.2em] mb-2">
           Хугацаа
         </div>
@@ -3861,11 +3859,8 @@ function SalaryView({ sessions, profile }) {
             { id: "custom", label: "Гар сонголт" },
           ].map((opt) => (
             <button key={opt.id} onClick={() => setFilterType(opt.id)}
-              style={{ background: filterType === opt.id ? T.ink : "transparent",
-                       color: filterType === opt.id ? T.surface : T.ink,
-                       borderColor: filterType === opt.id ? T.ink : T.border,
-                       fontFamily: FM }}
-              className="px-3 py-1 text-[10px] uppercase tracking-[0.2em] border rounded-full hover:opacity-80">
+              className={`${filterType === opt.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1 text-[10px] uppercase tracking-[0.2em] border rounded-full`}
+              style={{ fontFamily: FM, borderColor: filterType === opt.id ? "transparent" : T.borderSoft }}>
               {opt.label}
             </button>
           ))}
@@ -3889,7 +3884,7 @@ function SalaryView({ sessions, profile }) {
       </div>
 
       {/* Daily breakdown */}
-      <div style={{ background: T.surface, borderColor: T.border }} className="rounded-2xl border overflow-hidden">
+      <div className="glass rounded-3xl overflow-hidden slide-up-delay-2">
         <div className="px-5 py-4 border-b" style={{ borderColor: T.borderSoft }}>
           <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-lg">Өдрөөр</h3>
           <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-[0.2em] mt-0.5">
