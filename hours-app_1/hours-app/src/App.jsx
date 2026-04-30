@@ -152,38 +152,39 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — Stripe-ийн blue-gray
-  bg: "#f6f9fc",
-  bgSolid: "#f6f9fc",
-  // Surfaces (Stripe = цагаан карт)
+  // Background — Vuexy soft cream-purple
+  bg: "#f8f7fa",
+  bgSolid: "#f8f7fa",
+  // Surfaces — цагаан карт + жижиг сүүдэр
   surface: "#ffffff",
   surfaceStrong: "#ffffff",
-  surfaceAlt: "#f6f9fc",
+  surfaceAlt: "#f8f7fa",
   surfaceGlass: "#ffffff",
-  // Text — Stripe ink
-  ink: "#1a1f36", inkSoft: "#3c4257",
-  muted: "#697386", mutedSoft: "#8898aa",
+  // Text — Vuexy slate
+  ink: "#5d596c", inkSoft: "#6f6b7d",
+  muted: "#a8aaae", mutedSoft: "#b9b9c3",
   // Borders
-  border: "#e3e8ee",
-  borderSoft: "#e7ebf0",
-  borderStrong: "#c1c9d2",
-  // Accent — Stripe purple #635bff
-  highlight: "#635bff",
-  highlightDark: "#5851ec",
-  highlightSoft: "#f0eeff",
-  highlightGlow: "0 1px 2px rgba(99,91,255,0.25), 0 1px 4px rgba(99,91,255,0.15)",
-  // Statuses
-  ok: "#10b981", okSoft: "#d4f7e0",
-  err: "#ef4444", errSoft: "#fbe4e4",
-  warn: "#f59e0b", warnSoft: "#fff4e0",
+  border: "#dbdade",
+  borderSoft: "#e7e7e9",
+  borderStrong: "#b9b9c3",
+  // Accent — Vuexy purple
+  highlight: "#7367f0",
+  highlightDark: "#6256e6",
+  highlightSoft: "#ebe9f1",
+  highlightGlow: "0 2px 6px rgba(115,103,240,0.3)",
+  // Statuses — Vuexy палет
+  ok: "#28c76f", okSoft: "#d6f4e3",
+  err: "#ea5455", errSoft: "#ffe0e0",
+  warn: "#ff9f43", warnSoft: "#fdf3d4",
+  info: "#00cfe8", infoSoft: "#d4f4f9",
   // Helpers
   blur: "none",
-  cardShadow: "0 1px 3px rgba(50,50,93,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-  cardShadowHover: "0 4px 12px rgba(50,50,93,0.08), 0 2px 4px rgba(0,0,0,0.05)",
+  cardShadow: "0 2px 6px rgba(47,43,61,0.06)",
+  cardShadowHover: "0 4px 18px rgba(47,43,61,0.1)",
 };
-const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
-const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
-const FD = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+const FS = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FM = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FD = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ROOT
@@ -417,7 +418,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "#635bff",
+              background: "#7367f0",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -451,7 +452,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "#635bff",
+              background: "#7367f0",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1138,7 +1139,7 @@ function AdminDashboard({ profile }) {
           {/* Logo header */}
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -1180,7 +1181,7 @@ function AdminDashboard({ profile }) {
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1244,11 +1245,41 @@ function AdminDashboard({ profile }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-              <BigStat label="Ажилтан" value={employees.length} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Clock} iconColor="success" />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Calendar} iconColor="purple" />
+              <BigStat label="Ажилтан" value={employees.length} icon={Users} iconColor="info" />
             </div>
+
+            {view === "team" && (
+              <div className="vuexy-hero rounded-xl p-6 mb-5 slide-up text-white relative overflow-hidden">
+                <div className="relative z-10">
+                  <h2 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.01em" }} className="text-xl mb-1">
+                    Сайн уу, {profile.name}! 👋
+                  </h2>
+                  <p style={{ fontFamily: FS, opacity: 0.9 }} className="text-sm mb-3">
+                    Өнөөдөр {activeCount} ажилтан идэвхтэй ажиллаж байна
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    <div style={{ background: "rgba(255,255,255,0.2)" }}
+                         className="px-3 py-1.5 rounded-md text-xs font-medium">
+                      📊 {employees.length} ажилтан
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,0.2)" }}
+                         className="px-3 py-1.5 rounded-md text-xs font-medium">
+                      ⚡ {pendingApprovals.length} хүсэлт
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,0.2)" }}
+                         className="px-3 py-1.5 rounded-md text-xs font-medium">
+                      🏢 {departments.length} хэлтэс
+                    </div>
+                  </div>
+                </div>
+                <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "30%",
+                              background: "radial-gradient(circle at right, rgba(255,255,255,0.15), transparent)",
+                              opacity: 0.6 }} />
+              </div>
+            )}
 
             {view === "team" && (
               <div className="flex justify-end mb-4">
@@ -1822,7 +1853,7 @@ function EmployeeDashboard({ profile }) {
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
               <div style={{
-                background: isActive ? "#10b981" : "#635bff",
+                background: isActive ? "#10b981" : "#7367f0",
                 color: "white",
               }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
                 <UserIcon size={14} />
@@ -1861,7 +1892,7 @@ function EmployeeDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -3513,15 +3544,30 @@ function SidebarSection({ label, children }) {
   );
 }
 
-function BigStat({ label, value, suffix, accent }) {
+function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "purple", trend }) {
   return (
-    <div className="glass lift rounded-2xl px-5 py-4">
-      <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em] mb-1.5">{label}</div>
-      <div className="flex items-baseline gap-1.5">
-        <span style={{ fontFamily: FD, fontWeight: 500, color: accent ? T.highlight : T.ink, letterSpacing: "-0.03em" }}
-              className="text-3xl tabular-nums">{value}</span>
-        {suffix && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{suffix}</span>}
+    <div className="glass lift rounded-xl p-5">
+      <div className="flex items-start justify-between mb-3">
+        <div style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }} className="text-xs">
+          {label}
+        </div>
+        {Icon && (
+          <div className={`vuexy-stat-icon bg-${iconColor}`}>
+            <Icon size={18} strokeWidth={2} />
+          </div>
+        )}
       </div>
+      <div className="flex items-baseline gap-1">
+        <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink, letterSpacing: "-0.02em" }}
+              className="text-2xl tabular-nums">{value}</span>
+        {suffix && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{suffix}</span>}
+      </div>
+      {trend && (
+        <div style={{ color: trend.up ? T.ok : T.err, fontFamily: FS, fontWeight: 500 }}
+             className="text-[10px] mt-1.5">
+          {trend.up ? "↑" : "↓"} {trend.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -4331,7 +4377,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -4363,7 +4409,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "#635bff", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "#7367f0", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -4414,10 +4460,10 @@ function ManagerDashboard({ profile }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" />
-              <BigStat label="Ажилтан" value={team.length} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 slide-up-delay-1">
+              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Clock} iconColor="success" />
+              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Calendar} iconColor="purple" />
+              <BigStat label="Ажилтан" value={team.length} icon={Users} iconColor="info" />
             </div>
 
         {feedback && (
@@ -6650,7 +6696,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "#635bff",
+                              background: "#7367f0",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -6987,7 +7033,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "#635bff",
+                                background: "#7367f0",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
