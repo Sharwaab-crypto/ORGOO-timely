@@ -597,9 +597,11 @@ function AdminDashboard({ profile }) {
   const [kpiEntries, setKpiEntries] = useState([]);
   const [editingKpi, setEditingKpi] = useState(null); // null | 'add' | kpi obj
   const [kpiInputDept, setKpiInputDept] = useState(null); // department for KPI entry form
+  const [tasks, setTasks] = useState([]);
+  const [editingTask, setEditingTask] = useState(null); // null | 'add' | task obj
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE] = await Promise.all([
+    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk] = await Promise.all([
       supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -611,6 +613,7 @@ function AdminDashboard({ profile }) {
       supabase.from("leaves").select("*").order("created_at", { ascending: false }),
       supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
       supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+      supabase.from("tasks").select("*").order("created_at", { ascending: false }),
     ]);
     if (emps.data) {
       setEmployees(emps.data.filter((p) => p.role === "employee"));
@@ -630,6 +633,7 @@ function AdminDashboard({ profile }) {
     if (lvs.data) setLeaves(lvs.data);
     if (kpiD.data) setKpiDefs(kpiD.data);
     if (kpiE.data) setKpiEntries(kpiE.data);
+    if (tsk.data) setTasks(tsk.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -647,6 +651,7 @@ function AdminDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "kpi_definitions" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "kpi_entries" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadAll())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -993,6 +998,55 @@ function AdminDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
+  // Tasks CRUD
+  const upsertTask = async (data) => {
+    try {
+      if (data.id) {
+        const { error } = await supabase.from("tasks").update({
+          title: data.title, description: data.description,
+          status: data.status, priority: data.priority,
+          assignee_id: data.assignee_id, due_date: data.due_date,
+          completed_at: data.status === "done" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("tasks").insert({
+          department_id: data.department_id,
+          title: data.title, description: data.description,
+          status: data.status || "todo", priority: data.priority || "medium",
+          assignee_id: data.assignee_id, due_date: data.due_date,
+          created_by: profile.id,
+        });
+        if (error) throw error;
+      }
+      setEditingTask(null);
+      setFeedback({ type: "success", msg: "Даалгавар хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteTask = async (id) => {
+    try {
+      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "Устгагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const updateTaskStatus = async (taskId, newStatus) => {
+    try {
+      const { error } = await supabase.from("tasks").update({
+        status: newStatus,
+        completed_at: newStatus === "done" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", taskId);
+      if (error) throw error;
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
   // Session edit/delete (admin)
   const editSession = async ({ id, start_time, end_time, site_id, edit_reason }) => {
     try {
@@ -1098,6 +1152,7 @@ function AdminDashboard({ profile }) {
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
           <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
+          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
           <Tab active={view === "departments"} onClick={() => setView("departments")} icon={Users}>Хэлтсүүд</Tab>
           <Tab active={view === "managers"} onClick={() => setView("managers")} icon={ShieldCheck}>Ахлагчид</Tab>
           <Tab active={view === "sites"} onClick={() => setView("sites")} icon={MapPin}>Байрууд</Tab>
@@ -1187,6 +1242,19 @@ function AdminDashboard({ profile }) {
             onOpenInputForm={(deptId) => setKpiInputDept(deptId)}
           />
         )}
+        {view === "tasks" && (
+          <TasksView
+            tasks={tasks}
+            departments={departments}
+            employees={[...employees, ...managers]}
+            currentUserId={profile.id}
+            isAdmin={true}
+            onAdd={() => setEditingTask("add")}
+            onEdit={(t) => setEditingTask(t)}
+            onDelete={deleteTask}
+            onUpdateStatus={updateTaskStatus}
+          />
+        )}
 
         <Footer count={sessions.length} />
       </div>
@@ -1225,6 +1293,16 @@ function AdminDashboard({ profile }) {
           existingEntries={kpiEntries}
           onSave={upsertKpiEntries}
           onClose={() => setKpiInputDept(null)} />
+      )}
+
+      {editingTask && (
+        <TaskFormModal
+          mode={editingTask === "add" ? "add" : "edit"}
+          task={editingTask === "add" ? null : editingTask}
+          departments={departments}
+          employees={[...employees, ...managers]}
+          onSave={upsertTask}
+          onClose={() => setEditingTask(null)} />
       )}
 
       {siteFormMode && (
@@ -1279,7 +1357,11 @@ function EmployeeDashboard({ profile }) {
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
   const [myLeaves, setMyLeaves] = useState([]);
+  const [myTasks, setMyTasks] = useState([]);
   const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [allDepartments, setAllDepartments] = useState([]);
+  const [deptColleagues, setDeptColleagues] = useState([]);
   const [nearestDistances, setNearestDistances] = useState(null);
   const [mySites, setMySites] = useState([]);
   const [feedback, setFeedback] = useState(null);
@@ -1292,12 +1374,17 @@ function EmployeeDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps, esResult, lvs] = await Promise.all([
+    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
       supabase.from("employee_sites").select("site_id, sites(*)").eq("employee_id", profile.id),
       supabase.from("leaves").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
+      supabase.from("tasks").select("*").or(`assignee_id.eq.${profile.id},created_by.eq.${profile.id}`).order("created_at", { ascending: false }),
+      supabase.from("departments").select("*").order("name"),
+      profile.department_id
+        ? supabase.from("profiles").select("id, name, role, department_id").eq("department_id", profile.department_id)
+        : Promise.resolve({ data: [] }),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
@@ -1306,6 +1393,9 @@ function EmployeeDashboard({ profile }) {
       setMySites(esResult.data.map(es => es.sites).filter(Boolean));
     }
     if (lvs.data) setMyLeaves(lvs.data);
+    if (tsk.data) setMyTasks(tsk.data);
+    if (depts.data) setAllDepartments(depts.data);
+    if (colleagues.data) setDeptColleagues(colleagues.data);
   };
 
   useEffect(() => { loadMy(); }, []);
@@ -1317,6 +1407,7 @@ function EmployeeDashboard({ profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "leaves", filter: `employee_id=eq.${profile.id}` }, () => loadMy())
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadMy())
       .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadMy())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -1609,6 +1700,7 @@ function EmployeeDashboard({ profile }) {
           <Tab active={view === "home"} onClick={() => setView("home")} icon={Clock}>Цаг</Tab>
           <Tab active={view === "salary"} onClick={() => setView("salary")} icon={FileSpreadsheet}>Цалин</Tab>
           <Tab active={view === "history"} onClick={() => setView("history")} icon={Calendar}>Түүх</Tab>
+          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
           <Tab active={view === "leaves"} onClick={() => setView("leaves")} icon={Calendar}>Чөлөө</Tab>
           <Tab active={view === "requests"} onClick={() => setView("requests")} icon={ClipboardCheck}
                badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</Tab>
@@ -1777,6 +1869,35 @@ function EmployeeDashboard({ profile }) {
               } catch (e) { setFeedback({ type: "error", msg: e.message }); }
             }} />
         )}
+
+        {view === "tasks" && (
+          <MyTasksView
+            tasks={myTasks}
+            currentUserId={profile.id}
+            colleagues={deptColleagues}
+            hasDepartment={!!profile.department_id}
+            onAdd={() => setEditingTask("add")}
+            onEdit={(t) => setEditingTask(t)}
+            onDelete={async (id) => {
+              try {
+                await supabase.from("tasks").delete().eq("id", id);
+                setFeedback({ type: "success", msg: "Устгагдлаа" });
+                await loadMy();
+              } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+            }}
+            onUpdateStatus={async (taskId, newStatus) => {
+              try {
+                const { error } = await supabase.from("tasks").update({
+                  status: newStatus,
+                  completed_at: newStatus === "done" ? new Date().toISOString() : null,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", taskId);
+                if (error) throw error;
+                setFeedback({ type: "success", msg: "Шинэчлэгдлээ" });
+                await loadMy();
+              } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+            }} />
+        )}
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
 
         <Footer count={mySessions.length} />
@@ -1824,6 +1945,42 @@ function EmployeeDashboard({ profile }) {
               await loadMy();
             } catch (e) { setFeedback({ type: "error", msg: e.message }); }
           }} />
+      )}
+
+      {editingTask && (
+        <TaskFormModal
+          mode={editingTask === "add" ? "add" : "edit"}
+          task={editingTask === "add" ? null : editingTask}
+          departments={profile.department_id ? allDepartments.filter(d => d.id === profile.department_id) : []}
+          employees={deptColleagues}
+          onSave={async (data) => {
+            try {
+              if (data.id) {
+                const { error } = await supabase.from("tasks").update({
+                  title: data.title, description: data.description,
+                  status: data.status, priority: data.priority,
+                  assignee_id: data.assignee_id, due_date: data.due_date,
+                  completed_at: data.status === "done" ? new Date().toISOString() : null,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", data.id);
+                if (error) throw error;
+              } else {
+                const { error } = await supabase.from("tasks").insert({
+                  department_id: profile.department_id || data.department_id,
+                  title: data.title, description: data.description,
+                  status: "todo", priority: data.priority || "medium",
+                  assignee_id: data.assignee_id || profile.id,
+                  due_date: data.due_date,
+                  created_by: profile.id,
+                });
+                if (error) throw error;
+              }
+              setEditingTask(null);
+              setFeedback({ type: "success", msg: "Хадгаллаа" });
+              await loadMy();
+            } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+          }}
+          onClose={() => setEditingTask(null)} />
       )}
 
       {showSitePicker && (
@@ -3713,6 +3870,8 @@ function ManagerDashboard({ profile }) {
   const [kpiDefs, setKpiDefs] = useState([]);
   const [kpiEntries, setKpiEntries] = useState([]);
   const [kpiInputDept, setKpiInputDept] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [editingTask, setEditingTask] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
   const [, setTick] = useState(0);
@@ -3721,7 +3880,7 @@ function ManagerDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadAll = async () => {
-    const [me, sess, active, apps, st, es, dept, kpiD, kpiE] = await Promise.all([
+    const [me, sess, active, apps, st, es, dept, kpiD, kpiE, tsk] = await Promise.all([
       supabase.from("manager_employees").select("employee_id, profiles!manager_employees_employee_id_fkey(*)").eq("manager_id", profile.id),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
@@ -3731,6 +3890,7 @@ function ManagerDashboard({ profile }) {
       supabase.from("departments").select("*").order("name"),
       supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
       supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+      supabase.from("tasks").select("*").order("created_at", { ascending: false }),
     ]);
     if (me.data) setTeam(me.data.map((m) => m.profiles).filter(Boolean));
     if (sess.data) setSessions(sess.data);
@@ -3745,6 +3905,55 @@ function ManagerDashboard({ profile }) {
     if (dept.data) setDepartments(dept.data);
     if (kpiD.data) setKpiDefs(kpiD.data);
     if (kpiE.data) setKpiEntries(kpiE.data);
+    if (tsk.data) setTasks(tsk.data);
+  };
+
+  const upsertTask = async (data) => {
+    try {
+      if (data.id) {
+        const { error } = await supabase.from("tasks").update({
+          title: data.title, description: data.description,
+          status: data.status, priority: data.priority,
+          assignee_id: data.assignee_id, due_date: data.due_date,
+          completed_at: data.status === "done" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("tasks").insert({
+          department_id: data.department_id,
+          title: data.title, description: data.description,
+          status: data.status || "todo", priority: data.priority || "medium",
+          assignee_id: data.assignee_id, due_date: data.due_date,
+          created_by: profile.id,
+        });
+        if (error) throw error;
+      }
+      setEditingTask(null);
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteTask = async (id) => {
+    try {
+      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "Устгагдлаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const updateTaskStatus = async (taskId, newStatus) => {
+    try {
+      const { error } = await supabase.from("tasks").update({
+        status: newStatus,
+        completed_at: newStatus === "done" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", taskId);
+      if (error) throw error;
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
   const upsertKpiEntries = async (deptId, date, entries) => {
@@ -3880,6 +4089,7 @@ function ManagerDashboard({ profile }) {
         <nav className="flex items-center gap-1.5 mb-6 flex-wrap slide-up-delay-2">
           <Tab active={view === "team"} onClick={() => setView("team")} icon={Users}>Баг</Tab>
           <Tab active={view === "dashboard"} onClick={() => setView("dashboard")} icon={BarChart3}>Дашборд</Tab>
+          <Tab active={view === "tasks"} onClick={() => setView("tasks")} icon={ClipboardCheck}>Даалгавар</Tab>
           <Tab active={view === "ledger"} onClick={() => setView("ledger")} icon={Calendar}>Тэмдэглэл</Tab>
           <Tab active={view === "approvals"} onClick={() => setView("approvals")} icon={Inbox} badge={pendingApprovals.length}>
             Хүсэлт
@@ -3904,6 +4114,20 @@ function ManagerDashboard({ profile }) {
             isAdmin={false}
             currentUserId={profile.id}
             onOpenInputForm={(deptId) => setKpiInputDept(deptId)}
+          />
+        )}
+
+        {view === "tasks" && (
+          <TasksView
+            tasks={tasks}
+            departments={departments}
+            employees={team}
+            currentUserId={profile.id}
+            isAdmin={false}
+            onAdd={() => setEditingTask("add")}
+            onEdit={(t) => setEditingTask(t)}
+            onDelete={deleteTask}
+            onUpdateStatus={updateTaskStatus}
           />
         )}
         {view === "ledger" && (
@@ -3939,6 +4163,16 @@ function ManagerDashboard({ profile }) {
           existingEntries={kpiEntries}
           onSave={upsertKpiEntries}
           onClose={() => setKpiInputDept(null)} />
+      )}
+
+      {editingTask && (
+        <TaskFormModal
+          mode={editingTask === "add" ? "add" : "edit"}
+          task={editingTask === "add" ? null : editingTask}
+          departments={departments}
+          employees={team}
+          onSave={upsertTask}
+          onClose={() => setEditingTask(null)} />
       )}
     </div>
   );
@@ -5791,6 +6025,622 @@ function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
           ))}
         </ChartComponent>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TASKS — helpers
+// ═══════════════════════════════════════════════════════════════════════════
+const TASK_STATUS = {
+  todo: { label: "Хийх", color: T.muted, bg: "rgba(107,114,128,0.1)", icon: "📋" },
+  in_progress: { label: "Хийж буй", color: T.warn, bg: "rgba(245,158,11,0.12)", icon: "⚡" },
+  done: { label: "Хийсэн", color: T.ok, bg: "rgba(16,185,129,0.12)", icon: "✅" },
+};
+
+const TASK_PRIORITY = {
+  low: { label: "Бага", color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
+  medium: { label: "Дунд", color: "#3b82f6", bg: "rgba(59,130,246,0.12)" },
+  high: { label: "Өндөр", color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
+  urgent: { label: "Яаралтай", color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TASKS VIEW (admin/manager) — Kanban
+// ═══════════════════════════════════════════════════════════════════════════
+function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAdd, onEdit, onDelete, onUpdateStatus }) {
+  const [selectedDept, setSelectedDept] = useState("all");
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const filteredTasks = selectedDept === "all" ? tasks : tasks.filter(t => t.department_id === selectedDept);
+
+  const tasksByStatus = {
+    todo: filteredTasks.filter(t => t.status === "todo"),
+    in_progress: filteredTasks.filter(t => t.status === "in_progress"),
+    done: filteredTasks.filter(t => t.status === "done"),
+  };
+
+  const empById = (id) => employees.find(e => e.id === id);
+  const deptById = (id) => departments.find(d => d.id === id);
+
+  return (
+    <div className="space-y-4 fade-in">
+      {/* Filter bar */}
+      <div className="glass rounded-2xl p-4 slide-up flex items-center gap-3 flex-wrap">
+        <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
+          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+          className="px-3 py-2 rounded-lg border text-xs outline-none">
+          <option value="all">Бүх хэлтэс</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+
+        <div className="flex-1" />
+
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+          {filteredTasks.length} даалгавар
+        </div>
+
+        <button onClick={onAdd}
+          className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+          style={{ fontFamily: FM }}>
+          <Plus size={11} /> Даалгавар нэмэх
+        </button>
+      </div>
+
+      {/* Kanban */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {Object.entries(tasksByStatus).map(([status, list], colIdx) => {
+          const meta = TASK_STATUS[status];
+          return (
+            <div key={status} className={`glass rounded-3xl p-4 slide-up-delay-${colIdx + 1}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 14 }}>{meta.icon}</span>
+                  <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-base">{meta.label}</h3>
+                </div>
+                <span style={{ background: meta.bg, color: meta.color, fontFamily: FM }}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-bold tabular-nums">
+                  {list.length}
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                {list.length === 0 ? (
+                  <div style={{ color: T.muted }} className="text-center py-8 text-xs">
+                    Даалгавар алга
+                  </div>
+                ) : list.map((t) => {
+                  const dept = deptById(t.department_id);
+                  const assignee = empById(t.assignee_id);
+                  const priority = TASK_PRIORITY[t.priority] || TASK_PRIORITY.medium;
+                  const isOverdue = t.due_date && t.status !== "done" && new Date(t.due_date) < new Date(new Date().toISOString().slice(0,10));
+
+                  return (
+                    <div key={t.id} className="glass-soft rounded-xl p-3 lift cursor-pointer slide-up"
+                         onClick={() => onEdit(t)}>
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span style={{ background: priority.bg, color: priority.color, fontFamily: FM }}
+                                className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider font-bold">
+                            {priority.label}
+                          </span>
+                          {dept && (
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider truncate">
+                              {dept.name}
+                            </span>
+                          )}
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmDel(t); }}
+                          style={{ color: T.muted }} className="hover:text-red-500 shrink-0">
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+
+                      <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm mb-1.5 line-clamp-2">
+                        {t.title}
+                      </div>
+
+                      {t.description && (
+                        <p style={{ color: T.muted }} className="text-[11px] leading-relaxed line-clamp-2 mb-2">
+                          {t.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        {assignee ? (
+                          <div className="flex items-center gap-1">
+                            <div style={{
+                              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                              color: "white",
+                            }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
+                              {assignee.name?.[0]}
+                            </div>
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] truncate">
+                              {assignee.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
+                            Хариуцагчгүй
+                          </span>
+                        )}
+
+                        {t.due_date && (
+                          <span style={{
+                            color: isOverdue ? T.err : T.muted,
+                            fontFamily: FM,
+                          }} className="text-[10px]">
+                            📅 {t.due_date.slice(5)}
+                            {isOverdue && " ⚠"}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Status change buttons */}
+                      <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
+                        {status !== "todo" && (
+                          <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "todo"); }}
+                            className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                            style={{ fontFamily: FM, color: T.muted }}>
+                            ← Хийх
+                          </button>
+                        )}
+                        {status !== "in_progress" && (
+                          <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "in_progress"); }}
+                            className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                            style={{ fontFamily: FM, color: T.warn }}>
+                            ⚡ Эхлэх
+                          </button>
+                        )}
+                        {status !== "done" && (
+                          <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "done"); }}
+                            className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                            style={{ fontFamily: FM, color: T.ok }}>
+                            ✓ Дуусгах
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {confirmDel && (
+        <Modal onClose={() => setConfirmDel(null)} title="Даалгавар устгах?" maxW="max-w-sm">
+          <p style={{ color: T.muted }} className="text-sm mb-5">
+            <strong style={{ color: T.ink }}>{confirmDel.title}</strong> устгагдана.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDel(null)}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm"
+              style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+            <button onClick={() => { onDelete(confirmDel.id); setConfirmDel(null); }}
+              className="glow-danger press-btn flex-1 py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS }}>Устгах</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TASK FORM MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function TaskFormModal({ mode, task, departments, employees, onSave, onClose }) {
+  const [title, setTitle] = useState(task?.title || "");
+  const [description, setDescription] = useState(task?.description || "");
+  const [departmentId, setDepartmentId] = useState(task?.department_id || (departments[0]?.id || ""));
+  const [assigneeId, setAssigneeId] = useState(task?.assignee_id || "");
+  const [priority, setPriority] = useState(task?.priority || "medium");
+  const [status, setStatus] = useState(task?.status || "todo");
+  const [dueDate, setDueDate] = useState(task?.due_date || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    setErr("");
+    if (!title.trim()) return setErr("Гарчиг бичнэ үү");
+    if (!departmentId) return setErr("Хэлтэс сонгоно уу");
+    setBusy(true);
+    await onSave({
+      id: task?.id || null,
+      department_id: departmentId,
+      title: title.trim(),
+      description: description.trim() || null,
+      assignee_id: assigneeId || null,
+      priority,
+      status,
+      due_date: dueDate || null,
+    });
+    setBusy(false);
+  };
+
+  // Хэлтсийн ажилтнууд
+  const deptEmps = departmentId ? employees.filter(e => e.department_id === departmentId) : employees;
+
+  return (
+    <Modal onClose={onClose} title={mode === "add" ? "Шинэ даалгавар" : "Даалгавар засах"}>
+      <div className="space-y-4">
+        <Field label="Гарчиг" required>
+          <Input value={title} onChange={setTitle} placeholder="Жишээ: Сарын тайлан бэлдэх" autoFocus />
+        </Field>
+
+        <Field label="Дэлгэрэнгүй">
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+            placeholder="Юу хийх вэ, хэрхэн хийх ёстой г.м"
+            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none resize-none" />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Хэлтэс" required>
+            <select value={departmentId} onChange={(e) => { setDepartmentId(e.target.value); setAssigneeId(""); }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+              <option value="">— Сонгох —</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Хариуцагч">
+            <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+              <option value="">— Сонгоогүй —</option>
+              {deptEmps.map((e) => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Чухалчлал">
+            <select value={priority} onChange={(e) => setPriority(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+              {Object.entries(TASK_PRIORITY).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Дуусах огноо">
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
+          </Field>
+        </div>
+
+        {mode === "edit" && (
+          <Field label="Төлөв">
+            <div className="flex gap-1.5">
+              {Object.entries(TASK_STATUS).map(([k, v]) => (
+                <button key={k} onClick={() => setStatus(k)}
+                  className={`${status === k ? "tab-active" : "tab-inactive glass-soft"} press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-wider`}
+                  style={{ fontFamily: FM, borderColor: status === k ? "transparent" : T.borderSoft, border: "1px solid" }}>
+                  {v.icon} {v.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        {err && <ErrorBox>{err}</ErrorBox>}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose}
+            className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+            style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+          <button onClick={submit} disabled={busy}
+            className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ fontFamily: FS }}>
+            {busy && <Loader2 size={13} className="spin" />}
+            Хадгалах
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MY TASKS VIEW (employee) — Kanban + add own
+// ═══════════════════════════════════════════════════════════════════════════
+function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, onEdit, onDelete, onUpdateStatus }) {
+  const [filter, setFilter] = useState("assigned"); // assigned | created | all
+  const [viewMode, setViewMode] = useState("kanban"); // kanban | list
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const filtered = filter === "assigned" ? tasks.filter(t => t.assignee_id === currentUserId)
+                  : filter === "created" ? tasks.filter(t => t.created_by === currentUserId)
+                  : tasks;
+
+  const tasksByStatus = {
+    todo: filtered.filter(t => t.status === "todo"),
+    in_progress: filtered.filter(t => t.status === "in_progress"),
+    done: filtered.filter(t => t.status === "done"),
+  };
+
+  const empById = (id) => colleagues.find(e => e.id === id);
+
+  return (
+    <div className="space-y-4 fade-in">
+      {/* Filter + add */}
+      <div className="glass rounded-2xl p-4 slide-up flex items-center gap-3 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
+          {[
+            { id: "assigned", label: "Надад", count: tasks.filter(t => t.assignee_id === currentUserId).length },
+            { id: "created", label: "Миний үүсгэсэн", count: tasks.filter(t => t.created_by === currentUserId).length },
+            { id: "all", label: "Бүгд", count: tasks.length },
+          ].map((f) => (
+            <button key={f.id} onClick={() => setFilter(f.id)}
+              className={`${filter === f.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5`}
+              style={{ fontFamily: FM, borderColor: filter === f.id ? "transparent" : T.borderSoft }}>
+              {f.label}
+              {f.count > 0 && (
+                <span style={{
+                  background: filter === f.id ? "rgba(255,255,255,0.95)" : T.highlight,
+                  color: filter === f.id ? T.highlight : "white",
+                }} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold tabular-nums">{f.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="flex gap-1 glass-soft rounded-lg p-0.5">
+          <button onClick={() => setViewMode("kanban")}
+            className={`${viewMode === "kanban" ? "bg-white shadow-sm" : ""} press-btn px-2.5 py-1.5 rounded text-[10px] uppercase tracking-wider`}
+            style={{ fontFamily: FM, color: viewMode === "kanban" ? T.highlight : T.muted }}>
+            Kanban
+          </button>
+          <button onClick={() => setViewMode("list")}
+            className={`${viewMode === "list" ? "bg-white shadow-sm" : ""} press-btn px-2.5 py-1.5 rounded text-[10px] uppercase tracking-wider`}
+            style={{ fontFamily: FM, color: viewMode === "list" ? T.highlight : T.muted }}>
+            Жагсаалт
+          </button>
+        </div>
+
+        {hasDepartment && (
+          <button onClick={onAdd}
+            className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+            style={{ fontFamily: FM }}>
+            <Plus size={11} /> Шинэ
+          </button>
+        )}
+      </div>
+
+      {!hasDepartment && (
+        <div className="glass rounded-3xl py-6 px-4 text-center slide-up-delay-1" style={{ color: T.warn }}>
+          <AlertCircle size={20} className="mx-auto mb-2" strokeWidth={1.5} />
+          <p style={{ fontFamily: FM }} className="text-xs">
+            Та хэлтэст харьяалагдаагүй учраас даалгавар үүсгэх боломжгүй. Админд хандана уу.
+          </p>
+        </div>
+      )}
+
+      {/* Kanban view */}
+      {viewMode === "kanban" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {Object.entries(tasksByStatus).map(([status, list], colIdx) => {
+            const meta = TASK_STATUS[status];
+            return (
+              <div key={status} className={`glass rounded-3xl p-4 slide-up-delay-${colIdx + 1}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 14 }}>{meta.icon}</span>
+                    <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-base">{meta.label}</h3>
+                  </div>
+                  <span style={{ background: meta.bg, color: meta.color, fontFamily: FM }}
+                        className="px-2 py-0.5 rounded-full text-[9px] font-bold tabular-nums">
+                    {list.length}
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                  {list.length === 0 ? (
+                    <div style={{ color: T.muted }} className="text-center py-8 text-xs">
+                      Алга
+                    </div>
+                  ) : list.map((t) => {
+                    const assignee = empById(t.assignee_id);
+                    const priority = TASK_PRIORITY[t.priority] || TASK_PRIORITY.medium;
+                    const isOverdue = t.due_date && t.status !== "done" && new Date(t.due_date) < new Date(new Date().toISOString().slice(0,10));
+                    const canEdit = t.created_by === currentUserId || t.assignee_id === currentUserId;
+
+                    return (
+                      <div key={t.id} className="glass-soft rounded-xl p-3 lift cursor-pointer slide-up"
+                           onClick={() => canEdit && onEdit(t)}>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <span style={{ background: priority.bg, color: priority.color, fontFamily: FM }}
+                                className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider font-bold">
+                            {priority.label}
+                          </span>
+                          {(t.created_by === currentUserId) && (
+                            <button onClick={(e) => { e.stopPropagation(); setConfirmDel(t); }}
+                              style={{ color: T.muted }} className="hover:text-red-500 shrink-0">
+                              <Trash2 size={10} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm mb-1.5 line-clamp-2">
+                          {t.title}
+                        </div>
+
+                        {t.description && (
+                          <p style={{ color: T.muted }} className="text-[11px] leading-relaxed line-clamp-2 mb-2">
+                            {t.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          {assignee ? (
+                            <div className="flex items-center gap-1">
+                              <div style={{
+                                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                                color: "white",
+                              }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
+                                {assignee.name?.[0]}
+                              </div>
+                              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] truncate">
+                                {assignee.name}
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
+                              Хариуцагчгүй
+                            </span>
+                          )}
+
+                          {t.due_date && (
+                            <span style={{
+                              color: isOverdue ? T.err : T.muted,
+                              fontFamily: FM,
+                            }} className="text-[10px]">
+                              📅 {t.due_date.slice(5)}
+                              {isOverdue && " ⚠"}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status change buttons (only for assignee) */}
+                        {t.assignee_id === currentUserId && (
+                          <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
+                            {status !== "todo" && (
+                              <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "todo"); }}
+                                className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                                style={{ fontFamily: FM, color: T.muted }}>
+                                ← Хийх
+                              </button>
+                            )}
+                            {status !== "in_progress" && (
+                              <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "in_progress"); }}
+                                className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                                style={{ fontFamily: FM, color: T.warn }}>
+                                ⚡ Эхлэх
+                              </button>
+                            )}
+                            {status !== "done" && (
+                              <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "done"); }}
+                                className="glass-soft press-btn flex-1 py-1 rounded text-[9px] uppercase tracking-wider"
+                                style={{ fontFamily: FM, color: T.ok }}>
+                                ✓ Дуусгах
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* List view */}
+      {viewMode === "list" && (
+        <>
+          {filtered.length === 0 ? (
+            <div className="glass rounded-3xl py-12 px-6 text-center slide-up-delay-1" style={{ color: T.muted }}>
+              <ClipboardCheck size={28} className="mx-auto mb-3" strokeWidth={1.5} />
+              <p className="text-sm">Даалгавар алга</p>
+            </div>
+          ) : (
+            <div className="space-y-2 slide-up-delay-1">
+              {filtered.map((t) => {
+                const status = TASK_STATUS[t.status];
+                const priority = TASK_PRIORITY[t.priority];
+                const isOverdue = t.due_date && t.status !== "done" && new Date(t.due_date) < new Date(new Date().toISOString().slice(0,10));
+                const assignee = empById(t.assignee_id);
+
+                return (
+                  <div key={t.id} className="glass lift rounded-2xl p-4 slide-up cursor-pointer"
+                       onClick={() => onEdit(t)}>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span style={{ background: priority.bg, color: priority.color, fontFamily: FM }}
+                                className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold">
+                            {priority.label}
+                          </span>
+                          <span style={{ background: status.bg, color: status.color, fontFamily: FM }}
+                                className="px-2 py-0.5 rounded text-[9px] uppercase tracking-wider">
+                            {status.icon} {status.label}
+                          </span>
+                          {assignee && (
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                              👤 {assignee.name}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm mb-1">
+                          {t.title}
+                        </div>
+                        {t.description && (
+                          <p style={{ color: T.muted }} className="text-xs leading-relaxed mb-2">{t.description}</p>
+                        )}
+                        {t.due_date && (
+                          <div style={{ color: isOverdue ? T.err : T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                            📅 {t.due_date}
+                            {isOverdue && <span className="ml-1 font-bold">⚠ Хугацаа хэтэрсэн</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {t.assignee_id === currentUserId && t.status !== "done" && (
+                      <div className="flex gap-2 mt-3 pt-3 border-t" style={{ borderColor: T.borderSoft }}>
+                        {t.status === "todo" && (
+                          <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "in_progress"); }}
+                            className="glow-warn press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-wider font-medium"
+                            style={{ fontFamily: FM }}>
+                            ⚡ Эхлэх
+                          </button>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); onUpdateStatus(t.id, "done"); }}
+                          className="glow-success press-btn flex-1 py-2 rounded-lg text-[10px] uppercase tracking-wider font-medium"
+                          style={{ fontFamily: FM }}>
+                          ✓ Дуусгах
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {confirmDel && (
+        <Modal onClose={() => setConfirmDel(null)} title="Даалгавар устгах?" maxW="max-w-sm">
+          <p style={{ color: T.muted }} className="text-sm mb-5">
+            <strong style={{ color: T.ink }}>{confirmDel.title}</strong> устгагдана.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmDel(null)}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm"
+              style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
+            <button onClick={() => { onDelete(confirmDel.id); setConfirmDel(null); }}
+              className="glow-danger press-btn flex-1 py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS }}>Устгах</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
