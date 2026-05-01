@@ -4011,6 +4011,18 @@ function InventoryView({ profile, isAdmin = false }) {
               const stockPct = p.min_stock > 0 ? Math.min(100, (p.stock / (p.min_stock * 2)) * 100) : 100;
               return (
                 <div key={p.id} className="glass lift rounded-xl p-3">
+                  {/* Зураг */}
+                  {p.image_url && (
+                    <div style={{
+                      width: "100%", height: 120,
+                      borderRadius: 8, overflow: "hidden",
+                      background: T.surfaceAlt, marginBottom: 10,
+                    }}>
+                      <img src={p.image_url} alt={p.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        onError={(e) => { e.target.style.display = "none"; }} />
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -4247,8 +4259,69 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
   const [stock, setStock] = useState(product?.stock ? String(product.stock) : "0");
   const [minStock, setMinStock] = useState(product?.min_stock ? String(product.min_stock) : "0");
   const [description, setDescription] = useState(product?.description || "");
+  const [imageUrl, setImageUrl] = useState(product?.image_url || "");
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(product?.image_url || "");
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newCatName, setNewCatName] = useState("");
+  const fileInputRef = useRef(null);
+
+  // File сонгох
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Хэмжээ шалгах (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Зураг 5MB-аас бага байх ёстой");
+      return;
+    }
+
+    // Image мөн эсэх
+    if (!file.type.startsWith("image/")) {
+      alert("Зөвхөн зураг сонгох боломжтой");
+      return;
+    }
+
+    setImageFile(file);
+    // Preview
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  // Зураг устгах
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview("");
+    setImageUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Зураг upload хийх
+  const uploadImage = async () => {
+    if (!imageFile) return imageUrl;
+    setUploading(true);
+    try {
+      const ext = imageFile.name.split(".").pop().toLowerCase();
+      const fileName = `${profile.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage
+        .from("inv-products")
+        .upload(fileName, imageFile, {
+          contentType: imageFile.type,
+          upsert: false,
+        });
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from("inv-products")
+        .getPublicUrl(fileName);
+      return urlData.publicUrl;
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
   const inputClass = "w-full px-3 py-2 rounded-lg text-sm";
@@ -4264,6 +4337,70 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
         </div>
 
         <div className="space-y-3">
+          {/* Зураг upload */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Барааны зураг
+            </label>
+            <div className="flex gap-3 items-start">
+              {/* Preview */}
+              <div
+                onClick={() => !imagePreview && fileInputRef.current?.click()}
+                style={{
+                  width: 100, height: 100, borderRadius: 12,
+                  border: `2px dashed ${imagePreview ? "transparent" : T.border}`,
+                  background: imagePreview ? "transparent" : T.surfaceAlt,
+                  cursor: imagePreview ? "default" : "pointer",
+                  overflow: "hidden",
+                  position: "relative",
+                  flexShrink: 0,
+                }}
+                className="flex items-center justify-center">
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <button onClick={handleRemoveImage}
+                      style={{
+                        position: "absolute", top: 4, right: 4,
+                        background: "rgba(239,68,68,0.9)", color: "white",
+                        width: 24, height: 24, borderRadius: 12,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                      <X size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-center" style={{ color: T.muted, fontFamily: FM }}>
+                    <Camera size={24} className="mx-auto mb-1" />
+                    <div className="text-[9px]">Сонгох</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload buttons */}
+              <div className="flex-1 space-y-2">
+                <button type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+                  style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS, fontWeight: 500 }}>
+                  📁 Файлаас сонгох
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileSelect}
+                  style={{ display: "none" }}
+                />
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                  💡 JPG, PNG, WEBP (max 5MB)
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               Барааны нэр *
@@ -4373,24 +4510,31 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
           </div>
 
           <button
-            disabled={busy || !name.trim()}
+            disabled={busy || uploading || !name.trim()}
             onClick={async () => {
               setBusy(true);
-              await onSave({
-                name: name.trim(),
-                sku: sku.trim() || null,
-                category_id: categoryId || null,
-                unit,
-                cost_price: Number(costPrice) || 0,
-                sale_price: Number(salePrice) || 0,
-                stock: product ? Number(product.stock) : (Number(stock) || 0),
-                min_stock: Number(minStock) || 0,
-                description: description.trim() || null,
-              });
-              setBusy(false);
+              try {
+                const finalImageUrl = await uploadImage();
+                await onSave({
+                  name: name.trim(),
+                  sku: sku.trim() || null,
+                  category_id: categoryId || null,
+                  unit,
+                  cost_price: Number(costPrice) || 0,
+                  sale_price: Number(salePrice) || 0,
+                  stock: product ? Number(product.stock) : (Number(stock) || 0),
+                  min_stock: Number(minStock) || 0,
+                  description: description.trim() || null,
+                  image_url: finalImageUrl || null,
+                });
+              } catch (e) {
+                alert("Зураг хадгалахад алдаа: " + e.message);
+              } finally {
+                setBusy(false);
+              }
             }}
             className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : "Хадгалах"}
+            {uploading ? "🖼 Зураг илгээж буй..." : busy ? "Хадгалаж..." : "Хадгалах"}
           </button>
         </div>
       </div>
