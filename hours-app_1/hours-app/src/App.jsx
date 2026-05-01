@@ -610,7 +610,7 @@ function LoginScreen() {
 //  ADMIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function AdminDashboard({ profile }) {
-  const [view, setView] = useState("team");
+  const [view, setView] = useState("dashboard");
   const [employees, setEmployees] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
@@ -1344,12 +1344,6 @@ function AdminDashboard({ profile }) {
                 {view === "leaves" && `${leaves.filter(l => l.status === "pending").length} хариу хүлээж буй чөлөө`}
                 {view === "ledger" && "Цаг бүртгэлийн нарийвчилсан түүх"}
               </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 slide-up-delay-1">
-              <BigStat label="Ажиллаж буй" value={activeCount} accent={activeCount > 0} icon={Play} iconColor="success" />
-              <BigStat label="Өнөөдөр" value={fmtHours(teamTodayMs)} suffix="цаг" icon={Clock} iconColor="warn" />
-              <BigStat label="Ажилтан" value={employees.length} icon={Users} iconColor="pink" />
             </div>
 
             {view === "team" && (
@@ -6706,7 +6700,7 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  MANAGER DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function ManagerDashboard({ profile }) {
-  const [view, setView] = useState("team");
+  const [view, setView] = useState("dashboard");
   const [team, setTeam] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
