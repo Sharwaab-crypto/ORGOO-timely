@@ -8672,6 +8672,12 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
     if (period === "day") {
       return { start: selectedDate, end: selectedDate, label: selectedDate };
     }
+    if (period === "yesterday") {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = y.toISOString().slice(0, 10);
+      return { start: yStr, end: yStr, label: `Өчигдөр (${yStr})` };
+    }
     if (period === "week") {
       const end = new Date(selectedDate);
       const start = new Date(end); start.setDate(end.getDate() - 6);
@@ -8722,7 +8728,8 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex gap-1.5 flex-wrap">
             {[
-              { id: "day", label: "Өдөр" },
+              { id: "day", label: "Өнөөдөр" },
+              { id: "yesterday", label: "Өчигдөр" },
               { id: "week", label: "7 хоног" },
               { id: "month", label: "Сар" },
               { id: "year", label: "Жил" },
@@ -8892,11 +8899,12 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 
                   // Trend: Хэрэв 7 хоног мөн өнгөрсөн 7 хоног харьцуулах
                   let trend = null;
-                  if (period === "week" || period === "day") {
+                  if (period === "week" || period === "day" || period === "yesterday") {
+                    const dayShift = period === "week" ? 7 : 1;
                     const prevStart = new Date(periodRange.start);
-                    prevStart.setDate(prevStart.getDate() - (period === "day" ? 1 : 7));
+                    prevStart.setDate(prevStart.getDate() - dayShift);
                     const prevEnd = new Date(periodRange.end);
-                    prevEnd.setDate(prevEnd.getDate() - (period === "day" ? 1 : 7));
+                    prevEnd.setDate(prevEnd.getDate() - dayShift);
                     const prevEntries = kpiEntries.filter(e =>
                       e.kpi_id === kpi.id &&
                       e.entry_date >= prevStart.toISOString().slice(0,10) &&
