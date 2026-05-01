@@ -1165,6 +1165,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox}>Зарлал</SidebarTab>
+              <SidebarTab active={view === "best"} onClick={() => { setView("best"); setSidebarOpen(false); }} icon={ShieldCheck}>Шилдэг</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Ажилтнууд">
@@ -1227,6 +1228,7 @@ function AdminDashboard({ profile }) {
                 {view === "dashboard" && "Дашборд"}
                 {view === "tasks" && "Даалгавар"}
                 {view === "announcements" && "Зарлал"}
+                {view === "best" && "Шилдэг ажилтан"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1240,6 +1242,7 @@ function AdminDashboard({ profile }) {
                 {view === "dashboard" && "Хэлтсийн KPI болон тоон үзүүлэлтүүд"}
                 {view === "tasks" && "Даалгаврын Kanban самбар"}
                 {view === "announcements" && "Бүх ажилтанд хүрэх мэдээлэл"}
+                {view === "best" && "Сар бүрийн шилдэг ажилтны жагсаалт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1287,7 +1290,7 @@ function AdminDashboard({ profile }) {
         {view === "team" && (
           <TeamView
             employees={employees} sessions={sessions} activeSessions={activeSessions}
-            sites={sites} employeeSites={employeeSites}
+            sites={sites} employeeSites={employeeSites} leaves={leaves}
             geoBusyId={geoBusyId} feedback={feedback}
             onEdit={(emp) => { setFormEmp(emp); setFormMode("edit"); }}
             onDelete={(id) => setConfirmDel(id)}
@@ -1375,6 +1378,15 @@ function AdminDashboard({ profile }) {
                 await loadAll();
               } catch (e) { setFeedback({ type: "error", msg: e.message }); }
             }}
+          />
+        )}
+
+        {view === "best" && (
+          <BestEmployeeView
+            employees={employees}
+            sessions={sessions}
+            kpiEntries={kpiEntries}
+            leaves={leaves}
           />
         )}
 
@@ -2236,7 +2248,7 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd }) {
   if (employees.length === 0) {
     return (
       <div style={{ borderColor: T.border, background: T.surface }}
@@ -2290,6 +2302,13 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                 <p style={{ color: T.muted }} className="text-xs mt-0.5 truncate">{emp.job_title}</p>
               </div>
               <div className="flex gap-1 -mr-1.5 -mt-1.5">
+                <button onClick={() => {
+                  const now = new Date();
+                  exportSalaryPdf(emp, sessions, leaves, now.getFullYear(), now.getMonth() + 1)
+                    .catch(e => alert("PDF алдаа: " + e.message));
+                }} style={{ color: T.highlight }} className="p-1.5 rounded-lg hover:bg-black/5" title="Цалингийн PDF">
+                  <FileText size={14} />
+                </button>
                 <button onClick={() => onEdit(emp)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><Edit3 size={14} /></button>
                 <button onClick={() => onDelete(emp.id)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><X size={15} /></button>
               </div>
@@ -3531,7 +3550,150 @@ function SidebarSection({ label, children }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  LIVE MAP — Enterprise edition with 8 features
+//  BEST EMPLOYEE VIEW — Сарын шилдэг ажилтан
+// ═══════════════════════════════════════════════════════════════════════════
+function BestEmployeeView({ employees, sessions, kpiEntries, leaves }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+
+  const ranked = useMemo(() => {
+    return calculateBestEmployees(employees, sessions, kpiEntries, leaves, year, month);
+  }, [employees, sessions, kpiEntries, leaves, year, month]);
+
+  const top3 = ranked.slice(0, 3);
+  const others = ranked.slice(3, 10);
+
+  const monthNames = ["", "1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
+                      "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар"];
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="glass rounded-2xl p-4 flex flex-wrap gap-2 items-center">
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))}
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+          className="text-sm">
+          {[2024, 2025, 2026].map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={month} onChange={(e) => setMonth(Number(e.target.value))}
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+          className="text-sm">
+          {monthNames.slice(1).map((name, i) => <option key={i+1} value={i+1}>{name}</option>)}
+        </select>
+        <div className="flex-1" />
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+          {ranked.filter((r) => r.score > 0).length} ажилтан тооцоолсон
+        </div>
+      </div>
+
+      {/* TOP 3 podium */}
+      {top3.length > 0 && top3[0].score > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {top3.map((stat, i) => {
+            const medals = ["🥇", "🥈", "🥉"];
+            const colors = [
+              "linear-gradient(135deg, #fbbf24, #f59e0b)",
+              "linear-gradient(135deg, #cbd5e1, #94a3b8)",
+              "linear-gradient(135deg, #fb923c, #ea580c)",
+            ];
+            return (
+              <div key={stat.employee.id} className="glass-strong rounded-2xl p-5 text-center"
+                style={{ order: i === 0 ? 2 : i === 1 ? 1 : 3 }}>
+                <div style={{ fontSize: i === 0 ? 56 : 44 }} className="mb-2">
+                  {medals[i]}
+                </div>
+                <div style={{
+                  background: colors[i],
+                  color: "white",
+                  fontSize: i === 0 ? 28 : 24,
+                }} className="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold">
+                  {stat.employee.name?.[0]}
+                </div>
+                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">
+                  {stat.employee.name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
+                  {stat.employee.job_title || "—"}
+                </div>
+                <div style={{ background: T.highlightSoft, color: T.highlight }}
+                  className="rounded-full px-3 py-1 inline-block text-xs font-bold">
+                  {stat.score} оноо
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-1 text-[10px]" style={{ fontFamily: FS, color: T.inkSoft }}>
+                  <div>
+                    <div style={{ color: T.muted }} className="text-[9px]">ЦАГ</div>
+                    <div className="font-semibold">{stat.totalHours}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: T.muted }} className="text-[9px]">KPI</div>
+                    <div className="font-semibold">{stat.kpiScore}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: T.muted }} className="text-[9px]">ЧӨЛӨӨ</div>
+                    <div className="font-semibold">{stat.leaveCount}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Others list */}
+      {others.length > 0 && (
+        <div className="glass rounded-2xl p-4">
+          <div style={{ fontFamily: FS, color: T.muted }}
+               className="text-[10px] uppercase tracking-[0.2em] font-medium mb-3">
+            Бусад ажилтнууд
+          </div>
+          <div className="space-y-2">
+            {others.map((stat, i) => (
+              <div key={stat.employee.id}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/40 transition-colors">
+                <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }} className="text-sm w-6">
+                  {i + 4}
+                </div>
+                <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold">
+                  {stat.employee.name?.[0]}
+                </div>
+                <div className="flex-1">
+                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm">
+                    {stat.employee.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                    {stat.totalHours}ц · {stat.kpiScore} KPI · {stat.leaveCount} чөлөө
+                  </div>
+                </div>
+                <div style={{ background: T.surfaceAlt, color: T.inkSoft }}
+                  className="px-3 py-1 rounded-full text-xs font-semibold">
+                  {stat.score}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ranked.length === 0 || ranked[0].score === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📊</div>
+          <div style={{ fontFamily: FS, color: T.muted }} className="text-sm">
+            Энэ сард тоон үзүүлэлт хараахан байхгүй байна
+          </div>
+        </div>
+      ) : null}
+
+      {/* Info */}
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] text-center">
+        Шалгуур: Цаг (40%) + KPI (40%) + Чөлөө цөөн (20%)
+      </div>
+    </div>
+  );
+}
+
+
 //  Filter, Alerts, Cluster, Heatmap, Tracking, Time slider, PDF, Manager view
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -6334,7 +6496,207 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI Excel Export
 // ═══════════════════════════════════════════════════════════════════════════
-function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
+// ═══════════════════════════════════════════════════════════════════════════
+//  SALARY PDF — Цалингийн тайлан үүсгэх
+// ═══════════════════════════════════════════════════════════════════════════
+async function exportSalaryPdf(employee, sessions, leaves, year, month) {
+  const { jsPDF } = await import("jspdf");
+  await import("jspdf-autotable");
+
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59);
+
+  // Filter sessions for this month
+  const monthSessions = sessions.filter((s) => {
+    if (s.employee_id !== employee.id || !s.end_time) return false;
+    const start = new Date(s.start_time);
+    return start >= monthStart && start <= monthEnd;
+  });
+
+  // Тооцооллуудаа хийе
+  let totalMs = 0;
+  let regularMs = 0;
+  let overtimeMs = 0;
+  const dailyHours = {};
+
+  monthSessions.forEach((s) => {
+    const start = new Date(s.start_time);
+    const end = new Date(s.end_time);
+    const ms = end - start;
+    totalMs += ms;
+
+    const dayKey = start.toISOString().slice(0, 10);
+    dailyHours[dayKey] = (dailyHours[dayKey] || 0) + ms;
+  });
+
+  // Илүү цаг тооцох (өдөрт 8+ цаг -> overtime)
+  Object.values(dailyHours).forEach((ms) => {
+    const hours = ms / 3600000;
+    if (hours <= 8) {
+      regularMs += ms;
+    } else {
+      regularMs += 8 * 3600000;
+      overtimeMs += (hours - 8) * 3600000;
+    }
+  });
+
+  const totalHours = totalMs / 3600000;
+  const regularHours = regularMs / 3600000;
+  const overtimeHours = overtimeMs / 3600000;
+
+  const hourlyRate = Number(employee.hourly_rate || 0);
+  const otMultiplier = Number(employee.overtime_rate_multiplier || 1.5);
+  const baseSalary = Number(employee.base_salary || 0);
+
+  const regularPay = regularHours * hourlyRate;
+  const overtimePay = overtimeHours * hourlyRate * otMultiplier;
+
+  // Чөлөө тооцох
+  const monthLeaves = leaves.filter((l) => {
+    if (l.employee_id !== employee.id || l.status !== "approved") return false;
+    const lDate = new Date(l.leave_date);
+    return lDate >= monthStart && lDate <= monthEnd;
+  });
+  const leaveDeduction = monthLeaves.length * 8 * hourlyRate * 0.5; // 50% хасалт чөлөөтэй өдөр
+
+  const grossPay = baseSalary + regularPay + overtimePay - leaveDeduction;
+  const tax = grossPay * 0.1; // 10% татвар
+  const netPay = grossPay - tax;
+
+  const monthNames = ["", "1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
+                      "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар"];
+
+  // PDF үүсгэх
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  pdf.setFont("helvetica");
+
+  // Header
+  pdf.setFontSize(20);
+  pdf.setTextColor(236, 72, 153);
+  pdf.text("ORGOO", 20, 20);
+  pdf.setFontSize(10);
+  pdf.setTextColor(100, 100, 100);
+  pdf.text("Tsalingiin tailan", 20, 28);
+
+  // Employee info
+  pdf.setFontSize(14);
+  pdf.setTextColor(30, 30, 30);
+  pdf.text(employee.name || "—", 20, 45);
+  pdf.setFontSize(9);
+  pdf.setTextColor(120, 120, 120);
+  pdf.text(`Albanaa: ${employee.job_title || "—"}`, 20, 51);
+  pdf.text(`${monthNames[month]} ${year}`, 20, 56);
+
+  // Тооцооллын хүснэгт
+  const data = [
+    ["Undsen tsalin", `${baseSalary.toLocaleString()} togrog`],
+    ["Niit tsag", `${totalHours.toFixed(1)} tsag`],
+    ["  · Engiin", `${regularHours.toFixed(1)} tsag`],
+    ["  · Iluu tsag", `${overtimeHours.toFixed(1)} tsag`],
+    ["Tsagiin staavka", `${hourlyRate.toLocaleString()} togrog`],
+    ["Engiin tsag mongo", `${regularPay.toLocaleString()} togrog`],
+    [`Iluu tsag (x${otMultiplier})`, `${overtimePay.toLocaleString()} togrog`],
+    ["Cholootei udur", `${monthLeaves.length} udur`],
+    ["Cholootei khasalt", `-${leaveDeduction.toLocaleString()} togrog`],
+    ["", ""],
+    ["NIIT TUGREEN", `${grossPay.toLocaleString()} togrog`],
+    ["Tatvar (10%)", `-${tax.toLocaleString()} togrog`],
+  ];
+
+  pdf.autoTable({
+    startY: 70,
+    head: [["Zuil", "Mongo"]],
+    body: data,
+    theme: "plain",
+    headStyles: { fillColor: [236, 72, 153], textColor: [255, 255, 255], fontSize: 9 },
+    bodyStyles: { fontSize: 9 },
+    alternateRowStyles: { fillColor: [253, 243, 245] },
+    margin: { left: 20, right: 20 },
+  });
+
+  const finalY = pdf.lastAutoTable.finalY + 8;
+
+  // Final pay box
+  pdf.setFillColor(236, 72, 153);
+  pdf.rect(20, finalY, 170, 18, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFontSize(10);
+  pdf.text("AVAH MONGO", 25, finalY + 8);
+  pdf.setFontSize(16);
+  pdf.text(`${netPay.toLocaleString()} togrog`, 25, finalY + 15);
+
+  // Footer
+  pdf.setFontSize(8);
+  pdf.setTextColor(150, 150, 150);
+  pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
+  pdf.text("ORGOO automatic tailan", 150, 285);
+
+  pdf.save(`ORGOO-${employee.name}-${year}-${String(month).padStart(2, "0")}.pdf`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BEST EMPLOYEE — Шилдэг ажилтан автомат
+// ═══════════════════════════════════════════════════════════════════════════
+function calculateBestEmployees(employees, sessions, kpiEntries, leaves, year, month) {
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59);
+
+  const stats = employees.map((emp) => {
+    // Цаг
+    const empSessions = sessions.filter((s) => {
+      if (s.employee_id !== emp.id || !s.end_time) return false;
+      const sd = new Date(s.start_time);
+      return sd >= monthStart && sd <= monthEnd;
+    });
+    const totalHours = empSessions.reduce((sum, s) =>
+      sum + (new Date(s.end_time) - new Date(s.start_time)) / 3600000, 0);
+
+    // KPI
+    const empKpis = kpiEntries.filter((k) => {
+      if (k.employee_id !== emp.id) return false;
+      const kd = new Date(k.date);
+      return kd >= monthStart && kd <= monthEnd;
+    });
+    const kpiScore = empKpis.reduce((sum, k) => sum + Number(k.value || 0), 0);
+
+    // Чөлөө
+    const empLeaves = leaves.filter((l) => {
+      if (l.employee_id !== emp.id || l.status !== "approved") return false;
+      const ld = new Date(l.leave_date);
+      return ld >= monthStart && ld <= monthEnd;
+    });
+    const leaveCount = empLeaves.length;
+
+    // Final оноо: цаг (40%) + KPI (40%) + цөөн чөлөө (20%)
+    // Normalize: бусадтай харьцангуй
+    return {
+      employee: emp,
+      totalHours: totalHours.toFixed(1),
+      kpiScore,
+      leaveCount,
+      // Тогтмол шинж шалгаруулах
+      score: 0,
+    };
+  });
+
+  // Normalize and score
+  const maxHours = Math.max(...stats.map((s) => s.totalHours), 1);
+  const maxKpi = Math.max(...stats.map((s) => s.kpiScore), 1);
+  const maxLeaves = Math.max(...stats.map((s) => s.leaveCount), 1);
+
+  stats.forEach((s) => {
+    const hourScore = (s.totalHours / maxHours) * 40;
+    const kpiScore = (s.kpiScore / maxKpi) * 40;
+    const leaveScore = ((maxLeaves - s.leaveCount) / maxLeaves) * 20;
+    s.score = Math.round(hourScore + kpiScore + leaveScore);
+  });
+
+  // Sort by score desc
+  stats.sort((a, b) => b.score - a.score);
+  return stats;
+}
+
+
   const wb = XLSX.utils.book_new();
 
   // ============== Хуудас 1: ХУРААНГУЙ ==============
