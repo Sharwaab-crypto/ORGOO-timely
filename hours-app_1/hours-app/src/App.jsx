@@ -1252,6 +1252,8 @@ function AdminDashboard({ profile }) {
             </SidebarSection>
 
             <SidebarSection label="Бизнес">
+              <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Bell}>📞 Дуудлага</SidebarTab>
+              <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ClipboardCheck}>Захиалга</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
@@ -1325,6 +1327,8 @@ function AdminDashboard({ profile }) {
                 {view === "hrfile" && "HR хувийн файл"}
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "stockcount" && "Тооллого"}
+                {view === "callcenter" && "Дуудлагын самбар"}
+                {view === "orders" && "Захиалга"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1346,6 +1350,8 @@ function AdminDashboard({ profile }) {
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
+                {view === "callcenter" && "Утсан захиалга хүлээн авах"}
+                {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1532,6 +1538,14 @@ function AdminDashboard({ profile }) {
 
         {view === "stockcount" && (
           <StockCountView profile={profile} />
+        )}
+
+        {view === "callcenter" && (
+          <CallCenterView profile={profile} />
+        )}
+
+        {view === "orders" && (
+          <OrdersView profile={profile} />
         )}
 
             <Footer count={sessions.length} />
@@ -5640,6 +5654,762 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CALL CENTER VIEW — Дуудлагын самбар
+// ═══════════════════════════════════════════════════════════════════════════
+function CallCenterView({ profile }) {
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [todayCount, setTodayCount] = useState(0);
+  const [todayAmount, setTodayAmount] = useState(0);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const [{ data: prodData }, { data: ordData }] = await Promise.all([
+        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(20),
+      ]);
+
+      setProducts(prodData || []);
+      setRecentOrders(ordData || []);
+
+      // Өнөөдрийн захиалга
+      const todayOrders = (ordData || []).filter((o) => new Date(o.created_at) >= today && o.status !== "cancelled");
+      setTodayCount(todayOrders.length);
+      setTodayAmount(todayOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0));
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  return (
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="glass rounded-2xl p-4">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
+            Өнөөдрийн захиалга
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl">
+            {todayCount}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
+            Нийт дүн
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-2xl tabular-nums">
+            {todayAmount.toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
+      {/* Big call button */}
+      <button onClick={() => setShowCallModal(true)}
+        disabled={products.length === 0}
+        style={{
+          background: products.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #ec4899, #f97316)",
+          color: products.length === 0 ? T.mutedSoft : "white",
+          fontFamily: FS,
+          boxShadow: products.length === 0 ? "none" : "0 8px 24px rgba(236,72,153,0.3)",
+        }}
+        className="press-btn w-full py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
+        📞 Шинэ дуудлага хүлээн авах
+      </button>
+
+      {products.length === 0 && (
+        <div className="glass-soft rounded-lg p-3" style={{ color: T.warn, fontFamily: FS }}>
+          ⚠ Эхлээд бараа нэмэх ёстой (Бараа нөөц хэсгээс)
+        </div>
+      )}
+
+      {/* Recent orders */}
+      <div>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 px-1">
+          Сүүлийн дуудлагууд
+        </div>
+        {loading ? (
+          <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+            <Loader2 className="spin mx-auto mb-2" size={20} />
+          </div>
+        ) : recentOrders.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">📞</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              Дуудлага хараахан ирээгүй байна
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {recentOrders.slice(0, 10).map((o) => (
+              <OrderCard key={o.id} order={o} compact />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showCallModal && (
+        <CallReceiveModal
+          products={products}
+          profile={profile}
+          onSave={async (data) => {
+            try {
+              // 1. Customer find or create
+              let customerId = null;
+              if (data.phone) {
+                const { data: existing } = await supabase
+                  .from("biz_customers")
+                  .select("id, name")
+                  .eq("phone", data.phone)
+                  .maybeSingle();
+
+                if (existing) {
+                  customerId = existing.id;
+                  // Update name/address if changed
+                  if (data.name !== existing.name || data.address) {
+                    await supabase.from("biz_customers").update({
+                      name: data.name || existing.name,
+                      address: data.address || null,
+                      updated_at: new Date().toISOString(),
+                    }).eq("id", customerId);
+                  }
+                } else {
+                  const { data: newCust } = await supabase
+                    .from("biz_customers")
+                    .insert({
+                      phone: data.phone,
+                      name: data.name,
+                      address: data.address,
+                    })
+                    .select()
+                    .single();
+                  customerId = newCust?.id || null;
+                }
+              }
+
+              // 2. Order create
+              const orderNumber = `ZA-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 9000) + 1000}`;
+              const { data: order, error } = await supabase
+                .from("biz_orders")
+                .insert({
+                  order_number: orderNumber,
+                  customer_id: customerId,
+                  customer_phone: data.phone,
+                  customer_name: data.name,
+                  delivery_address: data.address,
+                  source: "phone",
+                  status: "new",
+                  total_amount: data.totalAmount,
+                  notes: data.notes,
+                  taken_by: profile.id,
+                })
+                .select()
+                .single();
+              if (error) throw error;
+
+              // 3. Order items
+              const orderItems = data.items.map((it) => ({
+                order_id: order.id,
+                product_id: it.product_id,
+                product_name: it.product_name,
+                quantity: it.quantity,
+                unit_price: it.unit_price,
+                total_amount: it.total_amount,
+              }));
+              await supabase.from("biz_order_items").insert(orderItems);
+
+              setShowCallModal(false);
+              await loadAll();
+              alert(`✅ Захиалга #${orderNumber} амжилттай!\n${data.totalAmount.toLocaleString()}₮`);
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setShowCallModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Дуудлага хүлээн авах modal ───────────────────────────────────
+function CallReceiveModal({ products, profile, onSave, onClose }) {
+  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [items, setItems] = useState([{ id: 1, productId: "", quantity: "", unitPrice: "" }]);
+  const [busy, setBusy] = useState(false);
+  const [searchingPhone, setSearchingPhone] = useState(false);
+  const [foundCustomer, setFoundCustomer] = useState(null);
+
+  // Утсан дугаараар хайх (auto-fill)
+  useEffect(() => {
+    if (!phone || phone.length < 6) {
+      setFoundCustomer(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchingPhone(true);
+      try {
+        const { data } = await supabase
+          .from("biz_customers")
+          .select("*")
+          .eq("phone", phone)
+          .maybeSingle();
+        if (data) {
+          setFoundCustomer(data);
+          if (!name) setName(data.name || "");
+          if (!address) setAddress(data.address || "");
+        } else {
+          setFoundCustomer(null);
+        }
+      } catch (e) { console.error(e); }
+      finally { setSearchingPhone(false); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [phone]);
+
+  const addRow = () => setItems([...items, { id: Date.now(), productId: "", quantity: "", unitPrice: "" }]);
+  const removeRow = (id) => items.length > 1 && setItems(items.filter((it) => it.id !== id));
+  const updateRow = (id, field, value) => setItems(items.map((it) => it.id === id ? { ...it, [field]: value } : it));
+
+  const selectProduct = (rowId, productId) => {
+    const p = products.find((p) => p.id === productId);
+    setItems(items.map((it) => it.id === rowId ? {
+      ...it,
+      productId,
+      unitPrice: p?.sale_price ? String(p.sale_price) : it.unitPrice,
+    } : it));
+  };
+
+  const total = items.reduce((sum, it) => {
+    return sum + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0));
+  }, 0);
+
+  const validItems = items.filter((it) => it.productId && Number(it.quantity) > 0);
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+  const inputClass = "px-2 py-1.5 rounded text-xs";
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
+      <div className="modal-content rounded-2xl w-full max-w-3xl p-5 max-h-[95vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            📞 Шинэ дуудлага
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        {/* Customer info */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📱 Утас *
+            </label>
+            <div className="relative">
+              <input value={phone} onChange={(e) => setPhone(e.target.value)}
+                placeholder="99887766"
+                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm"
+                autoFocus />
+              {searchingPhone && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <Loader2 className="spin" size={14} style={{ color: T.muted }} />
+                </div>
+              )}
+            </div>
+            {foundCustomer && (
+              <div className="mt-1 px-2 py-1 rounded"
+                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                <div className="text-[10px]">
+                  ✓ Үйлчлүүлэгч олдлоо · {foundCustomer.total_orders || 0} өмнөх захиалга · Нийт {Number(foundCustomer.total_amount || 0).toLocaleString()}₮
+                </div>
+              </div>
+            )}
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              👤 Нэр
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Овог нэр"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+            📍 Хүргэх хаяг
+          </label>
+          <input value={address} onChange={(e) => setAddress(e.target.value)}
+            placeholder="Дүүрэг, хороо, байр, тоот..."
+            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+        </div>
+
+        {/* Items */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              🛍 Захиалсан бараа
+            </label>
+            <button onClick={addRow}
+              className="press-btn px-2 py-1 rounded-lg text-[10px] flex items-center gap-1"
+              style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
+              <Plus size={11} /> Бараа нэмэх
+            </button>
+          </div>
+
+          <div className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 mb-1.5 px-1">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Үнэ</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
+            <div></div>
+          </div>
+
+          <div className="space-y-1.5">
+            {items.map((it) => {
+              const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+              const product = products.find((p) => p.id === it.productId);
+              const overstock = product && Number(it.quantity) > Number(product.stock);
+              return (
+                <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
+                  <select value={it.productId} onChange={(e) => selectProduct(it.id, e.target.value)}
+                    style={{
+                      ...inputStyle,
+                      borderColor: overstock ? T.warn : T.border,
+                    }} className={inputClass}>
+                    <option value="">— Сонгох —</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (нөөц: {p.stock})
+                      </option>
+                    ))}
+                  </select>
+                  <input type="number" value={it.quantity}
+                    onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
+                    placeholder="0"
+                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
+                  <input type="number" value={it.unitPrice}
+                    onChange={(e) => updateRow(it.id, "unitPrice", e.target.value)}
+                    placeholder="0"
+                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
+                  <div style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }}
+                    className="text-xs text-right tabular-nums px-1">
+                    {lineTotal > 0 ? lineTotal.toLocaleString() : "—"}
+                  </div>
+                  <button onClick={() => removeRow(it.id)}
+                    disabled={items.length === 1}
+                    style={{ color: items.length === 1 ? T.mutedSoft : T.err }}
+                    className="press-btn p-1 rounded">
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+            📝 Тэмдэглэл
+          </label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            placeholder="ж.нь: Шар савлаатай, цайны дэргэдэх...."
+            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+        </div>
+
+        {/* Total */}
+        {total > 0 && (
+          <div className="glass-soft rounded-lg p-3 mb-3 flex items-center justify-between">
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-xs uppercase tracking-wider">
+              Нийт дүн ({validItems.length} бараа)
+            </span>
+            <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl">
+              {total.toLocaleString()}₮
+            </span>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+            Цуцлах
+          </button>
+          <button
+            disabled={busy || !phone.trim() || validItems.length === 0}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                phone: phone.trim(),
+                name: name.trim() || null,
+                address: address.trim() || null,
+                notes: notes.trim() || null,
+                totalAmount: total,
+                items: validItems.map((it) => {
+                  const p = products.find((pp) => pp.id === it.productId);
+                  return {
+                    product_id: it.productId,
+                    product_name: p?.name || "—",
+                    quantity: Number(it.quantity),
+                    unit_price: Number(it.unitPrice) || 0,
+                    total_amount: (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
+                  };
+                }),
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "✓ Захиалга үүсгэх"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Захиалгын карт ───────────────────────────────────────────────
+function OrderCard({ order, compact = false, onClick }) {
+  const statusInfo = {
+    new: { label: "Шинэ", color: T.highlight, bg: T.highlightSoft, icon: "🆕" },
+    preparing: { label: "Бэлтгэгдэж", color: T.warn, bg: T.warnSoft, icon: "👨‍🍳" },
+    delivered: { label: "Хүргэгдсэн", color: T.ok, bg: "rgba(16,185,129,0.1)", icon: "✓" },
+    cancelled: { label: "Цуцалсан", color: T.err, bg: T.errSoft, icon: "✕" },
+  };
+  const status = statusInfo[order.status] || statusInfo.new;
+
+  return (
+    <button onClick={onClick}
+      className={`glass ${onClick ? "lift" : ""} rounded-xl p-3 w-full text-left block`}>
+      <div className="flex items-start gap-3">
+        <div style={{
+          background: status.bg, color: status.color,
+        }} className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+          {status.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+              #{order.order_number}
+            </span>
+            <span style={{
+              background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
+            }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+              {status.label}
+            </span>
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+            📱 {order.customer_phone || "—"} {order.customer_name ? `· ${order.customer_name}` : ""}
+          </div>
+          {!compact && order.delivery_address && (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+              📍 {order.delivery_address}
+            </div>
+          )}
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+            🕐 {new Date(order.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </div>
+        </div>
+        <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
+          {Number(order.total_amount).toLocaleString()}₮
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDERS VIEW — Захиалгын жагсаалт
+// ═══════════════════════════════════════════════════════════════════════════
+function OrdersView({ profile }) {
+  const [orders, setOrders] = useState([]);
+  const [items, setItems] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all"); // all | new | preparing | delivered | cancelled
+  const [search, setSearch] = useState("");
+  const [activeOrder, setActiveOrder] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const { data: ordData } = await supabase
+        .from("biz_orders")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      setOrders(ordData || []);
+
+      // Items load
+      if (ordData && ordData.length > 0) {
+        const orderIds = ordData.map((o) => o.id);
+        const { data: itemData } = await supabase
+          .from("biz_order_items")
+          .select("*")
+          .in("order_id", orderIds);
+        const itemMap = {};
+        (itemData || []).forEach((it) => {
+          if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
+          itemMap[it.order_id].push(it);
+        });
+        setItems(itemMap);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Filter
+  let filtered = orders;
+  if (filter !== "all") {
+    filtered = filtered.filter((o) => o.status === filter);
+  }
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((o) =>
+      o.order_number?.toLowerCase().includes(q) ||
+      o.customer_phone?.includes(q) ||
+      o.customer_name?.toLowerCase().includes(q)
+    );
+  }
+
+  // Counts
+  const counts = {
+    all: orders.length,
+    new: orders.filter((o) => o.status === "new").length,
+    preparing: orders.filter((o) => o.status === "preparing").length,
+    delivered: orders.filter((o) => o.status === "delivered").length,
+    cancelled: orders.filter((o) => o.status === "cancelled").length,
+  };
+
+  const updateStatus = async (orderId, newStatus) => {
+    const updates = { status: newStatus };
+    if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
+    if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
+    await supabase.from("biz_orders").update(updates).eq("id", orderId);
+    await loadAll();
+    if (activeOrder?.id === orderId) {
+      const updated = (await supabase.from("biz_orders").select("*").eq("id", orderId).single()).data;
+      setActiveOrder(updated);
+    }
+  };
+
+  if (activeOrder) {
+    return (
+      <OrderDetail
+        order={activeOrder}
+        items={items[activeOrder.id] || []}
+        onClose={() => setActiveOrder(null)}
+        onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Filter pills */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex flex-wrap gap-1">
+          {[
+            { key: "all", label: "Бүх", icon: "📋" },
+            { key: "new", label: "Шинэ", icon: "🆕" },
+            { key: "preparing", label: "Бэлтгэж", icon: "👨‍🍳" },
+            { key: "delivered", label: "Хүргэсэн", icon: "✓" },
+            { key: "cancelled", label: "Цуцалсан", icon: "✕" },
+          ].map((f) => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+              style={{
+                background: filter === f.key ? T.highlight : T.surfaceAlt,
+                color: filter === f.key ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 500,
+              }}>
+              <span>{f.icon}</span>
+              <span>{f.label}</span>
+              <span style={{
+                background: filter === f.key ? "rgba(255,255,255,0.2)" : T.surface,
+                color: filter === f.key ? "white" : T.muted,
+              }} className="text-[9px] px-1.5 rounded-full ml-0.5">
+                {counts[f.key]}
+              </span>
+            </button>
+          ))}
+        </div>
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 Захиалгын дугаар, утас, нэрээр хайх..."
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="w-full px-3 py-2 rounded-lg text-xs" />
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📋</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Захиалга байхгүй байна
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((o) => (
+            <OrderCard key={o.id} order={o} onClick={() => setActiveOrder(o)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderDetail({ order, items, onClose, onUpdateStatus }) {
+  const status = order.status;
+
+  const statusActions = {
+    new: [
+      { label: "Бэлтгэж эхлэх", action: "preparing", color: T.warn, icon: "👨‍🍳" },
+      { label: "Шууд хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
+    ],
+    preparing: [
+      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
+    ],
+    delivered: [],
+    cancelled: [],
+  };
+
+  const actions = statusActions[status] || [];
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2">
+        <button onClick={onClose} className="press-btn p-1.5 rounded-lg"
+          style={{ color: T.ink }}>
+          ←
+        </button>
+        <div className="flex-1 min-w-0">
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+            #{order.order_number}
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            {new Date(order.created_at).toLocaleString("mn-MN")}
+          </div>
+        </div>
+      </div>
+
+      {/* Customer info */}
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+          Үйлчлүүлэгч
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span style={{ color: T.muted }}>📱</span>
+            <a href={`tel:${order.customer_phone}`}
+              style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }}
+              className="text-sm">
+              {order.customer_phone || "—"}
+            </a>
+          </div>
+          {order.customer_name && (
+            <div className="flex items-center gap-2">
+              <span style={{ color: T.muted }}>👤</span>
+              <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
+                {order.customer_name}
+              </span>
+            </div>
+          )}
+          {order.delivery_address && (
+            <div className="flex items-start gap-2">
+              <span style={{ color: T.muted }}>📍</span>
+              <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
+                {order.delivery_address}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+          Захиалсан бараа ({items.length})
+        </div>
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-center gap-3 py-1.5"
+              style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-sm">
+                  {it.product_name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                  {Number(it.quantity)} × {Number(it.unit_price).toLocaleString()}₮
+                </div>
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+                {Number(it.total_amount).toLocaleString()}₮
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between pt-3 mt-2"
+          style={{ borderTop: `2px solid ${T.border}` }}>
+          <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">
+            Нийт
+          </span>
+          <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+            {Number(order.total_amount).toLocaleString()}₮
+          </span>
+        </div>
+      </div>
+
+      {/* Notes */}
+      {order.notes && (
+        <div className="glass rounded-2xl p-4">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+            Тэмдэглэл
+          </div>
+          <div style={{ fontFamily: FS, color: T.ink }} className="text-sm italic">
+            "{order.notes}"
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      {actions.length > 0 && (
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${actions.length}, 1fr)` }}>
+          {actions.map((a) => (
+            <button key={a.action} onClick={() => {
+              if (a.action === "cancelled" && !confirm("Захиалга цуцлах уу?")) return;
+              onUpdateStatus(a.action);
+            }}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{
+                background: a.action === "cancelled" ? T.errSoft : a.action === "delivered" ? "rgba(16,185,129,0.1)" : T.warnSoft,
+                color: a.color, fontFamily: FS,
+              }}>
+              <span>{a.icon}</span>
+              <span>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
