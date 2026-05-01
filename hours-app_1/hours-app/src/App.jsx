@@ -3905,10 +3905,10 @@ function InventoryView({ profile, isAdmin = false }) {
     [products]
   );
 
-  // Total value
-  const totalValue = products.reduce((sum, p) => sum + (Number(p.stock) * Number(p.cost_price || 0)), 0);
+  // Total value (нөөцийн зарах үнээр) ба авсан үнэ
+  const totalValue = products.reduce((sum, p) => sum + (Number(p.stock) * Number(p.sale_price || 0)), 0);
+  const totalCost = products.reduce((sum, p) => sum + (Number(p.stock) * Number(p.cost_price || 0)), 0);
   const totalProducts = products.length;
-  const outOfStock = products.filter((p) => p.stock <= 0).length;
 
   const catById = (id) => categories.find((c) => c.id === id);
 
@@ -3928,8 +3928,8 @@ function InventoryView({ profile, isAdmin = false }) {
         </div>
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нөөцийн үнэ</div>
-          <div style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }} className="text-2xl">
-            {(totalValue / 1000).toFixed(0)}к₮
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }} className="text-lg sm:text-xl tabular-nums">
+            {totalValue.toLocaleString()}₮
           </div>
         </div>
         <div className="glass rounded-2xl p-3">
@@ -3939,9 +3939,9 @@ function InventoryView({ profile, isAdmin = false }) {
           </div>
         </div>
         <div className="glass rounded-2xl p-3">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Дууссан</div>
-          <div style={{ fontFamily: FD, fontWeight: 600, color: outOfStock > 0 ? T.err : T.ink }} className="text-2xl">
-            {outOfStock}
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт авсан үнэ</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-lg sm:text-xl tabular-nums">
+            {totalCost.toLocaleString()}₮
           </div>
         </div>
       </div>
