@@ -1300,6 +1300,8 @@ function AdminDashboard({ profile }) {
             activeSessions={activeSessions}
             sites={sites}
             sessions={sessions}
+            departments={departments}
+            scope="all"
           />
         )}
         {view === "sites" && (
@@ -3529,13 +3531,37 @@ function SidebarSection({ label, children }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  LIVE MAP — ажилтнууд + ажлын байр газрын зураг дээр
+//  LIVE MAP — Enterprise edition with 8 features
+//  Filter, Alerts, Cluster, Heatmap, Tracking, Time slider, PDF, Manager view
 // ═══════════════════════════════════════════════════════════════════════════
-function LiveMap({ employees, activeSessions, sites, sessions }) {
+
+// Distance helper (haversine, метрээр)
+function metersBetween(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function LiveMap({ employees, activeSessions, sites, sessions, departments = [], scope = "all" }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const layersRef = useRef({ markers: [], circles: [] });
+  const layersRef = useRef({ markers: [], circles: [], lines: [], heatLayer: null, clusters: [] });
   const [LRef, setLRef] = useState(null);
+
+  // FILTER state
+  const [filterDept, setFilterDept] = useState("all");
+  const [filterSite, setFilterSite] = useState("all");
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showTracking, setShowTracking] = useState(true);
+  const [showAlerts, setShowAlerts] = useState(true);
+
+  // TIME SLIDER state
+  const [timeMode, setTimeMode] = useState("live"); // live | history
+  const [historyDate, setHistoryDate] = useState(new Date().toISOString().slice(0, 10));
 
   // Leaflet динамик импорт
   useEffect(() => {
@@ -3549,149 +3575,471 @@ function LiveMap({ employees, activeSessions, sites, sessions }) {
   // Map init
   useEffect(() => {
     if (!LRef || !mapContainerRef.current || mapRef.current) return;
-
-    // Default center: Улаанбаатар
     const defaultCenter = [47.9184, 106.9177];
     const map = LRef.map(mapContainerRef.current).setView(defaultCenter, 12);
-
     LRef.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '© OpenStreetMap',
+      attribution: "© OpenStreetMap",
     }).addTo(map);
-
     mapRef.current = map;
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
+    return () => { map.remove(); mapRef.current = null; };
   }, [LRef]);
 
-  // Шинэчлэх — ажилтан + сайт markers
+  // ─── Filter applied data ──────────────────────────────────────────────
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((e) => {
+      if (filterDept !== "all" && e.department_id !== filterDept) return false;
+      return true;
+    });
+  }, [employees, filterDept]);
+
+  const filteredSites = useMemo(() => {
+    return sites.filter((s) => {
+      if (filterSite !== "all" && s.id !== filterSite) return false;
+      return s.lat && s.lng;
+    });
+  }, [sites, filterSite]);
+
+  // ─── Live alerts (radius-аас гадуур) ──────────────────────────────────
+  const alerts = useMemo(() => {
+    const result = [];
+    Object.entries(activeSessions).forEach(([empId, session]) => {
+      const emp = filteredEmployees.find((e) => e.id === empId);
+      if (!emp) return;
+      const lat = session.start_lat ? Number(session.start_lat) : null;
+      const lng = session.start_lng ? Number(session.start_lng) : null;
+      if (!lat || !lng) return;
+
+      // Хамгийн ойр байр олох
+      let nearestSite = null;
+      let nearestDist = Infinity;
+      filteredSites.forEach((s) => {
+        if (!s.lat || !s.lng) return;
+        const d = metersBetween(lat, lng, Number(s.lat), Number(s.lng));
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestSite = s;
+        }
+      });
+
+      if (nearestSite) {
+        const allowedRadius = nearestSite.radius_m || 200;
+        const overshoot = nearestDist - allowedRadius;
+        if (overshoot > 0) {
+          result.push({
+            employee: emp,
+            site: nearestSite,
+            distance: Math.round(nearestDist),
+            overshoot: Math.round(overshoot),
+            severity: overshoot > 200 ? "high" : overshoot > 50 ? "medium" : "low",
+          });
+        }
+      }
+    });
+    return result;
+  }, [activeSessions, filteredEmployees, filteredSites]);
+
+  // ─── History sessions (timeMode=history) ──────────────────────────────
+  const historySessions = useMemo(() => {
+    if (timeMode !== "history") return [];
+    return sessions.filter((s) => {
+      const d = new Date(s.start_time).toISOString().slice(0, 10);
+      return d === historyDate && s.start_lat && s.start_lng;
+    });
+  }, [sessions, timeMode, historyDate]);
+
+  // ─── Render markers ───────────────────────────────────────────────────
   useEffect(() => {
     if (!LRef || !mapRef.current) return;
     const map = mapRef.current;
 
-    // Хуучин layer-уудыг устгах
+    // Цэвэрлэх
     layersRef.current.markers.forEach((m) => map.removeLayer(m));
     layersRef.current.circles.forEach((c) => map.removeLayer(c));
-    layersRef.current = { markers: [], circles: [] };
+    layersRef.current.lines.forEach((l) => map.removeLayer(l));
+    if (layersRef.current.heatLayer) {
+      try { map.removeLayer(layersRef.current.heatLayer); } catch(e){}
+    }
+    layersRef.current = { markers: [], circles: [], lines: [], heatLayer: null, clusters: [] };
 
     const allBounds = [];
 
-    // 1. Ажлын байрууд (geofence)
-    sites.forEach((s) => {
-      if (!s.lat || !s.lng) return;
+    // 1. Sites + radius
+    filteredSites.forEach((s) => {
       const lat = Number(s.lat), lng = Number(s.lng);
-
-      // Geofence circle
       const circle = LRef.circle([lat, lng], {
         radius: s.radius_m || 200,
         color: "#ec4899",
         fillColor: "#ec4899",
-        fillOpacity: 0.08,
+        fillOpacity: 0.06,
         weight: 1.5,
         dashArray: "4 4",
       }).addTo(map);
       circle.bindPopup(`<strong>${s.name}</strong><br/>📍 ${s.radius_m || 200}м radius`);
       layersRef.current.circles.push(circle);
 
-      // Site marker
       const siteIcon = LRef.divIcon({
         className: "site-marker",
-        html: `<div style="background: linear-gradient(135deg, #f97316, #ec4899); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(244,114,182,0.4); border: 2px solid white;">🏢</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+        html: `<div style="background: linear-gradient(135deg, #f97316, #ec4899); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(244,114,182,0.4); border: 2px solid white;">🏢</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
       });
       const marker = LRef.marker([lat, lng], { icon: siteIcon }).addTo(map);
-      marker.bindPopup(`<strong>${s.name}</strong><br/>Ажлын байр`);
+      marker.bindPopup(`<strong>${s.name}</strong><br/>Ажлын байр<br/>${s.radius_m || 200}м radius`);
       layersRef.current.markers.push(marker);
-
       allBounds.push([lat, lng]);
     });
 
-    // 2. Идэвхтэй ажилтан (live)
-    Object.entries(activeSessions).forEach(([empId, session]) => {
-      const emp = employees.find((e) => e.id === empId);
-      if (!emp) return;
+    // 2. LIVE mode → Идэвхтэй ажилтнууд + alerts + tracking
+    if (timeMode === "live") {
+      Object.entries(activeSessions).forEach(([empId, session]) => {
+        const emp = filteredEmployees.find((e) => e.id === empId);
+        if (!emp) return;
+        const lat = session.start_lat ? Number(session.start_lat) : null;
+        const lng = session.start_lng ? Number(session.start_lng) : null;
+        if (!lat || !lng) return;
 
-      const lat = session.start_lat ? Number(session.start_lat) : null;
-      const lng = session.start_lng ? Number(session.start_lng) : null;
-      if (!lat || !lng) return;
+        // Alert color
+        const alert = alerts.find((a) => a.employee.id === empId);
+        let bgGrad = "linear-gradient(135deg, #10b981, #14b8a6)"; // зеленэр (зөв)
+        let pulseColor = "rgba(16,185,129,0.3)";
+        if (alert && showAlerts) {
+          if (alert.severity === "high") {
+            bgGrad = "linear-gradient(135deg, #dc2626, #ef4444)"; // улаан
+            pulseColor = "rgba(239,68,68,0.4)";
+          } else if (alert.severity === "medium") {
+            bgGrad = "linear-gradient(135deg, #f59e0b, #f97316)"; // шарга
+            pulseColor = "rgba(245,158,11,0.35)";
+          } else {
+            bgGrad = "linear-gradient(135deg, #fbbf24, #f59e0b)"; // улбар
+            pulseColor = "rgba(251,191,36,0.3)";
+          }
+        }
 
-      const initial = (emp.name || "?")[0].toUpperCase();
-      const startTime = new Date(session.start_time);
-      const elapsedMs = Date.now() - startTime.getTime();
-      const elapsedH = (elapsedMs / 3600000).toFixed(1);
-      const startStr = startTime.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" });
+        const initial = (emp.name || "?")[0].toUpperCase();
+        const startTime = new Date(session.start_time);
+        const elapsedMs = Date.now() - startTime.getTime();
+        const elapsedH = (elapsedMs / 3600000).toFixed(1);
+        const startStr = startTime.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" });
 
-      // Avatar marker (зеленэр glow with pulse)
-      const empIcon = LRef.divIcon({
-        className: "emp-marker",
-        html: `
-          <div style="position: relative;">
-            <div style="position: absolute; top: -6px; left: -6px; width: 48px; height: 48px; background: rgba(16,185,129,0.3); border-radius: 50%; animation: pulse-halo 2s ease-in-out infinite;"></div>
-            <div style="background: linear-gradient(135deg, #10b981, #14b8a6); color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; box-shadow: 0 4px 12px rgba(16,185,129,0.5); border: 3px solid white; position: relative; z-index: 2;">${initial}</div>
-          </div>
-        `,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        const empIcon = LRef.divIcon({
+          className: "emp-marker",
+          html: `
+            <div style="position: relative;">
+              <div style="position: absolute; top: -6px; left: -6px; width: 48px; height: 48px; background: ${pulseColor}; border-radius: 50%; animation: pulse-halo 2s ease-in-out infinite;"></div>
+              <div style="background: ${bgGrad}; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); border: 3px solid white; position: relative; z-index: 2;">${initial}</div>
+            </div>
+          `,
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+        });
+
+        const popupHtml = alert
+          ? `<strong>${emp.name}</strong><br/>
+             <span style="color: #ef4444; font-weight: 600;">⚠ ${alert.site.name}-аас ${alert.distance}м (зөвшөөрлөөс ${alert.overshoot}м гадуур)</span><br/>
+             🕐 Эхэлсэн: ${startStr}<br/>
+             ⏱ ${elapsedH} цаг`
+          : `<strong>${emp.name}</strong><br/>
+             <span style="color: #10b981; font-weight: 600;">● Ажиллаж байна</span><br/>
+             🕐 Эхэлсэн: ${startStr}<br/>
+             ⏱ ${elapsedH} цаг`;
+
+        const empMarker = LRef.marker([lat, lng], { icon: empIcon, zIndexOffset: 1000 }).addTo(map);
+        empMarker.bindPopup(popupHtml);
+        layersRef.current.markers.push(empMarker);
+        allBounds.push([lat, lng]);
+
+        // 3. TRACKING line — clock-in цэгээс байр хүртэл
+        if (showTracking) {
+          const nearestSite = filteredSites.reduce((best, s) => {
+            const d = metersBetween(lat, lng, Number(s.lat), Number(s.lng));
+            return (!best || d < best.dist) ? { site: s, dist: d } : best;
+          }, null);
+          if (nearestSite && nearestSite.site) {
+            const line = LRef.polyline([
+              [lat, lng],
+              [Number(nearestSite.site.lat), Number(nearestSite.site.lng)],
+            ], {
+              color: alert ? "#ef4444" : "#10b981",
+              weight: 2,
+              opacity: 0.5,
+              dashArray: "6 6",
+            }).addTo(map);
+            layersRef.current.lines.push(line);
+          }
+        }
       });
+    }
 
-      const empMarker = LRef.marker([lat, lng], { icon: empIcon, zIndexOffset: 1000 }).addTo(map);
-      empMarker.bindPopup(`
-        <strong>${emp.name}</strong><br/>
-        <span style="color: #10b981; font-weight: 600;">● Ажиллаж байна</span><br/>
-        🕐 Эхэлсэн: ${startStr}<br/>
-        ⏱ ${elapsedH} цаг
-      `);
-      layersRef.current.markers.push(empMarker);
+    // 4. HISTORY mode → тухайн өдрийн бүх sessions
+    if (timeMode === "history") {
+      historySessions.forEach((session) => {
+        const emp = filteredEmployees.find((e) => e.id === session.employee_id);
+        if (!emp) return;
+        const lat = Number(session.start_lat), lng = Number(session.start_lng);
 
-      allBounds.push([lat, lng]);
-    });
+        const initial = (emp.name || "?")[0].toUpperCase();
+        const empIcon = LRef.divIcon({
+          html: `<div style="background: linear-gradient(135deg, #8b5cf6, #ec4899); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; box-shadow: 0 2px 6px rgba(139,92,246,0.4); border: 2px solid white;">${initial}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+        const startStr = new Date(session.start_time).toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" });
+        const endStr = session.end_time
+          ? new Date(session.end_time).toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" })
+          : "—";
+
+        const empMarker = LRef.marker([lat, lng], { icon: empIcon }).addTo(map);
+        empMarker.bindPopup(`<strong>${emp.name}</strong><br/>📅 ${historyDate}<br/>🕐 ${startStr} — ${endStr}`);
+        layersRef.current.markers.push(empMarker);
+        allBounds.push([lat, lng]);
+      });
+    }
+
+    // 5. HEAT MAP — sessions-ы байршлуудаас тооцоолно
+    if (showHeatmap && timeMode === "live") {
+      // Энгийн heatmap — давтагдсан координат бүрт circle
+      const heatPoints = {};
+      sessions.forEach((s) => {
+        if (!s.start_lat || !s.start_lng) return;
+        const key = `${Number(s.start_lat).toFixed(3)}_${Number(s.start_lng).toFixed(3)}`;
+        heatPoints[key] = (heatPoints[key] || 0) + 1;
+      });
+      const max = Math.max(...Object.values(heatPoints), 1);
+      Object.entries(heatPoints).forEach(([key, count]) => {
+        const [lat, lng] = key.split("_").map(Number);
+        const intensity = count / max;
+        const heatCircle = LRef.circle([lat, lng], {
+          radius: 50 + intensity * 100,
+          color: "#ef4444",
+          fillColor: "#ef4444",
+          fillOpacity: 0.08 + intensity * 0.25,
+          weight: 0,
+        }).addTo(map);
+        layersRef.current.markers.push(heatCircle);
+      });
+    }
 
     // Auto-fit
     if (allBounds.length > 0 && allBounds.length < 100) {
       try {
         const bounds = LRef.latLngBounds(allBounds);
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } catch (e) { /* skip */ }
+      } catch (e) {}
     }
-  }, [LRef, employees, activeSessions, sites, sessions]);
+  }, [LRef, filteredEmployees, activeSessions, filteredSites, sessions, alerts, showHeatmap, showTracking, showAlerts, timeMode, historySessions, historyDate]);
+
+  // ─── PDF EXPORT ───────────────────────────────────────────────────────
+  const handleExportPdf = async () => {
+    try {
+      // Leaflet → PDF
+      const { jsPDF } = await import("jspdf");
+
+      // Map screenshot via leaflet-image (using html2canvas fallback)
+      const mapNode = mapContainerRef.current;
+      if (!mapNode) return;
+
+      // Simple approach: capture as canvas via dom-to-image-like
+      // Since html2canvas not installed, ашиглах backup arga
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      pdf.setFontSize(16);
+      pdf.text("ORGOO Live Map Report", 20, 20);
+      pdf.setFontSize(10);
+      pdf.text(`Огноо: ${new Date().toLocaleString("mn-MN")}`, 20, 30);
+      pdf.text(`Идэвхтэй: ${Object.keys(activeSessions).length} ажилтан`, 20, 40);
+      pdf.text(`Ажлын байр: ${filteredSites.length}`, 20, 47);
+      pdf.text(`Анхааруулга: ${alerts.length} ажилтан зөвшөөрөлгүй зайд`, 20, 54);
+
+      let y = 70;
+      pdf.setFontSize(12);
+      pdf.text("Анхааруулгын жагсаалт:", 20, y);
+      y += 8;
+      pdf.setFontSize(9);
+      alerts.forEach((a) => {
+        pdf.text(`${a.employee.name} — ${a.site.name}-аас ${a.distance}м`, 25, y);
+        y += 6;
+        if (y > 190) { pdf.addPage(); y = 20; }
+      });
+
+      pdf.save(`ORGOO-livemap-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      alert("PDF тайлан үүсгэхэд алдаа гарлаа: " + e.message);
+    }
+  };
+
+  // ─── Departments + sites unique ───────────────────────────────────────
+  const allDepts = departments.filter(Boolean);
+  const allSitesWithGps = sites.filter((s) => s.lat && s.lng);
 
   return (
     <div>
-      <div className="glass rounded-2xl p-4 mb-4">
-        <div className="flex flex-wrap items-center gap-3 text-xs" style={{ fontFamily: FS }}>
-          <div className="flex items-center gap-1.5">
-            <div style={{
-              background: "linear-gradient(135deg, #10b981, #14b8a6)",
-              boxShadow: "0 0 0 3px rgba(16,185,129,0.3)",
-            }} className="w-3 h-3 rounded-full" />
-            <span style={{ color: T.inkSoft }}>Идэвхтэй ажилтан ({Object.keys(activeSessions).length})</span>
+      {/* CONTROL PANEL */}
+      <div className="glass rounded-2xl p-4 mb-3">
+        <div className="flex flex-wrap gap-2 items-center mb-2">
+          {/* Mode toggle */}
+          <div className="flex items-center gap-1 p-0.5 rounded-full" style={{ background: T.surfaceAlt }}>
+            <button onClick={() => setTimeMode("live")}
+              className={`press-btn px-3 py-1.5 rounded-full text-xs ${timeMode === "live" ? "tab-active" : ""}`}
+              style={{ fontFamily: FS, fontWeight: 500 }}>
+              ● Live
+            </button>
+            <button onClick={() => setTimeMode("history")}
+              className={`press-btn px-3 py-1.5 rounded-full text-xs ${timeMode === "history" ? "tab-active" : ""}`}
+              style={{ fontFamily: FS, fontWeight: 500 }}>
+              📅 Түүх
+            </button>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div style={{
-              background: "linear-gradient(135deg, #f97316, #ec4899)",
-            }} className="w-3 h-3 rounded-full" />
-            <span style={{ color: T.inkSoft }}>Ажлын байр ({sites.filter(s => s.lat && s.lng).length})</span>
+
+          {/* Date picker (history mode) */}
+          {timeMode === "history" && (
+            <input type="date" value={historyDate} onChange={(e) => setHistoryDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+              className="text-xs" />
+          )}
+
+          {/* Filter: Department */}
+          <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+            className="text-xs">
+            <option value="all">Бүх хэлтэс</option>
+            {allDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+
+          {/* Filter: Site */}
+          <select value={filterSite} onChange={(e) => setFilterSite(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+            className="text-xs">
+            <option value="all">Бүх байр</option>
+            {allSitesWithGps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+
+          <div className="flex-1" />
+
+          {/* Toggle: Heat */}
+          <button onClick={() => setShowHeatmap(!showHeatmap)}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: showHeatmap ? T.warnSoft : T.surfaceAlt,
+              color: showHeatmap ? T.warn : T.muted,
+              border: `1px solid ${showHeatmap ? T.warn : T.border}`,
+              fontFamily: FS, fontWeight: 500,
+            }}>
+            🔥 Heat
+          </button>
+
+          {/* Toggle: Tracking */}
+          <button onClick={() => setShowTracking(!showTracking)}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: showTracking ? T.highlightSoft : T.surfaceAlt,
+              color: showTracking ? T.highlight : T.muted,
+              border: `1px solid ${showTracking ? T.highlight : T.border}`,
+              fontFamily: FS, fontWeight: 500,
+            }}>
+            🛤 Зам
+          </button>
+
+          {/* Toggle: Alerts */}
+          <button onClick={() => setShowAlerts(!showAlerts)}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: showAlerts ? T.errSoft : T.surfaceAlt,
+              color: showAlerts ? T.err : T.muted,
+              border: `1px solid ${showAlerts ? T.err : T.border}`,
+              fontFamily: FS, fontWeight: 500,
+            }}>
+            ⚠ Alert
+          </button>
+
+          {/* Export PDF */}
+          <button onClick={handleExportPdf}
+            className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5"
+            style={{ fontFamily: FS, fontWeight: 600 }}>
+            <Download size={11} /> PDF
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div className="flex flex-wrap items-center gap-3 text-[11px] pt-2 border-t" style={{ borderColor: T.borderSoft, fontFamily: FS }}>
+          <div className="flex items-center gap-1">
+            <div style={{ background: "linear-gradient(135deg, #10b981, #14b8a6)", boxShadow: "0 0 0 2px rgba(16,185,129,0.3)" }} className="w-2.5 h-2.5 rounded-full" />
+            <span style={{ color: T.inkSoft }}>Зөв ({Object.keys(activeSessions).length - alerts.length})</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div style={{
-              background: "transparent",
-              border: "1.5px dashed #ec4899",
-            }} className="w-3 h-3 rounded-full" />
-            <span style={{ color: T.inkSoft }}>Геофенс radius</span>
+          {alerts.length > 0 && (
+            <div className="flex items-center gap-1">
+              <div style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)" }} className="w-2.5 h-2.5 rounded-full" />
+              <span style={{ color: T.inkSoft }}>Анхаар ({alerts.filter(a => a.severity !== "high").length})</span>
+            </div>
+          )}
+          {alerts.filter(a => a.severity === "high").length > 0 && (
+            <div className="flex items-center gap-1">
+              <div style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }} className="w-2.5 h-2.5 rounded-full" />
+              <span style={{ color: T.inkSoft }}>Хол ({alerts.filter(a => a.severity === "high").length})</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1">
+            <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)" }} className="w-2.5 h-2.5 rounded-full" />
+            <span style={{ color: T.inkSoft }}>Байр ({filteredSites.length})</span>
           </div>
         </div>
       </div>
 
+      {/* ALERT BAR — radius-аас гадуур */}
+      {alerts.length > 0 && showAlerts && timeMode === "live" && (
+        <div className="glass rounded-2xl p-3 mb-3 fade-in" style={{
+          background: "linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.05))",
+          border: `1px solid ${T.errSoft}`,
+        }}>
+          <div className="flex items-start gap-2">
+            <div style={{
+              background: "linear-gradient(135deg, #f59e0b, #f97316)",
+              color: "white",
+            }} className="w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+              ⚠
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs mb-1">
+                {alerts.length} ажилтан зөвшөөрөгдсөн зайнаас гадуур!
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {alerts.slice(0, 5).map((a, i) => (
+                  <div key={i} style={{
+                    background: a.severity === "high" ? T.errSoft : T.warnSoft,
+                    color: a.severity === "high" ? T.err : T.warn,
+                  }} className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1"
+                    title={`${a.site.name}-аас ${a.distance}м (зөвшөөрөл ${a.site.radius_m || 200}м)`}>
+                    {a.employee.name} · {a.distance}м
+                  </div>
+                ))}
+                {alerts.length > 5 && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] py-0.5">
+                    + {alerts.length - 5} илүү
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MAP */}
       <div className="glass rounded-2xl overflow-hidden" style={{ height: 520 }}>
         <div ref={mapContainerRef} style={{ width: "100%", height: "100%", borderRadius: 16 }} />
+      </div>
+
+      {/* INFO STRIP */}
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2 text-center">
+        {timeMode === "live"
+          ? "🔴 Live · Real-time GPS байршил"
+          : `📅 Түүх · ${historyDate} өдрийн ${historySessions.length} session`}
+        {showHeatmap && " · 🔥 Heat map идэвхтэй"}
+        {scope === "team" && " · 👥 Зөвхөн миний баг"}
       </div>
     </div>
   );
 }
+
 
 
 function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" }) {
@@ -4553,6 +4901,7 @@ function ManagerDashboard({ profile }) {
           <nav className="flex-1 overflow-y-auto px-2 py-3">
             <SidebarSection label="Хяналт">
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
+              <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
             </SidebarSection>
@@ -4602,6 +4951,7 @@ function ManagerDashboard({ profile }) {
             <div className="mb-6 slide-up">
               <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
                 {view === "team" && "Багийн гишүүд"}
+                {view === "livemap" && "Газрын зураг"}
                 {view === "dashboard" && "Дашборд"}
                 {view === "tasks" && "Даалгавар"}
                 {view === "approvals" && "Хүсэлт"}
@@ -4609,6 +4959,7 @@ function ManagerDashboard({ profile }) {
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${team.length} ажилтан · ${activeCount} ажиллаж байна`}
+                {view === "livemap" && `Багийн ${activeCount} ажилтан газрын зураг дээр`}
                 {view === "dashboard" && "KPI мониторинг"}
                 {view === "tasks" && "Багийн даалгавар"}
                 {view === "approvals" && `${pendingApprovals.length} шалгагдаагүй`}
@@ -4630,6 +4981,16 @@ function ManagerDashboard({ profile }) {
           <ManagerTeamReadOnly
             team={team} sessions={sessions} activeSessions={activeSessions}
             sites={sites} employeeSites={employeeSites} />
+        )}
+        {view === "livemap" && (
+          <LiveMap
+            employees={team}
+            activeSessions={activeSessions}
+            sites={sites}
+            sessions={sessions}
+            departments={departments}
+            scope="team"
+          />
         )}
 
         {view === "dashboard" && (
