@@ -6696,7 +6696,7 @@ function calculateBestEmployees(employees, sessions, kpiEntries, leaves, year, m
   return stats;
 }
 
-
+function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   const wb = XLSX.utils.book_new();
 
   // ============== Хуудас 1: ХУРААНГУЙ ==============
