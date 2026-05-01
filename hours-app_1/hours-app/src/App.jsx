@@ -6,6 +6,7 @@ import {
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
+  Bell, Phone, ShoppingBag, Package,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -1252,9 +1253,9 @@ function AdminDashboard({ profile }) {
             </SidebarSection>
 
             <SidebarSection label="Бизнес">
-              <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Bell}>📞 Дуудлага</SidebarTab>
-              <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ClipboardCheck}>Захиалга</SidebarTab>
-              <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Бараа нөөц</SidebarTab>
+              <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
+              <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+              <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
 
