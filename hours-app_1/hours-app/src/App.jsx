@@ -1029,6 +1029,9 @@ function AdminDashboard({ profile }) {
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
           target: data.target, target_period: data.target_period,
+          kpi_type: data.kpi_type || 'input',
+          formula: data.formula || null,
+          decimals: data.decimals ?? 0,
         }).eq("id", data.id);
         if (error) throw error;
       } else {
@@ -1037,6 +1040,9 @@ function AdminDashboard({ profile }) {
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
           target: data.target, target_period: data.target_period || 'daily',
+          kpi_type: data.kpi_type || 'input',
+          formula: data.formula || null,
+          decimals: data.decimals ?? 0,
         });
         if (error) throw error;
       }
@@ -1545,6 +1551,7 @@ function AdminDashboard({ profile }) {
           mode={editingKpi === "add" ? "add" : "edit"}
           kpi={editingKpi === "add" ? null : editingKpi}
           departments={departments}
+          allKpis={kpiDefs}
           onSave={upsertKpiDef}
           onClose={() => setEditingKpi(null)} />
       )}
@@ -8894,8 +8901,29 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
               ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {deptKpis.map((kpi) => {
-                  const entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
-                  const total = entries.reduce((sum, e) => sum + Number(e.value), 0);
+                  let total = 0;
+                  let entries = [];
+
+                  // Calculated KPI: формулаар тооцоолох
+                  if (kpi.kpi_type === "calculated" && kpi.formula?.numerator_id && kpi.formula?.denominator_id) {
+                    const numEntries = filteredEntries.filter(e => e.kpi_id === kpi.formula.numerator_id);
+                    const denEntries = filteredEntries.filter(e => e.kpi_id === kpi.formula.denominator_id);
+                    const numSum = numEntries.reduce((s, e) => s + Number(e.value), 0);
+                    const denSum = denEntries.reduce((s, e) => s + Number(e.value), 0);
+                    const op = kpi.formula.operator;
+                    if (op === "divide") {
+                      total = denSum === 0 ? 0 : numSum / denSum;
+                    } else if (op === "multiply") {
+                      total = numSum * denSum;
+                    } else if (op === "add") {
+                      total = numSum + denSum;
+                    } else if (op === "subtract") {
+                      total = numSum - denSum;
+                    }
+                  } else {
+                    entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
+                    total = entries.reduce((sum, e) => sum + Number(e.value), 0);
+                  }
 
                   // Trend: Хэрэв 7 хоног мөн өнгөрсөн 7 хоног харьцуулах
                   let trend = null;
@@ -8937,7 +8965,10 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                       <div className="flex items-baseline gap-1.5">
                         <span style={{ fontFamily: FD, fontWeight: 500, color: T.ink, letterSpacing: "-0.02em" }}
                               className="text-2xl tabular-nums">
-                          {total.toLocaleString()}
+                          {total.toLocaleString(undefined, {
+                            minimumFractionDigits: kpi.decimals || 0,
+                            maximumFractionDigits: kpi.decimals || 0,
+                          })}
                         </span>
                         {kpi.unit && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{kpi.unit}</span>}
                       </div>
@@ -9023,7 +9054,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI DEFINITION FORM (admin)
 // ═══════════════════════════════════════════════════════════════════════════
-function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
+function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose }) {
   const [name, setName] = useState(kpi?.name || "");
   const [unit, setUnit] = useState(kpi?.unit || "");
   const [departmentId, setDepartmentId] = useState(kpi?.department_id || (departments[0]?.id || ""));
@@ -9031,13 +9062,24 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
   const [order, setOrder] = useState(kpi?.display_order || 0);
   const [target, setTarget] = useState(kpi?.target ? String(kpi.target) : "");
   const [targetPeriod, setTargetPeriod] = useState(kpi?.target_period || "daily");
+  const [kpiType, setKpiType] = useState(kpi?.kpi_type || "input");
+  const [numeratorId, setNumeratorId] = useState(kpi?.formula?.numerator_id || "");
+  const [denominatorId, setDenominatorId] = useState(kpi?.formula?.denominator_id || "");
+  const [operator, setOperator] = useState(kpi?.formula?.operator || "divide");
+  const [decimals, setDecimals] = useState(kpi?.decimals ?? 2);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  // Энэ хэлтсийн KPI-уудаас сонгох (өөрөөсөө бусад)
+  const sameDeptKpis = allKpis.filter((k) => k.department_id === departmentId && k.id !== kpi?.id && k.kpi_type !== "calculated");
 
   const submit = async () => {
     setErr("");
     if (!name.trim()) return setErr("KPI-ийн нэр оруулна уу");
     if (!departmentId) return setErr("Хэлтэс сонгоно уу");
+    if (kpiType === "calculated" && (!numeratorId || !denominatorId)) {
+      return setErr("Тооцооллын KPI: эх KPI-ууд сонгоно уу");
+    }
     setBusy(true);
     await onSave({
       id: kpi?.id || null,
@@ -9048,6 +9090,13 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
       display_order: parseInt(order) || 0,
       target: target ? Number(target) : null,
       target_period: targetPeriod,
+      kpi_type: kpiType,
+      formula: kpiType === "calculated" ? {
+        numerator_id: numeratorId,
+        denominator_id: denominatorId,
+        operator,
+      } : null,
+      decimals: parseInt(decimals) || 0,
     });
     setBusy(false);
   };
@@ -9071,13 +9120,73 @@ function KpiDefFormModal({ mode, kpi, departments, onSave, onClose }) {
           <Input value={name} onChange={setName} placeholder="Жишээ: Хандалт, Захиалга" autoFocus />
         </Field>
 
+        {/* KPI төрөл сонгох */}
+        <Field label="KPI төрөл">
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setKpiType("input")}
+              className={`press-btn px-3 py-2.5 rounded-lg text-xs ${kpiType === "input" ? "tab-active" : "tab-inactive glass-soft"}`}
+              style={{ fontFamily: FM, border: "1px solid", borderColor: kpiType === "input" ? "transparent" : T.borderSoft }}>
+              ✍ Гар оруулах
+            </button>
+            <button type="button" onClick={() => setKpiType("calculated")}
+              className={`press-btn px-3 py-2.5 rounded-lg text-xs ${kpiType === "calculated" ? "tab-active" : "tab-inactive glass-soft"}`}
+              style={{ fontFamily: FM, border: "1px solid", borderColor: kpiType === "calculated" ? "transparent" : T.borderSoft }}>
+              🧮 Тооцоолох
+            </button>
+          </div>
+        </Field>
+
+        {/* Тооцооллын KPI бол формула UI */}
+        {kpiType === "calculated" && (
+          <div className="glass-soft rounded-lg p-3 space-y-2">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
+              🧮 Формул
+            </div>
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
+              <select value={numeratorId} onChange={(e) => setNumeratorId(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-2 py-2 rounded-lg border text-xs outline-none">
+                <option value="">— Сонгох —</option>
+                {sameDeptKpis.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
+                ))}
+              </select>
+              <select value={operator} onChange={(e) => setOperator(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM, fontSize: 18, fontWeight: 600 }}
+                className="px-2 py-2 rounded-lg border outline-none text-center">
+                <option value="divide">÷</option>
+                <option value="multiply">×</option>
+                <option value="add">+</option>
+                <option value="subtract">−</option>
+              </select>
+              <select value={denominatorId} onChange={(e) => setDenominatorId(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-2 py-2 rounded-lg border text-xs outline-none">
+                <option value="">— Сонгох —</option>
+                {sameDeptKpis.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
+              💡 Энэ KPI-д хүн утга оруулахгүй — автомат тооцоолно
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Хэмжих нэгж">
             <Input value={unit} onChange={setUnit} placeholder="₮, тоо, %" />
           </Field>
-          <Field label="Дараалал">
-            <Input value={String(order)} onChange={setOrder} type="number" placeholder="0" />
-          </Field>
+          {kpiType === "calculated" ? (
+            <Field label="Аравтын орон">
+              <Input value={String(decimals)} onChange={setDecimals} type="number" placeholder="2" />
+            </Field>
+          ) : (
+            <Field label="Дараалал">
+              <Input value={String(order)} onChange={setOrder} type="number" placeholder="0" />
+            </Field>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -9127,15 +9236,18 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // Зөвхөн input KPI-уудыг харуулах (calculated биш)
+  const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated");
+
   // Date солигдох тоолон утгуудыг ачаалах
   useEffect(() => {
     const initial = {};
-    kpiDefs.forEach((k) => {
+    inputKpis.forEach((k) => {
       const existing = existingEntries.find(e => e.kpi_id === k.id && e.entry_date === date);
       initial[k.id] = existing ? String(existing.value) : "";
     });
     setValues(initial);
-  }, [date, kpiDefs.length]);
+  }, [date, inputKpis.length]);
 
   const submit = async () => {
     setErr("");
@@ -9158,12 +9270,12 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
         </Field>
 
         <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-          {kpiDefs.length === 0 ? (
+          {inputKpis.length === 0 ? (
             <div className="glass-soft rounded-xl p-4 text-center">
               <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
             </div>
           ) : (
-            kpiDefs.map((k) => (
+            inputKpis.map((k) => (
               <div key={k.id} className="glass-soft rounded-xl p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{k.name}</div>
@@ -9185,7 +9297,7 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
           <button onClick={onClose}
             className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
             style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
-          <button onClick={submit} disabled={busy || kpiDefs.length === 0}
+          <button onClick={submit} disabled={busy || inputKpis.length === 0}
             className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ fontFamily: FS }}>
             {busy && <Loader2 size={13} className="spin" />}
