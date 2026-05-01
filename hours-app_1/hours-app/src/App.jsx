@@ -100,6 +100,30 @@ const fmtFullDate = (ts) => new Date(ts).toLocaleDateString([], { year: "numeric
 const startOfDay = (d = new Date()) => { const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); };
 const startOfWeek = () => { const x = new Date(); x.setDate(x.getDate() - x.getDay()); x.setHours(0,0,0,0); return x.getTime(); };
 
+// Notification sound — Web Audio API ашиглан зөөлөн "ping"
+const playNotificationSound = () => {
+  try {
+    const stored = localStorage.getItem("orgoo-sound");
+    if (stored === "off") return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    // Двух нотын "ding-dong"
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15); // E5
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {
+    // silent fail
+  }
+};
+
 const parseTime = (str) => { const [h, m] = (str || "00:00").split(":").map(Number); return { h, m }; };
 const setTimeOnDate = (d, hhmm) => { const x = new Date(d); const { h, m } = parseTime(hhmm); x.setHours(h, m, 0, 0); return x.getTime(); };
 
@@ -366,12 +390,8 @@ function NotificationManager({ profile }) {
       }, (payload) => {
         const n = payload.new;
         setToast({ title: n.title, body: n.body, link: n.link, id: n.id });
-        // Sound
-        try {
-          const audio = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQBPAAA=");
-          audio.volume = 0.3;
-          audio.play().catch(() => {});
-        } catch {}
+        // Sound (pleasant ding-dong)
+        playNotificationSound();
         // Auto dismiss
         setTimeout(() => setToast((t) => (t?.id === n.id ? null : t)), 6000);
       })
@@ -1218,6 +1238,9 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox}>Зарлал</SidebarTab>
               <SidebarTab active={view === "best"} onClick={() => { setView("best"); setSidebarOpen(false); }} icon={ShieldCheck}>Шилдэг</SidebarTab>
+              <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
+              <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
+              <SidebarTab active={view === "skills"} onClick={() => { setView("skills"); setSidebarOpen(false); }} icon={ShieldCheck}>Ур чадвар</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Ажилтнууд">
@@ -1281,6 +1304,9 @@ function AdminDashboard({ profile }) {
                 {view === "tasks" && "Даалгавар"}
                 {view === "announcements" && "Зарлал"}
                 {view === "best" && "Шилдэг ажилтан"}
+                {view === "calendar" && "Календар"}
+                {view === "schedule" && "Хуваарь"}
+                {view === "skills" && "Ур чадвар"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1295,6 +1321,9 @@ function AdminDashboard({ profile }) {
                 {view === "tasks" && "Даалгаврын Kanban самбар"}
                 {view === "announcements" && "Бүх ажилтанд хүрэх мэдээлэл"}
                 {view === "best" && "Сар бүрийн шилдэг ажилтны жагсаалт"}
+                {view === "calendar" && "Чөлөө + амралтын календар"}
+                {view === "schedule" && "Долоо хоногийн ажлын хуваарь"}
+                {view === "skills" && "Ажилтны ур чадвар + сургалт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1440,6 +1469,29 @@ function AdminDashboard({ profile }) {
             sessions={sessions}
             kpiEntries={kpiEntries}
             leaves={leaves}
+          />
+        )}
+
+        {view === "calendar" && (
+          <CalendarView
+            leaves={leaves}
+            employees={employees}
+            scope="all"
+          />
+        )}
+
+        {view === "schedule" && (
+          <ScheduleView
+            employees={employees}
+            sites={sites}
+            isAdmin={true}
+          />
+        )}
+
+        {view === "skills" && (
+          <SkillsView
+            employees={employees}
+            isAdmin={true}
           />
         )}
 
@@ -1965,6 +2017,9 @@ function EmployeeDashboard({ profile }) {
             <SidebarSection label="Ажил">
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</SidebarTab>
+              <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
+              <SidebarTab active={view === "skills"} onClick={() => { setView("skills"); setSidebarOpen(false); }} icon={ShieldCheck}>Ур чадвар</SidebarTab>
+              <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Хүсэлтүүд">
@@ -2026,6 +2081,9 @@ function EmployeeDashboard({ profile }) {
                 {view === "announcements" && "Зарлал"}
                 {view === "leaves" && "Чөлөө"}
                 {view === "requests" && "Хүсэлт"}
+                {view === "schedule" && "Миний хуваарь"}
+                {view === "skills" && "Миний ур чадвар"}
+                {view === "calendar" && "Календар"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 Сайн байна уу, {profile.name}!
@@ -2232,6 +2290,32 @@ function EmployeeDashboard({ profile }) {
           />
         )}
         {view === "requests" && <PersonalRequests approvals={myApprovals} onNew={() => setShowRequest(true)} />}
+
+        {view === "schedule" && (
+          <ScheduleView
+            employees={[profile]}
+            sites={mySites}
+            isAdmin={false}
+            currentUserId={profile.id}
+          />
+        )}
+
+        {view === "skills" && (
+          <SkillsView
+            employees={[profile]}
+            isAdmin={false}
+            currentUserId={profile.id}
+          />
+        )}
+
+        {view === "calendar" && (
+          <CalendarView
+            leaves={myLeaves}
+            employees={[profile]}
+            scope="self"
+            currentUserId={profile.id}
+          />
+        )}
 
         <Footer count={mySessions.length} />
           </div>
@@ -3654,6 +3738,728 @@ function SidebarSection({ label, children }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  BEST EMPLOYEE VIEW — Сарын шилдэг ажилтан
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  CALENDAR VIEW — Чөлөөг календар дээр харах
+// ═══════════════════════════════════════════════════════════════════════════
+function CalendarView({ leaves = [], employees = [], scope = "all", currentUserId = null }) {
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+
+  const filteredLeaves = useMemo(() => {
+    let result = leaves.filter((l) => l.status === "approved");
+    if (scope === "self" && currentUserId) {
+      result = result.filter((l) => l.employee_id === currentUserId);
+    }
+    return result;
+  }, [leaves, scope, currentUserId]);
+
+  // Build calendar grid
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startWeekday = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Mon=0
+  const daysInMonth = lastDay.getDate();
+
+  // Group leaves by date
+  const leavesByDate = useMemo(() => {
+    const map = {};
+    filteredLeaves.forEach((l) => {
+      const key = l.leave_date;
+      if (!map[key]) map[key] = [];
+      map[key].push(l);
+    });
+    return map;
+  }, [filteredLeaves]);
+
+  const monthNames = ["1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
+                      "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар"];
+  const weekdayNames = ["Да", "Мя", "Лх", "Пү", "Ба", "Бя", "Ня"];
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push(d);
+  }
+
+  const empById = (id) => employees.find((e) => e.id === id);
+
+  const goPrev = () => {
+    if (month === 0) { setMonth(11); setYear(year - 1); }
+    else setMonth(month - 1);
+  };
+  const goNext = () => {
+    if (month === 11) { setMonth(0); setYear(year + 1); }
+    else setMonth(month + 1);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2">
+        <button onClick={goPrev} className="press-btn p-1.5 rounded-lg hover:bg-black/5"
+          style={{ color: T.ink }}>
+          ←
+        </button>
+        <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex-1 text-center">
+          {monthNames[month]} {year}
+        </div>
+        <button onClick={goNext} className="press-btn p-1.5 rounded-lg hover:bg-black/5"
+          style={{ color: T.ink }}>
+          →
+        </button>
+        <button onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }}
+          className="press-btn px-3 py-1.5 rounded-lg text-xs"
+          style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+          Өнөөдөр
+        </button>
+      </div>
+
+      {/* Calendar grid */}
+      <div className="glass rounded-2xl p-3">
+        {/* Weekday header */}
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {weekdayNames.map((wd, i) => (
+            <div key={i} style={{
+              fontFamily: FS, fontWeight: 600,
+              color: i >= 5 ? T.err : T.muted,
+            }} className="text-[10px] text-center py-1.5 uppercase tracking-wider">
+              {wd}
+            </div>
+          ))}
+        </div>
+
+        {/* Days */}
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (d === null) return <div key={i} />;
+            const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+            const dayLeaves = leavesByDate[dateStr] || [];
+            const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+            const dayOfWeek = new Date(year, month, d).getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+            return (
+              <div key={i} style={{
+                background: isToday ? T.highlightSoft : "transparent",
+                border: isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`,
+                minHeight: 64,
+              }} className="rounded-lg p-1.5 relative">
+                <div style={{
+                  fontFamily: FS, fontWeight: isToday ? 700 : 500,
+                  color: isToday ? T.highlight : isWeekend ? T.err : T.ink,
+                }} className="text-xs">
+                  {d}
+                </div>
+                {dayLeaves.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {dayLeaves.slice(0, 2).map((l, j) => {
+                      const emp = empById(l.employee_id);
+                      return (
+                        <div key={j} style={{
+                          background: l.leave_type === "sick" ? T.errSoft : T.highlightSoft,
+                          color: l.leave_type === "sick" ? T.err : T.highlight,
+                        }} className="text-[9px] px-1 py-0.5 rounded truncate"
+                          title={`${emp?.name || "—"} (${l.leave_type === "sick" ? "Өвчтэй" : "Чөлөө"})`}>
+                          {emp?.name?.split(" ")[0] || "—"}
+                        </div>
+                      );
+                    })}
+                    {dayLeaves.length > 2 && (
+                      <div style={{ color: T.muted, fontFamily: FS }}
+                        className="text-[9px] px-1">
+                        +{dayLeaves.length - 2}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="glass rounded-xl p-3 flex flex-wrap items-center gap-3 text-[10px]" style={{ fontFamily: FS, color: T.inkSoft }}>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.highlightSoft, border: `1px solid ${T.highlight}` }} className="w-3 h-3 rounded" />
+          <span>Өнөөдөр</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.highlightSoft, color: T.highlight }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">A</div>
+          <span>Чөлөө</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.errSoft, color: T.err }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">B</div>
+          <span>Өвчтэй</span>
+        </div>
+        <div className="flex-1" />
+        <div style={{ color: T.muted }}>{filteredLeaves.length} нийт чөлөө</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SKILLS VIEW — Ажилтны ур чадвар + сургалт
+// ═══════════════════════════════════════════════════════════════════════════
+function SkillsView({ employees, isAdmin = false, currentUserId = null }) {
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingSkill, setEditingSkill] = useState(null);
+  const [filterEmpId, setFilterEmpId] = useState(isAdmin ? "all" : currentUserId);
+
+  const loadSkills = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from("skills").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      setSkills(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadSkills(); }, []);
+
+  const filtered = filterEmpId === "all"
+    ? skills
+    : skills.filter((s) => s.employee_id === filterEmpId);
+
+  const empById = (id) => employees.find((e) => e.id === id);
+
+  const levelColors = {
+    beginner: { bg: "rgba(148,163,184,0.15)", color: "#475569", label: "Анхан" },
+    intermediate: { bg: "rgba(251,191,36,0.15)", color: "#b45309", label: "Дунд" },
+    advanced: { bg: "rgba(16,185,129,0.15)", color: "#047857", label: "Гүнзгий" },
+    expert: { bg: "rgba(236,72,153,0.15)", color: "#be185d", label: "Эксперт" },
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Энэ ур чадварыг устгах уу?")) return;
+    await supabase.from("skills").delete().eq("id", id);
+    await loadSkills();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex flex-wrap gap-2 items-center">
+        {isAdmin && (
+          <select value={filterEmpId} onChange={(e) => setFilterEmpId(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+            className="text-sm">
+            <option value="all">Бүх ажилтан</option>
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        )}
+        <div className="flex-1" />
+        {isAdmin && (
+          <button onClick={() => setEditingSkill({})}
+            className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
+            <Plus size={12} /> Нэмэх
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+          Ачааллаж байна...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-3xl mb-2">🎓</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Ур чадвар бүртгэгдээгүй байна
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {filtered.map((s) => {
+            const emp = empById(s.employee_id);
+            const lvl = levelColors[s.level] || levelColors.beginner;
+            return (
+              <div key={s.id} className="glass lift rounded-xl p-3">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                      {s.name}
+                    </div>
+                    {emp && (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-0.5">
+                        {emp.name}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ background: lvl.bg, color: lvl.color, fontFamily: FS, fontWeight: 600 }}
+                    className="text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap">
+                    {lvl.label}
+                  </div>
+                </div>
+                {s.category && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-1">
+                    📂 {s.category}
+                  </div>
+                )}
+                {s.obtained_date && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                    📅 {new Date(s.obtained_date).toLocaleDateString("mn-MN")}
+                  </div>
+                )}
+                {s.notes && (
+                  <div style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px] mt-2 italic">
+                    "{s.notes}"
+                  </div>
+                )}
+                {isAdmin && (
+                  <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
+                    <button onClick={() => setEditingSkill(s)}
+                      className="press-btn flex-1 py-1 rounded text-[10px]"
+                      style={{ background: T.surfaceAlt, color: T.inkSoft, fontFamily: FS }}>
+                      Засах
+                    </button>
+                    <button onClick={() => handleDelete(s.id)}
+                      className="press-btn flex-1 py-1 rounded text-[10px]"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                      Устгах
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editingSkill && (
+        <SkillFormModal
+          skill={editingSkill.id ? editingSkill : null}
+          employees={employees}
+          onSave={async (data) => {
+            try {
+              if (editingSkill.id) {
+                await supabase.from("skills").update(data).eq("id", editingSkill.id);
+              } else {
+                await supabase.from("skills").insert(data);
+              }
+              setEditingSkill(null);
+              await loadSkills();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setEditingSkill(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SkillFormModal({ skill, employees, onSave, onClose }) {
+  const [employeeId, setEmployeeId] = useState(skill?.employee_id || "");
+  const [name, setName] = useState(skill?.name || "");
+  const [level, setLevel] = useState(skill?.level || "beginner");
+  const [category, setCategory] = useState(skill?.category || "");
+  const [obtainedDate, setObtainedDate] = useState(skill?.obtained_date || "");
+  const [notes, setNotes] = useState(skill?.notes || "");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            🎓 {skill ? "Засах" : "Шинэ ур чадвар"}
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Ажилтан</label>
+            <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              <option value="">— Сонгох —</option>
+              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Ур чадвар</label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="ж.нь: React, Англи хэл, Менежмент..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Түвшин</label>
+              <select value={level} onChange={(e) => setLevel(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm">
+                <option value="beginner">Анхан</option>
+                <option value="intermediate">Дунд</option>
+                <option value="advanced">Гүнзгий</option>
+                <option value="expert">Эксперт</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Авсан огноо</label>
+              <input type="date" value={obtainedDate} onChange={(e) => setObtainedDate(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Ангилал</label>
+            <input value={category} onChange={(e) => setCategory(e.target.value)}
+              placeholder="ж.нь: Програмчлал, Хэл, Менежмент"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+          </div>
+
+          <button
+            disabled={busy || !employeeId || !name}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                employee_id: employeeId,
+                name,
+                level,
+                category: category || null,
+                obtained_date: obtainedDate || null,
+                notes: notes || null,
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-2.5 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж байна..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCHEDULE VIEW — Долоо хоногийн ажилтны хуваарь
+// ═══════════════════════════════════════════════════════════════════════════
+function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null }) {
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [weekStart, setWeekStart] = useState(() => {
+    const d = new Date();
+    const day = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    d.setDate(d.getDate() - day);
+    return d.toISOString().slice(0, 10);
+  });
+  const [editing, setEditing] = useState(null);
+
+  const loadSchedules = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("work_schedules")
+        .select("*")
+        .eq("week_start", weekStart);
+      if (error) throw error;
+      setSchedules(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadSchedules(); }, [weekStart]);
+
+  const visibleEmployees = isAdmin
+    ? employees
+    : employees.filter((e) => e.id === currentUserId);
+
+  const dayNames = ["Да", "Мя", "Лх", "Пү", "Ба", "Бя", "Ня"];
+
+  const getCell = (empId, dayOfWeek) => {
+    return schedules.find((s) => s.employee_id === empId && s.day_of_week === dayOfWeek);
+  };
+
+  const goPrev = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() - 7);
+    setWeekStart(d.toISOString().slice(0, 10));
+  };
+  const goNext = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 7);
+    setWeekStart(d.toISOString().slice(0, 10));
+  };
+
+  // Long week dates
+  const weekDates = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
+  const handleSave = async (data) => {
+    try {
+      const existing = schedules.find((s) =>
+        s.employee_id === data.employee_id && s.day_of_week === data.day_of_week
+      );
+      if (existing) {
+        await supabase.from("work_schedules").update(data).eq("id", existing.id);
+      } else {
+        await supabase.from("work_schedules").insert({ ...data, week_start: weekStart });
+      }
+      setEditing(null);
+      await loadSchedules();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const handleDelete = async (cell) => {
+    if (!confirm("Устгах уу?")) return;
+    await supabase.from("work_schedules").delete().eq("id", cell.id);
+    await loadSchedules();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2">
+        <button onClick={goPrev} className="press-btn p-1.5 rounded-lg hover:bg-black/5"
+          style={{ color: T.ink }}>←</button>
+        <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm flex-1 text-center">
+          {weekDates[0].toLocaleDateString("mn-MN", { day: "numeric", month: "short" })}
+          {" — "}
+          {weekDates[6].toLocaleDateString("mn-MN", { day: "numeric", month: "short", year: "numeric" })}
+        </div>
+        <button onClick={goNext} className="press-btn p-1.5 rounded-lg hover:bg-black/5"
+          style={{ color: T.ink }}>→</button>
+        <button onClick={() => {
+          const d = new Date();
+          const day = d.getDay() === 0 ? 6 : d.getDay() - 1;
+          d.setDate(d.getDate() - day);
+          setWeekStart(d.toISOString().slice(0, 10));
+        }}
+          className="press-btn px-3 py-1.5 rounded-lg text-xs"
+          style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+          Энэ долоо хоног
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : (
+        <div className="glass rounded-2xl p-3 overflow-x-auto">
+          <table className="w-full" style={{ minWidth: 600 }}>
+            <thead>
+              <tr>
+                <th style={{ fontFamily: FS, color: T.muted, fontWeight: 500, textAlign: "left" }}
+                    className="text-[10px] uppercase tracking-wider pb-2 px-1">
+                  Ажилтан
+                </th>
+                {dayNames.map((dn, i) => (
+                  <th key={i} style={{
+                    fontFamily: FS, fontWeight: 500,
+                    color: i >= 5 ? T.err : T.muted,
+                  }} className="text-[10px] uppercase tracking-wider pb-2 px-1 text-center">
+                    {dn}
+                    <div className="text-[9px] mt-0.5">{weekDates[i].getDate()}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleEmployees.map((emp) => (
+                <tr key={emp.id}>
+                  <td style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                      className="text-xs py-2 px-1 whitespace-nowrap">
+                    {emp.name}
+                  </td>
+                  {[1,2,3,4,5,6,7].map((day) => {
+                    const cell = getCell(emp.id, day);
+                    const hasShift = !!cell?.shift_start;
+                    return (
+                      <td key={day} className="px-0.5 py-1 text-center">
+                        <button
+                          onClick={() => isAdmin && setEditing({ employee_id: emp.id, day_of_week: day, ...cell })}
+                          disabled={!isAdmin}
+                          style={{
+                            background: hasShift
+                              ? (cell.status === "absent" ? T.errSoft : cell.status === "leave" ? T.warnSoft : T.highlightSoft)
+                              : T.surfaceAlt,
+                            color: hasShift
+                              ? (cell.status === "absent" ? T.err : cell.status === "leave" ? T.warn : T.highlight)
+                              : T.muted,
+                            fontFamily: FS,
+                            fontWeight: 600,
+                            cursor: isAdmin ? "pointer" : "default",
+                          }}
+                          className={`w-full py-1.5 rounded text-[10px] ${isAdmin ? "hover:opacity-80" : ""}`}>
+                          {hasShift ? `${cell.shift_start.slice(0, 5)}` : "—"}
+                          {hasShift && (
+                            <div className="text-[8px] opacity-75">
+                              {cell.shift_end?.slice(0, 5)}
+                            </div>
+                          )}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="glass rounded-xl p-3 flex flex-wrap items-center gap-3 text-[10px]" style={{ fontFamily: FS, color: T.inkSoft }}>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.highlightSoft }} className="w-3 h-3 rounded" />
+          <span>Хуваарьт ажил</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.errSoft }} className="w-3 h-3 rounded" />
+          <span>Ирээгүй</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: T.warnSoft }} className="w-3 h-3 rounded" />
+          <span>Чөлөө</span>
+        </div>
+        <div className="flex-1" />
+        {isAdmin && <span style={{ color: T.muted }}>Cell дарж засна</span>}
+      </div>
+
+      {editing && (
+        <ScheduleFormModal
+          schedule={editing}
+          sites={sites}
+          employee={employees.find((e) => e.id === editing.employee_id)}
+          onSave={handleSave}
+          onDelete={editing.id ? () => handleDelete(editing) : null}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClose }) {
+  const [shiftStart, setShiftStart] = useState(schedule?.shift_start?.slice(0, 5) || "09:00");
+  const [shiftEnd, setShiftEnd] = useState(schedule?.shift_end?.slice(0, 5) || "18:00");
+  const [breakMinutes, setBreakMinutes] = useState(schedule?.break_minutes ?? 60);
+  const [siteId, setSiteId] = useState(schedule?.site_id || "");
+  const [status, setStatus] = useState(schedule?.status || "scheduled");
+  const [notes, setNotes] = useState(schedule?.notes || "");
+  const [busy, setBusy] = useState(false);
+
+  const dayNames = ["", "Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-base">
+              🕐 {dayNames[schedule.day_of_week]}
+            </h3>
+            <p style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+              {employee?.name}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Эхлэх</label>
+              <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Дуусах</label>
+              <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Завсарлага (мин)</label>
+            <input type="number" value={breakMinutes} onChange={(e) => setBreakMinutes(Number(e.target.value))}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Ажлын байр</label>
+            <select value={siteId} onChange={(e) => setSiteId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              <option value="">— Сонгох —</option>
+              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Төлөв</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              <option value="scheduled">Хуваарьт</option>
+              <option value="confirmed">Баталсан</option>
+              <option value="absent">Ирээгүй</option>
+              <option value="leave">Чөлөө</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                await onSave({
+                  employee_id: schedule.employee_id,
+                  day_of_week: schedule.day_of_week,
+                  shift_start: shiftStart,
+                  shift_end: shiftEnd,
+                  break_minutes: breakMinutes,
+                  site_id: siteId || null,
+                  status,
+                  notes: notes || null,
+                });
+                setBusy(false);
+              }}
+              className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold">
+              {busy ? "Хадгалаж..." : "Хадгалах"}
+            </button>
+            {onDelete && (
+              <button onClick={onDelete}
+                className="glow-danger press-btn py-2.5 px-4 rounded-xl text-sm font-semibold">
+                Устгах
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BestEmployeeView({ employees, sessions, kpiEntries, leaves }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
