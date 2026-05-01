@@ -9071,7 +9071,18 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
   const [err, setErr] = useState("");
 
   // Энэ хэлтсийн KPI-уудаас сонгох (өөрөөсөө бусад)
-  const sameDeptKpis = allKpis.filter((k) => k.department_id === departmentId && k.id !== kpi?.id && k.kpi_type !== "calculated");
+  // Бүх хэлтсийн KPI-уудаас сонгох (хэлтэс бүрээр бүлэглэсэн)
+  const allInputKpis = allKpis.filter((k) => k.id !== kpi?.id && k.kpi_type !== "calculated");
+  const kpisByDept = useMemo(() => {
+    const grouped = {};
+    allInputKpis.forEach((k) => {
+      const dept = departments.find((d) => d.id === k.department_id);
+      const deptName = dept?.name || "Бусад";
+      if (!grouped[deptName]) grouped[deptName] = [];
+      grouped[deptName].push(k);
+    });
+    return grouped;
+  }, [allInputKpis, departments]);
 
   const submit = async () => {
     setErr("");
@@ -9140,15 +9151,19 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
         {kpiType === "calculated" && (
           <div className="glass-soft rounded-lg p-3 space-y-2">
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
-              🧮 Формул
+              🧮 Формул (бүх хэлтсийн KPI-аас сонгож болно)
             </div>
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
               <select value={numeratorId} onChange={(e) => setNumeratorId(e.target.value)}
                 style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="px-2 py-2 rounded-lg border text-xs outline-none">
                 <option value="">— Сонгох —</option>
-                {sameDeptKpis.map((k) => (
-                  <option key={k.id} value={k.id}>{k.name}</option>
+                {Object.entries(kpisByDept).map(([deptName, kpis]) => (
+                  <optgroup key={deptName} label={`📂 ${deptName}`}>
+                    {kpis.map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <select value={operator} onChange={(e) => setOperator(e.target.value)}
@@ -9163,11 +9178,35 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
                 style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
                 className="px-2 py-2 rounded-lg border text-xs outline-none">
                 <option value="">— Сонгох —</option>
-                {sameDeptKpis.map((k) => (
-                  <option key={k.id} value={k.id}>{k.name}</option>
+                {Object.entries(kpisByDept).map(([deptName, kpis]) => (
+                  <optgroup key={deptName} label={`📂 ${deptName}`}>
+                    {kpis.map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
+
+            {/* Хэлтэс хоорондын тооцоолол байгаа эсэхийг харуулах */}
+            {numeratorId && denominatorId && (() => {
+              const num = allInputKpis.find((k) => k.id === numeratorId);
+              const den = allInputKpis.find((k) => k.id === denominatorId);
+              if (!num || !den) return null;
+              const numDept = departments.find((d) => d.id === num.department_id);
+              const denDept = departments.find((d) => d.id === den.department_id);
+              const sameDept = num.department_id === den.department_id;
+              return (
+                <div style={{ background: sameDept ? T.highlightSoft : "rgba(245,158,11,0.1)", color: sameDept ? T.highlight : T.warn, fontFamily: FM }}
+                     className="text-[10px] px-2 py-1.5 rounded">
+                  {sameDept ? "✓" : "🔀"} {numDept?.name || "?"} · {num.name}
+                  {" "}{operator === "divide" ? "÷" : operator === "multiply" ? "×" : operator === "add" ? "+" : "−"}{" "}
+                  {denDept?.name || "?"} · {den.name}
+                  {!sameDept && " (хэлтэс хооронд)"}
+                </div>
+              );
+            })()}
+
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
               💡 Энэ KPI-д хүн утга оруулахгүй — автомат тооцоолно
             </div>
