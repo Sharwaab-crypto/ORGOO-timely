@@ -1253,6 +1253,7 @@ function AdminDashboard({ profile }) {
 
             <SidebarSection label="Бизнес">
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Бараа нөөц</SidebarTab>
+              <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Ажилтнууд">
@@ -1323,6 +1324,7 @@ function AdminDashboard({ profile }) {
                 {view === "polls" && "Санал асуулга"}
                 {view === "hrfile" && "HR хувийн файл"}
                 {view === "inventory" && "Бараа нөөц"}
+                {view === "stockcount" && "Тооллого"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1343,6 +1345,7 @@ function AdminDashboard({ profile }) {
                 {view === "polls" && "Ажилтнуудаас санал авах"}
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
+                {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1525,6 +1528,10 @@ function AdminDashboard({ profile }) {
 
         {view === "inventory" && (
           <InventoryView profile={profile} isAdmin={true} />
+        )}
+
+        {view === "stockcount" && (
+          <StockCountView profile={profile} />
         )}
 
             <Footer count={sessions.length} />
@@ -4244,6 +4251,600 @@ function InventoryView({ profile, isAdmin = false }) {
           }}
           onClose={() => setMovementFor(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STOCK COUNT VIEW — Тооллого
+// ═══════════════════════════════════════════════════════════════════════════
+function StockCountView({ profile }) {
+  const [counts, setCounts] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCount, setActiveCount] = useState(null); // open detail
+  const [showNewModal, setShowNewModal] = useState(false);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: countsData }, { data: prodData }] = await Promise.all([
+        supabase.from("inv_stock_counts").select("*").order("started_at", { ascending: false }),
+        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+      ]);
+      setCounts(countsData || []);
+      setProducts(prodData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Шинэ тооллого нээх
+  const handleStartNew = async (notes) => {
+    try {
+      // Snapshot бараа жагсаалт
+      const countNumber = `TC-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 1000)}`;
+      const { data: newCount, error } = await supabase
+        .from("inv_stock_counts")
+        .insert({
+          count_number: countNumber,
+          status: "in_progress",
+          notes,
+          total_products: products.length,
+          created_by: profile.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      // Бүх барааг snapshot хийх
+      const items = products.map((p) => ({
+        count_id: newCount.id,
+        product_id: p.id,
+        system_qty: p.stock,
+      }));
+      const { error: itemErr } = await supabase.from("inv_stock_count_items").insert(items);
+      if (itemErr) throw itemErr;
+
+      setShowNewModal(false);
+      await loadAll();
+      setActiveCount(newCount.id);
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  if (activeCount) {
+    return (
+      <StockCountDetail
+        countId={activeCount}
+        products={products}
+        profile={profile}
+        onClose={() => { setActiveCount(null); loadAll(); }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button onClick={() => setShowNewModal(true)}
+          className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5">
+          <Plus size={12} /> Шинэ тооллого
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : counts.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📋</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">
+            Тооллого хийгдээгүй байна
+          </div>
+          <button onClick={() => setShowNewModal(true)}
+            className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold">
+            + Анхны тооллого хийх
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {counts.map((c) => {
+            const isComplete = c.status === "completed";
+            const isCancel = c.status === "cancelled";
+            return (
+              <button key={c.id} onClick={() => setActiveCount(c.id)}
+                className="glass lift rounded-xl p-3 w-full text-left">
+                <div className="flex items-center gap-3">
+                  <div style={{
+                    background: isComplete ? "rgba(16,185,129,0.1)" : isCancel ? T.errSoft : T.warnSoft,
+                    color: isComplete ? T.ok : isCancel ? T.err : T.warn,
+                  }} className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                    {isComplete ? "✓" : isCancel ? "✕" : "📋"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                        {c.count_number}
+                      </span>
+                      <span style={{
+                        background: isComplete ? "rgba(16,185,129,0.1)" : isCancel ? T.errSoft : T.warnSoft,
+                        color: isComplete ? T.ok : isCancel ? T.err : T.warn,
+                      }} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                        {isComplete ? "Дууссан" : isCancel ? "Цуцалсан" : "Хийгдэж буй"}
+                      </span>
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                      {new Date(c.started_at).toLocaleString("mn-MN")} · {c.total_products || 0} бараа
+                    </div>
+                    {c.notes && (
+                      <div style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px] mt-1 italic truncate">
+                        "{c.notes}"
+                      </div>
+                    )}
+                  </div>
+                  {Number(c.total_diff_amount) !== 0 && (
+                    <div style={{
+                      color: c.total_diff_amount > 0 ? T.ok : T.err,
+                      fontFamily: FD, fontWeight: 600,
+                    }} className="text-sm">
+                      {c.total_diff_amount > 0 ? "+" : ""}{Number(c.total_diff_amount).toLocaleString()}₮
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {showNewModal && (
+        <NewStockCountModal
+          productsCount={products.length}
+          onSave={handleStartNew}
+          onClose={() => setShowNewModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewStockCountModal({ productsCount, onSave, onClose }) {
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            📋 Шинэ тооллого
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="glass-soft rounded-lg p-3 mb-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider mb-1">
+            Тооллогод орох бараа
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl">
+            {productsCount} бараа
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+            💡 Бүх идэвхтэй барааны одоогийн нөөц snapshot хадгалагдана
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Тэмдэглэл (заавал биш)
+            </label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="ж.нь: Сарын эцсийн тооллого, агуулах А..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+          </div>
+
+          <button
+            disabled={busy || productsCount === 0}
+            onClick={async () => {
+              setBusy(true);
+              await onSave(notes.trim() || null);
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Үүсгэж байна..." : "Тооллого эхлүүлэх"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockCountDetail({ countId, products, profile, onClose }) {
+  const [count, setCount] = useState(null);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all"); // all | counted | uncounted | diff
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [{ data: cData }, { data: iData }] = await Promise.all([
+        supabase.from("inv_stock_counts").select("*").eq("id", countId).single(),
+        supabase.from("inv_stock_count_items").select("*").eq("count_id", countId),
+      ]);
+      setCount(cData);
+      setItems(iData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [countId]);
+
+  const productById = (id) => products.find((p) => p.id === id);
+
+  // Update item actual qty
+  const updateActual = async (itemId, actualQty) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    const product = productById(item.product_id);
+    const diffQty = actualQty - Number(item.system_qty);
+    const diffAmount = diffQty * Number(product?.cost_price || 0);
+
+    await supabase.from("inv_stock_count_items").update({
+      actual_qty: actualQty,
+      diff_qty: diffQty,
+      diff_amount: diffAmount,
+      counted_at: new Date().toISOString(),
+      counted_by: profile.id,
+    }).eq("id", itemId);
+
+    setItems(items.map((i) => i.id === itemId ? {
+      ...i, actual_qty: actualQty, diff_qty: diffQty, diff_amount: diffAmount,
+    } : i));
+  };
+
+  // Тооллого дуусгах + бараа auto adjust
+  const handleComplete = async () => {
+    if (!confirm(`Тооллогыг дуусгах уу?\n\nБараа бүрийн нөөц бодит тоонд тохирч засагдана.\nЭнэ үйлдэл буцах боломжгүй!`)) return;
+
+    setBusy(true);
+    try {
+      // Зөрүү байгаа item бүрд adjustment movement үүсгэх
+      const totalDiff = items.reduce((sum, i) => sum + (Number(i.diff_amount) || 0), 0);
+      const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
+
+      for (const item of countedItems) {
+        if (Number(item.diff_qty) !== 0) {
+          await supabase.from("inv_movements").insert({
+            product_id: item.product_id,
+            movement_type: "adjust",
+            quantity: Number(item.actual_qty), // adjust set нөөц to actual
+            unit_price: 0,
+            total_amount: Number(item.diff_amount) || 0,
+            reason: "manual",
+            notes: `Тооллого ${count.count_number}`,
+            reference_number: count.count_number,
+            created_by: profile.id,
+          });
+        }
+      }
+
+      // Тооллого дуусгах
+      await supabase.from("inv_stock_counts").update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        total_diff_amount: totalDiff,
+      }).eq("id", countId);
+
+      alert(`✅ Тооллого амжилттай дууслаа.\n\nБараа бүрийн нөөц шинэчлэгдсэн.`);
+      onClose();
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Тооллого цуцлах
+  const handleCancel = async () => {
+    if (!confirm("Тооллогыг цуцлах уу?\n\nБараа нөөц өөрчлөгдөхгүй.")) return;
+    await supabase.from("inv_stock_counts").update({
+      status: "cancelled",
+      completed_at: new Date().toISOString(),
+    }).eq("id", countId);
+    onClose();
+  };
+
+  // PDF тайлан
+  const handlePdf = async () => {
+    try {
+      const { jsPDF } = await import("jspdf");
+      await import("jspdf-autotable");
+
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      pdf.setFont("helvetica");
+
+      // Header
+      pdf.setFontSize(20);
+      pdf.setTextColor(236, 72, 153);
+      pdf.text("ORGOO", 20, 20);
+      pdf.setFontSize(11);
+      pdf.setTextColor(60, 60, 60);
+      pdf.text("Toollogiin tailan", 20, 27);
+
+      // Info
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Dugaar: ${count.count_number}`, 20, 38);
+      pdf.text(`Ehlesen: ${new Date(count.started_at).toLocaleString("mn-MN")}`, 20, 43);
+      if (count.completed_at) {
+        pdf.text(`Duussan: ${new Date(count.completed_at).toLocaleString("mn-MN")}`, 20, 48);
+      }
+      pdf.text(`Toluv: ${count.status === "completed" ? "Duussan" : count.status === "cancelled" ? "Tsutsalsan" : "Hijgdej bui"}`, 20, 53);
+
+      // Stats
+      const counted = items.filter((i) => i.actual_qty !== null).length;
+      const withDiff = items.filter((i) => Number(i.diff_qty) !== 0 && i.actual_qty !== null).length;
+      const totalDiff = items.reduce((s, i) => s + (Number(i.diff_amount) || 0), 0);
+
+      pdf.setFillColor(253, 243, 245);
+      pdf.rect(20, 60, 170, 16, "F");
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 120, 120);
+      pdf.text("Niit baraa", 25, 66);
+      pdf.text("Toollson", 65, 66);
+      pdf.text("Zoruutei", 105, 66);
+      pdf.text("Niit zoruunii dun", 145, 66);
+
+      pdf.setFontSize(11);
+      pdf.setTextColor(30, 30, 30);
+      pdf.text(`${items.length}`, 25, 73);
+      pdf.text(`${counted}`, 65, 73);
+      pdf.text(`${withDiff}`, 105, 73);
+      pdf.setTextColor(totalDiff < 0 ? 220 : totalDiff > 0 ? 16 : 30, totalDiff < 0 ? 38 : totalDiff > 0 ? 185 : 30, totalDiff < 0 ? 38 : totalDiff > 0 ? 129 : 30);
+      pdf.text(`${totalDiff.toLocaleString()}₮`, 145, 73);
+
+      // Table — only items with diff
+      const tableData = items
+        .filter((i) => i.actual_qty !== null)
+        .map((i) => {
+          const p = productById(i.product_id);
+          return [
+            p?.name || "—",
+            p?.sku || "—",
+            String(i.system_qty || 0),
+            String(i.actual_qty || 0),
+            String(i.diff_qty || 0),
+            (Number(i.diff_amount) || 0).toLocaleString(),
+          ];
+        });
+
+      pdf.autoTable({
+        startY: 85,
+        head: [["Baraa", "SKU", "Sistemd", "Bodit", "Zoruu", "Dun (₮)"]],
+        body: tableData,
+        theme: "plain",
+        headStyles: { fillColor: [236, 72, 153], textColor: [255, 255, 255], fontSize: 9 },
+        bodyStyles: { fontSize: 8 },
+        alternateRowStyles: { fillColor: [253, 243, 245] },
+        margin: { left: 20, right: 20 },
+        columnStyles: {
+          2: { halign: "right" },
+          3: { halign: "right" },
+          4: { halign: "right" },
+          5: { halign: "right" },
+        },
+      });
+
+      // Footer
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
+      pdf.text("ORGOO", 180, 285);
+
+      pdf.save(`ORGOO-${count.count_number}.pdf`);
+    } catch (e) {
+      alert("PDF алдаа: " + e.message);
+    }
+  };
+
+  if (loading || !count) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+        <Loader2 className="spin mx-auto mb-2" size={20} />
+      </div>
+    );
+  }
+
+  // Filter items
+  let filtered = items;
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((i) => {
+      const p = productById(i.product_id);
+      return p?.name?.toLowerCase().includes(q) || p?.sku?.toLowerCase().includes(q);
+    });
+  }
+  if (filter === "counted") filtered = filtered.filter((i) => i.actual_qty !== null);
+  else if (filter === "uncounted") filtered = filtered.filter((i) => i.actual_qty === null);
+  else if (filter === "diff") filtered = filtered.filter((i) => Number(i.diff_qty) !== 0 && i.actual_qty !== null);
+
+  const counted = items.filter((i) => i.actual_qty !== null).length;
+  const withDiff = items.filter((i) => Number(i.diff_qty) !== 0 && i.actual_qty !== null).length;
+  const totalDiff = items.reduce((s, i) => s + (Number(i.diff_amount) || 0), 0);
+  const isReadOnly = count.status !== "in_progress";
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2">
+        <button onClick={onClose} className="press-btn p-1.5 rounded-lg hover:bg-black/5"
+          style={{ color: T.ink }}>
+          ←
+        </button>
+        <div className="flex-1 min-w-0">
+          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+            {count.count_number}
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            {new Date(count.started_at).toLocaleString("mn-MN")}
+          </div>
+        </div>
+        <button onClick={handlePdf}
+          className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+          style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+          <Download size={11} /> PDF
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="glass rounded-xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl">{items.length}</div>
+        </div>
+        <div className="glass rounded-xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Тоолсон</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-2xl">{counted}</div>
+        </div>
+        <div className="glass rounded-xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Зөрүүтэй</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: withDiff > 0 ? T.warn : T.ink }} className="text-2xl">{withDiff}</div>
+        </div>
+        <div className="glass rounded-xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Зөрүүний дүн</div>
+          <div style={{
+            fontFamily: FD, fontWeight: 600,
+            color: totalDiff < 0 ? T.err : totalDiff > 0 ? T.ok : T.ink,
+          }} className="text-base">
+            {totalDiff > 0 ? "+" : ""}{Math.abs(totalDiff) > 1000 ? (totalDiff / 1000).toFixed(0) + "к" : totalDiff.toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="glass rounded-2xl p-3 flex flex-wrap gap-2 items-center">
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 Хайх..."
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+          className="text-xs flex-1 min-w-[120px]" />
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+          className="text-xs">
+          <option value="all">Бүх ({items.length})</option>
+          <option value="uncounted">Тоолоогүй ({items.length - counted})</option>
+          <option value="counted">Тоолсон ({counted})</option>
+          <option value="diff">Зөрүүтэй ({withDiff})</option>
+        </select>
+      </div>
+
+      {/* Items */}
+      <div className="space-y-2">
+        {filtered.map((item) => {
+          const p = productById(item.product_id);
+          if (!p) return null;
+          const hasDiff = item.actual_qty !== null && Number(item.diff_qty) !== 0;
+          const isCounted = item.actual_qty !== null;
+
+          return (
+            <div key={item.id} className="glass rounded-xl p-3">
+              <div className="flex items-center gap-3 mb-2">
+                {p.image_url && (
+                  <img src={p.image_url} alt={p.name}
+                    style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6 }} />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                    {p.name}
+                  </div>
+                  {p.sku && (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      SKU: {p.sku}
+                    </div>
+                  )}
+                </div>
+                {isCounted && (
+                  <div style={{
+                    background: hasDiff ? (item.diff_qty > 0 ? "rgba(16,185,129,0.1)" : T.errSoft) : "rgba(16,185,129,0.1)",
+                    color: hasDiff ? (item.diff_qty > 0 ? T.ok : T.err) : T.ok,
+                  }} className="text-[10px] px-2 py-0.5 rounded-full font-medium">
+                    {hasDiff ? `${item.diff_qty > 0 ? "+" : ""}${item.diff_qty}` : "✓"}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-0.5">Системд</div>
+                  <div style={{ fontFamily: FD, fontWeight: 500, color: T.ink }} className="text-sm">
+                    {Number(item.system_qty).toLocaleString()}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-0.5">Бодит</div>
+                  {isReadOnly ? (
+                    <div style={{ fontFamily: FD, fontWeight: 500, color: T.ink }} className="text-sm">
+                      {item.actual_qty !== null ? Number(item.actual_qty).toLocaleString() : "—"}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      value={item.actual_qty ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? null : Number(e.target.value);
+                        if (v === null) {
+                          // Clear
+                          supabase.from("inv_stock_count_items").update({
+                            actual_qty: null, diff_qty: null, diff_amount: null, counted_at: null,
+                          }).eq("id", item.id);
+                          setItems(items.map((i) => i.id === item.id ? { ...i, actual_qty: null, diff_qty: null, diff_amount: null } : i));
+                        } else {
+                          updateActual(item.id, v);
+                        }
+                      }}
+                      placeholder="Бодит"
+                      style={{ background: T.surfaceAlt, border: `1px solid ${isCounted ? T.border : T.warn}`, color: T.ink, fontFamily: FS }}
+                      className="w-full px-2 py-1 rounded text-sm tabular-nums" />
+                  )}
+                </div>
+                <div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-0.5">Дүн</div>
+                  <div style={{
+                    fontFamily: FD, fontWeight: 500,
+                    color: hasDiff ? (item.diff_qty > 0 ? T.ok : T.err) : T.muted,
+                  }} className="text-sm">
+                    {isCounted && hasDiff
+                      ? `${item.diff_amount > 0 ? "+" : ""}${Math.abs(item.diff_amount) > 1000 ? (item.diff_amount/1000).toFixed(0)+"к" : Number(item.diff_amount).toLocaleString()}`
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Action buttons */}
+      {!isReadOnly && (
+        <div className="glass rounded-2xl p-3 flex gap-2 sticky bottom-3">
+          <button onClick={handleCancel} disabled={busy}
+            className="press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.err, fontFamily: FS }}>
+            Цуцлах
+          </button>
+          <button onClick={handleComplete} disabled={busy || counted === 0}
+            className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : `✓ Дуусгах (${counted}/${items.length})`}
+          </button>
+        </div>
       )}
     </div>
   );
