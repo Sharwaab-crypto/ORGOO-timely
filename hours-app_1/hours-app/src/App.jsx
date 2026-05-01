@@ -4506,7 +4506,10 @@ function HRFileFormModal({ hrFile, employee, currentUserId, onSave, onClose }) {
   );
 }
 
-
+// ═══════════════════════════════════════════════════════════════════════════
+//  CALENDAR VIEW — Чөлөөг календар дээр харах
+// ═══════════════════════════════════════════════════════════════════════════
+function CalendarView({ leaves = [], employees = [], scope = "all", currentUserId = null }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
