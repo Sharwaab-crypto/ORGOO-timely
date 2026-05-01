@@ -5,7 +5,7 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
-  Camera, Moon, Sun, Briefcase, Vote,
+  Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -3771,16 +3771,37 @@ function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
   );
 }
 
-function SidebarSection({ label, children }) {
+function SidebarSection({ label, children, defaultOpen = true }) {
+  // localStorage-аас сэргээх (label-ыг key болгож)
+  const storageKey = label ? `orgoo-sidebar-${label}` : null;
+  const [open, setOpen] = useState(() => {
+    if (!storageKey || typeof window === "undefined") return defaultOpen;
+    const stored = localStorage.getItem(storageKey);
+    return stored === null ? defaultOpen : stored === "1";
+  });
+
+  useEffect(() => {
+    if (storageKey) {
+      localStorage.setItem(storageKey, open ? "1" : "0");
+    }
+  }, [open, storageKey]);
+
   return (
     <div className="mb-4">
       {label && (
-        <div style={{ fontFamily: FS, color: T.mutedSoft }}
-             className="text-[10px] uppercase tracking-[0.15em] font-medium px-3 mb-1.5">
-          {label}
-        </div>
+        <button
+          onClick={() => setOpen(!open)}
+          className="press-btn w-full flex items-center justify-between px-3 mb-1.5 hover:opacity-70 transition-opacity group"
+          style={{ fontFamily: FS, color: T.mutedSoft }}>
+          <span className="text-[10px] uppercase tracking-[0.15em] font-medium">
+            {label}
+          </span>
+          {open
+            ? <ChevronDown size={11} style={{ color: T.mutedSoft }} />
+            : <ChevronRight size={11} style={{ color: T.mutedSoft }} />}
+        </button>
       )}
-      <div className="space-y-0.5">{children}</div>
+      {open && <div className="space-y-0.5">{children}</div>}
     </div>
   );
 }
