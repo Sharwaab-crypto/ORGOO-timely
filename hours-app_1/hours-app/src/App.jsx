@@ -5667,34 +5667,33 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  CALL CENTER VIEW — Дуудлагын самбар
+//  CALL CENTER VIEW — Дуудлагын самбар (энгийн)
 // ═══════════════════════════════════════════════════════════════════════════
 function CallCenterView({ profile }) {
   const [showCallModal, setShowCallModal] = useState(false);
-  const [products, setProducts] = useState([]);
-  const [recentOrders, setRecentOrders] = useState([]);
+  const [recentCalls, setRecentCalls] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [todayCount, setTodayCount] = useState(0);
-  const [todayAmount, setTodayAmount] = useState(0);
+  const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
 
   const loadAll = async () => {
     setLoading(true);
     try {
+      const { data: callData } = await supabase
+        .from("biz_calls")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setRecentCalls(callData || []);
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-      const [{ data: prodData }, { data: ordData }] = await Promise.all([
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
-        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(20),
-      ]);
-
-      setProducts(prodData || []);
-      setRecentOrders(ordData || []);
-
-      // Өнөөдрийн захиалга
-      const todayOrders = (ordData || []).filter((o) => new Date(o.created_at) >= today && o.status !== "cancelled");
-      setTodayCount(todayOrders.length);
-      setTodayAmount(todayOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0));
+      setStats({
+        today: (callData || []).filter((c) => new Date(c.created_at) >= today).length,
+        week: (callData || []).filter((c) => new Date(c.created_at) >= weekAgo).length,
+        total: (callData || []).length,
+      });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -5704,45 +5703,40 @@ function CallCenterView({ profile }) {
   return (
     <div className="space-y-3">
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="glass rounded-2xl p-4">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
-            Өнөөдрийн захиалга
-          </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Өнөөдөр</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl">
-            {todayCount}
+            {stats.today}
           </div>
         </div>
-        <div className="glass rounded-2xl p-4">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider mb-1">
-            Нийт дүн
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Энэ долоо хоногт</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-3xl">
+            {stats.week}
           </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-2xl tabular-nums">
-            {todayAmount.toLocaleString()}₮
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-3xl">
+            {stats.total}
           </div>
         </div>
       </div>
 
       {/* Big call button */}
       <button onClick={() => setShowCallModal(true)}
-        disabled={products.length === 0}
         style={{
-          background: products.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #ec4899, #f97316)",
-          color: products.length === 0 ? T.mutedSoft : "white",
+          background: "linear-gradient(135deg, #ec4899, #f97316)",
+          color: "white",
           fontFamily: FS,
-          boxShadow: products.length === 0 ? "none" : "0 8px 24px rgba(236,72,153,0.3)",
+          boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
         }}
         className="press-btn w-full py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
-        📞 Шинэ дуудлага хүлээн авах
+        📞 Шинэ дуудлага бүртгэх
       </button>
 
-      {products.length === 0 && (
-        <div className="glass-soft rounded-lg p-3" style={{ color: T.warn, fontFamily: FS }}>
-          ⚠ Эхлээд бараа нэмэх ёстой (Бараа нөөц хэсгээс)
-        </div>
-      )}
-
-      {/* Recent orders */}
+      {/* Recent calls */}
       <div>
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 px-1">
           Сүүлийн дуудлагууд
@@ -5751,95 +5745,92 @@ function CallCenterView({ profile }) {
           <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
             <Loader2 className="spin mx-auto mb-2" size={20} />
           </div>
-        ) : recentOrders.length === 0 ? (
+        ) : recentCalls.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📞</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Дуудлага хараахан ирээгүй байна
+              Дуудлага хараахан бүртгэгдээгүй байна
             </div>
           </div>
         ) : (
           <div className="space-y-2">
-            {recentOrders.slice(0, 10).map((o) => (
-              <OrderCard key={o.id} order={o} compact />
+            {recentCalls.map((c) => (
+              <div key={c.id} className="glass rounded-xl p-3">
+                <div className="flex items-start gap-3">
+                  <div style={{ background: T.highlightSoft, color: T.highlight }}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                    📞
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <a href={`tel:${c.phone}`}
+                        style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }}
+                        className="text-sm">
+                        📱 {c.phone}
+                      </a>
+                      {c.customer_name && (
+                        <span style={{ color: T.ink, fontFamily: FS }} className="text-xs">
+                          · {c.customer_name}
+                        </span>
+                      )}
+                    </div>
+                    {c.notes && (
+                      <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1 italic">
+                        "{c.notes}"
+                      </div>
+                    )}
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                      🕐 {new Date(c.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )}
       </div>
 
       {showCallModal && (
-        <CallReceiveModal
-          products={products}
+        <SimpleCallModal
           profile={profile}
-          onSave={async (data) => {
+          onSave={async ({ phone, name, notes }) => {
             try {
               // 1. Customer find or create
               let customerId = null;
-              if (data.phone) {
-                const { data: existing } = await supabase
-                  .from("biz_customers")
-                  .select("id, name")
-                  .eq("phone", data.phone)
-                  .maybeSingle();
+              const { data: existing } = await supabase
+                .from("biz_customers")
+                .select("id, name")
+                .eq("phone", phone)
+                .maybeSingle();
 
-                if (existing) {
-                  customerId = existing.id;
-                  // Update name/address if changed
-                  if (data.name !== existing.name || data.address) {
-                    await supabase.from("biz_customers").update({
-                      name: data.name || existing.name,
-                      address: data.address || null,
-                      updated_at: new Date().toISOString(),
-                    }).eq("id", customerId);
-                  }
-                } else {
-                  const { data: newCust } = await supabase
-                    .from("biz_customers")
-                    .insert({
-                      phone: data.phone,
-                      name: data.name,
-                      address: data.address,
-                    })
-                    .select()
-                    .single();
-                  customerId = newCust?.id || null;
+              if (existing) {
+                customerId = existing.id;
+                if (name && name !== existing.name) {
+                  await supabase.from("biz_customers").update({
+                    name,
+                    updated_at: new Date().toISOString(),
+                  }).eq("id", customerId);
                 }
+              } else {
+                const { data: newCust } = await supabase
+                  .from("biz_customers")
+                  .insert({ phone, name })
+                  .select()
+                  .single();
+                customerId = newCust?.id || null;
               }
 
-              // 2. Order create
-              const orderNumber = `ZA-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 9000) + 1000}`;
-              const { data: order, error } = await supabase
-                .from("biz_orders")
-                .insert({
-                  order_number: orderNumber,
-                  customer_id: customerId,
-                  customer_phone: data.phone,
-                  customer_name: data.name,
-                  delivery_address: data.address,
-                  source: "phone",
-                  status: "new",
-                  total_amount: data.totalAmount,
-                  notes: data.notes,
-                  taken_by: profile.id,
-                })
-                .select()
-                .single();
-              if (error) throw error;
-
-              // 3. Order items
-              const orderItems = data.items.map((it) => ({
-                order_id: order.id,
-                product_id: it.product_id,
-                product_name: it.product_name,
-                quantity: it.quantity,
-                unit_price: it.unit_price,
-                total_amount: it.total_amount,
-              }));
-              await supabase.from("biz_order_items").insert(orderItems);
+              // 2. Save call log
+              await supabase.from("biz_calls").insert({
+                phone,
+                customer_id: customerId,
+                customer_name: name,
+                notes,
+                created_by: profile.id,
+              });
 
               setShowCallModal(false);
               await loadAll();
-              alert(`✅ Захиалга #${orderNumber} амжилттай!\n${data.totalAmount.toLocaleString()}₮`);
             } catch (e) { alert("Алдаа: " + e.message); }
           }}
           onClose={() => setShowCallModal(false)}
@@ -5849,25 +5840,23 @@ function CallCenterView({ profile }) {
   );
 }
 
-// ─── Дуудлага хүлээн авах modal ───────────────────────────────────
-function CallReceiveModal({ products, profile, onSave, onClose }) {
+// ─── Энгийн дуудлага бүртгэх modal ────────────────────────────────
+function SimpleCallModal({ profile, onSave, onClose }) {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([{ id: 1, productId: "", quantity: "", unitPrice: "" }]);
   const [busy, setBusy] = useState(false);
-  const [searchingPhone, setSearchingPhone] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
+  const [searching, setSearching] = useState(false);
 
-  // Утсан дугаараар хайх (auto-fill)
+  // Auto search by phone
   useEffect(() => {
     if (!phone || phone.length < 6) {
       setFoundCustomer(null);
       return;
     }
     const timer = setTimeout(async () => {
-      setSearchingPhone(true);
+      setSearching(true);
       try {
         const { data } = await supabase
           .from("biz_customers")
@@ -5877,50 +5866,28 @@ function CallReceiveModal({ products, profile, onSave, onClose }) {
         if (data) {
           setFoundCustomer(data);
           if (!name) setName(data.name || "");
-          if (!address) setAddress(data.address || "");
         } else {
           setFoundCustomer(null);
         }
       } catch (e) { console.error(e); }
-      finally { setSearchingPhone(false); }
+      finally { setSearching(false); }
     }, 500);
     return () => clearTimeout(timer);
   }, [phone]);
 
-  const addRow = () => setItems([...items, { id: Date.now(), productId: "", quantity: "", unitPrice: "" }]);
-  const removeRow = (id) => items.length > 1 && setItems(items.filter((it) => it.id !== id));
-  const updateRow = (id, field, value) => setItems(items.map((it) => it.id === id ? { ...it, [field]: value } : it));
-
-  const selectProduct = (rowId, productId) => {
-    const p = products.find((p) => p.id === productId);
-    setItems(items.map((it) => it.id === rowId ? {
-      ...it,
-      productId,
-      unitPrice: p?.sale_price ? String(p.sale_price) : it.unitPrice,
-    } : it));
-  };
-
-  const total = items.reduce((sum, it) => {
-    return sum + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0));
-  }, 0);
-
-  const validItems = items.filter((it) => it.productId && Number(it.quantity) > 0);
-
   const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
-  const inputClass = "px-2 py-1.5 rounded text-xs";
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
-      <div className="modal-content rounded-2xl w-full max-w-3xl p-5 max-h-[95vh] overflow-y-auto">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
         <div className="flex items-start justify-between mb-3">
           <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
-            📞 Шинэ дуудлага
+            📞 Дуудлага бүртгэх
           </h3>
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
 
-        {/* Customer info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        <div className="space-y-3">
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               📱 Утас *
@@ -5930,7 +5897,7 @@ function CallReceiveModal({ products, profile, onSave, onClose }) {
                 placeholder="99887766"
                 style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm"
                 autoFocus />
-              {searchingPhone && (
+              {searching && (
                 <div className="absolute right-2 top-1/2 -translate-y-1/2">
                   <Loader2 className="spin" size={14} style={{ color: T.muted }} />
                 </div>
@@ -5940,147 +5907,44 @@ function CallReceiveModal({ products, profile, onSave, onClose }) {
               <div className="mt-1 px-2 py-1 rounded"
                 style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
                 <div className="text-[10px]">
-                  ✓ Үйлчлүүлэгч олдлоо · {foundCustomer.total_orders || 0} өмнөх захиалга · Нийт {Number(foundCustomer.total_amount || 0).toLocaleString()}₮
+                  ✓ Үйлчлүүлэгч олдлоо · {foundCustomer.total_orders || 0} өмнөх захиалга
                 </div>
               </div>
             )}
           </div>
+
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              👤 Нэр
+              👤 Нэр (заавал биш)
             </label>
             <input value={name} onChange={(e) => setName(e.target.value)}
               placeholder="Овог нэр"
               style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
-        </div>
 
-        <div className="mb-3">
-          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-            📍 Хүргэх хаяг
-          </label>
-          <input value={address} onChange={(e) => setAddress(e.target.value)}
-            placeholder="Дүүрэг, хороо, байр, тоот..."
-            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-        </div>
-
-        {/* Items */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              🛍 Захиалсан бараа
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Сэтгэгдэл
             </label>
-            <button onClick={addRow}
-              className="press-btn px-2 py-1 rounded-lg text-[10px] flex items-center gap-1"
-              style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
-              <Plus size={11} /> Бараа нэмэх
-            </button>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder="ж.нь: Кофе сонирхож байсан, маргааш дахин залгая гэсэн..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
           </div>
 
-          <div className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 mb-1.5 px-1">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Үнэ</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
-            <div></div>
-          </div>
-
-          <div className="space-y-1.5">
-            {items.map((it) => {
-              const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
-              const product = products.find((p) => p.id === it.productId);
-              const overstock = product && Number(it.quantity) > Number(product.stock);
-              return (
-                <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
-                  <select value={it.productId} onChange={(e) => selectProduct(it.id, e.target.value)}
-                    style={{
-                      ...inputStyle,
-                      borderColor: overstock ? T.warn : T.border,
-                    }} className={inputClass}>
-                    <option value="">— Сонгох —</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} (нөөц: {p.stock})
-                      </option>
-                    ))}
-                  </select>
-                  <input type="number" value={it.quantity}
-                    onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
-                    placeholder="0"
-                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
-                  <input type="number" value={it.unitPrice}
-                    onChange={(e) => updateRow(it.id, "unitPrice", e.target.value)}
-                    placeholder="0"
-                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
-                  <div style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }}
-                    className="text-xs text-right tabular-nums px-1">
-                    {lineTotal > 0 ? lineTotal.toLocaleString() : "—"}
-                  </div>
-                  <button onClick={() => removeRow(it.id)}
-                    disabled={items.length === 1}
-                    style={{ color: items.length === 1 ? T.mutedSoft : T.err }}
-                    className="press-btn p-1 rounded">
-                    <X size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-            📝 Тэмдэглэл
-          </label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            placeholder="ж.нь: Шар савлаатай, цайны дэргэдэх...."
-            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
-        </div>
-
-        {/* Total */}
-        {total > 0 && (
-          <div className="glass-soft rounded-lg p-3 mb-3 flex items-center justify-between">
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-xs uppercase tracking-wider">
-              Нийт дүн ({validItems.length} бараа)
-            </span>
-            <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl">
-              {total.toLocaleString()}₮
-            </span>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <button onClick={onClose} disabled={busy}
-            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
-            Цуцлах
-          </button>
           <button
-            disabled={busy || !phone.trim() || validItems.length === 0}
+            disabled={busy || !phone.trim()}
             onClick={async () => {
               setBusy(true);
               await onSave({
                 phone: phone.trim(),
                 name: name.trim() || null,
-                address: address.trim() || null,
                 notes: notes.trim() || null,
-                totalAmount: total,
-                items: validItems.map((it) => {
-                  const p = products.find((pp) => pp.id === it.productId);
-                  return {
-                    product_id: it.productId,
-                    product_name: p?.name || "—",
-                    quantity: Number(it.quantity),
-                    unit_price: Number(it.unitPrice) || 0,
-                    total_amount: (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
-                  };
-                }),
               });
               setBusy(false);
             }}
-            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : "✓ Захиалга үүсгэх"}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "✓ Хадгалах"}
           </button>
         </div>
       </div>
