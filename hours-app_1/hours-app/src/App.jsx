@@ -1251,6 +1251,10 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>HR файл</SidebarTab>
             </SidebarSection>
 
+            <SidebarSection label="Бизнес">
+              <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Бараа нөөц</SidebarTab>
+            </SidebarSection>
+
             <SidebarSection label="Ажилтнууд">
               <SidebarTab active={view === "departments"} onClick={() => { setView("departments"); setSidebarOpen(false); }} icon={Users}>Хэлтсүүд</SidebarTab>
               <SidebarTab active={view === "managers"} onClick={() => { setView("managers"); setSidebarOpen(false); }} icon={ShieldCheck}>Ахлагчид</SidebarTab>
@@ -1318,6 +1322,7 @@ function AdminDashboard({ profile }) {
                 {view === "skills" && "Ур чадвар"}
                 {view === "polls" && "Санал асуулга"}
                 {view === "hrfile" && "HR хувийн файл"}
+                {view === "inventory" && "Бараа нөөц"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1337,6 +1342,7 @@ function AdminDashboard({ profile }) {
                 {view === "skills" && "Ажилтны ур чадвар + сургалт"}
                 {view === "polls" && "Ажилтнуудаас санал авах"}
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
+                {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1515,6 +1521,10 @@ function AdminDashboard({ profile }) {
             profile={profile}
             isAdmin={true}
           />
+        )}
+
+        {view === "inventory" && (
+          <InventoryView profile={profile} isAdmin={true} />
         )}
 
             <Footer count={sessions.length} />
@@ -3833,6 +3843,699 @@ function DarkModeToggle() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  POLLS VIEW — Санал асуулга
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  INVENTORY VIEW — Бараа нөөц
+// ═══════════════════════════════════════════════════════════════════════════
+function InventoryView({ profile, isAdmin = false }) {
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [movementFor, setMovementFor] = useState(null); // { product, type: "in"|"out" }
+  const [filterCat, setFilterCat] = useState("all");
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState("products"); // products | history | low
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: prodData }, { data: catData }, { data: movData }] = await Promise.all([
+        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        supabase.from("inv_categories").select("*").order("display_order"),
+        supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
+      ]);
+      setProducts(prodData || []);
+      setCategories(catData || []);
+      setMovements(movData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Filtered products
+  const filtered = useMemo(() => {
+    let result = products;
+    if (filterCat !== "all") {
+      result = result.filter((p) => p.category_id === filterCat);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((p) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q) ||
+        p.barcode?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [products, filterCat, search]);
+
+  // Low stock products
+  const lowStock = useMemo(() =>
+    products.filter((p) => p.min_stock > 0 && p.stock <= p.min_stock),
+    [products]
+  );
+
+  // Total value
+  const totalValue = products.reduce((sum, p) => sum + (Number(p.stock) * Number(p.cost_price || 0)), 0);
+  const totalProducts = products.length;
+  const outOfStock = products.filter((p) => p.stock <= 0).length;
+
+  const catById = (id) => categories.find((c) => c.id === id);
+
+  const handleDelete = async (id) => {
+    if (!confirm("Энэ барааг устгах уу?")) return;
+    await supabase.from("inv_products").update({ is_active: false }).eq("id", id);
+    await loadAll();
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт бараа</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl">{totalProducts}</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нөөцийн үнэ</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }} className="text-2xl">
+            {(totalValue / 1000).toFixed(0)}к₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нөөц багатай</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: lowStock.length > 0 ? T.warn : T.ink }} className="text-2xl">
+            {lowStock.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Дууссан</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: outOfStock > 0 ? T.err : T.ink }} className="text-2xl">
+            {outOfStock}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs + actions */}
+      <div className="glass rounded-2xl p-3 flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 p-0.5 rounded-full" style={{ background: T.surfaceAlt }}>
+          <button onClick={() => setTab("products")}
+            className={`press-btn px-3 py-1.5 rounded-full text-xs ${tab === "products" ? "tab-active" : ""}`}
+            style={{ fontFamily: FS, fontWeight: 500 }}>
+            📦 Бараа ({filtered.length})
+          </button>
+          <button onClick={() => setTab("low")}
+            className={`press-btn px-3 py-1.5 rounded-full text-xs ${tab === "low" ? "tab-active" : ""}`}
+            style={{ fontFamily: FS, fontWeight: 500 }}>
+            ⚠ Анхааруулга ({lowStock.length})
+          </button>
+          <button onClick={() => setTab("history")}
+            className={`press-btn px-3 py-1.5 rounded-full text-xs ${tab === "history" ? "tab-active" : ""}`}
+            style={{ fontFamily: FS, fontWeight: 500 }}>
+            📜 Түүх
+          </button>
+        </div>
+
+        <div className="flex-1" />
+
+        {tab === "products" && (
+          <>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍 Хайх..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+              className="text-xs w-32 sm:w-44" />
+            <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, padding: "6px 10px", borderRadius: 8 }}
+              className="text-xs">
+              <option value="all">Бүх категори</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </>
+        )}
+
+        {isAdmin && (
+          <button onClick={() => setEditing({})}
+            className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
+            <Plus size={12} /> Бараа
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : tab === "products" ? (
+        filtered.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">📦</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">
+              Бараа олдсонгүй
+            </div>
+            {isAdmin && products.length === 0 && (
+              <button onClick={() => setEditing({})}
+                className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold">
+                + Анхны бараа нэмэх
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {filtered.map((p) => {
+              const cat = catById(p.category_id);
+              const isLow = p.min_stock > 0 && p.stock <= p.min_stock;
+              const isOut = p.stock <= 0;
+              const stockPct = p.min_stock > 0 ? Math.min(100, (p.stock / (p.min_stock * 2)) * 100) : 100;
+              return (
+                <div key={p.id} className="glass lift rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {cat && (
+                          <span style={{ background: cat.color || T.highlight, color: "white" }}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                            {cat.name}
+                          </span>
+                        )}
+                        {isOut && <span style={{ background: T.errSoft, color: T.err }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">⚠ Дууссан</span>}
+                        {!isOut && isLow && <span style={{ background: T.warnSoft, color: T.warn }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">⚠ Багатай</span>}
+                      </div>
+                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mt-1 truncate">
+                        {p.name}
+                      </div>
+                      {p.sku && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          SKU: {p.sku}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-baseline gap-1 mb-2">
+                    <span style={{
+                      fontFamily: FD, fontWeight: 700,
+                      color: isOut ? T.err : isLow ? T.warn : T.ink,
+                    }} className="text-2xl">
+                      {Number(p.stock).toLocaleString()}
+                    </span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      {p.unit}
+                    </span>
+                    {p.min_stock > 0 && (
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] ml-auto">
+                        мин: {p.min_stock}
+                      </span>
+                    )}
+                  </div>
+
+                  {p.min_stock > 0 && (
+                    <div style={{ background: T.surfaceAlt, height: 4, borderRadius: 2 }} className="mb-2">
+                      <div style={{
+                        width: `${stockPct}%`,
+                        height: "100%",
+                        background: isOut ? T.err : isLow ? T.warn : T.ok,
+                        borderRadius: 2,
+                      }} />
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-[10px]" style={{ fontFamily: FM, color: T.muted }}>
+                    <span>Авсан: {Number(p.cost_price || 0).toLocaleString()}₮</span>
+                    <span>Зарсан: {Number(p.sale_price || 0).toLocaleString()}₮</span>
+                  </div>
+
+                  <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
+                    <button onClick={() => setMovementFor({ product: p, type: "in" })}
+                      className="press-btn flex-1 py-1 rounded text-[10px]"
+                      style={{ background: T.successSoft || "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}>
+                      📥 Орлого
+                    </button>
+                    <button onClick={() => setMovementFor({ product: p, type: "out" })}
+                      className="press-btn flex-1 py-1 rounded text-[10px]"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                      📤 Зарлага
+                    </button>
+                    {isAdmin && (
+                      <>
+                        <button onClick={() => setEditing(p)} style={{ color: T.muted }}
+                          className="press-btn p-1 rounded">
+                          <Edit3 size={11} />
+                        </button>
+                        <button onClick={() => handleDelete(p.id)} style={{ color: T.err }}
+                          className="press-btn p-1 rounded">
+                          <Trash2 size={11} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : tab === "low" ? (
+        lowStock.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">✅</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              Бүх барааны нөөц хангалттай
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {lowStock.map((p) => (
+              <div key={p.id} className="glass rounded-xl p-3 flex items-center gap-3">
+                <div style={{ background: T.warnSoft, color: T.warn }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                  ⚠
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                    {p.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    Үлдэгдэл: {p.stock} {p.unit} · Мин: {p.min_stock} {p.unit}
+                  </div>
+                </div>
+                <button onClick={() => setMovementFor({ product: p, type: "in" })}
+                  className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold">
+                  📥 Орлого
+                </button>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        // History
+        movements.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">📜</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              Хөдөлгөөн хараахан байхгүй байна
+            </div>
+          </div>
+        ) : (
+          <div className="glass rounded-2xl p-3 overflow-x-auto">
+            <table className="w-full" style={{ minWidth: 600 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Огноо</th>
+                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Бараа</th>
+                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "center" }} className="text-[10px] uppercase tracking-wider pb-2">Төрөл</th>
+                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Тоо ширхэг</th>
+                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Дүн</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movements.slice(0, 50).map((m) => {
+                  const product = products.find((p) => p.id === m.product_id);
+                  return (
+                    <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                      <td style={{ fontFamily: FM, color: T.muted }} className="text-[10px] py-2">
+                        {new Date(m.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="text-xs py-2">
+                        {product?.name || "—"}
+                      </td>
+                      <td className="text-xs py-2 text-center">
+                        <span style={{
+                          background: m.movement_type === "in" ? "rgba(16,185,129,0.1)" : m.movement_type === "out" ? T.errSoft : T.surfaceAlt,
+                          color: m.movement_type === "in" ? T.ok : m.movement_type === "out" ? T.err : T.muted,
+                          fontFamily: FS, fontWeight: 600,
+                        }} className="px-2 py-0.5 rounded text-[10px]">
+                          {m.movement_type === "in" ? "📥 Орлого" : m.movement_type === "out" ? "📤 Зарлага" : "⚙ Засвар"}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }} className="text-xs py-2 text-right tabular-nums">
+                        {Number(m.quantity).toLocaleString()}
+                      </td>
+                      <td style={{ fontFamily: FM, color: T.muted }} className="text-xs py-2 text-right tabular-nums">
+                        {m.total_amount ? Number(m.total_amount).toLocaleString() + "₮" : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {editing && (
+        <ProductFormModal
+          product={editing.id ? editing : null}
+          categories={categories}
+          profile={profile}
+          onSave={async (data) => {
+            try {
+              if (editing.id) {
+                await supabase.from("inv_products").update({ ...data, updated_at: new Date().toISOString() }).eq("id", editing.id);
+              } else {
+                await supabase.from("inv_products").insert({ ...data, created_by: profile.id });
+              }
+              setEditing(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onAddCategory={async (name) => {
+            try {
+              const { data } = await supabase.from("inv_categories").insert({ name }).select().single();
+              await loadAll();
+              return data;
+            } catch (e) { alert("Алдаа: " + e.message); return null; }
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {movementFor && (
+        <MovementFormModal
+          product={movementFor.product}
+          type={movementFor.type}
+          profile={profile}
+          onSave={async (data) => {
+            try {
+              await supabase.from("inv_movements").insert({
+                product_id: movementFor.product.id,
+                movement_type: movementFor.type,
+                ...data,
+                created_by: profile.id,
+              });
+              setMovementFor(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setMovementFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductFormModal({ product, categories, profile, onSave, onAddCategory, onClose }) {
+  const [name, setName] = useState(product?.name || "");
+  const [sku, setSku] = useState(product?.sku || "");
+  const [categoryId, setCategoryId] = useState(product?.category_id || "");
+  const [unit, setUnit] = useState(product?.unit || "ширхэг");
+  const [costPrice, setCostPrice] = useState(product?.cost_price ? String(product.cost_price) : "");
+  const [salePrice, setSalePrice] = useState(product?.sale_price ? String(product.sale_price) : "");
+  const [stock, setStock] = useState(product?.stock ? String(product.stock) : "0");
+  const [minStock, setMinStock] = useState(product?.min_stock ? String(product.min_stock) : "0");
+  const [description, setDescription] = useState(product?.description || "");
+  const [busy, setBusy] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+  const inputClass = "w-full px-3 py-2 rounded-lg text-sm";
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            📦 {product ? "Бараа засах" : "Шинэ бараа"}
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Барааны нэр *
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="ж.нь: Кофе шар, 1кг"
+              style={inputStyle} className={inputClass} autoFocus />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                SKU/Дотоодын код
+              </label>
+              <input value={sku} onChange={(e) => setSku(e.target.value)}
+                placeholder="COFFEE-001"
+                style={inputStyle} className={inputClass} />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Хэмжих нэгж
+              </label>
+              <input value={unit} onChange={(e) => setUnit(e.target.value)}
+                placeholder="ширхэг, кг, литр"
+                style={inputStyle} className={inputClass} />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Категори
+            </label>
+            <div className="flex gap-2">
+              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+                style={inputStyle} className={inputClass}>
+                <option value="">— Сонгох —</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="+ Шинэ"
+                style={inputStyle} className="px-3 py-2 rounded-lg text-sm w-24" />
+              <button type="button" onClick={async () => {
+                if (!newCatName.trim()) return;
+                const newCat = await onAddCategory(newCatName.trim());
+                if (newCat) {
+                  setCategoryId(newCat.id);
+                  setNewCatName("");
+                }
+              }}
+                className="press-btn px-3 py-2 rounded-lg text-xs"
+                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Авсан үнэ (₮)
+              </label>
+              <input type="number" value={costPrice} onChange={(e) => setCostPrice(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Зарах үнэ (₮)
+              </label>
+              <input type="number" value={salePrice} onChange={(e) => setSalePrice(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                {product ? "Одоогийн нөөц" : "Эхлэх нөөц"}
+              </label>
+              <input type="number" value={stock} onChange={(e) => setStock(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} disabled={!!product} />
+              {product && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
+                  💡 Нөөц өөрчлөхийн тулд "📥 Орлого" эсвэл "📤 Зарлага" товчийг ашигла
+                </div>
+              )}
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Хамгийн бага нөөц (alert)
+              </label>
+              <input type="number" value={minStock} onChange={(e) => setMinStock(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Тэмдэглэл
+            </label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              style={inputStyle} className={`${inputClass} resize-none`} />
+          </div>
+
+          <button
+            disabled={busy || !name.trim()}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                name: name.trim(),
+                sku: sku.trim() || null,
+                category_id: categoryId || null,
+                unit,
+                cost_price: Number(costPrice) || 0,
+                sale_price: Number(salePrice) || 0,
+                stock: product ? Number(product.stock) : (Number(stock) || 0),
+                min_stock: Number(minStock) || 0,
+                description: description.trim() || null,
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MovementFormModal({ product, type, profile, onSave, onClose }) {
+  const [quantity, setQuantity] = useState("");
+  const [unitPrice, setUnitPrice] = useState(
+    type === "in" ? String(product.cost_price || 0) : String(product.sale_price || 0)
+  );
+  const [reason, setReason] = useState(type === "in" ? "purchase" : "sale");
+  const [notes, setNotes] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+  const inputClass = "w-full px-3 py-2 rounded-lg text-sm";
+
+  const total = (Number(quantity) || 0) * (Number(unitPrice) || 0);
+
+  const reasonOptions = type === "in" ? [
+    { value: "purchase", label: "Худалдан авалт" },
+    { value: "return", label: "Эргэн ирсэн" },
+    { value: "manual", label: "Гар тохируулга" },
+  ] : [
+    { value: "sale", label: "Борлуулалт" },
+    { value: "damage", label: "Гэмтэлтэй" },
+    { value: "manual", label: "Гар тохируулга" },
+  ];
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+              {type === "in" ? "📥 Орлого" : "📤 Зарлага"}
+            </h3>
+            <p style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+              {product.name}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="glass-soft rounded-lg p-2.5 mb-3 flex items-center gap-2">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            Одоогийн нөөц:
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm">
+            {Number(product.stock).toLocaleString()} {product.unit}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Тоо ширхэг *
+              </label>
+              <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} autoFocus />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                Нэгж үнэ (₮)
+              </label>
+              <input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)}
+                placeholder="0"
+                style={inputStyle} className={inputClass} />
+            </div>
+          </div>
+
+          {total > 0 && (
+            <div className="glass-soft rounded-lg p-2.5 flex items-center justify-between">
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                Нийт дүн
+              </span>
+              <span style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }} className="text-base">
+                {total.toLocaleString()}₮
+              </span>
+            </div>
+          )}
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Шалтгаан
+            </label>
+            <select value={reason} onChange={(e) => setReason(e.target.value)}
+              style={inputStyle} className={inputClass}>
+              {reasonOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Лавлагаа дугаар
+            </label>
+            <input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)}
+              placeholder="ж.нь: INV-2026-001"
+              style={inputStyle} className={inputClass} />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Тэмдэглэл
+            </label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              style={inputStyle} className={`${inputClass} resize-none`} />
+          </div>
+
+          {type === "out" && Number(quantity) > Number(product.stock) && (
+            <div style={{ background: T.errSoft, color: T.err, fontFamily: FS }}
+              className="text-xs px-3 py-2 rounded-lg">
+              ⚠ Нөөцөөс илүү! Үлдэгдэл: {product.stock} {product.unit}
+            </div>
+          )}
+
+          <button
+            disabled={busy || !quantity || Number(quantity) <= 0}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                quantity: Number(quantity),
+                unit_price: Number(unitPrice) || 0,
+                total_amount: total,
+                reason,
+                notes: notes.trim() || null,
+                reference_number: referenceNumber.trim() || null,
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : type === "in" ? "📥 Орлого хийх" : "📤 Зарлага хийх"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PollsView({ profile, isAdmin = false }) {
   const [polls, setPolls] = useState([]);
   const [votes, setVotes] = useState([]);
