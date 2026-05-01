@@ -5,6 +5,7 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
+  Camera,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -52,6 +53,30 @@ const getLocation = () => new Promise((resolve, reject) => {
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
   );
 });
+
+// Upload photo to Supabase storage
+async function uploadClockPhoto(employeeId, blob, type = "in") {
+  if (!blob) return null;
+  try {
+    const ts = Date.now();
+    const path = `${employeeId}/${type}-${ts}.jpg`;
+    const { data, error } = await supabase.storage
+      .from("clock-photos")
+      .upload(path, blob, {
+        contentType: "image/jpeg",
+        cacheControl: "3600",
+      });
+    if (error) throw error;
+
+    const { data: urlData } = supabase.storage
+      .from("clock-photos")
+      .getPublicUrl(path);
+    return urlData.publicUrl;
+  } catch (e) {
+    console.error("Photo upload failed:", e);
+    return null;
+  }
+}
 
 const distanceMeters = (a, b) => {
   const R = 6371000, toRad = (d) => (d * Math.PI) / 180;
@@ -584,6 +609,8 @@ function AdminDashboard({ profile }) {
   const [confirmDelSite, setConfirmDelSite] = useState(null);
   const [chooseSiteFor, setChooseSiteFor] = useState(null); // employee for clock-in site picker
   const [editingSession, setEditingSession] = useState(null);
+  const [photoCapture, setPhotoCapture] = useState(null); // { emp, site, loc, distance, type }
+  const [photoViewer, setPhotoViewer] = useState(null); // { url, employee, time }
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
@@ -776,17 +803,42 @@ function AdminDashboard({ profile }) {
         setFeedback({ empId: emp.id, type: "error", msg: `Хязгаараас гадуур — ${fmtDist(d)} (${site.radius}m)` });
         return;
       }
+      // Open photo capture modal first
+      setPhotoCapture({
+        emp,
+        site,
+        loc,
+        distance: d,
+        type: "in",
+      });
+    } catch (e) { setFeedback({ empId: emp.id, type: "error", msg: e.message }); }
+    finally { setGeoBusyId(null); }
+  };
+
+  // Complete clock-in after photo
+  const completeClockInWithPhoto = async (photoBlob) => {
+    if (!photoCapture) return;
+    const { emp, site, loc, distance } = photoCapture;
+    try {
+      // Upload photo
+      const photoUrl = await uploadClockPhoto(emp.id, photoBlob, "in");
+
+      // Insert active session
       const startTime = new Date(capSessionStart(emp, Date.now())).toISOString();
       const { error } = await supabase.from("active_sessions").upsert({
         employee_id: emp.id, start_time: startTime,
-        start_lat: loc.lat, start_lng: loc.lng, distance_meters: d,
+        start_lat: loc.lat, start_lng: loc.lng, distance_meters: distance,
         site_id: site.id,
+        clock_in_photo_url: photoUrl,
       });
       if (error) throw error;
-      setFeedback({ empId: emp.id, type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(d)}` });
+      setFeedback({ empId: emp.id, type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(distance)}` });
+      setPhotoCapture(null);
       await loadAll();
-    } catch (e) { setFeedback({ empId: emp.id, type: "error", msg: e.message }); }
-    finally { setGeoBusyId(null); }
+    } catch (e) {
+      setFeedback({ empId: emp.id, type: "error", msg: e.message });
+      setPhotoCapture(null);
+    }
   };
 
   const tryClockOut = async (emp) => {
@@ -1295,6 +1347,7 @@ function AdminDashboard({ profile }) {
             onEdit={(emp) => { setFormEmp(emp); setFormMode("edit"); }}
             onDelete={(id) => setConfirmDel(id)}
             onClockIn={tryClockIn} onClockOut={tryClockOut}
+            onViewPhoto={(data) => setPhotoViewer(data)}
             onAdd={() => { setFormEmp(null); setFormMode("add"); }} />
         )}
         {view === "livemap" && (
@@ -1500,6 +1553,23 @@ function AdminDashboard({ profile }) {
           onClose={() => setEditingSession(null)} />
       )}
 
+      {photoCapture && (
+        <PhotoCaptureModal
+          title="Цаг бүртгэхийн тулд зураг авна уу"
+          onCapture={completeClockInWithPhoto}
+          onCancel={() => setPhotoCapture(null)}
+        />
+      )}
+
+      {photoViewer && (
+        <PhotoViewerModal
+          photoUrl={photoViewer.url}
+          employee={photoViewer.employee}
+          time={photoViewer.time}
+          onClose={() => setPhotoViewer(null)}
+        />
+      )}
+
       {confirmDel && (
         <ConfirmDeleteModal
           name={employees.find((e) => e.id === confirmDel)?.name}
@@ -1531,6 +1601,7 @@ function EmployeeDashboard({ profile }) {
   const [geoBusy, setGeoBusy] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
   const [showSitePicker, setShowSitePicker] = useState(false);
+  const [photoCapture, setPhotoCapture] = useState(null); // { site, loc, distance }
   const [, setTick] = useState(0);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t+1), 1000); return () => clearInterval(id); }, []);
@@ -1671,19 +1742,32 @@ function EmployeeDashboard({ profile }) {
         return;
       }
       // Уян хатан байранд ирсэн цагаараа бүртгэнэ (capSessionStart хэрэглэхгүй)
-      const startTime = site.is_flexible
-        ? new Date().toISOString()
-        : new Date(capSessionStart(profile, Date.now())).toISOString();
-      const { error } = await supabase.from("active_sessions").upsert({
-        employee_id: profile.id, start_time: startTime,
-        start_lat: loc.lat, start_lng: loc.lng, distance_meters: d,
-        site_id: site.id,
-      });
-      if (error) throw error;
-      setFeedback({ type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(d)}` });
-      await loadMy();
+      const startTimeMs = site.is_flexible ? Date.now() : capSessionStart(profile, Date.now());
+      // Open photo modal to take selfie before saving
+      setPhotoCapture({ site, loc, distance: d, startTime: new Date(startTimeMs).toISOString() });
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
     finally { setGeoBusy(false); }
+  };
+
+  const completeMyClockInWithPhoto = async (photoBlob) => {
+    if (!photoCapture) return;
+    const { site, loc, distance, startTime } = photoCapture;
+    try {
+      const photoUrl = await uploadClockPhoto(profile.id, photoBlob, "in");
+      const { error } = await supabase.from("active_sessions").upsert({
+        employee_id: profile.id, start_time: startTime,
+        start_lat: loc.lat, start_lng: loc.lng, distance_meters: distance,
+        site_id: site.id,
+        clock_in_photo_url: photoUrl,
+      });
+      if (error) throw error;
+      setFeedback({ type: "success", msg: `Цаг бүртгэгдлээ · ${site.name} · ${fmtDist(distance)}` });
+      setPhotoCapture(null);
+      await loadMy();
+    } catch (e) {
+      setFeedback({ type: "error", msg: e.message });
+      setPhotoCapture(null);
+    }
   };
 
   const onClockOut = async () => {
@@ -2157,6 +2241,14 @@ function EmployeeDashboard({ profile }) {
         <RequestModal profile={profile} onClose={() => setShowRequest(false)} onSubmit={submitRequest} />
       )}
 
+      {photoCapture && (
+        <PhotoCaptureModal
+          title="Цаг бүртгэхийн тулд зураг авна уу"
+          onCapture={completeMyClockInWithPhoto}
+          onCancel={() => setPhotoCapture(null)}
+        />
+      )}
+
       {showEarlyLeave && (
         <EarlyLeaveModal profile={profile} myActive={myActive}
           onClose={() => setShowEarlyLeave(false)} onSubmit={submitRequest} />
@@ -2248,7 +2340,7 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd, onViewPhoto }) {
   if (employees.length === 0) {
     return (
       <div style={{ borderColor: T.border, background: T.surface }}
@@ -2302,6 +2394,15 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                 <p style={{ color: T.muted }} className="text-xs mt-0.5 truncate">{emp.job_title}</p>
               </div>
               <div className="flex gap-1 -mr-1.5 -mt-1.5">
+                {activeSessions[emp.id]?.clock_in_photo_url && (
+                  <button onClick={() => onViewPhoto({
+                    url: activeSessions[emp.id].clock_in_photo_url,
+                    employee: emp,
+                    time: activeSessions[emp.id].start_time,
+                  })} style={{ color: T.ok }} className="p-1.5 rounded-lg hover:bg-black/5" title="Clock-in зураг">
+                    <Camera size={14} />
+                  </button>
+                )}
                 <button onClick={() => {
                   const now = new Date();
                   exportSalaryPdf(emp, sessions, leaves, now.getFullYear(), now.getMonth() + 1)
@@ -4632,6 +4733,195 @@ function SitePickerModal({ employee, sites, distances, onPick, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  GENERIC CONFIRM MODAL
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  PHOTO CAPTURE MODAL — Цаг бүртгэх үед сэлфи авах
+// ═══════════════════════════════════════════════════════════════════════════
+function PhotoCaptureModal({ onCapture, onCancel, title = "Цаг бүртгэлд зураг шаардагдана" }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [captured, setCaptured] = useState(null); // {blob, dataUrl}
+
+  // Start camera
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user", // front-facing camera (selfie)
+            width: { ideal: 720 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (e) {
+        setError(
+          e.name === "NotAllowedError"
+            ? "Камер ашиглах зөвшөөрөл өгнө үү"
+            : e.name === "NotFoundError"
+            ? "Камер олдсонгүй"
+            : "Камер нээгдсэнгүй: " + e.message
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const takePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      setCaptured({ blob, dataUrl });
+    }, "image/jpeg", 0.85);
+  };
+
+  const retake = () => setCaptured(null);
+
+  const confirm = async () => {
+    if (!captured) return;
+    setBusy(true);
+    try {
+      await onCapture(captured.blob);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+      <div className="modal-content rounded-2xl max-w-md w-full p-5 max-h-[95vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-base">
+            📷 {title}
+          </h3>
+          <button onClick={onCancel} style={{ color: T.muted }}
+            className="press-btn p-1 rounded hover:bg-black/5">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? (
+          <div className="mb-3">
+            <FeedbackBox type="error">{error}</FeedbackBox>
+            <p style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-3">
+              Камерийг шууд хааж амжуу. Утсаны тохиргоонд "Камер" зөвшөөрөл өгөөрэй.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-xl overflow-hidden mb-3 relative" style={{ background: "#000", aspectRatio: "1/1" }}>
+              {captured ? (
+                <img src={captured.dataUrl} alt="captured"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <video ref={videoRef} autoPlay playsInline muted
+                  style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
+              )}
+              <canvas ref={canvasRef} style={{ display: "none" }} />
+
+              {/* Overlay frame */}
+              {!captured && (
+                <div style={{
+                  position: "absolute",
+                  inset: "10%",
+                  border: "2px dashed rgba(255,255,255,0.5)",
+                  borderRadius: "50%",
+                  pointerEvents: "none",
+                }} />
+              )}
+            </div>
+
+            <p style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3 text-center">
+              {captured
+                ? "Зураг авагдсан. Илгээх үү?"
+                : "Нүүрээ дугуй дотор байрлуулаад товч дарна уу"}
+            </p>
+
+            <div className="flex gap-2">
+              {captured ? (
+                <>
+                  <button onClick={retake}
+                    className="press-btn flex-1 py-3 rounded-xl text-sm font-medium"
+                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                    Дахин авах
+                  </button>
+                  <button onClick={confirm} disabled={busy}
+                    className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+                    {busy ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                    {busy ? "Илгээж байна..." : "Илгээх"}
+                  </button>
+                </>
+              ) : (
+                <button onClick={takePhoto}
+                  className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-semibold">
+                  📷 Зураг авах
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PHOTO VIEWER — Зураг харах модал
+// ═══════════════════════════════════════════════════════════════════════════
+function PhotoViewerModal({ photoUrl, employee, time, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4"
+      onClick={onClose}>
+      <div className="modal-content rounded-2xl max-w-md w-full p-4"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">
+              {employee?.name || "Ажилтан"}
+            </div>
+            {time && (
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                {new Date(time).toLocaleString("mn-MN")}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}
+            className="press-btn p-1.5 rounded-lg hover:bg-black/5">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="rounded-xl overflow-hidden" style={{ background: "#000" }}>
+          <img src={photoUrl} alt="clock-in"
+            style={{ width: "100%", height: "auto", maxHeight: "70vh", objectFit: "contain" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmModal({ title, message, onCancel, onConfirm, confirmLabel = "Устгах" }) {
   return (
     <Modal onClose={onCancel} title={title} maxW="max-w-sm">
