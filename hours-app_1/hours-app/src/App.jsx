@@ -4107,11 +4107,6 @@ function InventoryView({ profile, isAdmin = false }) {
                       style={{ background: T.successSoft || "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}>
                       📥 Орлого
                     </button>
-                    <button onClick={() => setMovementFor({ product: p, type: "out" })}
-                      className="press-btn flex-1 py-1 rounded text-[10px]"
-                      style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
-                      📤 Зарлага
-                    </button>
                     {isAdmin && (
                       <>
                         <button onClick={() => setEditing(p)} style={{ color: T.muted }}
