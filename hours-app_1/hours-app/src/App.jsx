@@ -4309,6 +4309,7 @@ function InventoryView({ profile, isAdmin = false }) {
 function StockCountView({ profile }) {
   const [counts, setCounts] = useState([]);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCount, setActiveCount] = useState(null); // open detail
   const [showNewModal, setShowNewModal] = useState(false);
@@ -4316,38 +4317,52 @@ function StockCountView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: countsData }, { data: prodData }] = await Promise.all([
+      const [{ data: countsData }, { data: prodData }, { data: catData }] = await Promise.all([
         supabase.from("inv_stock_counts").select("*").order("started_at", { ascending: false }),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        supabase.from("inv_categories").select("*").order("display_order"),
       ]);
       setCounts(countsData || []);
       setProducts(prodData || []);
+      setCategories(catData || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadAll(); }, []);
 
-  // Шинэ тооллого нээх
-  const handleStartNew = async (notes) => {
+  // Шинэ тооллого нээх (категориор шүүх боломжтой)
+  const handleStartNew = async ({ notes, categoryId }) => {
     try {
-      // Snapshot бараа жагсаалт
-      const countNumber = `TC-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 1000)}`;
+      // Категориор шүүж бараа авах
+      const filteredProducts = categoryId
+        ? products.filter((p) => p.category_id === categoryId)
+        : products;
+
+      if (filteredProducts.length === 0) {
+        alert("Сонгосон категорид бараа байхгүй байна");
+        return;
+      }
+
+      const cat = categoryId ? categories.find((c) => c.id === categoryId) : null;
+      const prefix = cat ? cat.name.toUpperCase().slice(0, 3).replace(/[^A-ZА-ЯЁӨҮ]/gi, "") || "TC" : "TC";
+
+      const countNumber = `${prefix}-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 1000)}`;
       const { data: newCount, error } = await supabase
         .from("inv_stock_counts")
         .insert({
           count_number: countNumber,
           status: "in_progress",
-          notes,
-          total_products: products.length,
+          notes: cat ? `[${cat.name}] ${notes || ""}`.trim() : notes,
+          total_products: filteredProducts.length,
           created_by: profile.id,
         })
         .select()
         .single();
       if (error) throw error;
 
-      // Бүх барааг snapshot хийх
-      const items = products.map((p) => ({
+      // Шүүгдсэн барааг snapshot хийх
+      const items = filteredProducts.map((p) => ({
         count_id: newCount.id,
         product_id: p.id,
         system_qty: p.stock,
@@ -4449,7 +4464,8 @@ function StockCountView({ profile }) {
 
       {showNewModal && (
         <NewStockCountModal
-          productsCount={products.length}
+          products={products}
+          categories={categories}
           onSave={handleStartNew}
           onClose={() => setShowNewModal(false)}
         />
@@ -4458,13 +4474,32 @@ function StockCountView({ profile }) {
   );
 }
 
-function NewStockCountModal({ productsCount, onSave, onClose }) {
+function NewStockCountModal({ products, categories, onSave, onClose }) {
   const [notes, setNotes] = useState("");
+  const [categoryId, setCategoryId] = useState(""); // "" = бүх
   const [busy, setBusy] = useState(false);
+
+  // Сонгосон категорийн бараа тоо
+  const filteredCount = categoryId
+    ? products.filter((p) => p.category_id === categoryId).length
+    : products.length;
+
+  // Категори бүрд бараа тоо
+  const catCounts = useMemo(() => {
+    const map = {};
+    products.forEach((p) => {
+      if (p.category_id) {
+        map[p.category_id] = (map[p.category_id] || 0) + 1;
+      }
+    });
+    return map;
+  }, [products]);
+
+  const noCatCount = products.filter((p) => !p.category_id).length;
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
             📋 Шинэ тооллого
@@ -4472,39 +4507,113 @@ function NewStockCountModal({ productsCount, onSave, onClose }) {
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
 
-        <div className="glass-soft rounded-lg p-3 mb-3">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider mb-1">
-            Тооллогод орох бараа
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl">
-            {productsCount} бараа
-          </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
-            💡 Бүх идэвхтэй барааны одоогийн нөөц snapshot хадгалагдана
-          </div>
-        </div>
-
         <div className="space-y-3">
+          {/* Категори сонгох */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block">
+              Аль барааг тоолох вэ?
+            </label>
+            <div className="space-y-1.5">
+              {/* Бүх бараа */}
+              <button onClick={() => setCategoryId("")}
+                className="press-btn w-full p-3 rounded-xl flex items-center justify-between transition-all"
+                style={{
+                  background: categoryId === "" ? T.highlightSoft : T.surfaceAlt,
+                  border: `2px solid ${categoryId === "" ? T.highlight : "transparent"}`,
+                  fontFamily: FS,
+                }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📦</span>
+                  <span style={{ fontWeight: 600, color: T.ink }} className="text-sm">
+                    Бүх бараа
+                  </span>
+                </div>
+                <span style={{
+                  background: categoryId === "" ? T.highlight : T.surface,
+                  color: categoryId === "" ? "white" : T.ink,
+                }} className="text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                  {products.length}
+                </span>
+              </button>
+
+              {/* Категорууд */}
+              {categories.map((cat) => {
+                const count = catCounts[cat.id] || 0;
+                const isSelected = categoryId === cat.id;
+                if (count === 0) return null;
+                return (
+                  <button key={cat.id} onClick={() => setCategoryId(cat.id)}
+                    className="press-btn w-full p-3 rounded-xl flex items-center justify-between transition-all"
+                    style={{
+                      background: isSelected ? T.highlightSoft : T.surfaceAlt,
+                      border: `2px solid ${isSelected ? T.highlight : "transparent"}`,
+                      fontFamily: FS,
+                    }}>
+                    <div className="flex items-center gap-2">
+                      <span style={{ background: cat.color || T.highlight }}
+                        className="w-3 h-3 rounded-full" />
+                      <span style={{ fontWeight: 600, color: T.ink }} className="text-sm">
+                        {cat.name}
+                      </span>
+                    </div>
+                    <span style={{
+                      background: isSelected ? T.highlight : T.surface,
+                      color: isSelected ? "white" : T.ink,
+                    } } className="text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Категоригүй бараа */}
+              {noCatCount > 0 && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1 italic">
+                  💡 {noCatCount} бараа категорьгүй
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="glass-soft rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider">
+                  Тооллогод орох
+                </div>
+                <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl">
+                  {filteredCount} бараа
+                </div>
+              </div>
+              <div style={{ fontSize: 32 }}>📋</div>
+            </div>
+          </div>
+
+          {/* Тэмдэглэл */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               Тэмдэглэл (заавал биш)
             </label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={3}
+              rows={2}
               placeholder="ж.нь: Сарын эцсийн тооллого, агуулах А..."
               style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
               className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
           </div>
 
           <button
-            disabled={busy || productsCount === 0}
+            disabled={busy || filteredCount === 0}
             onClick={async () => {
               setBusy(true);
-              await onSave(notes.trim() || null);
+              await onSave({
+                notes: notes.trim() || null,
+                categoryId: categoryId || null,
+              });
               setBusy(false);
             }}
             className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Үүсгэж байна..." : "Тооллого эхлүүлэх"}
+            {busy ? "Үүсгэж байна..." : `Тооллого эхлүүлэх (${filteredCount})`}
           </button>
         </div>
       </div>
