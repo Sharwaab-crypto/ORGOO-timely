@@ -1600,6 +1600,7 @@ function EmployeeDashboard({ profile }) {
   const [feedback, setFeedback] = useState(null);
   const [geoBusy, setGeoBusy] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
+  const [photoFor, setPhotoFor] = useState(null); // {type: "in"|"out", siteId, callback}
   const [showSitePicker, setShowSitePicker] = useState(false);
   const [photoCapture, setPhotoCapture] = useState(null); // { site, loc, distance }
   const [, setTick] = useState(0);
@@ -4919,22 +4920,6 @@ function PhotoViewerModal({ photoUrl, employee, time, onClose }) {
         </div>
       </div>
     </div>
-  );
-}
-
-function ConfirmModal({ title, message, onCancel, onConfirm, confirmLabel = "Устгах" }) {
-  return (
-    <Modal onClose={onCancel} title={title} maxW="max-w-sm">
-      <p style={{ color: T.muted }} className="text-sm mb-5">{message}</p>
-      <div className="flex gap-3">
-        <button onClick={onCancel} style={{ fontFamily: FS, color: "#1e1b4b" }}
-            className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Цуцлах</button>
-        <button onClick={onConfirm} style={{ background: T.err, color: T.surface, fontFamily: FS }}
-          className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 flex items-center justify-center gap-1.5">
-          <Trash2 size={12} /> {confirmLabel}
-        </button>
-      </div>
-    </Modal>
   );
 }
 
