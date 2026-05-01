@@ -8577,7 +8577,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
     [`Хугацаа: ${periodRange.label}`],
     [`Огноо: ${periodRange.start} → ${periodRange.end}`],
     [],
-    ["Хэлтэс", "KPI", "Нэгж", "Нийт утга", "Цэлэт", "Биеэлэлт %", "Тренд"],
+    ["Хэлтэс", "KPI", "Нэгж", "Нийт утга", "Зорилт", "Биеэлэлт %", "Тренд"],
   ];
 
   departments.forEach((dept) => {
@@ -9324,10 +9324,10 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="🎯 Цэлэт (заавал биш)">
+          <Field label="🎯 Зорилт (заавал биш)">
             <Input value={target} onChange={setTarget} type="number" placeholder="14581" />
           </Field>
-          <Field label="Цэлэтийн хугацаа">
+          <Field label="Зорилтын хугацаа">
             <select value={targetPeriod} onChange={(e) => setTargetPeriod(e.target.value)}
               style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
