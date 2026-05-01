@@ -1255,6 +1255,7 @@ function AdminDashboard({ profile }) {
             <SidebarSection label="Бизнес">
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+              <SidebarTab active={view === "customers"} onClick={() => { setView("customers"); setSidebarOpen(false); }} icon={Users}>Үйлчлүүлэгч</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
@@ -1330,6 +1331,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "orders" && "Захиалга"}
+                {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1353,6 +1355,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
+                {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1547,6 +1550,10 @@ function AdminDashboard({ profile }) {
 
         {view === "orders" && (
           <OrdersView profile={profile} />
+        )}
+
+        {view === "customers" && (
+          <CustomersView profile={profile} />
         )}
 
             <Footer count={sessions.length} />
@@ -6411,6 +6418,468 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CUSTOMERS VIEW — Үйлчлүүлэгч (дугаар бүртгэл)
+// ═══════════════════════════════════════════════════════════════════════════
+function CustomersView({ profile }) {
+  const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all"); // all | vip | regular | new
+  const [editing, setEditing] = useState(null);
+  const [activeCustomer, setActiveCustomer] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: custData }, { data: ordData }] = await Promise.all([
+        supabase.from("biz_customers").select("*").order("last_order_at", { ascending: false, nullsFirst: false }),
+        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }),
+      ]);
+      setCustomers(custData || []);
+      setOrders(ordData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Statistic
+  const stats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    return {
+      total: customers.length,
+      newThisWeek: customers.filter((c) => new Date(c.created_at) >= weekAgo).length,
+      activeThisMonth: customers.filter((c) => c.last_order_at && new Date(c.last_order_at) >= monthAgo).length,
+      vip: customers.filter((c) => (c.total_orders || 0) >= 5).length,
+    };
+  }, [customers]);
+
+  // Categorize customers
+  const categorize = (c) => {
+    const orders = c.total_orders || 0;
+    if (orders >= 5) return "vip";
+    if (orders >= 2) return "regular";
+    return "new";
+  };
+
+  // Filter
+  let filtered = customers;
+  if (filter !== "all") {
+    filtered = filtered.filter((c) => categorize(c) === filter);
+  }
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((c) =>
+      c.phone?.includes(q) ||
+      c.name?.toLowerCase().includes(q) ||
+      c.address?.toLowerCase().includes(q)
+    );
+  }
+
+  if (activeCustomer) {
+    const customerOrders = orders.filter((o) => o.customer_id === activeCustomer.id);
+    return (
+      <CustomerDetail
+        customer={activeCustomer}
+        orders={customerOrders}
+        onClose={() => setActiveCustomer(null)}
+        onEdit={() => setEditing(activeCustomer)}
+        onDelete={async () => {
+          if (!confirm("Энэ үйлчлүүлэгчийг устгах уу?\n\nЗахиалгын түүх хэвээр үлдэнэ.")) return;
+          await supabase.from("biz_customers").delete().eq("id", activeCustomer.id);
+          setActiveCustomer(null);
+          await loadAll();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт дугаар</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl">
+            {stats.total}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Идэвхтэй (сард)</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-2xl">
+            {stats.activeThisMonth}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Шинэ (7 хоног)</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.warn }} className="text-2xl">
+            +{stats.newThisWeek}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">VIP (5+)</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-2xl flex items-center gap-1">
+            🥇 {stats.vip}
+          </div>
+        </div>
+      </div>
+
+      {/* Filter + actions */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { key: "all", label: "Бүх", icon: "👥" },
+            { key: "vip", label: "VIP", icon: "🥇" },
+            { key: "regular", label: "Тогтмол", icon: "⭐" },
+            { key: "new", label: "Шинэ", icon: "🆕" },
+          ].map((f) => {
+            const count = f.key === "all" ? customers.length : customers.filter((c) => categorize(c) === f.key).length;
+            return (
+              <button key={f.key} onClick={() => setFilter(f.key)}
+                className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+                style={{
+                  background: filter === f.key ? T.highlight : T.surfaceAlt,
+                  color: filter === f.key ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 500,
+                }}>
+                <span>{f.icon}</span>
+                <span>{f.label}</span>
+                <span style={{
+                  background: filter === f.key ? "rgba(255,255,255,0.2)" : T.surface,
+                  color: filter === f.key ? "white" : T.muted,
+                }} className="text-[9px] px-1.5 rounded-full ml-0.5">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+          <div className="flex-1" />
+          <button onClick={() => setEditing({})}
+            className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
+            <Plus size={12} /> Шинэ
+          </button>
+        </div>
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 Утас, нэр, хаягаар хайх..."
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="w-full px-3 py-2 rounded-lg text-xs" />
+      </div>
+
+      {/* Customer list */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">👥</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">
+            {customers.length === 0 ? "Үйлчлүүлэгч хараахан байхгүй байна" : "Олдсонгүй"}
+          </div>
+          {customers.length === 0 && (
+            <button onClick={() => setEditing({})}
+              className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold">
+              + Анхны үйлчлүүлэгч нэмэх
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((c) => {
+            const cat = categorize(c);
+            const catInfo = {
+              vip: { label: "VIP", color: T.highlight, bg: T.highlightSoft, icon: "🥇" },
+              regular: { label: "Тогтмол", color: T.ok, bg: "rgba(16,185,129,0.1)", icon: "⭐" },
+              new: { label: "Шинэ", color: T.warn, bg: T.warnSoft, icon: "🆕" },
+            }[cat];
+
+            return (
+              <button key={c.id} onClick={() => setActiveCustomer(c)}
+                className="glass lift rounded-xl p-3 w-full text-left">
+                <div className="flex items-center gap-3">
+                  <div style={{
+                    background: catInfo.bg, color: catInfo.color,
+                  }} className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                    {catInfo.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                        📱 {c.phone}
+                      </span>
+                      <span style={{
+                        background: catInfo.bg, color: catInfo.color, fontFamily: FS, fontWeight: 600,
+                      }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                        {catInfo.label}
+                      </span>
+                    </div>
+                    {c.name && (
+                      <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-0.5">
+                        👤 {c.name}
+                      </div>
+                    )}
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 flex flex-wrap gap-2">
+                      <span>📦 {c.total_orders || 0} захиалга</span>
+                      {Number(c.total_amount) > 0 && (
+                        <span>💰 {Number(c.total_amount).toLocaleString()}₮</span>
+                      )}
+                      {c.last_order_at && (
+                        <span>🕐 Сүүлд: {new Date(c.last_order_at).toLocaleDateString("mn-MN")}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <CustomerFormModal
+          customer={editing.id ? editing : null}
+          onSave={async (data) => {
+            try {
+              if (editing.id) {
+                await supabase.from("biz_customers").update({
+                  ...data,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", editing.id);
+                if (activeCustomer?.id === editing.id) {
+                  const { data: updated } = await supabase.from("biz_customers").select("*").eq("id", editing.id).single();
+                  setActiveCustomer(updated);
+                }
+              } else {
+                await supabase.from("biz_customers").insert(data);
+              }
+              setEditing(null);
+              await loadAll();
+            } catch (e) {
+              if (e.message?.includes("duplicate") || e.message?.includes("unique")) {
+                alert("Энэ утсан дугаар бүртгэлтэй байна!");
+              } else {
+                alert("Алдаа: " + e.message);
+              }
+            }
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomerFormModal({ customer, onSave, onClose }) {
+  const [phone, setPhone] = useState(customer?.phone || "");
+  const [name, setName] = useState(customer?.name || "");
+  const [address, setAddress] = useState(customer?.address || "");
+  const [notes, setNotes] = useState(customer?.notes || "");
+  const [busy, setBusy] = useState(false);
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            👤 {customer ? "Үйлчлүүлэгч засах" : "Шинэ үйлчлүүлэгч"}
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📱 Утас *
+            </label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)}
+              placeholder="99887766"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm"
+              autoFocus disabled={!!customer} />
+            {customer && (
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
+                💡 Утас нь өөрчлөгдөхгүй
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              👤 Нэр
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Овог нэр"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📍 Хаяг
+            </label>
+            <input value={address} onChange={(e) => setAddress(e.target.value)}
+              placeholder="СБД 1-р хороо, 24-р байр..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Тэмдэглэл
+            </label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="VIP, аллерги, дуртай бараа..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+          </div>
+
+          <button
+            disabled={busy || !phone.trim()}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                phone: phone.trim(),
+                name: name.trim() || null,
+                address: address.trim() || null,
+                notes: notes.trim() || null,
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomerDetail({ customer, orders, onClose, onEdit, onDelete }) {
+  const totalOrders = orders.length;
+  const completedOrders = orders.filter((o) => o.status === "delivered").length;
+  const totalAmount = orders.filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const avgOrder = totalOrders > 0 ? totalAmount / completedOrders : 0;
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2">
+        <button onClick={onClose} className="press-btn p-1.5 rounded-lg" style={{ color: T.ink }}>
+          ←
+        </button>
+        <div className="flex-1 min-w-0">
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+            {customer.name || "Нэргүй үйлчлүүлэгч"}
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            Бүртгэгдсэн: {new Date(customer.created_at).toLocaleDateString("mn-MN")}
+          </div>
+        </div>
+        <button onClick={onEdit} style={{ color: T.muted }}
+          className="press-btn p-1.5 rounded-lg">
+          <Edit3 size={14} />
+        </button>
+        <button onClick={onDelete} style={{ color: T.err }}
+          className="press-btn p-1.5 rounded-lg">
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      {/* Contact info */}
+      <div className="glass rounded-2xl p-4">
+        <div className="space-y-2">
+          <a href={`tel:${customer.phone}`}
+            className="flex items-center gap-3 press-btn p-2 rounded-lg"
+            style={{ background: T.highlightSoft }}>
+            <span className="text-xl">📱</span>
+            <div className="flex-1">
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.highlight }} className="text-base">
+                {customer.phone}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                Дарж залгах
+              </div>
+            </div>
+          </a>
+          {customer.address && (
+            <div className="flex items-start gap-3 p-2">
+              <span className="text-xl">📍</span>
+              <div style={{ fontFamily: FS, color: T.ink }} className="text-sm">
+                {customer.address}
+              </div>
+            </div>
+          )}
+          {customer.notes && (
+            <div className="flex items-start gap-3 p-2">
+              <span className="text-xl">📝</span>
+              <div style={{ fontFamily: FS, color: T.ink }} className="text-sm italic">
+                "{customer.notes}"
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="glass rounded-xl p-3 text-center">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Захиалга</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl">
+            {totalOrders}
+          </div>
+        </div>
+        <div className="glass rounded-xl p-3 text-center">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Хүргэгдсэн</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl">
+            {completedOrders}
+          </div>
+        </div>
+        <div className="glass rounded-xl p-3 text-center">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Дундаж</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base">
+            {avgOrder > 0 ? Math.round(avgOrder).toLocaleString() + "₮" : "—"}
+          </div>
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl p-3 flex items-center justify-between">
+        <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+          💰 Нийт зарцуулсан
+        </span>
+        <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl">
+          {totalAmount.toLocaleString()}₮
+        </span>
+      </div>
+
+      {/* Order history */}
+      <div>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 px-1">
+          Захиалгын түүх ({totalOrders})
+        </div>
+        {orders.length === 0 ? (
+          <div className="glass rounded-2xl p-6 text-center">
+            <div className="text-3xl mb-1">📭</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+              Захиалга байхгүй
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {orders.map((o) => (
+              <OrderCard key={o.id} order={o} compact />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
