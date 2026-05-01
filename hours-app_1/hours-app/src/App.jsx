@@ -8945,40 +8945,133 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     }
                   }
 
+                  // Тус KPI-н өнгийг тогтоогдоход (display_order эсвэл index ашиглан)
+                  const kpiIndex = deptKpis.findIndex(k => k.id === kpi.id);
+                  const gradients = [
+                    { from: "#8b5cf6", to: "#ec4899", shadow: "rgba(139,92,246,0.25)" }, // Purple → Pink
+                    { from: "#06b6d4", to: "#3b82f6", shadow: "rgba(6,182,212,0.25)" },  // Cyan → Blue
+                    { from: "#f59e0b", to: "#ef4444", shadow: "rgba(245,158,11,0.25)" }, // Orange → Red
+                    { from: "#10b981", to: "#14b8a6", shadow: "rgba(16,185,129,0.25)" }, // Green → Teal
+                    { from: "#ec4899", to: "#f97316", shadow: "rgba(236,72,153,0.25)" }, // Pink → Orange
+                    { from: "#6366f1", to: "#8b5cf6", shadow: "rgba(99,102,241,0.25)" }, // Indigo → Purple
+                    { from: "#f43f5e", to: "#fb7185", shadow: "rgba(244,63,94,0.25)" },  // Rose
+                    { from: "#0ea5e9", to: "#06b6d4", shadow: "rgba(14,165,233,0.25)" }, // Sky → Cyan
+                  ];
+                  const grad = gradients[kpiIndex % gradients.length];
+
+                  // Бүтээх mini chart points (өмнөх 7 өдрөөс)
+                  const chartPoints = (() => {
+                    const days = 7;
+                    const today = new Date(periodRange.end || new Date());
+                    const points = [];
+                    for (let i = days - 1; i >= 0; i--) {
+                      const d = new Date(today);
+                      d.setDate(d.getDate() - i);
+                      const dStr = d.toISOString().slice(0, 10);
+
+                      let val = 0;
+                      if (kpi.kpi_type === "calculated" && kpi.formula?.numerator_id && kpi.formula?.denominator_id) {
+                        const numEntries = kpiEntries.filter(e => e.kpi_id === kpi.formula.numerator_id && e.entry_date === dStr);
+                        const denEntries = kpiEntries.filter(e => e.kpi_id === kpi.formula.denominator_id && e.entry_date === dStr);
+                        const n = numEntries.reduce((s, e) => s + Number(e.value), 0);
+                        const dn = denEntries.reduce((s, e) => s + Number(e.value), 0);
+                        const op = kpi.formula.operator;
+                        if (op === "divide") val = dn === 0 ? 0 : n / dn;
+                        else if (op === "multiply") val = n * dn;
+                        else if (op === "add") val = n + dn;
+                        else if (op === "subtract") val = n - dn;
+                      } else {
+                        const dayEntries = kpiEntries.filter(e => e.kpi_id === kpi.id && e.entry_date === dStr);
+                        val = dayEntries.reduce((s, e) => s + Number(e.value), 0);
+                      }
+                      points.push(val);
+                    }
+                    return points;
+                  })();
+
+                  // Normalize to SVG points
+                  const maxVal = Math.max(...chartPoints, 1);
+                  const minVal = Math.min(...chartPoints, 0);
+                  const range = maxVal - minVal || 1;
+                  const svgPoints = chartPoints.map((v, i) => {
+                    const x = (i / (chartPoints.length - 1)) * 80;
+                    const y = 22 - ((v - minVal) / range) * 18;
+                    return `${x.toFixed(1)},${y.toFixed(1)}`;
+                  }).join(" ");
+                  const polygonPoints = `${svgPoints} 80,24 0,24`;
+
                   return (
-                    <div key={kpi.id} className="glass lift rounded-2xl p-4 group relative">
-                      <div className="flex items-start justify-between mb-1">
-                        <span style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.2em] line-clamp-2">
+                    <div key={kpi.id}
+                      className="lift rounded-2xl p-3 group relative"
+                      style={{
+                        background: `linear-gradient(135deg, ${grad.from} 0%, ${grad.to} 100%)`,
+                        boxShadow: `0 4px 20px ${grad.shadow}`,
+                        color: "white",
+                      }}>
+                      <div className="flex items-start justify-between mb-1.5">
+                        <span style={{ fontFamily: FM, opacity: 0.9, fontWeight: 600 }} className="text-[9px] uppercase tracking-[0.15em] line-clamp-2">
                           {kpi.name}
                         </span>
-                        {isAdmin && (
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => onEditKpi(kpi)} style={{ color: T.muted }} className="hover:text-black">
-                              <Edit3 size={11} />
-                            </button>
-                            <button onClick={() => setConfirmDelKpi(kpi)} style={{ color: T.err }}>
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {kpi.kpi_type === "calculated" && (
+                            <div style={{ background: "rgba(255,255,255,0.2)" }}
+                              className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" title="Тооцооллын KPI">
+                              🧮
+                            </div>
+                          )}
+                          {trend && (
+                            <div style={{ background: "rgba(255,255,255,0.2)" }}
+                              className="w-4 h-4 rounded-full flex items-center justify-center text-[9px]">
+                              {trend.up ? "↗" : "↘"}
+                            </div>
+                          )}
+                          {isAdmin && (
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                              <button onClick={() => onEditKpi(kpi)} style={{ color: "white" }} className="hover:opacity-70">
+                                <Edit3 size={10} />
+                              </button>
+                              <button onClick={() => setConfirmDelKpi(kpi)} style={{ color: "white" }} className="hover:opacity-70">
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-baseline gap-1.5">
-                        <span style={{ fontFamily: FD, fontWeight: 500, color: T.ink, letterSpacing: "-0.02em" }}
-                              className="text-2xl tabular-nums">
+
+                      <div className="flex items-baseline gap-1">
+                        <span style={{ fontFamily: FD, fontWeight: 700, letterSpacing: "-0.02em" }}
+                              className="text-xl tabular-nums">
                           {total.toLocaleString(undefined, {
                             minimumFractionDigits: kpi.decimals || 0,
                             maximumFractionDigits: kpi.decimals || 0,
                           })}
                         </span>
-                        {kpi.unit && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{kpi.unit}</span>}
+                        {kpi.unit && <span style={{ opacity: 0.85, fontFamily: FM }} className="text-[9px]">{kpi.unit}</span>}
                       </div>
 
-                      {/* Target progress */}
-                      {kpi.target && entries.length > 0 && (() => {
-                        // Цэлэт хугацаагаар нь тооцох
+                      {/* Mini chart */}
+                      <svg viewBox="0 0 80 24" style={{ width: "100%", height: 20, marginTop: 6 }}>
+                        <defs>
+                          <linearGradient id={`grad-${kpi.id}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#fff" stopOpacity="0.4"/>
+                            <stop offset="100%" stopColor="#fff" stopOpacity="0"/>
+                          </linearGradient>
+                        </defs>
+                        <polygon points={polygonPoints} fill={`url(#grad-${kpi.id})`} />
+                        <polyline points={svgPoints} fill="none" stroke="white" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                      </svg>
+
+                      {/* Trend or target */}
+                      {trend ? (
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }} className="text-[9px]">
+                            {trend.up ? "+" : ""}{trend.change.toFixed(1)}%
+                          </span>
+                          <span style={{ opacity: 0.7, fontFamily: FM }} className="text-[9px]">vs өмнөх</span>
+                        </div>
+                      ) : kpi.target && entries.length > 0 ? (() => {
                         let targetTotal = Number(kpi.target);
                         if (kpi.target_period === "daily") {
-                          // Хэрэв period нь 7 хоног бол 7 өдрийн target нийт
                           const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
                           targetTotal = Number(kpi.target) * days;
                         } else if (kpi.target_period === "weekly") {
@@ -8986,39 +9079,26 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                           targetTotal = Number(kpi.target) * weeks;
                         }
                         const percent = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
-                        const colorBar = percent >= 100 ? T.ok : percent >= 70 ? T.warn : T.err;
-
                         return (
-                          <div className="mt-2">
+                          <div className="mt-1.5">
                             <div className="flex items-center justify-between text-[9px] mb-1">
-                              <span style={{ color: T.muted, fontFamily: FM }}>🎯 {targetTotal.toLocaleString()}</span>
-                              <span style={{ color: colorBar, fontFamily: FM, fontWeight: 600 }}>
+                              <span style={{ opacity: 0.85, fontFamily: FM }}>🎯 {targetTotal.toLocaleString()}</span>
+                              <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }}>
                                 {percent.toFixed(0)}%
                               </span>
                             </div>
-                            <div style={{ background: "rgba(99,102,241,0.1)", height: 4, borderRadius: 999, overflow: "hidden" }}>
+                            <div style={{ background: "rgba(255,255,255,0.25)", height: 3, borderRadius: 999, overflow: "hidden" }}>
                               <div style={{
                                 width: `${Math.min(percent, 100)}%`,
                                 height: "100%",
-                                background: `linear-gradient(90deg, ${colorBar}, ${colorBar}dd)`,
+                                background: "white",
                                 transition: "width 0.5s ease",
                               }} />
                             </div>
                           </div>
                         );
-                      })()}
-
-                      {trend && (
-                        <div className="flex items-center gap-1 mt-1.5">
-                          {trend.up ? <TrendingUp size={11} style={{ color: T.ok }} /> : <TrendingDown size={11} style={{ color: T.err }} />}
-                          <span style={{ color: trend.up ? T.ok : T.err, fontFamily: FM }} className="text-[10px] font-medium">
-                            {trend.up ? "+" : ""}{trend.change.toFixed(1)}%
-                          </span>
-                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">vs өмнөх</span>
-                        </div>
-                      )}
-                      {entries.length > 0 && period !== "day" && (
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1.5">
+                      })() : (
+                        <div style={{ opacity: 0.7, fontFamily: FM }} className="text-[9px] mt-1.5">
                           {entries.length} өдрийн нийт
                         </div>
                       )}
