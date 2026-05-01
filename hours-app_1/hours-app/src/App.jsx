@@ -5,7 +5,7 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
-  Camera,
+  Camera, Moon, Sun, Briefcase, Vote,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -1241,6 +1241,8 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
               <SidebarTab active={view === "skills"} onClick={() => { setView("skills"); setSidebarOpen(false); }} icon={ShieldCheck}>Ур чадвар</SidebarTab>
+              <SidebarTab active={view === "polls"} onClick={() => { setView("polls"); setSidebarOpen(false); }} icon={Vote}>Санал асуулга</SidebarTab>
+              <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>HR файл</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Ажилтнууд">
@@ -1270,6 +1272,7 @@ function AdminDashboard({ profile }) {
                   Админ
                 </div>
               </div>
+              <DarkModeToggle />
               <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
                 className="press-btn p-1.5 rounded hover:bg-gray-100" title="Гарах">
                 <LogOut size={14} />
@@ -1307,6 +1310,8 @@ function AdminDashboard({ profile }) {
                 {view === "calendar" && "Календар"}
                 {view === "schedule" && "Хуваарь"}
                 {view === "skills" && "Ур чадвар"}
+                {view === "polls" && "Санал асуулга"}
+                {view === "hrfile" && "HR хувийн файл"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1324,6 +1329,8 @@ function AdminDashboard({ profile }) {
                 {view === "calendar" && "Чөлөө + амралтын календар"}
                 {view === "schedule" && "Долоо хоногийн ажлын хуваарь"}
                 {view === "skills" && "Ажилтны ур чадвар + сургалт"}
+                {view === "polls" && "Ажилтнуудаас санал авах"}
+                {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1491,6 +1498,21 @@ function AdminDashboard({ profile }) {
         {view === "skills" && (
           <SkillsView
             employees={employees}
+            isAdmin={true}
+          />
+        )}
+
+        {view === "polls" && (
+          <PollsView
+            profile={profile}
+            isAdmin={true}
+          />
+        )}
+
+        {view === "hrfile" && (
+          <HRPersonalFileView
+            employees={employees}
+            profile={profile}
             isAdmin={true}
           />
         )}
@@ -2020,6 +2042,8 @@ function EmployeeDashboard({ profile }) {
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
               <SidebarTab active={view === "skills"} onClick={() => { setView("skills"); setSidebarOpen(false); }} icon={ShieldCheck}>Ур чадвар</SidebarTab>
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
+              <SidebarTab active={view === "polls"} onClick={() => { setView("polls"); setSidebarOpen(false); }} icon={Vote}>Санал асуулга</SidebarTab>
+              <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>Миний файл</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Хүсэлтүүд">
@@ -2041,6 +2065,7 @@ function EmployeeDashboard({ profile }) {
                   {profile.job_title}
                 </div>
               </div>
+              <DarkModeToggle />
               <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
                 className="press-btn p-1.5 rounded hover:bg-gray-100">
                 <LogOut size={14} />
@@ -2084,6 +2109,8 @@ function EmployeeDashboard({ profile }) {
                 {view === "schedule" && "Миний хуваарь"}
                 {view === "skills" && "Миний ур чадвар"}
                 {view === "calendar" && "Календар"}
+                {view === "polls" && "Санал асуулга"}
+                {view === "hrfile" && "Миний хувийн файл"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 Сайн байна уу, {profile.name}!
@@ -2313,6 +2340,22 @@ function EmployeeDashboard({ profile }) {
             leaves={myLeaves}
             employees={[profile]}
             scope="self"
+            currentUserId={profile.id}
+          />
+        )}
+
+        {view === "polls" && (
+          <PollsView
+            profile={profile}
+            isAdmin={false}
+          />
+        )}
+
+        {view === "hrfile" && (
+          <HRPersonalFileView
+            employees={[profile]}
+            profile={profile}
+            isAdmin={false}
             currentUserId={profile.id}
           />
         )}
@@ -3735,13 +3778,735 @@ function SidebarSection({ label, children }) {
   );
 }
 
+// Dark mode toggle
+function DarkModeToggle() {
+  const [dark, setDark] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("orgoo-dark") === "1";
+  });
+
+  useEffect(() => {
+    if (dark) {
+      document.documentElement.classList.add("dark-mode");
+      localStorage.setItem("orgoo-dark", "1");
+    } else {
+      document.documentElement.classList.remove("dark-mode");
+      localStorage.setItem("orgoo-dark", "0");
+    }
+  }, [dark]);
+
+  return (
+    <button onClick={() => setDark(!dark)}
+      style={{ color: T.muted }}
+      className="press-btn p-1.5 rounded hover:bg-black/5"
+      title={dark ? "Цайвар горим" : "Бараан горим"}>
+      {dark ? <Sun size={14} /> : <Moon size={14} />}
+    </button>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  BEST EMPLOYEE VIEW — Сарын шилдэг ажилтан
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
-//  CALENDAR VIEW — Чөлөөг календар дээр харах
+//  POLLS VIEW — Санал асуулга
 // ═══════════════════════════════════════════════════════════════════════════
-function CalendarView({ leaves = [], employees = [], scope = "all", currentUserId = null }) {
+function PollsView({ profile, isAdmin = false }) {
+  const [polls, setPolls] = useState([]);
+  const [votes, setVotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+
+  const loadPolls = async () => {
+    setLoading(true);
+    try {
+      const [{ data: pData }, { data: vData }] = await Promise.all([
+        supabase.from("polls").select("*").order("created_at", { ascending: false }),
+        supabase.from("poll_votes").select("*"),
+      ]);
+      setPolls(pData || []);
+      setVotes(vData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadPolls(); }, []);
+
+  const myVote = (pollId) => votes.find((v) => v.poll_id === pollId && v.voter_id === profile.id);
+
+  const handleVote = async (poll, optionIds) => {
+    try {
+      const existing = myVote(poll.id);
+      if (existing) {
+        await supabase.from("poll_votes").update({ option_ids: optionIds, voted_at: new Date().toISOString() }).eq("id", existing.id);
+      } else {
+        await supabase.from("poll_votes").insert({ poll_id: poll.id, voter_id: profile.id, option_ids: optionIds });
+      }
+      await loadPolls();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Энэ санал асуулгыг устгах уу?")) return;
+    await supabase.from("polls").delete().eq("id", id);
+    await loadPolls();
+  };
+
+  const handleClose = async (id) => {
+    await supabase.from("polls").update({ status: "closed" }).eq("id", id);
+    await loadPolls();
+  };
+
+  return (
+    <div className="space-y-3">
+      {isAdmin && (
+        <div className="flex justify-end">
+          <button onClick={() => setEditing({})}
+            className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5">
+            <Plus size={12} /> Шинэ санал асуулга
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : polls.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">🗳</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Идэвхтэй санал асуулга байхгүй байна
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {polls.map((poll) => {
+            const pollVotes = votes.filter((v) => v.poll_id === poll.id);
+            const my = myVote(poll.id);
+            const isExpired = poll.expires_at && new Date(poll.expires_at) < new Date();
+            const isClosed = poll.status === "closed" || isExpired;
+            const totalVotes = pollVotes.length;
+
+            // Count votes per option
+            const counts = {};
+            pollVotes.forEach((v) => {
+              (v.option_ids || []).forEach((oid) => {
+                counts[oid] = (counts[oid] || 0) + 1;
+              });
+            });
+
+            return (
+              <div key={poll.id} className="glass rounded-2xl p-4">
+                <div className="flex items-start gap-2 mb-2">
+                  <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0">
+                    🗳
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                          {poll.title}
+                        </h3>
+                        {poll.description && (
+                          <p style={{ color: T.inkSoft, fontFamily: FS }} className="text-xs mt-0.5">
+                            {poll.description}
+                          </p>
+                        )}
+                      </div>
+                      {isClosed && (
+                        <span style={{ background: T.surfaceAlt, color: T.muted }}
+                          className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap">
+                          Хаагдсан
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {(poll.options || []).map((opt) => {
+                        const cnt = counts[opt.id] || 0;
+                        const pct = totalVotes ? Math.round((cnt / totalVotes) * 100) : 0;
+                        const selected = (my?.option_ids || []).includes(opt.id);
+                        const showResult = !!my || isClosed || isAdmin;
+
+                        return (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              if (isClosed) return;
+                              if (poll.multiple_choice) {
+                                const current = my?.option_ids || [];
+                                const newIds = current.includes(opt.id)
+                                  ? current.filter((id) => id !== opt.id)
+                                  : [...current, opt.id];
+                                handleVote(poll, newIds);
+                              } else {
+                                handleVote(poll, [opt.id]);
+                              }
+                            }}
+                            disabled={isClosed}
+                            className="w-full text-left relative overflow-hidden rounded-lg"
+                            style={{
+                              background: showResult
+                                ? `linear-gradient(to right, ${selected ? T.highlightSoft : T.surfaceAlt} 0%, ${selected ? T.highlightSoft : T.surfaceAlt} ${pct}%, ${T.surfaceGlass} ${pct}%, ${T.surfaceGlass} 100%)`
+                                : T.surfaceAlt,
+                              border: `1px solid ${selected ? T.highlight : T.borderSoft}`,
+                              fontFamily: FS,
+                              padding: "10px 12px",
+                            }}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {selected && <CheckCircle2 size={14} style={{ color: T.highlight }} />}
+                                <span style={{ color: T.ink, fontWeight: selected ? 600 : 400 }} className="text-sm truncate">
+                                  {opt.text}
+                                </span>
+                              </div>
+                              {showResult && (
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                                    {cnt} саналт
+                                  </span>
+                                  <span style={{ color: selected ? T.highlight : T.inkSoft, fontFamily: FS, fontWeight: 600 }}
+                                    className="text-xs">
+                                    {pct}%
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 mt-3 pt-2 border-t" style={{ borderColor: T.borderSoft, fontFamily: FS }}>
+                      <span style={{ color: T.muted }} className="text-[10px]">
+                        {totalVotes} нийт сонголт
+                      </span>
+                      {poll.multiple_choice && (
+                        <span style={{ color: T.muted }} className="text-[10px]">
+                          · Олон сонголт
+                        </span>
+                      )}
+                      {poll.anonymous && (
+                        <span style={{ color: T.muted }} className="text-[10px]">
+                          · Нууц
+                        </span>
+                      )}
+                      {poll.expires_at && (
+                        <span style={{ color: isExpired ? T.err : T.muted }} className="text-[10px]">
+                          · {isExpired ? "Дууссан" : `Дуусах: ${new Date(poll.expires_at).toLocaleDateString("mn-MN")}`}
+                        </span>
+                      )}
+                      <div className="flex-1" />
+                      {isAdmin && (
+                        <>
+                          {!isClosed && (
+                            <button onClick={() => handleClose(poll.id)}
+                              style={{ color: T.warn, fontFamily: FS }}
+                              className="text-[10px] hover:underline">
+                              Хаах
+                            </button>
+                          )}
+                          <button onClick={() => handleDelete(poll.id)}
+                            style={{ color: T.err, fontFamily: FS }}
+                            className="text-[10px] hover:underline">
+                            Устгах
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <PollFormModal
+          poll={editing.id ? editing : null}
+          profile={profile}
+          onSave={async (data) => {
+            try {
+              if (editing.id) {
+                await supabase.from("polls").update(data).eq("id", editing.id);
+              } else {
+                await supabase.from("polls").insert({ ...data, created_by: profile.id });
+              }
+              setEditing(null);
+              await loadPolls();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PollFormModal({ poll, profile, onSave, onClose }) {
+  const [title, setTitle] = useState(poll?.title || "");
+  const [description, setDescription] = useState(poll?.description || "");
+  const [options, setOptions] = useState(poll?.options || [
+    { id: "1", text: "" },
+    { id: "2", text: "" },
+  ]);
+  const [multipleChoice, setMultipleChoice] = useState(poll?.multiple_choice || false);
+  const [anonymous, setAnonymous] = useState(poll?.anonymous || false);
+  const [expiresAt, setExpiresAt] = useState(poll?.expires_at?.slice(0, 16) || "");
+  const [busy, setBusy] = useState(false);
+
+  const updateOption = (i, text) => {
+    const newOpts = [...options];
+    newOpts[i] = { ...newOpts[i], text };
+    setOptions(newOpts);
+  };
+
+  const addOption = () => {
+    setOptions([...options, { id: String(options.length + 1), text: "" }]);
+  };
+
+  const removeOption = (i) => {
+    if (options.length <= 2) return;
+    setOptions(options.filter((_, idx) => idx !== i));
+  };
+
+  const validOptions = options.filter((o) => o.text.trim());
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            🗳 {poll ? "Засах" : "Шинэ санал асуулга"}
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Гарчиг</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)}
+              placeholder="Жишээ: Дараагийн оффисын очих газар?"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тайлбар (заавал биш)</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-2 block">Сонголтууд</label>
+            <div className="space-y-2">
+              {options.map((opt, i) => (
+                <div key={opt.id} className="flex gap-1">
+                  <input value={opt.text} onChange={(e) => updateOption(i, e.target.value)}
+                    placeholder={`Сонголт ${i + 1}`}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="flex-1 px-3 py-2 rounded-lg text-sm" />
+                  {options.length > 2 && (
+                    <button onClick={() => removeOption(i)}
+                      style={{ color: T.err }} className="press-btn p-2 rounded hover:bg-red-50">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button onClick={addOption}
+                className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-1 border-2 border-dashed"
+                style={{ borderColor: T.border, color: T.muted, fontFamily: FS }}>
+                <Plus size={12} /> Сонголт нэмэх
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={multipleChoice} onChange={(e) => setMultipleChoice(e.target.checked)} />
+              <span style={{ color: T.ink, fontFamily: FS }} className="text-xs">Олон сонголт</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
+              <span style={{ color: T.ink, fontFamily: FS }} className="text-xs">Нууц</span>
+            </label>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Дуусах огноо (заавал биш)</label>
+            <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <button
+            disabled={busy || !title || validOptions.length < 2}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                title,
+                description: description || null,
+                options: validOptions.map((o, i) => ({ id: String(i + 1), text: o.text })),
+                multiple_choice: multipleChoice,
+                anonymous,
+                expires_at: expiresAt || null,
+                status: "active",
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  HR PERSONAL FILE — Дэлгэрэнгүй ажилтны мэдээлэл
+// ═══════════════════════════════════════════════════════════════════════════
+function HRPersonalFileView({ employees, profile, isAdmin = false, currentUserId = null }) {
+  const [selectedEmpId, setSelectedEmpId] = useState(isAdmin ? "" : currentUserId);
+  const [hrFile, setHrFile] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const loadHrFile = async (empId) => {
+    if (!empId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("hr_personal_files")
+        .select("*")
+        .eq("employee_id", empId)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") throw error;
+      setHrFile(data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    if (selectedEmpId) loadHrFile(selectedEmpId);
+  }, [selectedEmpId]);
+
+  const selectedEmp = employees.find((e) => e.id === selectedEmpId);
+
+  return (
+    <div className="space-y-3">
+      {isAdmin && (
+        <div className="glass rounded-2xl p-3">
+          <select value={selectedEmpId} onChange={(e) => setSelectedEmpId(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2 rounded-lg text-sm">
+            <option value="">— Ажилтан сонгох —</option>
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {!selectedEmpId ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">💼</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Ажилтан сонгоно уу
+          </div>
+        </div>
+      ) : loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="glass-strong rounded-2xl p-5">
+            <div className="flex items-start gap-4">
+              <div style={{
+                background: "linear-gradient(135deg, #f97316, #ec4899)",
+                color: "white",
+              }} className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold">
+                {selectedEmp?.name?.[0]}
+              </div>
+              <div className="flex-1">
+                <h2 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xl">
+                  {selectedEmp?.name}
+                </h2>
+                <p style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-0.5">
+                  {selectedEmp?.job_title || "—"}
+                </p>
+                <p style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">
+                  {selectedEmp?.email}
+                </p>
+              </div>
+              {isAdmin && (
+                <button onClick={() => setEditing(true)}
+                  className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
+                  <Edit3 size={12} /> Засах
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!hrFile && (
+            <div className="glass rounded-2xl p-8 text-center">
+              <div className="text-3xl mb-2">📋</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">
+                HR файл хараахан үүсгэгдээгүй байна
+              </div>
+              {isAdmin && (
+                <button onClick={() => setEditing(true)}
+                  className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold">
+                  + Үүсгэх
+                </button>
+              )}
+            </div>
+          )}
+
+          {hrFile && (
+            <>
+              {/* Personal Info */}
+              <div className="glass rounded-2xl p-4">
+                <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3 flex items-center gap-2">
+                  👤 Хувийн мэдээлэл
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <FieldRow label="Бүтэн нэр" value={hrFile.full_name} />
+                  <FieldRow label="Регистр" value={hrFile.national_id} />
+                  <FieldRow label="Төрсөн огноо" value={hrFile.birth_date ? new Date(hrFile.birth_date).toLocaleDateString("mn-MN") : null} />
+                  <FieldRow label="Хүйс" value={hrFile.gender === "male" ? "Эр" : hrFile.gender === "female" ? "Эм" : hrFile.gender} />
+                  <FieldRow label="Утас" value={hrFile.phone} />
+                  <FieldRow label="Гэр бүл" value={hrFile.marital_status === "single" ? "Гэрлээгүй" : hrFile.marital_status === "married" ? "Гэрлэсэн" : hrFile.marital_status} />
+                  <FieldRow label="Хүүхдийн тоо" value={hrFile.children_count} />
+                  <FieldRow label="Хаяг" value={hrFile.address} fullWidth />
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              {(hrFile.emergency_contact_name || hrFile.emergency_contact_phone) && (
+                <div className="glass rounded-2xl p-4">
+                  <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3 flex items-center gap-2">
+                    🚨 Яаралтай үед холбоо барих
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <FieldRow label="Нэр" value={hrFile.emergency_contact_name} />
+                    <FieldRow label="Утас" value={hrFile.emergency_contact_phone} />
+                  </div>
+                </div>
+              )}
+
+              {/* Education */}
+              {(hrFile.education || hrFile.university) && (
+                <div className="glass rounded-2xl p-4">
+                  <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3 flex items-center gap-2">
+                    🎓 Боловсрол
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <FieldRow label="Боловсрол" value={hrFile.education} />
+                    <FieldRow label="Их сургууль" value={hrFile.university} />
+                    <FieldRow label="Төгссөн жил" value={hrFile.graduation_year} />
+                  </div>
+                </div>
+              )}
+
+              {/* Work Info */}
+              <div className="glass rounded-2xl p-4">
+                <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3 flex items-center gap-2">
+                  💼 Ажлын мэдээлэл
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <FieldRow label="Орсон огноо" value={hrFile.hire_date ? new Date(hrFile.hire_date).toLocaleDateString("mn-MN") : null} />
+                  <FieldRow label="Гэрээний төгсгөл" value={hrFile.contract_end_date ? new Date(hrFile.contract_end_date).toLocaleDateString("mn-MN") : null} />
+                  <FieldRow label="Гэрээний төрөл" value={hrFile.contract_type === "full_time" ? "Бүтэн цаг" : hrFile.contract_type === "part_time" ? "Хагас цаг" : hrFile.contract_type} />
+                  <FieldRow label="Банк" value={hrFile.bank_name} />
+                  <FieldRow label="Дансны дугаар" value={hrFile.bank_account} fullWidth />
+                </div>
+              </div>
+
+              {hrFile.notes && (
+                <div className="glass rounded-2xl p-4">
+                  <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-2">📝 Тэмдэглэл</h3>
+                  <p style={{ color: T.inkSoft, fontFamily: FS }} className="text-xs whitespace-pre-wrap">
+                    {hrFile.notes}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {editing && isAdmin && (
+            <HRFileFormModal
+              hrFile={hrFile}
+              employee={selectedEmp}
+              currentUserId={profile.id}
+              onSave={async (data) => {
+                try {
+                  if (hrFile?.id) {
+                    await supabase.from("hr_personal_files").update({ ...data, updated_at: new Date().toISOString(), updated_by: profile.id }).eq("id", hrFile.id);
+                  } else {
+                    await supabase.from("hr_personal_files").insert({ ...data, employee_id: selectedEmpId, updated_by: profile.id });
+                  }
+                  setEditing(false);
+                  await loadHrFile(selectedEmpId);
+                } catch (e) { alert("Алдаа: " + e.message); }
+              }}
+              onClose={() => setEditing(false)}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FieldRow({ label, value, fullWidth }) {
+  return (
+    <div style={fullWidth ? { gridColumn: "1 / -1" } : {}}>
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-0.5">
+        {label}
+      </div>
+      <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">
+        {value || <span style={{ color: T.mutedSoft }}>—</span>}
+      </div>
+    </div>
+  );
+}
+
+function HRFileFormModal({ hrFile, employee, currentUserId, onSave, onClose }) {
+  const [data, setData] = useState({
+    full_name: hrFile?.full_name || employee?.name || "",
+    birth_date: hrFile?.birth_date || "",
+    gender: hrFile?.gender || "",
+    national_id: hrFile?.national_id || "",
+    phone: hrFile?.phone || "",
+    emergency_contact_name: hrFile?.emergency_contact_name || "",
+    emergency_contact_phone: hrFile?.emergency_contact_phone || "",
+    address: hrFile?.address || "",
+    marital_status: hrFile?.marital_status || "",
+    children_count: hrFile?.children_count || 0,
+    education: hrFile?.education || "",
+    university: hrFile?.university || "",
+    graduation_year: hrFile?.graduation_year || "",
+    hire_date: hrFile?.hire_date || "",
+    contract_end_date: hrFile?.contract_end_date || "",
+    contract_type: hrFile?.contract_type || "",
+    bank_name: hrFile?.bank_name || "",
+    bank_account: hrFile?.bank_account || "",
+    notes: hrFile?.notes || "",
+  });
+  const [busy, setBusy] = useState(false);
+
+  const upd = (field, value) => setData({ ...data, [field]: value });
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+  const inputClass = "w-full px-3 py-2 rounded-lg text-sm";
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-2xl p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+            💼 HR файл засах
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        {/* Personal */}
+        <div className="mb-4">
+          <h4 style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-2">👤 Хувийн</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={data.full_name} onChange={(e) => upd("full_name", e.target.value)} placeholder="Бүтэн нэр" style={inputStyle} className={inputClass} />
+            <input value={data.national_id} onChange={(e) => upd("national_id", e.target.value)} placeholder="Регистр" style={inputStyle} className={inputClass} />
+            <input type="date" value={data.birth_date} onChange={(e) => upd("birth_date", e.target.value)} placeholder="Төрсөн огноо" style={inputStyle} className={inputClass} />
+            <select value={data.gender} onChange={(e) => upd("gender", e.target.value)} style={inputStyle} className={inputClass}>
+              <option value="">— Хүйс —</option>
+              <option value="male">Эр</option>
+              <option value="female">Эм</option>
+              <option value="other">Бусад</option>
+            </select>
+            <input value={data.phone} onChange={(e) => upd("phone", e.target.value)} placeholder="Утас" style={inputStyle} className={inputClass} />
+            <select value={data.marital_status} onChange={(e) => upd("marital_status", e.target.value)} style={inputStyle} className={inputClass}>
+              <option value="">— Гэр бүлийн байдал —</option>
+              <option value="single">Гэрлээгүй</option>
+              <option value="married">Гэрлэсэн</option>
+              <option value="divorced">Салсан</option>
+              <option value="widowed">Бэлэвсэн</option>
+            </select>
+            <input type="number" value={data.children_count} onChange={(e) => upd("children_count", Number(e.target.value))} placeholder="Хүүхдийн тоо" style={inputStyle} className={inputClass} />
+            <input value={data.address} onChange={(e) => upd("address", e.target.value)} placeholder="Хаяг" style={inputStyle} className={`${inputClass} col-span-2`} />
+          </div>
+        </div>
+
+        {/* Emergency */}
+        <div className="mb-4">
+          <h4 style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-2">🚨 Яаралтай</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={data.emergency_contact_name} onChange={(e) => upd("emergency_contact_name", e.target.value)} placeholder="Нэр" style={inputStyle} className={inputClass} />
+            <input value={data.emergency_contact_phone} onChange={(e) => upd("emergency_contact_phone", e.target.value)} placeholder="Утас" style={inputStyle} className={inputClass} />
+          </div>
+        </div>
+
+        {/* Education */}
+        <div className="mb-4">
+          <h4 style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-2">🎓 Боловсрол</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={data.education} onChange={(e) => upd("education", e.target.value)} placeholder="Боловсрол (ж.нь Бакалавр)" style={inputStyle} className={inputClass} />
+            <input value={data.university} onChange={(e) => upd("university", e.target.value)} placeholder="Их сургууль" style={inputStyle} className={inputClass} />
+            <input type="number" value={data.graduation_year} onChange={(e) => upd("graduation_year", e.target.value)} placeholder="Төгссөн жил" style={inputStyle} className={inputClass} />
+          </div>
+        </div>
+
+        {/* Work */}
+        <div className="mb-4">
+          <h4 style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-2">💼 Ажил</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={data.hire_date} onChange={(e) => upd("hire_date", e.target.value)} placeholder="Орсон огноо" style={inputStyle} className={inputClass} />
+            <input type="date" value={data.contract_end_date} onChange={(e) => upd("contract_end_date", e.target.value)} placeholder="Гэрээний төгсгөл" style={inputStyle} className={inputClass} />
+            <select value={data.contract_type} onChange={(e) => upd("contract_type", e.target.value)} style={inputStyle} className={inputClass}>
+              <option value="">— Гэрээний төрөл —</option>
+              <option value="full_time">Бүтэн цаг</option>
+              <option value="part_time">Хагас цаг</option>
+              <option value="contract">Гэрээт</option>
+            </select>
+            <input value={data.bank_name} onChange={(e) => upd("bank_name", e.target.value)} placeholder="Банк" style={inputStyle} className={inputClass} />
+            <input value={data.bank_account} onChange={(e) => upd("bank_account", e.target.value)} placeholder="Дансны дугаар" style={inputStyle} className={`${inputClass} col-span-2`} />
+          </div>
+        </div>
+
+        <textarea value={data.notes} onChange={(e) => upd("notes", e.target.value)}
+          rows={3}
+          placeholder="Тэмдэглэл..."
+          style={inputStyle} className={`${inputClass} resize-none mb-3`} />
+
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await onSave({
+              ...data,
+              children_count: Number(data.children_count) || 0,
+              graduation_year: Number(data.graduation_year) || null,
+              birth_date: data.birth_date || null,
+              hire_date: data.hire_date || null,
+              contract_end_date: data.contract_end_date || null,
+            });
+            setBusy(false);
+          }}
+          className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+          {busy ? "Хадгалаж..." : "Хадгалах"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -6168,6 +6933,7 @@ function ManagerDashboard({ profile }) {
                   {team.length} ажилтан
                 </div>
               </div>
+              <DarkModeToggle />
               <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
                 className="press-btn p-1.5 rounded hover:bg-gray-100">
                 <LogOut size={14} />
