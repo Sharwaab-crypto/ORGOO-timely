@@ -3517,7 +3517,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                          color: role === "driver" ? "white" : T.ink,
                          borderColor: role === "driver" ? "#0ea5e9" : T.border, fontFamily: FM }}
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
-                🚚 Хүргэлт
+                🚚 Хүргэгч
               </button>
             </div>
             {role === "manager" && (
@@ -3532,7 +3532,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
             )}
             {role === "driver" && (
               <p style={{ color: "#0ea5e9" }} className="text-[11px] mt-1.5">
-                🚚 Хүргэлт: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
+                🚚 Хүргэгч: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
               </p>
             )}
           </div>
@@ -14450,7 +14450,7 @@ function DriverDashboard({ profile }) {
         </div>
         <div className="flex-1">
           <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-            Хүргэлт
+            🚚 Хүргэгч
           </h1>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
             {profile.name || "—"}
