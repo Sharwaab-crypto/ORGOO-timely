@@ -3451,7 +3451,12 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
       email: email.trim(), name: name.trim(),
       role, // employee | manager
       department_id: departmentId || null,
-      job_title: jobTitle.trim() || (role === "manager" ? "Ахлагч" : "Ажилтан"),
+      job_title: jobTitle.trim() || (
+        role === "manager" ? "Ахлагч"
+        : role === "operator" ? "Оператор"
+        : role === "driver" ? "Хүргэгч"
+        : "Ажилтан"
+      ),
       hourly_rate: parseFloat(rate) || 0,
       site_lat: showLegacy && site?.lat ? site.lat : null,
       site_lng: showLegacy && site?.lng ? site.lng : null,
@@ -9921,11 +9926,12 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, phone, job_title")
+        .select("id, name, job_title")
         .eq("role", "driver")
         .order("name");
+      if (error) console.error("Driver fetch error:", error);
       setDrivers(data || []);
     })();
   }, []);
@@ -10034,12 +10040,11 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
               <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
                 {assignedDriver.name}
               </div>
-              {assignedDriver.phone && (
-                <a href={`tel:${assignedDriver.phone}`}
-                  style={{ color: "#0ea5e9", fontFamily: FM }}
+              {assignedDriver.job_title && (
+                <div style={{ color: T.muted, fontFamily: FM }}
                   className="text-[11px]">
-                  📞 {assignedDriver.phone}
-                </a>
+                  {assignedDriver.job_title}
+                </div>
               )}
             </div>
             <button onClick={() => assignDriver("")} disabled={busy}
@@ -10079,9 +10084,9 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
                     <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
                       {d.name}
                     </div>
-                    {d.phone && (
+                    {d.job_title && (
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        📞 {d.phone}
+                        {d.job_title}
                       </div>
                     )}
                   </div>
