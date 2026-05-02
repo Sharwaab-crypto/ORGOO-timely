@@ -1269,6 +1269,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
+              <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
@@ -1347,6 +1348,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "sales" && "Борлуулалтын самбар"}
+                {view === "settlement" && "Тооцоо тулгах"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -1374,6 +1376,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
                 {view === "sales" && "FB page тус бүрийн борлуулалтын тайлан"}
+                {view === "settlement" && "Хүргэгч тус бүрийн тооцоо нэгтгэл"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -1576,6 +1579,10 @@ function AdminDashboard({ profile }) {
 
         {view === "sales" && (
           <SalesDashboardView profile={profile} />
+        )}
+
+        {view === "settlement" && (
+          <DriverSettlementView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -8017,6 +8024,436 @@ function SalesDashboardView({ profile }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DRIVER SETTLEMENT — Хүргэгчийн тооцоо тулгах самбар
+// ═══════════════════════════════════════════════════════════════════════════
+function DriverSettlementView({ profile }) {
+  const [drivers, setDrivers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDriver, setActiveDriver] = useState(null);
+  const [period, setPeriod] = useState(() => {
+    try { return localStorage.getItem("orgoo-settlement-period") || "today"; } catch { return "today"; }
+  });
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-settlement-period", period); } catch {}
+  }, [period]);
+
+  const periodRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+    if (period === "today") return { start: today, end: tomorrow, label: "Өнөөдөр" };
+    if (period === "yesterday") {
+      const y = new Date(today); y.setDate(today.getDate() - 1);
+      return { start: y, end: today, label: "Өчигдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(today); start.setDate(today.getDate() - 6);
+      return { start, end: tomorrow, label: "7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start, end: tomorrow, label: "Энэ сар" };
+    }
+    if (period === "custom") {
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      return {
+        start: new Date(sy, sm - 1, sd, 0, 0, 0),
+        end: new Date(ey, em - 1, ed + 1, 0, 0, 0),
+        label: `${customStart} – ${customEnd}`,
+      };
+    }
+    return { start: new Date(0), end: new Date(8640000000000000), label: "Бүгд" };
+  }, [period, customStart, customEnd]);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: drvData }, { data: ordData }] = await Promise.all([
+        supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
+        supabase.from("biz_orders").select("*").not("driver_id", "is", null),
+      ]);
+      setDrivers(drvData || []);
+      setOrders(ordData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Period-аар шүүх
+  const filteredOrders = useMemo(() => orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [orders, periodRange]);
+
+  // Тус хүргэгчийн стат
+  const driverStats = useMemo(() => drivers.map((d) => {
+    const dOrders = filteredOrders.filter((o) => o.driver_id === d.id);
+    const delivered = dOrders.filter((o) => o.status === "delivered");
+    const cancelled = dOrders.filter((o) => o.status === "cancelled");
+    const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending");
+
+    const deliveredTotal = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+    const paidAlready = delivered.reduce((s, o) => s + Number(o.paid_amount || 0), 0);
+    const owed = deliveredTotal - paidAlready; // Тушаах ёстой дүн
+
+    return {
+      ...d,
+      delivered: delivered.length,
+      cancelled: cancelled.length,
+      pending: pending.length,
+      deliveredTotal,
+      paidAlready,
+      owed,
+      deliveredOrders: delivered,
+      cancelledOrders: cancelled,
+    };
+  }), [drivers, filteredOrders]);
+
+  // Detail харах хэсэг
+  if (activeDriver) {
+    const driver = driverStats.find((d) => d.id === activeDriver);
+    if (!driver) {
+      return (
+        <div className="glass rounded-2xl p-8 text-center">
+          <button onClick={() => setActiveDriver(null)} style={{ color: T.muted }}>← Буцах</button>
+        </div>
+      );
+    }
+
+    const allOrders = [...driver.deliveredOrders, ...driver.cancelledOrders]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    return (
+      <div className="space-y-3">
+        {/* Header */}
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <button onClick={() => setActiveDriver(null)}
+            className="press-btn p-1.5 rounded-lg" style={{ color: T.ink }}>
+            ←
+          </button>
+          <div style={{ background: "#0ea5e9", color: "white" }}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+            {driver.name?.charAt(0) || "🚚"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🚚 {driver.name}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {driver.job_title || "Хүргэгч"}
+            </div>
+          </div>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            {periodRange.label}
+          </span>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+              ✓ Хүргэсэн
+            </div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
+              {driver.delivered}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+              ✕ Цуцалсан
+            </div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-3xl tabular-nums">
+              {driver.cancelled}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+              💰 Нийт хүргэсэн дүн
+            </div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+              {driver.deliveredTotal.toLocaleString()}₮
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}`, background: "rgba(245,158,11,0.05)" }}>
+            <div style={{ color: T.warn, fontFamily: FM, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider">
+              ⚠ ТУШААХ ДҮН
+            </div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-2xl tabular-nums">
+              {driver.owed.toLocaleString()}₮
+            </div>
+            {driver.paidAlready > 0 && (
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                (өмнө төлсөн: {driver.paidAlready.toLocaleString()}₮)
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Орлогын тооцоолол */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2 flex items-center gap-2">
+            🧮 Тооцооллын дэлгэрэнгүй
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between py-1">
+              <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хүргэгдсэн захиалгуудын нийт дүн</span>
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                {driver.deliveredTotal.toLocaleString()}₮
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-1" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ color: T.ok, fontFamily: FS }} className="text-xs">− Урьдчилж төлсөн</span>
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-sm tabular-nums">
+                −{driver.paidAlready.toLocaleString()}₮
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2" style={{ background: T.warnSoft, padding: 12, borderRadius: 8, marginTop: 8 }}>
+              <span style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-sm">⚠ Тушаах дүн</span>
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+                {driver.owed.toLocaleString()}₮
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Захиалгын жагсаалт */}
+        <div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2 flex items-center gap-2">
+            📋 Захиалгын жагсаалт ({allOrders.length})
+          </div>
+          {allOrders.length === 0 ? (
+            <div className="glass rounded-2xl p-8 text-center">
+              <div className="text-4xl mb-2">📋</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                Захиалга алга
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {allOrders.map((o) => {
+                const isDelivered = o.status === "delivered";
+                const paid = Number(o.paid_amount || 0);
+                const total = Number(o.total_amount || 0);
+                const isFullyPaid = paid >= total && total > 0;
+                return (
+                  <div key={o.id} className="glass rounded-xl p-2.5 flex items-center gap-2">
+                    <div style={{
+                      background: isDelivered ? "rgba(16,185,129,0.1)" : T.errSoft,
+                      color: isDelivered ? T.ok : T.err,
+                    }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                      {isDelivered ? "✓" : "✕"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                          {o.customer_phone}
+                        </span>
+                        {o.customer_name && (
+                          <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                            · {o.customer_name}
+                          </span>
+                        )}
+                        {isFullyPaid && isDelivered && (
+                          <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full">
+                            ✓ ТӨЛСӨН
+                          </span>
+                        )}
+                      </div>
+                      {o.delivery_address && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] truncate flex items-center gap-0.5">
+                          📍 {o.delivery_address}
+                        </div>
+                      )}
+                      {!isDelivered && o.notes && (
+                        <div style={{ color: T.err, fontFamily: FM, fontStyle: "italic" }} className="text-[10px] mt-0.5">
+                          {o.notes.split("\n").pop()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: isDelivered ? T.ink : T.muted }}
+                        className="text-sm tabular-nums whitespace-nowrap" >
+                        {total.toLocaleString()}₮
+                      </div>
+                      {isDelivered && paid > 0 && (
+                        <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }}
+                          className="text-[10px] tabular-nums whitespace-nowrap">
+                          ✓ {paid.toLocaleString()}₮
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Хүргэгчийн жагсаалт
+  return (
+    <div className="space-y-3">
+      {/* Period selector */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "yesterday", label: "Өчигдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "Энэ сар" },
+            { id: "all", label: "Бүгд" },
+            { id: "custom", label: "📅 Гараар" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex items-center gap-1">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+              <span style={{ color: T.muted }}>→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Нийт стат */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            🚚 Хүргэгч нар
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#0ea5e9" }} className="text-3xl tabular-nums">
+            {driverStats.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            ✓ Нийт хүргэсэн
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
+            {driverStats.reduce((s, d) => s + d.delivered, 0)}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            💰 Нийт орлого
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+            {driverStats.reduce((s, d) => s + d.deliveredTotal, 0).toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ background: T.warnSoft }}>
+          <div style={{ fontFamily: FM, color: T.warn, fontWeight: 700 }} className="text-[9px] uppercase tracking-wider">
+            ⚠ Нийт тушаах
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-2xl tabular-nums">
+            {driverStats.reduce((s, d) => s + d.owed, 0).toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
+      {/* Хүргэгчийн жагсаалт */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : driverStats.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">🚚</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Хүргэгч ажилтан байхгүй
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {driverStats.map((d) => (
+            <button key={d.id}
+              onClick={() => setActiveDriver(d.id)}
+              className="press-btn glass lift rounded-2xl p-3 w-full text-left"
+              style={{ borderLeft: d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
+              <div className="flex items-center gap-3 mb-2">
+                <div style={{ background: "#0ea5e9", color: "white" }}
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+                  {d.name?.charAt(0) || "🚚"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                    🚚 {d.name}
+                  </div>
+                  {d.job_title && (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {d.job_title}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+                    Тушаах
+                  </div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: d.owed > 0 ? T.warn : T.ok }} className="text-lg tabular-nums">
+                    {d.owed.toLocaleString()}₮
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✓ Хүрг.</div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                    {d.delivered}
+                  </div>
+                </div>
+                <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✕ Цуц.</div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
+                    {d.cancelled}
+                  </div>
+                </div>
+                <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">⏳ Хүл.</div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
+                    {d.pending}
+                  </div>
+                </div>
+                <div style={{ background: "rgba(236,72,153,0.1)" }} className="rounded-lg p-2 text-center">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Дүн</div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-sm tabular-nums">
+                    {(d.deliveredTotal / 1000).toFixed(0)}K₮
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -14749,6 +15186,8 @@ function DriverDashboard({ profile }) {
   const [items, setItems] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeOrder, setActiveOrder] = useState(null);
+  const [cancelOrder, setCancelOrder] = useState(null);
+  const [cancelNote, setCancelNote] = useState("");
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
   });
@@ -14989,10 +15428,7 @@ function DriverDashboard({ profile }) {
                       style={{ background: T.ok, color: "white", fontFamily: FS }}>
                       ✓ Хүргэсэн
                     </button>
-                    <button onClick={() => {
-                        if (!confirm("Хүргэх боломжгүй гэж тэмдэглэх үү?")) return;
-                        updateStatus(o.id, "cancelled");
-                      }}
+                    <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
                       className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                       style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
                       ✕ Хүргэх боломжгүй
@@ -15004,6 +15440,80 @@ function DriverDashboard({ profile }) {
           </div>
         )}
       </div>
+
+      {/* Cancel modal — Сэтгэгдэл бичих */}
+      {cancelOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+          background: "rgba(244, 114, 182, 0.15)",
+          backdropFilter: "blur(8px)",
+        }}
+          onClick={() => setCancelOrder(null)}>
+          <div style={{
+              background: "rgba(255, 255, 255, 0.98)",
+              backdropFilter: "blur(24px) saturate(180%)",
+              border: "1px solid rgba(255, 255, 255, 0.8)",
+              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              borderRadius: 16, width: "100%", maxWidth: 400,
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+                ✕ Хүргэх боломжгүй
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                {cancelOrder.customer_name || cancelOrder.customer_phone}
+              </div>
+            </div>
+
+            <div className="p-3 space-y-2">
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                  Шалтгаан *
+                </label>
+                <textarea
+                  value={cancelNote}
+                  onChange={(e) => setCancelNote(e.target.value)}
+                  placeholder="Жишээ нь: Хаяг олдохгүй, Хариу авахгүй, Худалдан авагч цуцалсан..."
+                  rows={4}
+                  autoFocus
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 flex gap-2" style={{ borderTop: `1px solid ${T.border}` }}>
+              <button onClick={() => setCancelOrder(null)}
+                className="press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+                Болих
+              </button>
+              <button
+                disabled={!cancelNote.trim()}
+                onClick={async () => {
+                  try {
+                    const existingNotes = cancelOrder.notes ? cancelOrder.notes + "\n\n" : "";
+                    await supabase.from("biz_orders").update({
+                      status: "cancelled",
+                      cancelled_at: new Date().toISOString(),
+                      notes: existingNotes + `[Хүргэгч цуцалсан]: ${cancelNote.trim()}`,
+                    }).eq("id", cancelOrder.id);
+                    setCancelOrder(null);
+                    setCancelNote("");
+                    await loadAll();
+                  } catch (e) { alert("Алдаа: " + e.message); }
+                }}
+                className="press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: T.err, color: "white", fontFamily: FS, opacity: cancelNote.trim() ? 1 : 0.5 }}>
+                ✕ Цуцлах
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
