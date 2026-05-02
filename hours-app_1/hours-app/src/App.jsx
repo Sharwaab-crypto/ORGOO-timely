@@ -5978,7 +5978,7 @@ function CallCenterView({ profile }) {
                               ) : (
                                 <>
                                   <Phone size={11} style={{ color: T.muted }} />
-                                  <span className="text-xs">Calling. {phone}</span>
+                                  <span className="text-xs">Call. {phone}</span>
                                 </>
                               )}
                             </button>
