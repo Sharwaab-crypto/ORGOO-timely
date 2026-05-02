@@ -7806,70 +7806,160 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
-function OrderCard({ order, compact = false, onClick }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap }) {
   const statusInfo = {
-    new: { label: "Шинэ", color: T.highlight, bg: T.highlightSoft, icon: "🆕" },
-    delivered: { label: "Хүргэгдсэн", color: T.ok, bg: "rgba(16,185,129,0.1)", icon: "✓" },
-    cancelled: { label: "Цуцалсан", color: T.err, bg: T.errSoft, icon: "✕" },
+    new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
+    pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
+    delivered: { label: "Хүргэгдсэн", color: T.ok, bg: "rgba(16,185,129,0.1)" },
+    cancelled: { label: "Цуцалсан", color: T.err, bg: T.errSoft },
   };
   const status = statusInfo[order.status] || statusInfo.new;
   const paid = Number(order.paid_amount || 0);
   const total = Number(order.total_amount || 0);
   const isFullyPaid = paid >= total && total > 0;
+  const balance = total - paid;
+
+  const [showMenu, setShowMenu] = useState(false);
+
+  // Items-аас нийт тоо ширхэг + эхний барааны зураг
+  const totalQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+  const firstItem = items[0];
+  const firstProduct = firstItem ? null : null; // image_url-ийг items-аас авах
+  const firstImage = firstItem?.product_image || null;
 
   return (
-    <div className={`glass rounded-xl p-3 ${onClick ? "lift" : ""}`}>
-      <div className="flex items-start gap-3">
-        <button onClick={onClick}
-          style={{ background: status.bg, color: status.color }}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0 press-btn">
-          {status.icon}
-        </button>
-        <div className="flex-1 min-w-0">
+    <div className="glass rounded-xl p-3 relative">
+      <div className="flex items-center gap-3">
+        {/* Index badge */}
+        <div style={{
+          background: "rgba(59,130,246,0.1)", color: "#3b82f6",
+          fontFamily: FD, fontWeight: 700,
+        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+          {index + 1}
+        </div>
+
+        {/* Phones + Address */}
+        <button onClick={onClick} className="flex-1 min-w-0 text-left press-btn">
           <div className="flex items-center gap-2 flex-wrap">
-            {order.customer_name && (
-              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
-                {order.customer_name}
-              </span>
-            )}
-            <span style={{
-              background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
-            }} className="text-[9px] px-1.5 py-0.5 rounded-full">
-              {status.label}
+            <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+              {order.customer_phone || "—"}
             </span>
-            {isFullyPaid && (
-              <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
-                className="text-[9px] px-1.5 py-0.5 rounded-full">
-                ✓ ТӨЛСӨН
-              </span>
+            {order.customer_phone2 && (
+              <>
+                <span style={{ color: T.muted }}>·</span>
+                <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+                  {order.customer_phone2}
+                </span>
+              </>
             )}
           </div>
-          {order.customer_phone && (
-            <a href={`tel:${order.customer_phone}`}
-              style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}
-              className="text-xs mt-1 inline-flex items-center gap-1 hover:underline press-btn">
-              📞 {order.customer_phone}
-            </a>
-          )}
-          {!compact && order.delivery_address && (
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
-              📍 {order.delivery_address}
+          {order.delivery_address && (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5 flex items-start gap-1">
+              <MapPin size={10} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
+              <span className="truncate">{order.delivery_address}</span>
             </div>
           )}
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            🕐 {new Date(order.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+        </button>
+
+        {/* Image + qty badge */}
+        {firstImage && (
+          <div className="relative flex-shrink-0">
+            <img src={firstImage} alt=""
+              style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
+            {items.length > 1 && (
+              <div style={{
+                position: "absolute", top: -6, right: -6,
+                background: "#3b82f6", color: "white",
+                width: 18, height: 18, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10, fontWeight: 700,
+              }}>{items.length}</div>
+            )}
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
+              {firstItem ? Number(firstItem.unit_price || 0).toLocaleString() + "₮" : ""}
+            </div>
           </div>
-        </div>
-        <button onClick={onClick} className="text-right press-btn">
+        )}
+
+        {/* Status pill */}
+        <span style={{
+          background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
+        }} className="text-[10px] px-2.5 py-1 rounded-full flex-shrink-0">
+          {status.label}
+        </span>
+
+        {/* Amount */}
+        <div className="text-right flex-shrink-0">
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
             {total.toLocaleString()}₮
           </div>
-          {paid > 0 && (
-            <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-[11px] tabular-nums whitespace-nowrap">
-              ✓ {paid.toLocaleString()}₮
-            </div>
+          <div style={{
+            fontFamily: FD, fontWeight: 600,
+            color: isFullyPaid ? T.ok : (balance > 0 ? T.muted : T.ok),
+          }} className="text-[11px] tabular-nums whitespace-nowrap">
+            {isFullyPaid ? `✓ ${paid.toLocaleString()}₮` : `${paid.toLocaleString()}₮`}
+          </div>
+        </div>
+
+        {/* Pin button (Map) */}
+        {onMap && (
+          <button onClick={onMap}
+            className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
+            style={{
+              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+              color: "white",
+              boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
+            }}
+            title="Газрын зураг">
+            <MapPin size={14} />
+            <span style={{
+              position: "absolute", top: 2, right: 2,
+              width: 6, height: 6, borderRadius: "50%",
+              background: T.ok, border: "1.5px solid white",
+            }} />
+          </button>
+        )}
+
+        {/* 3-dot menu */}
+        <div className="relative flex-shrink-0">
+          <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            style={{ color: T.muted }}
+            className="press-btn w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-100">
+            <span className="text-base font-bold leading-none">⋮</span>
+          </button>
+          {showMenu && (
+            <>
+              <div onClick={() => setShowMenu(false)}
+                style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{
+                position: "absolute", right: 0, top: 32, zIndex: 50,
+                background: T.surface, border: `1px solid ${T.border}`,
+                borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                minWidth: 140,
+              }}>
+                {onEdit && (
+                  <button onClick={() => { setShowMenu(false); onEdit(); }}
+                    className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                    style={{ color: T.ink, fontFamily: FS, textAlign: "left" }}>
+                    <Edit3 size={12} /> Засварлах
+                  </button>
+                )}
+                {onCancel && order.status !== "cancelled" && (
+                  <button onClick={() => { setShowMenu(false); onCancel(); }}
+                    className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                    style={{ color: T.err, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
+                    <X size={12} /> Цуцлах
+                  </button>
+                )}
+                <button onClick={() => { setShowMenu(false); onClick && onClick(); }}
+                  className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                  style={{ color: T.ink, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
+                  👁 Дэлгэрэнгүй
+                </button>
+              </div>
+            </>
           )}
-        </button>
+        </div>
       </div>
     </div>
   );
@@ -7896,17 +7986,26 @@ function OrdersView({ profile }) {
         .limit(200);
       setOrders(ordData || []);
 
-      // Items load
+      // Items load + product image-уудыг авах
       if (ordData && ordData.length > 0) {
         const orderIds = ordData.map((o) => o.id);
         const { data: itemData } = await supabase
           .from("biz_order_items")
           .select("*")
           .in("order_id", orderIds);
+
+        // Product images
+        const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
+        const { data: prodData } = productIds.length > 0
+          ? await supabase.from("inv_products").select("id, image_url").in("id", productIds)
+          : { data: [] };
+        const prodMap = {};
+        (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
+
         const itemMap = {};
         (itemData || []).forEach((it) => {
           if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
-          itemMap[it.order_id].push(it);
+          itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
         });
         setItems(itemMap);
       }
@@ -7934,7 +8033,7 @@ function OrdersView({ profile }) {
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === "new").length,
-    preparing: orders.filter((o) => o.status === "preparing").length,
+    pending: orders.filter((o) => o.status === "pending").length,
     delivered: orders.filter((o) => o.status === "delivered").length,
     cancelled: orders.filter((o) => o.status === "cancelled").length,
   };
@@ -7970,6 +8069,7 @@ function OrdersView({ profile }) {
           {[
             { key: "all", label: "Бүх", icon: "📋" },
             { key: "new", label: "Шинэ", icon: "🆕" },
+            { key: "pending", label: "Хүлээгдэж", icon: "⏳" },
             { key: "delivered", label: "Хүргэсэн", icon: "✓" },
             { key: "cancelled", label: "Цуцалсан", icon: "✕" },
           ].map((f) => (
@@ -8010,8 +8110,25 @@ function OrdersView({ profile }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((o) => (
-            <OrderCard key={o.id} order={o} onClick={() => setActiveOrder(o)} />
+          {filtered.map((o, idx) => (
+            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+              onClick={() => setActiveOrder(o)}
+              onMap={o.delivery_address ? () => {
+                const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.delivery_address)}`;
+                window.open(url, "_blank");
+              } : null}
+              onEdit={() => setActiveOrder(o)}
+              onCancel={async () => {
+                if (!confirm(`Захиалгыг цуцлах уу?\n\nҮйлчлүүлэгч: ${o.customer_name || o.customer_phone}\nДүн: ${Number(o.total_amount).toLocaleString()}₮`)) return;
+                try {
+                  await supabase.from("biz_orders").update({
+                    status: "cancelled",
+                    cancelled_at: new Date().toISOString(),
+                  }).eq("id", o.id);
+                  await loadAll();
+                } catch (e) { alert("Алдаа: " + e.message); }
+              }}
+            />
           ))}
         </div>
       )}
@@ -8024,6 +8141,11 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
 
   const statusActions = {
     new: [
+      { label: "Хүлээгдэж байна", action: "pending", color: T.warn, icon: "⏳" },
+      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
+    ],
+    pending: [
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
