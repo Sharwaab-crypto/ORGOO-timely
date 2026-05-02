@@ -12615,7 +12615,7 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function OperatorDashboard({ profile }) {
   const [view, setView] = useState(() => {
-    try { return localStorage.getItem("orgoo-operator-view") || "callcenter"; } catch { return "callcenter"; }
+    try { return localStorage.getItem("orgoo-operator-view") || "dashboard"; } catch { return "dashboard"; }
   });
 
   useEffect(() => {
@@ -12655,6 +12655,9 @@ function OperatorDashboard({ profile }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
+          <SidebarSection label="Хяналт">
+            <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
+          </SidebarSection>
           <SidebarSection label="Бизнес">
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
@@ -12693,19 +12696,313 @@ function OperatorDashboard({ profile }) {
           </button>
           <div className="flex-1">
             <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {view === "dashboard" && "📊 Миний KPI"}
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
-              {view === "customers" && "👥 Үйлчлүүлэгч"}
             </h1>
           </div>
         </header>
 
         <div className="p-4 max-w-6xl mx-auto">
+          {view === "dashboard" && <OperatorKPIView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
-          {view === "customers" && <CustomersView profile={profile} />}
         </div>
       </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR KPI VIEW — Хувийн дашборд
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorKPIView({ profile }) {
+  const [calls, setCalls] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [period, setPeriod] = useState(() => {
+    try { return localStorage.getItem("orgoo-operator-period") || "today"; } catch { return "today"; }
+  });
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-operator-period", period); } catch {}
+  }, [period]);
+
+  const periodRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+    if (period === "today") return { start: today, end: tomorrow, label: "Өнөөдөр" };
+    if (period === "yesterday") {
+      const y = new Date(today); y.setDate(today.getDate() - 1);
+      return { start: y, end: today, label: "Өчигдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(today); start.setDate(today.getDate() - 6);
+      return { start, end: tomorrow, label: "7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start, end: tomorrow, label: "Энэ сар" };
+    }
+    if (period === "custom") {
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      return {
+        start: new Date(sy, sm - 1, sd, 0, 0, 0),
+        end: new Date(ey, em - 1, ed + 1, 0, 0, 0),
+        label: `${customStart} – ${customEnd}`,
+      };
+    }
+    return { start: new Date(0), end: new Date(8640000000000000), label: "Бүгд" };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // Зөвхөн өөрийн бичсэн дуудлага + захиалга
+        const [{ data: callData }, { data: ordData }] = await Promise.all([
+          supabase.from("biz_calls").select("*").eq("created_by", profile.id),
+          supabase.from("biz_orders").select("*").eq("taken_by", profile.id),
+        ]);
+        setCalls(callData || []);
+        setOrders(ordData || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [profile.id]);
+
+  // Period-ээр шүүх
+  const filteredCalls = useMemo(() => calls.filter((c) => {
+    const d = new Date(c.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [calls, periodRange]);
+
+  const filteredOrders = useMemo(() => orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [orders, periodRange]);
+
+  // Stats
+  const uniquePhones = new Set(filteredCalls.map((c) => c.phone)).size;
+  const totalOrders = filteredOrders.length;
+  const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
+  const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+  const cancelledOrders = filteredOrders.filter((o) => o.status === "cancelled").length;
+  const successRate = totalOrders > 0 ? Math.round((deliveredOrders / totalOrders) * 100) : 0;
+  const cancelRate = totalOrders > 0 ? Math.round((cancelledOrders / totalOrders) * 100) : 0;
+  const pendingRate = totalOrders > 0 ? Math.round((pendingOrders / totalOrders) * 100) : 0;
+  const totalRevenue = filteredOrders
+    .filter((o) => o.status === "delivered")
+    .reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const conversion = uniquePhones > 0 ? Math.round((totalOrders / uniquePhones) * 100) : 0;
+
+  return (
+    <div className="space-y-3">
+      {/* Operator header */}
+      <div style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white" }}
+        className="rounded-2xl p-5 flex items-center gap-4">
+        <div style={{ background: "rgba(255,255,255,0.2)", color: "white" }}
+          className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0">
+          🎧
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 style={{ fontFamily: FS, fontWeight: 700 }} className="text-xl">
+            {profile.name || "Оператор"}
+          </h2>
+          <div style={{ opacity: 0.85, fontFamily: FM }} className="text-xs">
+            {profile.job_title || "Оператор"}
+          </div>
+        </div>
+      </div>
+
+      {/* Period selector */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "yesterday", label: "Өчигдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "Энэ сар" },
+            { id: "all", label: "Бүгд" },
+            { id: "custom", label: "📅 Гараар" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex items-center gap-1">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+              <span style={{ color: T.muted }}>→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : (
+        <>
+          {/* 4 том стат карт */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+              <div style={{ background: T.highlightSoft, color: T.highlight }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Phone size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-4xl tabular-nums">
+                {uniquePhones}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm mt-1">
+                Бүртгэсэн дугаар
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #9333ea` }}>
+              <div style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <ShoppingBag size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-4xl tabular-nums">
+                {totalOrders}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm mt-1">
+                Бүртгэсэн захиалга
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+              <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <CheckCircle2 size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-4xl tabular-nums">
+                {deliveredOrders}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm mt-1">
+                Амжилттай хүргэгдсэн
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                {successRate}% амжилт
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.err}` }}>
+              <div style={{ background: T.errSoft, color: T.err }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <X size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-4xl tabular-nums">
+                {cancelledOrders}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm mt-1">
+                Амжилтгүй
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                Цуцлагдсан / татгалзсан
+              </div>
+            </div>
+          </div>
+
+          {/* Гүйцэтгэлийн харьцаа */}
+          <div className="glass rounded-2xl p-4">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm mb-3 flex items-center gap-2">
+              📊 Гүйцэтгэлийн харьцаа
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span style={{ background: T.ok }} className="w-2 h-2 rounded-full" />
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs">Хүргэгдсэн</span>
+                    <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-xs tabular-nums">{deliveredOrders}</span>
+                  </div>
+                  <span style={{ color: T.ok, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">{successRate}%</span>
+                </div>
+                <div style={{ background: T.surfaceAlt, height: 6, borderRadius: 3 }}>
+                  <div style={{ width: `${successRate}%`, height: "100%", background: T.ok, borderRadius: 3, transition: "width 0.5s" }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span style={{ background: T.warn }} className="w-2 h-2 rounded-full" />
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs">Хүргэлтэнд</span>
+                    <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-xs tabular-nums">{pendingOrders}</span>
+                  </div>
+                  <span style={{ color: T.warn, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">{pendingRate}%</span>
+                </div>
+                <div style={{ background: T.surfaceAlt, height: 6, borderRadius: 3 }}>
+                  <div style={{ width: `${pendingRate}%`, height: "100%", background: T.warn, borderRadius: 3, transition: "width 0.5s" }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span style={{ background: T.err }} className="w-2 h-2 rounded-full" />
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs">Цуцлагдсан</span>
+                    <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-xs tabular-nums">{cancelledOrders}</span>
+                  </div>
+                  <span style={{ color: T.err, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">{cancelRate}%</span>
+                </div>
+                <div style={{ background: T.surfaceAlt, height: 6, borderRadius: 3 }}>
+                  <div style={{ width: `${cancelRate}%`, height: "100%", background: T.err, borderRadius: 3, transition: "width 0.5s" }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Доод стат */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="glass rounded-xl p-3 text-center">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Нийт залгалт</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-xl tabular-nums">
+                {filteredCalls.length}
+              </div>
+            </div>
+            <div className="glass rounded-xl p-3 text-center">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Нийт орлого</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
+                {totalRevenue.toLocaleString()}₮
+              </div>
+            </div>
+            <div className="glass rounded-xl p-3 text-center">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Conversion</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+                {conversion}%
+              </div>
+            </div>
+            <div className="glass rounded-xl p-3 text-center">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Хүлээгдэж</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+                {pendingOrders}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
