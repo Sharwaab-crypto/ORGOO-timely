@@ -5711,7 +5711,7 @@ function CallCenterView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
   // Дугаарыг хуулах + захиалга нээх
-  const handlePhoneClick = async (phone, customerName, callNotes, callProducts) => {
+  const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
       // Clipboard-руу хуулах
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -5735,10 +5735,11 @@ function CallCenterView({ profile }) {
         name: customerName,
         notes: callNotes,
         products: callProducts,
+        callId,
       });
     } catch (e) {
       console.error("Copy error:", e);
-      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts });
+      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts, callId });
     }
   };
 
@@ -5814,7 +5815,7 @@ function CallCenterView({ profile }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => handlePhoneClick(c.phone, c.customer_name, c.notes, c.interested_products)}
+                      <button onClick={() => handlePhoneClick(c.phone, c.customer_name, c.notes, c.interested_products, c.id)}
                         style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }}
                         className="text-sm press-btn hover:opacity-80 flex items-center gap-1">
                         📱 {c.phone}
@@ -5993,6 +5994,38 @@ function CallCenterView({ profile }) {
           initialProducts={orderForCall.products}
           onSave={async (data) => {
             try {
+              // ─── ACTION: callback (дараа холбогдох) ───────────
+              if (data.action === "callback") {
+                // Дуудлага хэвээр үлдээх + сэтгэгдэл шинэчлэх
+                if (orderForCall.callId) {
+                  await supabase.from("biz_calls").update({
+                    notes: data.notes,
+                  }).eq("id", orderForCall.callId);
+                }
+                setOrderForCall(null);
+                await loadAll();
+                alert(`⏳ Дараа холбогдоно гэж тэмдэглэлээ.\nСэтгэгдэл хадгалагдсан.`);
+                return;
+              }
+
+              // ─── ACTION: cancelled (цуцлах + дугаар устгах) ──────
+              if (data.action === "cancelled") {
+                // Сэтгэгдлийг update
+                if (orderForCall.callId) {
+                  await supabase.from("biz_calls").update({
+                    notes: `[ЦУЦАЛСАН] ${data.notes}`,
+                  }).eq("id", orderForCall.callId);
+                }
+                // Тус утсаар бүх дуудлагыг устгах
+                await supabase.from("biz_calls").delete().eq("phone", data.phone);
+
+                setOrderForCall(null);
+                await loadAll();
+                alert(`❌ Цуцлагдсан. Дугаар устгагдлаа.`);
+                return;
+              }
+
+              // ─── ACTION: ordered (захиалга үүсгэх) — default ─────
               // 1. Customer find or create
               let customerId = null;
               if (data.phone) {
@@ -7089,18 +7122,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="flex gap-2 mt-4">
-          <button onClick={onClose} disabled={busy}
-            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
-            Цуцлах
-          </button>
+        {/* Action buttons — 3 status */}
+        <div className="space-y-2 mt-4">
+          {/* Гол товч: Дуудаад авлаа (захиалга үүсгэх) */}
           <button
             disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
             onClick={async () => {
               setBusy(true);
               await onSave({
+                action: "ordered",
                 phone: phone.trim(),
                 phone2: phone2.trim() || null,
                 name: name.trim() || null,
@@ -7123,8 +7153,61 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               });
               setBusy(false);
             }}
-            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : `✓ Захиалга үүсгэх (${items.length})`}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+            <CheckCircle2 size={14} />
+            {busy ? "Хадгалаж..." : `✓ Дуудаад авлаа (${items.length})`}
+          </button>
+
+          {/* 2-р мөр: Дараа холбогдох + Цуцалсан */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              disabled={busy || !phone.trim()}
+              onClick={async () => {
+                setBusy(true);
+                await onSave({
+                  action: "callback",
+                  phone: phone.trim(),
+                  phone2: phone2.trim() || null,
+                  name: name.trim() || null,
+                  notes: notes.trim() || null,
+                });
+                setBusy(false);
+              }}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: T.warnSoft, color: T.warn, fontFamily: FS }}>
+              <Clock size={13} />
+              ⏳ Дараа холбогдох
+            </button>
+
+            <button
+              disabled={busy || !phone.trim()}
+              onClick={async () => {
+                if (!notes.trim()) {
+                  alert("⚠ Цуцлахын тулд сэтгэгдэл заавал бичих ёстой!\n\nШалтгаан тэмдэглэх хэсэгт оруулна уу.");
+                  return;
+                }
+                if (!confirm("Энэ дуудлагыг цуцлах уу?\n\n• Сэтгэгдэл хадгалагдана\n• Дугаарыг устгана")) return;
+                setBusy(true);
+                await onSave({
+                  action: "cancelled",
+                  phone: phone.trim(),
+                  phone2: phone2.trim() || null,
+                  notes: notes.trim(),
+                });
+                setBusy(false);
+              }}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+              <X size={13} />
+              ❌ Цуцалсан
+            </button>
+          </div>
+
+          {/* Болих */}
+          <button onClick={onClose} disabled={busy}
+            className="press-btn w-full py-2 rounded-xl text-xs font-medium"
+            style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+            Болих
           </button>
         </div>
       </div>
