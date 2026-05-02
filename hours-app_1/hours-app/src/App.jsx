@@ -4794,6 +4794,7 @@ function TransferRequestsView({ profile }) {
   const [activeReq, setActiveReq] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
+  const [editedQty, setEditedQty] = useState({}); // Засагдсан тоо: { itemId: quantity }
 
   const loadAll = async () => {
     setLoading(true);
@@ -4835,6 +4836,15 @@ function TransferRequestsView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // activeReq солигдоход edited тоог reset хийх
+  useEffect(() => {
+    if (activeReq && items[activeReq.id]) {
+      const initial = {};
+      items[activeReq.id].forEach((it) => { initial[it.id] = Number(it.quantity); });
+      setEditedQty(initial);
+    }
+  }, [activeReq?.id, items]);
+
   // Зөвшөөрөх
   const approveRequest = async (req) => {
     const reqItems = items[req.id] || [];
@@ -4851,10 +4861,18 @@ function TransferRequestsView({ profile }) {
 
       // Зөвхөн movement бичнэ — trigger автоматаар inv_stock шинэчилнэ
       for (const it of reqItems) {
+        const finalQty = Number(editedQty[it.id] ?? it.quantity);
+        if (finalQty <= 0) continue; // 0 болгосон барааг алгасах
+
+        // Тоо өөрчлөгдсөн бол items хүснэгтэд бас хадгалах
+        if (finalQty !== Number(it.quantity)) {
+          await supabase.from("inv_transfer_items").update({ quantity: finalQty }).eq("id", it.id);
+        }
+
         await supabase.from("inv_movements").insert({
           product_id: it.product_id,
           movement_type: "transfer",
-          quantity: Number(it.quantity),
+          quantity: finalQty,
           warehouse_id: fromWhId,
           to_warehouse_id: toWhId,
           notes: req.is_return ? "Буцаалт" : "Шилжүүлэг",
@@ -4980,6 +4998,14 @@ function TransferRequestsView({ profile }) {
           <div className="space-y-1.5">
             {reqItems.map((it) => {
               const prod = products.find((p) => p.id === it.product_id);
+              const fromStock = stock.find((s) =>
+                s.warehouse_id === activeReq.from_warehouse_id &&
+                s.product_id === it.product_id
+              );
+              const stockQty = Number(fromStock?.quantity || 0);
+              const currentQty = editedQty[it.id] ?? Number(it.quantity);
+              const overStock = currentQty > stockQty;
+              const isPending = activeReq.status === "pending";
               return (
                 <div key={it.id} className="flex items-center gap-2.5 p-2 rounded-lg"
                   style={{ background: T.surfaceAlt }}>
@@ -4991,18 +5017,45 @@ function TransferRequestsView({ profile }) {
                     <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
                       {it.product_name || prod?.name}
                     </div>
-                    {(it.product_sku || prod?.sku) && (
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        {it.product_sku || prod?.sku}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {(it.product_sku || prod?.sku) && (
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          {it.product_sku || prod?.sku}
+                        </span>
+                      )}
+                      <span style={{
+                        background: overStock ? T.errSoft : stockQty <= 5 ? T.warnSoft : "rgba(16,185,129,0.1)",
+                        color: overStock ? T.err : stockQty <= 5 ? T.warn : T.ok,
+                        fontFamily: FM, fontWeight: 600,
+                      }} className="text-[10px] px-2 py-0.5 rounded-full">
+                        Үлд: {stockQty}
+                      </span>
+                      {overStock && (
+                        <span style={{ color: T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
+                          ⚠ нөөцөөс илүү
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{
-                    background: T.highlight, color: "white",
-                    fontFamily: FD, fontWeight: 700,
-                  }} className="text-sm px-3 py-1 rounded-full tabular-nums">
-                    ×{Number(it.quantity)}
-                  </div>
+                  {isPending ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setEditedQty({ ...editedQty, [it.id]: Math.max(0, currentQty - 1) })}
+                        className="press-btn w-7 h-7 rounded-full flex items-center justify-center text-base font-bold"
+                        style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}>−</button>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: overStock ? T.err : T.ink, minWidth: 32 }}
+                        className="text-sm text-center tabular-nums">
+                        {currentQty}
+                      </span>
+                      <button onClick={() => setEditedQty({ ...editedQty, [it.id]: currentQty + 1 })}
+                        className="press-btn w-7 h-7 rounded-full flex items-center justify-center text-base font-bold"
+                        style={{ background: T.highlight, color: "white" }}>+</button>
+                    </div>
+                  ) : (
+                    <div style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                      className="text-sm px-3 py-1 rounded-full tabular-nums">
+                      ×{Number(it.quantity)}
+                    </div>
+                  )}
                 </div>
               );
             })}
