@@ -9787,7 +9787,9 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
   const firstImage = firstItem?.product_image || null;
 
   return (
-    <div className="glass rounded-xl p-3 relative">
+    <div className="glass rounded-xl p-3 relative"
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
       <div className="flex items-center gap-3">
         {/* Index badge */}
         <div style={{
@@ -9872,24 +9874,24 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           </div>
         </div>
 
-        {/* Pin button (Map) */}
-        {onMap && (
-          <button onClick={onMap}
-            className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
-            style={{
-              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-              color: "white",
-              boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
-            }}
-            title="Газрын зураг">
-            <MapPin size={14} />
+        {/* Pin button (Дэлгэрэнгүй харах) */}
+        <button onClick={onClick}
+          className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
+          style={{
+            background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+            color: "white",
+            boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
+          }}
+          title="Дэлгэрэнгүй">
+          <MapPin size={14} />
+          {order.delivery_lat && order.delivery_lng && (
             <span style={{
               position: "absolute", top: 2, right: 2,
               width: 6, height: 6, borderRadius: "50%",
               background: T.ok, border: "1.5px solid white",
             }} />
-          </button>
-        )}
+          )}
+        </button>
 
         {/* 3-dot menu */}
         <div className="flex-shrink-0">
@@ -10707,7 +10709,9 @@ function OrdersView({ profile }) {
                           try {
                             await supabase.from("biz_orders").update({
                               driver_id: d.id,
-                              status: "pending",  // Автомат "Хүлээгдэж" статус
+                              status: "pending",
+                              assigned_at: new Date().toISOString(),
+                              assigned_by: profile.id,
                             }).eq("id", assignDriverOrder.id);
                             setAssignDriverOrder(null);
                             await loadAll();
@@ -10754,34 +10758,29 @@ function OrdersView({ profile }) {
 
 function OrderDetail({ order, items, onClose, onUpdateStatus }) {
   const status = order.status;
-  const [drivers, setDrivers] = useState([]);
-  const [assignedDriverId, setAssignedDriverId] = useState(order.driver_id || "");
-  const [showDriverPicker, setShowDriverPicker] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [activityProfiles, setActivityProfiles] = useState({});
 
+  // Бүх холбоотой ажилтнуудын мэдээлэл татах
   useEffect(() => {
+    const ids = [order.taken_by, order.assigned_by, order.delivered_by, order.cancelled_by, order.driver_id]
+      .filter(Boolean);
+    if (ids.length === 0) return;
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("profiles")
-        .select("id, name, job_title")
-        .eq("role", "driver")
-        .order("name");
-      if (error) console.error("Driver fetch error:", error);
-      setDrivers(data || []);
+        .select("id, name, role, job_title")
+        .in("id", ids);
+      const map = {};
+      (data || []).forEach((p) => { map[p.id] = p; });
+      setActivityProfiles(map);
     })();
-  }, []);
+  }, [order.id]);
 
-  const assignDriver = async (driverId) => {
-    setBusy(true);
-    try {
-      await supabase.from("biz_orders").update({ driver_id: driverId || null }).eq("id", order.id);
-      setAssignedDriverId(driverId);
-      setShowDriverPicker(false);
-    } catch (e) { alert("Алдаа: " + e.message); }
-    finally { setBusy(false); }
+  const formatDateTime = (dt) => {
+    if (!dt) return "";
+    const d = new Date(dt);
+    return `${d.toLocaleDateString("mn-MN")} ${d.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" })}`;
   };
-
-  const assignedDriver = drivers.find((d) => d.id === assignedDriverId);
 
   const statusActions = {
     new: [
@@ -10850,89 +10849,127 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
         </div>
       </div>
 
-      {/* Delivery сонгох */}
+      {/* Үйл ажиллагааны түүх */}
       <div className="glass rounded-2xl p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            🚚 Delivery
-          </div>
-          {assignedDriver && (
-            <button onClick={() => setShowDriverPicker(!showDriverPicker)}
-              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
-              className="text-xs press-btn">
-              Солих
-            </button>
-          )}
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-3 flex items-center gap-1">
+          📋 Үйл ажиллагааны түүх
         </div>
-
-        {assignedDriver ? (
-          <div className="flex items-center gap-3">
-            <div style={{ background: "#0ea5e9", color: "white" }}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold">
-              {assignedDriver.name?.charAt(0) || "🚚"}
+        <div className="space-y-2.5">
+          {/* 1. Захиалга үүссэн */}
+          <div className="flex items-start gap-3">
+            <div style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea" }}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+              🆕
             </div>
             <div className="flex-1 min-w-0">
-              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
-                {assignedDriver.name}
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                Захиалга үүссэн
               </div>
-              {assignedDriver.job_title && (
-                <div style={{ color: T.muted, fontFamily: FM }}
-                  className="text-[11px]">
-                  {assignedDriver.job_title}
-                </div>
-              )}
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                {order.taken_by && activityProfiles[order.taken_by] ? (
+                  <>
+                    <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full">
+                      🎧 {activityProfiles[order.taken_by].name}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    {order.source === "phone" ? "📞 Утсаар" : "Систем"}
+                  </span>
+                )}
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                  {formatDateTime(order.created_at)}
+                </span>
+              </div>
             </div>
-            <button onClick={() => assignDriver("")} disabled={busy}
-              className="press-btn px-2 py-1 rounded-lg text-[10px]"
-              style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
-              Авах
-            </button>
           </div>
-        ) : (
-          <button onClick={() => setShowDriverPicker(!showDriverPicker)}
-            className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-1"
-            style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600, border: `1px dashed #0ea5e9` }}>
-            🚚 Delivery сонгох
-          </button>
-        )}
 
-        {/* Driver picker dropdown */}
-        {showDriverPicker && (
-          <div className="mt-2 space-y-1" style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 8 }}>
-            {drivers.length === 0 ? (
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] text-center py-2">
-                Delivery хараахан бүртгэгдээгүй байна
+          {/* 2. Delivery хуваарилсан */}
+          {order.driver_id && (
+            <div className="flex items-start gap-3">
+              <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                🚚
               </div>
-            ) : (
-              drivers.map((d) => (
-                <button key={d.id} onClick={() => assignDriver(d.id)} disabled={busy}
-                  className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
-                  style={{
-                    background: assignedDriverId === d.id ? "rgba(14,165,233,0.15)" : T.surfaceAlt,
-                    border: assignedDriverId === d.id ? `1px solid #0ea5e9` : `1px solid transparent`,
-                  }}>
-                  <div style={{ background: "#0ea5e9", color: "white" }}
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
-                    {d.name?.charAt(0) || "🚚"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                      {d.name}
-                    </div>
-                    {d.job_title && (
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        {d.job_title}
-                      </div>
-                    )}
-                  </div>
-                  {assignedDriverId === d.id && (
-                    <CheckCircle2 size={14} style={{ color: "#0ea5e9" }} />
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                  Delivery-д хуваарилагдсан
+                </div>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {activityProfiles[order.driver_id] && (
+                    <span style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full">
+                      🚚 {activityProfiles[order.driver_id].name}
+                    </span>
                   )}
-                </button>
-              ))
-            )}
-          </div>
-        )}
+                  {order.assigned_by && activityProfiles[order.assigned_by] && (
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      ← {activityProfiles[order.assigned_by].name}
+                    </span>
+                  )}
+                  {order.assigned_at && (
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      {formatDateTime(order.assigned_at)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Хүргэгдсэн */}
+          {order.status === "delivered" && order.delivered_at && (
+            <div className="flex items-start gap-3">
+              <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                ✓
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ok }} className="text-xs">
+                  Амжилттай хүргэгдсэн
+                </div>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {order.delivered_by && activityProfiles[order.delivered_by] && (
+                    <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full">
+                      🚚 {activityProfiles[order.delivered_by].name}
+                    </span>
+                  )}
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    {formatDateTime(order.delivered_at)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. Цуцалсан */}
+          {order.status === "cancelled" && order.cancelled_at && (
+            <div className="flex items-start gap-3">
+              <div style={{ background: T.errSoft, color: T.err }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                ✕
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 600, color: T.err }} className="text-xs">
+                  Цуцлагдсан
+                </div>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {order.cancelled_by && activityProfiles[order.cancelled_by] && (
+                    <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full">
+                      {activityProfiles[order.cancelled_by].name}
+                    </span>
+                  )}
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    {formatDateTime(order.cancelled_at)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Items */}
@@ -15261,7 +15298,10 @@ function DriverDashboard({ profile }) {
 
   const updateStatus = async (orderId, newStatus) => {
     const updates = { status: newStatus };
-    if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
+    if (newStatus === "delivered") {
+      updates.delivered_at = new Date().toISOString();
+      updates.delivered_by = profile.id;
+    }
     try {
       await supabase.from("biz_orders").update(updates).eq("id", orderId);
       await loadAll();
@@ -15518,6 +15558,7 @@ function DriverDashboard({ profile }) {
                     await supabase.from("biz_orders").update({
                       status: "cancelled",
                       cancelled_at: new Date().toISOString(),
+                      cancelled_by: profile.id,
                       notes: existingNotes + `[Хүргэгч цуцалсан]: ${cancelNote.trim()}`,
                     }).eq("id", cancelOrder.id);
                     setCancelOrder(null);
