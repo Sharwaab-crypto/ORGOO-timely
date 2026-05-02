@@ -5742,6 +5742,15 @@ function CallCenterView({ profile }) {
     }
   };
 
+  // Дуудлага устгах
+  const handleDeleteCall = async (callId) => {
+    if (!confirm("Энэ дуудлагын бүртгэлийг устгах уу?")) return;
+    try {
+      await supabase.from("biz_calls").delete().eq("id", callId);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
   return (
     <div className="space-y-3">
       {/* Stats */}
@@ -5775,7 +5784,7 @@ function CallCenterView({ profile }) {
           boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
         }}
         className="press-btn w-full py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
-        📞 Шинэ дуудлага бүртгэх
+        📞 Дугаар бүртгэх
       </button>
 
       {/* Recent calls */}
@@ -5913,6 +5922,12 @@ function CallCenterView({ profile }) {
                       🕐 {new Date(c.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
+                  <button onClick={() => handleDeleteCall(c.id)}
+                    style={{ color: T.err }}
+                    className="press-btn p-1.5 rounded-lg hover:bg-red-50 flex-shrink-0"
+                    title="Устгах">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             ))}
