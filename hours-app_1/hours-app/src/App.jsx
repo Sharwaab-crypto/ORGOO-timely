@@ -10993,7 +10993,7 @@ function OrdersView({ profile }) {
   const [products, setProducts] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("new");
   const [driverFilter, setDriverFilter] = useState("all"); // all | unassigned | <driverId>
   const [search, setSearch] = useState("");
   const [activeOrder, setActiveOrder] = useState(null);
