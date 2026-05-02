@@ -5887,20 +5887,30 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
-          // Tab counts
-          const grouped = {};
+          // Cycle-аар тоолох
+          const phoneGrouped = {};
           recentCalls.forEach((c) => {
-            if (!grouped[c.phone]) grouped[c.phone] = [];
-            grouped[c.phone].push(c);
+            if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
+            phoneGrouped[c.phone].push(c);
           });
-          const counts = { calling: 0, ordered: 0, cancelled: 0 };
-          Object.entries(grouped).forEach(([phone, calls]) => {
-            const sortedByDate = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const latestStatus = sortedByDate[0]?.call_status;
 
-            if (latestStatus === "ordered") counts.ordered++;
-            else if (latestStatus === "cancelled") counts.cancelled++;
-            else counts.calling++;
+          const counts = { calling: 0, ordered: 0, cancelled: 0 };
+          Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+            const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            let currentCycle = [];
+
+            sorted.forEach((call) => {
+              currentCycle.push(call);
+              if (call.call_status === "ordered") {
+                counts.ordered++;
+                currentCycle = [];
+              } else if (call.call_status === "cancelled") {
+                counts.cancelled++;
+                currentCycle = [];
+              }
+            });
+            // Open cycle
+            if (currentCycle.length > 0) counts.calling++;
           });
 
           return (
@@ -5970,39 +5980,63 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-2">
             {(() => {
-              // Дуудлагуудыг утсаар нь groupping хийх
-              const grouped = {};
+              // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
+              // Cycle = "ordered" эсвэл "cancelled" хүртэлх дуудлагуудын багц
+              const phoneGrouped = {};
               recentCalls.forEach((c) => {
-                if (!grouped[c.phone]) grouped[c.phone] = [];
-                grouped[c.phone].push(c);
+                if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
+                phoneGrouped[c.phone].push(c);
               });
 
-              // Утас бүрийн төлөв — ХАМГИЙН СҮҮЛИЙН дуудлагын call_status-аар
-              const phoneStatus = {};
-              Object.entries(grouped).forEach(([phone, calls]) => {
-                // calls нь created_at desc-ээр sort хийгдсэн (анхны load-д)
-                // Тэгэхээр calls[0] = хамгийн сүүлийн дуудлага
-                const sortedByDate = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                const latestStatus = sortedByDate[0]?.call_status;
+              // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
+              const cycleList = []; // [{ phone, calls, status, latestDate, cycleIndex }]
+              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+                // Ascending sort (хамгийн хуучнаас эхэлж)
+                const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                let currentCycle = [];
+                let cycleIdx = 0;
 
-                if (latestStatus === "ordered") phoneStatus[phone] = "ordered";
-                else if (latestStatus === "cancelled") phoneStatus[phone] = "cancelled";
-                else phoneStatus[phone] = "calling"; // pending, no_answer, callback, unreachable, null = calling
+                sorted.forEach((call) => {
+                  currentCycle.push(call);
+                  // Хэрэв ordered эсвэл cancelled бол цикл хаах
+                  if (call.call_status === "ordered" || call.call_status === "cancelled") {
+                    cycleList.push({
+                      phone,
+                      calls: currentCycle,
+                      status: call.call_status,
+                      latestDate: call.created_at,
+                      cycleIndex: cycleIdx++,
+                    });
+                    currentCycle = [];
+                  }
+                });
+
+                // Үлдсэн дуудлагууд (closed status-аар хаагдаагүй) — open cycle
+                if (currentCycle.length > 0) {
+                  cycleList.push({
+                    phone,
+                    calls: currentCycle,
+                    status: "calling", // open
+                    latestDate: currentCycle[currentCycle.length - 1].created_at,
+                    cycleIndex: cycleIdx,
+                  });
+                }
               });
 
               // Tab-ийн дагуу filter
-              const filteredPhones = Object.keys(grouped).filter((phone) => {
-                if (activeTab === "calling") return phoneStatus[phone] === "calling";
-                if (activeTab === "ordered") return phoneStatus[phone] === "ordered";
-                if (activeTab === "cancelled") return phoneStatus[phone] === "cancelled";
+              const filteredCycles = cycleList.filter((cy) => {
+                if (activeTab === "calling") return cy.status === "calling";
+                if (activeTab === "ordered") return cy.status === "ordered";
+                if (activeTab === "cancelled") return cy.status === "cancelled";
                 return true;
               });
 
-              const phoneOrder = filteredPhones.sort((a, b) =>
-                new Date(grouped[b][0].created_at) - new Date(grouped[a][0].created_at)
+              // Хамгийн сүүлчээр болсон цикл нь дээр гарна
+              const sortedCycles = filteredCycles.sort((a, b) =>
+                new Date(b.latestDate) - new Date(a.latestDate)
               );
 
-              if (phoneOrder.length === 0) {
+              if (sortedCycles.length === 0) {
                 return (
                   <div className="glass rounded-2xl p-8 text-center">
                     <div className="text-4xl mb-2">
@@ -6017,8 +6051,9 @@ function CallCenterView({ profile }) {
                 );
               }
 
-              return phoneOrder.slice(0, 30).map((phone) => {
-                const calls = grouped[phone];
+              return sortedCycles.slice(0, 30).map((cycle) => {
+                const phone = cycle.phone;
+                const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
                 const latestCall = calls[0];
                 const customer = customers.find((cu) => cu.phone === phone);
                 const customerIndex = customers.findIndex((cu) => cu.phone === phone) + 1;
