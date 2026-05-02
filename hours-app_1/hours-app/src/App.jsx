@@ -6144,9 +6144,15 @@ function CallCenterView({ profile }) {
                           </span>
                         );
                       })()}
-                      <button onClick={() => {
-                        if (!confirm(`${phone} - бүх дуудлагыг устгах уу? (${calls.length})`)) return;
-                        Promise.all(calls.map((c) => supabase.from("biz_calls").delete().eq("id", c.id))).then(() => loadAll());
+                      <button onClick={async () => {
+                        if (!confirm(`${phone} - устгагдсан хэсэгт шилжүүлэх үү?\n\n• Бүх дуудлагууд хэвээр үлдэнэ\n• "Устгагдсан" tab-аас харах боломжтой`)) return;
+                        try {
+                          // Бүх дуудлагуудын call_status-г "cancelled" болгох
+                          await supabase.from("biz_calls")
+                            .update({ call_status: "cancelled" })
+                            .eq("phone", phone);
+                          await loadAll();
+                        } catch (e) { alert("Алдаа: " + e.message); }
                       }}
                         style={{ background: T.err, color: "white" }}
                         className="press-btn px-3 py-1 rounded-md text-xs flex items-center gap-1">
@@ -6323,13 +6329,14 @@ function CallCenterView({ profile }) {
                   customerId = newCust?.id || null;
                 }
 
-                // 2. Call log
+                // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
                 await supabase.from("biz_calls").insert({
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
                   fb_page_id: fb_page_id || null,
                   interested_products,
+                  call_status: "pending",
                   created_by: profile.id,
                 });
               }
