@@ -1265,6 +1265,7 @@ function AdminDashboard({ profile }) {
 
             <SidebarSection label="Бизнес">
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
+              <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
@@ -1341,6 +1342,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
+                {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -1366,6 +1368,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
+                {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -1559,6 +1562,10 @@ function AdminDashboard({ profile }) {
 
         {view === "callcenter" && (
           <CallCenterView profile={profile} />
+        )}
+
+        {view === "operator-kpi" && (
+          <OperatorKPIReportView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -6916,6 +6923,441 @@ function CallCenterView({ profile }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR KPI REPORT — Admin/Manager-д харагдах ажилтны KPI тайлан
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorKPIReportView({ profile }) {
+  const [calls, setCalls] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [operators, setOperators] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Period filter
+  const [period, setPeriod] = useState(() => {
+    try { return localStorage.getItem("orgoo-kpi-report-period") || "today"; } catch { return "today"; }
+  });
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-kpi-report-period", period); } catch {}
+  }, [period]);
+
+  const periodRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+    if (period === "today") return { start: today, end: tomorrow, label: "Өнөөдөр" };
+    if (period === "yesterday") {
+      const y = new Date(today); y.setDate(today.getDate() - 1);
+      return { start: y, end: today, label: "Өчигдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(today); start.setDate(today.getDate() - 6);
+      return { start, end: tomorrow, label: "7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start, end: tomorrow, label: "Энэ сар" };
+    }
+    if (period === "custom") {
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      return {
+        start: new Date(sy, sm - 1, sd, 0, 0, 0),
+        end: new Date(ey, em - 1, ed + 1, 0, 0, 0),
+        label: `${customStart} – ${customEnd}`,
+      };
+    }
+    return { start: new Date(0), end: new Date(8640000000000000), label: "Бүгд" };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [{ data: callData }, { data: ordData }, { data: opData }] = await Promise.all([
+          supabase.from("biz_calls").select("*"),
+          supabase.from("biz_orders").select("*"),
+          supabase.from("profiles")
+            .select("id, name, role, job_title")
+            .in("role", ["admin", "manager", "operator"])
+            .order("name"),
+        ]);
+        setCalls(callData || []);
+        setOrders(ordData || []);
+        setOperators(opData || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  // Period-ээр шүүх
+  const filteredCalls = useMemo(() => calls.filter((c) => {
+    const d = new Date(c.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [calls, periodRange]);
+
+  const filteredOrders = useMemo(() => orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [orders, periodRange]);
+
+  // Тус ажилтнаар групплэх
+  const reportData = useMemo(() => {
+    const opMap = {};
+    operators.forEach((op) => {
+      opMap[op.id] = {
+        id: op.id,
+        name: op.name || "—",
+        role: op.role,
+        title: op.job_title || "",
+        uniquePhones: new Set(),
+        totalCalls: 0,
+        totalOrders: 0,
+        delivered: 0,
+        cancelled: 0,
+        pending: 0,
+        revenue: 0,
+      };
+    });
+
+    filteredCalls.forEach((c) => {
+      if (!c.created_by || !opMap[c.created_by]) return;
+      opMap[c.created_by].uniquePhones.add(c.phone);
+      opMap[c.created_by].totalCalls++;
+    });
+
+    filteredOrders.forEach((o) => {
+      if (!o.taken_by || !opMap[o.taken_by]) return;
+      opMap[o.taken_by].totalOrders++;
+      if (o.status === "delivered") {
+        opMap[o.taken_by].delivered++;
+        opMap[o.taken_by].revenue += Number(o.total_amount || 0);
+      } else if (o.status === "cancelled") {
+        opMap[o.taken_by].cancelled++;
+      } else {
+        opMap[o.taken_by].pending++;
+      }
+    });
+
+    return Object.values(opMap)
+      .filter((op) => op.totalCalls > 0 || op.totalOrders > 0)
+      .sort((a, b) => b.delivered - a.delivered);
+  }, [filteredCalls, filteredOrders, operators]);
+
+  // Нийт мөр
+  const totals = useMemo(() => ({
+    uniquePhones: reportData.reduce((s, r) => s + r.uniquePhones.size, 0),
+    totalCalls: reportData.reduce((s, r) => s + r.totalCalls, 0),
+    totalOrders: reportData.reduce((s, r) => s + r.totalOrders, 0),
+    delivered: reportData.reduce((s, r) => s + r.delivered, 0),
+    pending: reportData.reduce((s, r) => s + r.pending, 0),
+    cancelled: reportData.reduce((s, r) => s + r.cancelled, 0),
+    revenue: reportData.reduce((s, r) => s + r.revenue, 0),
+  }), [reportData]);
+
+  // Excel татах
+  const exportExcel = () => {
+    try {
+      const rows = reportData.map((op, idx) => {
+        const successRate = op.totalOrders > 0
+          ? Math.round((op.delivered / op.totalOrders) * 100)
+          : 0;
+        const conversion = op.uniquePhones.size > 0
+          ? Math.round((op.totalOrders / op.uniquePhones.size) * 100)
+          : 0;
+
+        return {
+          "№": idx + 1,
+          "Ажилтны нэр": op.name,
+          "Албан тушаал": op.title,
+          "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : "Оператор",
+          "Бүртгэсэн дугаар": op.uniquePhones.size,
+          "Нийт залгалт": op.totalCalls,
+          "Бүртгэсэн захиалга": op.totalOrders,
+          "Амжилттай хүргэгдсэн": op.delivered,
+          "Хүргэлтэнд": op.pending,
+          "Цуцлагдсан": op.cancelled,
+          "Амжилтын %": successRate + "%",
+          "Conversion %": conversion + "%",
+          "Нийт орлого (₮)": op.revenue.toLocaleString(),
+        };
+      });
+
+      if (rows.length === 0) {
+        alert("Энэ хугацаанд идэвхтэй ажилтан байхгүй.");
+        return;
+      }
+
+      // НИЙТ мөр
+      rows.push({
+        "№": "",
+        "Ажилтны нэр": "НИЙТ",
+        "Албан тушаал": "",
+        "Эрх": "",
+        "Бүртгэсэн дугаар": totals.uniquePhones,
+        "Нийт залгалт": totals.totalCalls,
+        "Бүртгэсэн захиалга": totals.totalOrders,
+        "Амжилттай хүргэгдсэн": totals.delivered,
+        "Хүргэлтэнд": totals.pending,
+        "Цуцлагдсан": totals.cancelled,
+        "Амжилтын %": "",
+        "Conversion %": "",
+        "Нийт орлого (₮)": totals.revenue.toLocaleString(),
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 18 }, { wch: 15 }, { wch: 10 },
+        { wch: 16 }, { wch: 13 }, { wch: 18 }, { wch: 20 },
+        { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 13 },
+        { wch: 16 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Ажилтны KPI");
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Ажилтны_KPI_${periodRange.label}_${dateStr}.xlsx`);
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Period selector + Excel button */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "yesterday", label: "Өчигдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "Энэ сар" },
+            { id: "all", label: "Бүгд" },
+            { id: "custom", label: "📅 Гараар" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex items-center gap-1">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+              <span style={{ color: T.muted }}>→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+            </div>
+          )}
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
+            {periodRange.label}
+          </span>
+          <button onClick={exportExcel}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5"
+            style={{
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              color: "white",
+              fontFamily: FS, fontWeight: 600,
+              boxShadow: "0 4px 12px rgba(16,185,129,0.3)",
+            }}>
+            <FileSpreadsheet size={12} />
+            Excel татах
+          </button>
+        </div>
+      </div>
+
+      {/* Нийт стат самбар */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            👥 Идэвхтэй ажилтан
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl tabular-nums">
+            {reportData.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            📞 Нийт дугаар
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
+            {totals.uniquePhones}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            ✅ Амжилттай захиалга
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
+            {totals.delivered}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            💰 Нийт орлого
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
+            {totals.revenue.toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
+      {/* Ажилтны жагсаалт */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : reportData.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📊</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Энэ хугацаанд идэвхтэй ажилтан байхгүй
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reportData.map((op, idx) => {
+            const successRate = op.totalOrders > 0
+              ? Math.round((op.delivered / op.totalOrders) * 100)
+              : 0;
+            const conversion = op.uniquePhones.size > 0
+              ? Math.round((op.totalOrders / op.uniquePhones.size) * 100)
+              : 0;
+
+            const roleColor = op.role === "admin" ? "#9333ea"
+              : op.role === "manager" ? "#3b82f6"
+              : "#ec4899";
+            const roleLabel = op.role === "admin" ? "Админ"
+              : op.role === "manager" ? "Ахлагч"
+              : "Оператор";
+
+            return (
+              <div key={op.id} className="glass rounded-2xl p-3">
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div style={{
+                    background: idx === 0 ? "linear-gradient(135deg, #f59e0b, #f97316)" : roleColor,
+                    color: "white", fontFamily: FD, fontWeight: 700,
+                  }} className="w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+                    {idx === 0 ? "🏆" : idx + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                        {op.name}
+                      </span>
+                      <span style={{
+                        background: roleColor + "20", color: roleColor,
+                        fontFamily: FS, fontWeight: 600,
+                      }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                        {roleLabel}
+                      </span>
+                      {op.title && (
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          · {op.title}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                      {op.revenue.toLocaleString()}₮
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                      Амжилт {successRate}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      Дугаар
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
+                      {op.uniquePhones.size}
+                    </div>
+                  </div>
+                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      Залгалт
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-lg tabular-nums">
+                      {op.totalCalls}
+                    </div>
+                  </div>
+                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      Захиалга
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-lg tabular-nums">
+                      {op.totalOrders}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      ✓ Хүргэсэн
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
+                      {op.delivered}
+                    </div>
+                  </div>
+                  <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      ⏳ Хүлээгдэж
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-lg tabular-nums">
+                      {op.pending}
+                    </div>
+                  </div>
+                  <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
+                      ✕ Цуцалсан
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-lg tabular-nums">
+                      {op.cancelled}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conversion progress */}
+                <div className="mt-2 flex items-center gap-2">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    Conversion:
+                  </span>
+                  <div style={{ background: T.surfaceAlt, height: 4, borderRadius: 2 }} className="flex-1 overflow-hidden">
+                    <div style={{
+                      width: `${Math.min(conversion, 100)}%`,
+                      height: "100%",
+                      background: T.highlight,
+                      transition: "width 0.5s",
+                    }} />
+                  </div>
+                  <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">
+                    {conversion}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
