@@ -6310,42 +6310,88 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                       {filteredProducts.slice(0, 30).map((p) => {
                         const selected = items.find((ip) => ip.productId === p.id);
                         return (
-                          <button key={p.id} onClick={() => setActiveProduct(p)}
-                            className="press-btn rounded-lg overflow-hidden text-left relative"
+                          <div key={p.id}
+                            className="rounded-lg overflow-hidden relative"
                             style={{
                               background: T.surface,
-                              border: `2px solid ${selected ? T.highlight : T.border}`,
+                              border: `1px solid ${T.border}`,
                             }}>
-                            {selected && (
-                              <div style={{
-                                position: "absolute", top: 4, right: 4, zIndex: 2,
-                                background: T.highlight, color: "white",
-                                width: 20, height: 20, borderRadius: "50%",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: 10, fontWeight: 700,
-                              }}>{selected.qty}</div>
-                            )}
-                            <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt }}>
-                              {p.image_url ? (
-                                <img src={p.image_url} alt={p.name}
-                                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                              ) : (
-                                <div style={{
-                                  width: "100%", height: "100%",
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  fontSize: 28,
-                                }}>📦</div>
+                            {/* Top: SKU + Тайлбар pill */}
+                            <div className="flex items-center gap-1 p-1.5"
+                              style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                              {p.sku && (
+                                <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded">
+                                  {p.sku}
+                                </span>
                               )}
+                              <button onClick={() => setActiveProduct(p)}
+                                style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
+                                className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
+                                Тайлбар
+                              </button>
                             </div>
-                            <div className="p-1.5">
+
+                            {/* Image (clickable to add) */}
+                            <button onClick={() => toggleProduct(p)}
+                              className="press-btn w-full block">
+                              <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
+                                {p.image_url ? (
+                                  <img src={p.image_url} alt={p.name}
+                                    style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                                ) : (
+                                  <div style={{
+                                    width: "100%", height: "100%",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 32,
+                                  }}>📦</div>
+                                )}
+                                {selected && (
+                                  <div style={{
+                                    position: "absolute", inset: 0,
+                                    background: "rgba(236,72,153,0.1)",
+                                    border: `2px solid ${T.highlight}`,
+                                  }} />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Name */}
+                            <div className="px-1.5 pt-1 pb-0.5">
                               <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                                className="text-[10px] truncate">{p.name}</div>
-                              <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}
-                                className="text-[10px] tabular-nums">
-                                {Number(p.sale_price || 0).toLocaleString()}₮
+                                className="text-[10px] line-clamp-2 leading-tight">
+                                {p.name}
                               </div>
                             </div>
-                          </button>
+
+                            {/* Price + Qty */}
+                            <div className="flex items-center justify-between px-1.5 pb-1.5">
+                              <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                                className="text-[11px] tabular-nums">
+                                {Number(p.sale_price || 0).toLocaleString()}₮
+                              </span>
+                              {selected ? (
+                                <div className="flex items-center gap-0.5">
+                                  <button onClick={() => updateItemQty(p.id, selected.qty - 1)}
+                                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}
+                                    className="w-5 h-5 rounded text-[10px] press-btn">−</button>
+                                  <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]">
+                                    {selected.qty}
+                                  </span>
+                                  <button onClick={() => updateItemQty(p.id, selected.qty + 1)}
+                                    style={{ background: T.highlight, color: "white" }}
+                                    className="w-5 h-5 rounded text-[10px] press-btn">+</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => toggleProduct(p)}
+                                  style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}` }}
+                                  className="press-btn w-5 h-5 rounded-full flex items-center justify-center text-[11px]">
+                                  +
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -6496,35 +6542,21 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                 const selected = items.find((ip) => ip.productId === activeProduct.id);
                 if (!selected) {
                   return (
-                    <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
-                      className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
-                      <Plus size={14} /> Сонгох
-                    </button>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-center text-xs italic">
+                      💡 Зураг дээр дарж сонгоно уу
+                    </div>
                   );
                 }
                 return (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 rounded-lg"
-                      style={{ background: T.highlightSoft }}>
-                      <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                        Тоо ширхэг
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => updateItemQty(selected.productId, selected.qty - 1)}
-                          style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
-                          className="w-8 h-8 rounded text-base press-btn">−</button>
-                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}
-                          className="text-2xl tabular-nums w-10 text-center">{selected.qty}</span>
-                        <button onClick={() => updateItemQty(selected.productId, selected.qty + 1)}
-                          style={{ background: T.highlight, color: "white" }}
-                          className="w-8 h-8 rounded text-base press-btn">+</button>
-                      </div>
-                    </div>
-                    <button onClick={() => { toggleProduct({ id: activeProduct.id }); setActiveProduct(null); }}
-                      className="press-btn w-full py-2 rounded-xl text-xs font-semibold"
-                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                      ✕ Хасах
-                    </button>
+                  <div className="flex items-center justify-between p-3 rounded-lg"
+                    style={{ background: T.highlightSoft }}>
+                    <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                      ✓ Сонгогдсон
+                    </span>
+                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}
+                      className="text-xl tabular-nums">
+                      {selected.qty} ширхэг
+                    </span>
                   </div>
                 );
               })()}
