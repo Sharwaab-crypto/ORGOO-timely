@@ -6077,20 +6077,23 @@ function SimpleCallModal({ profile, onSave, onClose }) {
   );
 }
 
-// ─── Захиалга авах modal — Бүрэн хувилбар ──────────────────────────
+// ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
 function CallReceiveModal({ products, profile, initialPhone, initialName, onSave, onClose }) {
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState("");
   const [name, setName] = useState(initialName || "");
+  const [district, setDistrict] = useState("");
+  const [khoroo, setKhoroo] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([{ id: 1, productId: "", quantity: "", unitPrice: "" }]);
+  const [items, setItems] = useState([]); // { productId, quantity }
   const [deliveryFee, setDeliveryFee] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
+  const [callType, setCallType] = useState("called"); // called | walk_in
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
-  const [productSearchOpen, setProductSearchOpen] = useState(null); // row id
+  const [productSearch, setProductSearch] = useState("");
 
   // Customer auto-search
   useEffect(() => {
@@ -6120,32 +6123,54 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
     return () => clearTimeout(timer);
   }, [phone]);
 
-  const addRow = () => setItems([...items, { id: Date.now(), productId: "", quantity: "", unitPrice: "" }]);
-  const removeRow = (id) => items.length > 1 && setItems(items.filter((it) => it.id !== id));
-  const updateRow = (id, field, value) => setItems(items.map((it) => it.id === id ? { ...it, [field]: value } : it));
+  // Filter products
+  const filtered = useMemo(() => {
+    if (!productSearch.trim()) return products;
+    const q = productSearch.toLowerCase();
+    return products.filter((p) =>
+      p.name?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q)
+    );
+  }, [products, productSearch]);
 
-  const selectProduct = (rowId, productId) => {
-    const p = products.find((p) => p.id === productId);
-    setItems(items.map((it) => it.id === rowId ? {
-      ...it, productId, unitPrice: p?.sale_price ? String(p.sale_price) : it.unitPrice,
-    } : it));
-    setProductSearchOpen(null);
+  const addItem = (product) => {
+    const exists = items.find((it) => it.productId === product.id);
+    if (exists) {
+      setItems(items.map((it) => it.productId === product.id ? { ...it, quantity: it.quantity + 1 } : it));
+    } else {
+      setItems([...items, {
+        productId: product.id,
+        product: product,
+        quantity: 1,
+        unitPrice: Number(product.sale_price || 0),
+      }]);
+    }
+  };
+
+  const updateQty = (productId, qty) => {
+    if (qty <= 0) {
+      removeItem(productId);
+      return;
+    }
+    setItems(items.map((it) => it.productId === productId ? { ...it, quantity: qty } : it));
+  };
+
+  const removeItem = (productId) => {
+    setItems(items.filter((it) => it.productId !== productId));
   };
 
   // Тооцоо
-  const subtotal = items.reduce((sum, it) => sum + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), 0);
+  const subtotal = items.reduce((sum, it) => sum + (it.quantity * it.unitPrice), 0);
   const fee = Number(deliveryFee) || 0;
   const total = subtotal + fee;
   const paid = Number(paidAmount) || 0;
   const balance = total - paid;
-  const validItems = items.filter((it) => it.productId && Number(it.quantity) > 0);
 
   const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
-  const inputClass = "px-2 py-1.5 rounded text-xs";
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
-      <div className="modal-content rounded-2xl w-full max-w-3xl p-5 max-h-[95vh] overflow-y-auto">
+      <div className="modal-content rounded-2xl w-full max-w-6xl p-4 sm:p-5 max-h-[95vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
             🛍 Захиалга авах
@@ -6153,242 +6178,317 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
 
-        {/* Customer info — 2 утас */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📱 Утас 1 *
-            </label>
-            <div className="relative">
-              <input value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="99887766"
-                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-              {searching && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <Loader2 className="spin" size={14} style={{ color: T.muted }} />
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
+          {/* ЗҮҮН: Form */}
+          <div className="glass rounded-xl p-4 space-y-3">
+            {/* District + Khoroo */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  Дүүрэг
+                </label>
+                <input value={district} onChange={(e) => setDistrict(e.target.value)}
+                  placeholder="Сонгох"
+                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  Дүүрэг хороо
+                </label>
+                <input value={khoroo} onChange={(e) => setKhoroo(e.target.value)}
+                  placeholder="Дүүрэг хороо"
+                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+              </div>
+            </div>
+
+            {/* Phones */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  <span style={{ color: T.err }}>*</span> Дугаар 1
+                </label>
+                <div className="relative">
+                  <input value={phone} onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Дугаар 1"
+                    style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+                  {searching && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <Loader2 className="spin" size={14} style={{ color: T.muted }} />
+                    </div>
+                  )}
                 </div>
+                {foundCustomer && (
+                  <div className="mt-1 px-2 py-1 rounded"
+                    style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                    <div className="text-[10px]">
+                      ✓ {foundCustomer.total_orders || 0} өмнөх захиалга · {Number(foundCustomer.total_amount || 0).toLocaleString()}₮
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  Дугаар 2
+                </label>
+                <input value={phone2} onChange={(e) => setPhone2(e.target.value)}
+                  placeholder="Дугаар 2"
+                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+              </div>
+            </div>
+
+            {/* Address */}
+            <div>
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                <span style={{ color: T.err }}>*</span> Хаяг
+              </label>
+              <textarea value={address} onChange={(e) => setAddress(e.target.value)}
+                rows={2}
+                placeholder="Хаяг байршил"
+                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+            </div>
+
+            {/* Subtotal + Total */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  Үнийн дүн
+                </label>
+                <div className="px-3 py-2 rounded-lg text-sm tabular-nums"
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                  {subtotal.toLocaleString()}₮
+                </div>
+              </div>
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  Нийт дүн
+                </label>
+                <div className="px-3 py-2 rounded-lg text-sm tabular-nums"
+                  style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}>
+                  {total.toLocaleString()}₮
+                </div>
+              </div>
+            </div>
+
+            {/* Delivery fee + Paid */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  <span style={{ color: T.err }}>*</span> Хүргэлтийн үнэ
+                </label>
+                <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)}
+                  placeholder="Хүргэлтийн үнэ"
+                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+              </div>
+              <div>
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                  <span style={{ color: T.err }}>*</span> Төлсөн дүн
+                </label>
+                <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)}
+                  placeholder="0"
+                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+                {paid > 0 && balance !== 0 && (
+                  <div style={{ color: balance > 0 ? T.warn : T.ok, fontFamily: FM }}
+                    className="text-[10px] mt-1">
+                    {balance > 0 ? `⚠ Үлдэгдэл: ${balance.toLocaleString()}₮` : `💰 Илүү: ${Math.abs(balance).toLocaleString()}₮`}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Type buttons */}
+            <div>
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                Нэмэлт мэдээлэл
+              </label>
+              <div className="flex gap-2 mb-2">
+                <button onClick={() => setCallType("called")}
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  style={{
+                    background: callType === "called" ? T.highlight : T.surfaceAlt,
+                    color: callType === "called" ? "white" : T.ink,
+                    fontFamily: FS, fontWeight: 600,
+                  }}>
+                  Залгасан
+                </button>
+                <button onClick={() => setCallType("walk_in")}
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  style={{
+                    background: callType === "walk_in" ? T.highlight : T.surfaceAlt,
+                    color: callType === "walk_in" ? "white" : T.ink,
+                    fontFamily: FS, fontWeight: 600,
+                  }}>
+                  Орж ирсэн
+                </button>
+              </div>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="Нэмэлт мэдээлэл"
+                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+            </div>
+          </div>
+
+          {/* БАРУУН: Бараа хайх + сонгосон бараа */}
+          <div className="glass rounded-xl p-4 flex flex-col" style={{ maxHeight: "75vh" }}>
+            <h4 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base mb-3">
+              Бараа хайх
+            </h4>
+
+            {/* Search */}
+            <input value={productSearch} onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="🔍 Нэр, SKU-аар хайх..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm mb-3" />
+
+            {/* Сонгосон бараанууд */}
+            {items.length > 0 && (
+              <div className="space-y-2 mb-3 pb-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+                {items.map((it) => {
+                  const p = it.product;
+                  return (
+                    <div key={it.productId} className="rounded-xl p-3"
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                      <div className="flex gap-3 items-start">
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name}
+                            style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8 }} />
+                        ) : (
+                          <div style={{
+                            width: 60, height: 60, borderRadius: 8,
+                            background: T.surface, display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 24,
+                          }}>📦</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1 mb-1 flex-wrap">
+                            {p.sku && (
+                              <span style={{ background: T.highlightSoft, color: T.highlight }}
+                                className="text-[9px] px-1.5 py-0.5 rounded font-medium">
+                                {p.sku}
+                              </span>
+                            )}
+                            <button onClick={() => removeItem(it.productId)}
+                              style={{ background: T.muted, color: "white" }}
+                              className="ml-auto w-5 h-5 rounded-full flex items-center justify-center text-[10px]">
+                              ✕
+                            </button>
+                          </div>
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }}
+                            className="text-sm mb-2 line-clamp-2">
+                            {p.name}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
+                              className="text-sm tabular-nums">
+                              {Number(it.unitPrice).toLocaleString()}₮
+                            </span>
+                            <div className="flex items-center gap-1 ml-auto">
+                              <button onClick={() => updateQty(it.productId, it.quantity - 1)}
+                                style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
+                                className="w-6 h-6 rounded text-xs press-btn">
+                                −
+                              </button>
+                              <input type="number" value={it.quantity}
+                                onChange={(e) => updateQty(it.productId, Number(e.target.value) || 0)}
+                                style={{ ...inputStyle, width: 40, textAlign: "center" }}
+                                className="px-1 py-0.5 rounded text-xs tabular-nums" />
+                              <button onClick={() => updateQty(it.productId, it.quantity + 1)}
+                                style={{ background: T.highlight, color: "white" }}
+                                className="w-6 h-6 rounded text-xs press-btn">
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Хайлтын үр дүн */}
+            <div className="flex-1 overflow-y-auto space-y-1.5">
+              {filtered.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-center py-8 text-sm">
+                  {products.length === 0 ? "Бараа байхгүй" : "Олдсонгүй"}
+                </div>
+              ) : (
+                filtered.slice(0, 30).map((p) => {
+                  const inCart = items.find((it) => it.productId === p.id);
+                  return (
+                    <button key={p.id} onClick={() => addItem(p)}
+                      className="press-btn w-full rounded-lg p-2 flex items-center gap-2 text-left hover:opacity-80"
+                      style={{
+                        background: inCart ? T.highlightSoft : "transparent",
+                        border: `1px solid ${inCart ? T.highlight : T.border}`,
+                      }}>
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.name}
+                          style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+                      ) : (
+                        <div style={{
+                          width: 36, height: 36, borderRadius: 6,
+                          background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 18, flexShrink: 0,
+                        }}>📦</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate">
+                          {p.name}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          {Number(p.sale_price || 0).toLocaleString()}₮ · {p.stock} {p.unit}
+                        </div>
+                      </div>
+                      {inCart && (
+                        <span style={{ background: T.highlight, color: "white" }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                          {inCart.quantity}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
-            {foundCustomer && (
-              <div className="mt-1 px-2 py-1 rounded"
-                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
-                <div className="text-[10px]">
-                  ✓ {foundCustomer.total_orders || 0} өмнөх захиалга · {Number(foundCustomer.total_amount || 0).toLocaleString()}₮
-                </div>
-              </div>
-            )}
-          </div>
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📱 Утас 2
-            </label>
-            <input value={phone2} onChange={(e) => setPhone2(e.target.value)}
-              placeholder="99112233 (нэмэлт)"
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              👤 Нэр
-            </label>
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="Овог нэр"
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-          </div>
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📍 Хүргэх хаяг
-            </label>
-            <input value={address} onChange={(e) => setAddress(e.target.value)}
-              placeholder="Дүүрэг, хороо, байр..."
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-          </div>
-        </div>
-
-        {/* Items */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              🛍 Захиалсан бараа
-            </label>
-            <button onClick={addRow}
-              className="press-btn px-2 py-1 rounded-lg text-[10px] flex items-center gap-1"
-              style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
-              <Plus size={11} /> Нэмэх
-            </button>
-          </div>
-
-          <div className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 mb-1.5 px-1">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Үнэ</div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
-            <div></div>
-          </div>
-
-          <div className="space-y-1.5">
-            {items.map((it) => {
-              const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
-              const selectedProduct = products.find((p) => p.id === it.productId);
-              return (
-                <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
-                  <ProductSearchSelect
-                    products={products}
-                    value={it.productId}
-                    onChange={(pid) => selectProduct(it.id, pid)}
-                    isOpen={productSearchOpen === it.id}
-                    onOpen={() => setProductSearchOpen(it.id)}
-                    onClose={() => setProductSearchOpen(null)}
-                  />
-                  <input type="number" value={it.quantity}
-                    onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
-                    placeholder="0"
-                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
-                  <input type="number" value={it.unitPrice}
-                    onChange={(e) => updateRow(it.id, "unitPrice", e.target.value)}
-                    placeholder="0"
-                    style={inputStyle} className={`${inputClass} text-right tabular-nums`} />
-                  <div style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }}
-                    className="text-xs text-right tabular-nums px-1">
-                    {lineTotal > 0 ? lineTotal.toLocaleString() : "—"}
-                  </div>
-                  <button onClick={() => removeRow(it.id)}
-                    disabled={items.length === 1}
-                    style={{ color: items.length === 1 ? T.mutedSoft : T.err }}
-                    className="press-btn p-1 rounded">
-                    <X size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Хүргэлт + Урьдчилсан төлбөр */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              🚚 Хүргэлтийн үнэ
-            </label>
-            <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)}
-              placeholder="0"
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
-          </div>
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              💵 Урьдчилсан төлсөн
-            </label>
-            <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)}
-              placeholder="0"
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-            📝 Тэмдэглэл
-          </label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            placeholder="..."
-            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
-        </div>
-
-        {/* Тооцооны хэсэг */}
-        {(subtotal > 0 || fee > 0) && (
-          <div className="glass-soft rounded-lg p-3 mb-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                Бараа ({validItems.length})
-              </span>
-              <span style={{ fontFamily: FM, color: T.ink, fontWeight: 500 }} className="text-sm tabular-nums">
-                {subtotal.toLocaleString()}₮
-              </span>
-            </div>
-            {fee > 0 && (
-              <div className="flex items-center justify-between">
-                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                  🚚 Хүргэлт
-                </span>
-                <span style={{ fontFamily: FM, color: T.ink, fontWeight: 500 }} className="text-sm tabular-nums">
-                  +{fee.toLocaleString()}₮
-                </span>
-              </div>
-            )}
-            <div className="flex items-center justify-between pt-2"
-              style={{ borderTop: `1px solid ${T.border}` }}>
-              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
-                Нийт дүн
-              </span>
-              <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
-                {total.toLocaleString()}₮
-              </span>
-            </div>
-            {paid > 0 && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }} className="text-xs">
-                    💵 Төлсөн
-                  </span>
-                  <span style={{ fontFamily: FM, color: T.ok, fontWeight: 600 }} className="text-sm tabular-nums">
-                    −{paid.toLocaleString()}₮
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pt-2"
-                  style={{ borderTop: `2px dashed ${T.border}` }}>
-                  <span style={{ fontFamily: FS, fontWeight: 700, color: balance > 0 ? T.warn : T.ok }} className="text-sm">
-                    {balance > 0 ? "⚠ Үлдэгдэл" : balance < 0 ? "💰 Илүү" : "✓ Бүрэн төлсөн"}
-                  </span>
-                  <span style={{
-                    fontFamily: FD, fontWeight: 700,
-                    color: balance > 0 ? T.warn : T.ok,
-                  }} className="text-xl tabular-nums">
-                    {balance >= 0 ? balance.toLocaleString() : Math.abs(balance).toLocaleString()}₮
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2">
+        {/* Action buttons */}
+        <div className="flex gap-2 mt-4">
           <button onClick={onClose} disabled={busy}
             className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
             style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
             Цуцлах
           </button>
           <button
-            disabled={busy || !phone.trim() || validItems.length === 0}
+            disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
             onClick={async () => {
               setBusy(true);
+              const fullAddress = [district, khoroo, address].filter(Boolean).join(", ");
               await onSave({
                 phone: phone.trim(),
                 phone2: phone2.trim() || null,
                 name: name.trim() || null,
-                address: address.trim() || null,
+                address: fullAddress || null,
                 notes: notes.trim() || null,
+                callType,
                 subtotal,
                 deliveryFee: fee,
                 totalAmount: total,
                 paidAmount: paid,
                 balanceDue: balance,
-                items: validItems.map((it) => {
-                  const p = products.find((pp) => pp.id === it.productId);
-                  return {
-                    product_id: it.productId,
-                    product_name: p?.name || "—",
-                    quantity: Number(it.quantity),
-                    unit_price: Number(it.unitPrice) || 0,
-                    total_amount: (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
-                  };
-                }),
+                items: items.map((it) => ({
+                  product_id: it.productId,
+                  product_name: it.product.name,
+                  quantity: it.quantity,
+                  unit_price: it.unitPrice,
+                  total_amount: it.quantity * it.unitPrice,
+                })),
               });
               setBusy(false);
             }}
             className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : "✓ Захиалга үүсгэх"}
+            {busy ? "Хадгалаж..." : `✓ Захиалга үүсгэх (${items.length})`}
           </button>
         </div>
       </div>
