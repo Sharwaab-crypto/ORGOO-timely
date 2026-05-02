@@ -9802,15 +9802,27 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         {/* Phones + Address */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
-              {order.customer_phone || "—"}
-            </span>
+            {order.customer_phone ? (
+              <a href={`tel:${order.customer_phone}`}
+                style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }}
+                className="text-sm tabular-nums hover:underline"
+                onClick={(e) => e.stopPropagation()}>
+                {order.customer_phone}
+              </a>
+            ) : (
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                —
+              </span>
+            )}
             {order.customer_phone2 && (
               <>
                 <span style={{ color: T.muted }}>·</span>
-                <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+                <a href={`tel:${order.customer_phone2}`}
+                  style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }}
+                  className="text-sm tabular-nums hover:underline"
+                  onClick={(e) => e.stopPropagation()}>
                   {order.customer_phone2}
-                </span>
+                </a>
               </>
             )}
           </div>
@@ -9839,14 +9851,31 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           <div className="relative flex-shrink-0">
             <img src={firstImage} alt=""
               style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
-            {items.length > 1 && (
+            {/* Захиалсан тоо badge — зургийн дээгүүр */}
+            {firstItem && Number(firstItem.quantity) > 0 && (
               <div style={{
                 position: "absolute", top: -6, right: -6,
+                background: "linear-gradient(135deg, #ec4899, #db2777)",
+                color: "white",
+                minWidth: 20, height: 20, borderRadius: 999,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "0 4px",
+                fontSize: 10, fontWeight: 700,
+                boxShadow: "0 2px 6px rgba(236,72,153,0.4)",
+                border: "1.5px solid white",
+              }}>×{Number(firstItem.quantity)}</div>
+            )}
+            {/* Олон төрлийн бараа byne индикатор */}
+            {items.length > 1 && (
+              <div style={{
+                position: "absolute", bottom: -6, right: -6,
                 background: "#3b82f6", color: "white",
                 width: 18, height: 18, borderRadius: "50%",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 10, fontWeight: 700,
-              }}>{items.length}</div>
+                fontSize: 9, fontWeight: 700,
+                border: "1.5px solid white",
+                boxShadow: "0 2px 6px rgba(59,130,246,0.4)",
+              }}>+{items.length - 1}</div>
             )}
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
               {firstItem ? Number(firstItem.unit_price || 0).toLocaleString() + "₮" : ""}
@@ -9878,11 +9907,15 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         <button onClick={onClick}
           className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
           style={{
-            background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+            background: order.delivery_lat && order.delivery_lng
+              ? "linear-gradient(135deg, #6366f1, #4f46e5)"
+              : "linear-gradient(135deg, #ef4444, #dc2626)",
             color: "white",
-            boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
+            boxShadow: order.delivery_lat && order.delivery_lng
+              ? "0 4px 12px rgba(99,102,241,0.3)"
+              : "0 4px 12px rgba(239,68,68,0.3)",
           }}
-          title="Дэлгэрэнгүй">
+          title={order.delivery_lat ? "Дэлгэрэнгүй" : "Pin зоогоогүй"}>
           <MapPin size={14} />
           {order.delivery_lat && order.delivery_lng && (
             <span style={{
@@ -11127,28 +11160,63 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
 
       {/* Items */}
       <div className="glass rounded-2xl p-4">
-        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-3">
           Захиалсан бараа ({items.length})
         </div>
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {items.map((it) => (
-            <div key={it.id} className="flex items-center gap-3 py-1.5"
-              style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-              <div className="flex-1 min-w-0">
-                <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-sm">
-                  {it.product_name}
-                </div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                  {Number(it.quantity)} × {Number(it.unit_price).toLocaleString()}₮
-                </div>
+            <div key={it.id} className="rounded-xl p-2 flex flex-col gap-2"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+              {/* SKU + tag */}
+              <div className="flex items-center gap-1 flex-wrap">
+                {it.product_sku && (
+                  <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+                    className="text-[9px] px-1.5 py-0.5 rounded">
+                    {it.product_sku}
+                  </span>
+                )}
+                <span style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
+                  className="text-[9px] px-1.5 py-0.5 rounded">
+                  Тайлбар
+                </span>
               </div>
-              <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
-                {Number(it.total_amount).toLocaleString()}₮
+
+              {/* Image */}
+              {it.product_image && (
+                <div className="relative">
+                  <img src={it.product_image} alt=""
+                    style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8 }} />
+                </div>
+              )}
+
+              {/* Name */}
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs leading-tight">
+                {it.product_name}
+              </div>
+
+              {/* Price + qty badge */}
+              <div className="flex items-center justify-between">
+                <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-sm tabular-nums">
+                  {Number(it.unit_price).toLocaleString()}₮
+                </div>
+                <div className="flex items-center gap-1.5"
+                  style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 999 }}>
+                  <span style={{
+                    background: T.highlight, color: "white",
+                    fontFamily: FD, fontWeight: 700,
+                    minWidth: 22, height: 22,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    borderRadius: 999,
+                    padding: "0 6px",
+                  }} className="text-[11px] tabular-nums">
+                    {Number(it.quantity)}
+                  </span>
+                </div>
               </div>
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between pt-3 mt-2"
+        <div className="flex items-center justify-between pt-3 mt-3"
           style={{ borderTop: `2px solid ${T.border}` }}>
           <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">
             Нийт
