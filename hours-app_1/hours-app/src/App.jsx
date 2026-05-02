@@ -4845,33 +4845,12 @@ function TransferRequestsView({ profile }) {
 
     if (!confirm(`Хүсэлтийг зөвшөөрөх үү?\n\nХэрэглэгч: ${profiles[req.requester_id]?.name || "—"}\n${reqItems.length} төрлийн бараа\n\n${req.is_return ? "БУЦААГДАХ" : "ШИЛЖҮҮЛЭГДЭХ"}`)) return;
 
-    try {
+   try {
       const fromWhId = req.from_warehouse_id;
       const toWhId = req.to_warehouse_id;
 
-      // Stock хөдөлгөөн хийх
+      // Зөвхөн movement бичнэ — trigger автоматаар inv_stock шинэчилнэ
       for (const it of reqItems) {
-        // From warehouse-аас хасах
-        const fromStock = stock.find((s) => s.warehouse_id === fromWhId && s.product_id === it.product_id);
-        const fromQty = Number(fromStock?.quantity || 0);
-        await supabase.from("inv_stock").upsert({
-          warehouse_id: fromWhId,
-          product_id: it.product_id,
-          quantity: fromQty - Number(it.quantity),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "warehouse_id,product_id" });
-
-        // To warehouse-д нэмэх
-        const toStock = stock.find((s) => s.warehouse_id === toWhId && s.product_id === it.product_id);
-        const toQty = Number(toStock?.quantity || 0);
-        await supabase.from("inv_stock").upsert({
-          warehouse_id: toWhId,
-          product_id: it.product_id,
-          quantity: toQty + Number(it.quantity),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "warehouse_id,product_id" });
-
-        // Movement бичих
         await supabase.from("inv_movements").insert({
           product_id: it.product_id,
           movement_type: "transfer",
@@ -4882,6 +4861,7 @@ function TransferRequestsView({ profile }) {
           created_by: profile.id,
         });
       }
+
 
       // Хүсэлт төлөв шинэчлэх
       await supabase.from("inv_transfer_requests").update({
