@@ -5830,8 +5830,9 @@ function CallCenterView({ profile }) {
 
       {showCallModal && (
         <SimpleCallModal
+          products={products}
           profile={profile}
-          onSave={async ({ phone, name, notes }) => {
+          onSave={async ({ phone, name, notes, interestedProducts }) => {
             try {
               // 1. Customer find or create
               let customerId = null;
@@ -5858,12 +5859,17 @@ function CallCenterView({ profile }) {
                 customerId = newCust?.id || null;
               }
 
-              // 2. Save call log
+              // 2. Save call log + сонирхсон бараа жагсаалт
+              const productList = interestedProducts && interestedProducts.length > 0
+                ? interestedProducts.map((p) => `• ${p.name}${p.qty > 1 ? ` (${p.qty} ш)` : ""}`).join("\n")
+                : "";
+              const fullNotes = [notes, productList ? `\n📦 СОНИРХСОН БАРАА:\n${productList}` : ""].filter(Boolean).join("\n");
+
               await supabase.from("biz_calls").insert({
                 phone,
                 customer_id: customerId,
                 customer_name: name,
-                notes,
+                notes: fullNotes || null,
                 created_by: profile.id,
               });
 
@@ -5966,10 +5972,13 @@ function CallCenterView({ profile }) {
 }
 
 // ─── Энгийн дуудлага бүртгэх modal ────────────────────────────────
-function SimpleCallModal({ profile, onSave, onClose }) {
+function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const [interestedProducts, setInterestedProducts] = useState([]); // [{ id, name, qty }]
+  const [productSearch, setProductSearch] = useState("");
+  const [showProductPicker, setShowProductPicker] = useState(false);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -6000,11 +6009,39 @@ function SimpleCallModal({ profile, onSave, onClose }) {
     return () => clearTimeout(timer);
   }, [phone]);
 
+  // Барааны хайлт
+  const filteredProducts = useMemo(() => {
+    if (!productSearch.trim()) return products;
+    const q = productSearch.toLowerCase();
+    return products.filter((p) =>
+      p.name?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q)
+    );
+  }, [products, productSearch]);
+
+  // Add/remove бараа
+  const toggleProduct = (product) => {
+    const exists = interestedProducts.find((p) => p.id === product.id);
+    if (exists) {
+      setInterestedProducts(interestedProducts.filter((p) => p.id !== product.id));
+    } else {
+      setInterestedProducts([...interestedProducts, { id: product.id, name: product.name, qty: 1, image_url: product.image_url, sku: product.sku }]);
+    }
+  };
+
+  const updateQty = (productId, qty) => {
+    if (qty <= 0) {
+      setInterestedProducts(interestedProducts.filter((p) => p.id !== productId));
+      return;
+    }
+    setInterestedProducts(interestedProducts.map((p) => p.id === productId ? { ...p, qty } : p));
+  };
+
   const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
             📞 Дуудлага бүртгэх
@@ -6014,8 +6051,8 @@ function SimpleCallModal({ profile, onSave, onClose }) {
 
         <div className="space-y-3">
           <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📱 Утас *
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Phone size={11} /> Утас *
             </label>
             <div className="relative">
               <input value={phone} onChange={(e) => setPhone(e.target.value)}
@@ -6039,21 +6076,129 @@ function SimpleCallModal({ profile, onSave, onClose }) {
           </div>
 
           <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              👤 Нэр (заавал биш)
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <UserIcon size={11} /> Нэр (заавал биш)
             </label>
             <input value={name} onChange={(e) => setName(e.target.value)}
               placeholder="Овог нэр"
               style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
 
+          {/* Сонирхсон бараа хэсэг */}
           <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📝 Сэтгэгдэл
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <ShoppingBag size={11} /> Сонирхсон бараа
+            </label>
+
+            {/* Сонгосон жагсаалт */}
+            {interestedProducts.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {interestedProducts.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg"
+                    style={{ background: T.highlightSoft }}>
+                    {p.image_url ? (
+                      <img src={p.image_url} alt={p.name}
+                        style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }} />
+                    ) : (
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 4, background: T.surface,
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+                      }}>📦</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate">
+                        {p.name}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateQty(p.id, p.qty - 1)}
+                        style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
+                        className="w-5 h-5 rounded text-[10px] press-btn">−</button>
+                      <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
+                        className="text-xs tabular-nums w-6 text-center">{p.qty}</span>
+                      <button onClick={() => updateQty(p.id, p.qty + 1)}
+                        style={{ background: T.highlight, color: "white" }}
+                        className="w-5 h-5 rounded text-[10px] press-btn">+</button>
+                    </div>
+                    <button onClick={() => toggleProduct({ id: p.id })}
+                      style={{ color: T.err }} className="press-btn">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button onClick={() => setShowProductPicker(!showProductPicker)}
+              className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+              style={{
+                background: showProductPicker ? T.highlight : T.surfaceAlt,
+                color: showProductPicker ? "white" : T.ink,
+                border: `1px dashed ${showProductPicker ? T.highlight : T.border}`,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {showProductPicker ? "Хаах" : `+ Бараа сонгох ${interestedProducts.length > 0 ? `(${interestedProducts.length})` : ""}`}
+            </button>
+
+            {/* Product picker */}
+            {showProductPicker && (
+              <div className="mt-2 rounded-lg overflow-hidden"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                <input value={productSearch} onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="🔍 Бараа хайх..."
+                  style={{ background: T.surface, border: "none", borderBottom: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 text-sm" />
+                <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                  {filteredProducts.length === 0 ? (
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-center py-6 text-xs">
+                      {products.length === 0 ? "Бараа байхгүй" : "Олдсонгүй"}
+                    </div>
+                  ) : (
+                    filteredProducts.slice(0, 30).map((p) => {
+                      const selected = interestedProducts.find((ip) => ip.id === p.id);
+                      return (
+                        <button key={p.id} onClick={() => toggleProduct(p)}
+                          className="press-btn w-full p-1.5 rounded flex items-center gap-2 text-left"
+                          style={{
+                            background: selected ? T.highlightSoft : T.surface,
+                            border: `1px solid ${selected ? T.highlight : "transparent"}`,
+                          }}>
+                          {p.image_url ? (
+                            <img src={p.image_url} alt={p.name}
+                              style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} />
+                          ) : (
+                            <div style={{
+                              width: 28, height: 28, borderRadius: 4, background: T.surfaceAlt,
+                              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                            }}>📦</div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                              className="text-[11px] truncate">{p.name}</div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                              {Number(p.sale_price || 0).toLocaleString()}₮
+                            </div>
+                          </div>
+                          {selected && (
+                            <span style={{ background: T.highlight, color: "white" }}
+                              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">✓</span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <FileText size={11} /> Сэтгэгдэл
             </label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              placeholder="ж.нь: Кофе сонирхож байсан, маргааш дахин залгая гэсэн..."
+              rows={3}
+              placeholder="ж.нь: Хямдрал асуусан, маргааш дахин залгая гэсэн..."
               style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
           </div>
 
@@ -6065,6 +6210,7 @@ function SimpleCallModal({ profile, onSave, onClose }) {
                 phone: phone.trim(),
                 name: name.trim() || null,
                 notes: notes.trim() || null,
+                interestedProducts: interestedProducts.length > 0 ? interestedProducts : null,
               });
               setBusy(false);
             }}
