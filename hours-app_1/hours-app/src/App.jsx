@@ -4526,6 +4526,7 @@ function InventoryView({ profile, isAdmin = false }) {
                 reason: "purchase",
                 reference_number: header.receiving_number,
                 receiving_id: receivData.id,
+                warehouse_id: header.warehouse_id, // Заавал агуулах
                 notes: header.supplier_name ? `Нийлүүлэгч: ${header.supplier_name}` : null,
                 created_by: profile.id,
               }));
@@ -6281,11 +6282,24 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
   const [supplierPhone, setSupplierPhone] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const [warehouseId, setWarehouseId] = useState(""); // ⭐ Заавал агуулах сонгох
+  const [warehouses, setWarehouses] = useState([]);
   const [items, setItems] = useState([
     { id: 1, productId: "", quantity: "", unitPrice: "" }
   ]);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState({});
+
+  // Load warehouses
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("inv_warehouses").select("*").eq("is_active", true).order("type").order("name");
+      setWarehouses(data || []);
+      // Default Төв агуулах
+      const main = (data || []).find((w) => w.type === "main");
+      if (main) setWarehouseId(main.id);
+    })();
+  }, []);
 
   const addRow = () => {
     setItems([...items, { id: Date.now(), productId: "", quantity: "", unitPrice: "" }]);
@@ -6330,6 +6344,35 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
             📥 Бөөн орлого
           </h3>
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        {/* Warehouse selector — ЗААВАЛ */}
+        <div className="mb-3 p-3 rounded-xl"
+          style={{ background: T.highlightSoft, border: `2px solid ${T.highlight}` }}>
+          <label style={{ color: T.highlight, fontFamily: FS, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider mb-2 block flex items-center gap-1">
+            <Package size={11} /> Орлого хийх агуулах *
+          </label>
+          {warehouses.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs py-2">
+              Loading...
+            </div>
+          ) : (
+            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              <option value="">— Агуулах сонгоно уу —</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.type === "main" ? "🏢" : "🚚"} {w.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {!warehouseId && (
+            <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] mt-1.5 flex items-center gap-1">
+              ⚠ Агуулах заавал сонгох ёстой
+            </div>
+          )}
         </div>
 
         {/* Header info */}
@@ -6449,8 +6492,12 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
             Цуцлах
           </button>
           <button
-            disabled={busy || validItems.length === 0}
+            disabled={busy || validItems.length === 0 || !warehouseId}
             onClick={async () => {
+              if (!warehouseId) {
+                alert("⚠ Орлого хийх агуулахыг заавал сонгоно уу!");
+                return;
+              }
               setBusy(true);
               await onSave({
                 header: {
@@ -6461,6 +6508,7 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
                   notes: notes.trim() || null,
                   total_items: validItems.length,
                   total_amount: total,
+                  warehouse_id: warehouseId, // ⭐ Заавал
                 },
                 items: validItems.map((it) => ({
                   product_id: it.productId,
@@ -6471,8 +6519,9 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
               });
               setBusy(false);
             }}
-            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : `📥 ${validItems.length} бараа орлого хийх`}
+            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold"
+            style={{ opacity: !warehouseId ? 0.5 : 1 }}>
+            {busy ? "Хадгалаж..." : !warehouseId ? "⚠ Агуулах сонго" : `📥 ${validItems.length} бараа орлого хийх`}
           </button>
         </div>
       </div>
