@@ -9733,7 +9733,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
               borderRadius: 16,
               width: "100%",
               maxWidth: 480,
-              maxHeight: "75vh",
+              maxHeight: "90vh",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
@@ -9761,7 +9761,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
               />
             </div>
 
-            <div style={{ overflowY: "auto", flex: 1 }}>
+            <div style={{ overflowY: "auto", maxHeight: 388 }}>
               {filtered.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-2">🔍</div>
