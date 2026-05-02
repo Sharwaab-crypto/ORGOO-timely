@@ -16562,10 +16562,13 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
     })();
   }, [isReturn]);
 
-  // Available products (тэр агуулахад нөөцтэй)
-  const availableProducts = products.filter((p) => {
-    const s = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === p.id);
-    return s && Number(s.quantity) > 0;
+  // Available products (бүх бараа, нөөцтэй эсэхийг харуулах)
+  const availableProducts = [...products].sort((a, b) => {
+    const sA = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === a.id)?.quantity || 0);
+    const sB = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === b.id)?.quantity || 0);
+    if (sA > 0 && sB <= 0) return -1;
+    if (sA <= 0 && sB > 0) return 1;
+    return (a.name || "").localeCompare(b.name || "");
   });
 
   const filtered = search.trim()
@@ -16575,13 +16578,18 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const addItem = (product) => {
     if (selectedItems.find((x) => x.product_id === product.id)) return;
     const stockInfo = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === product.id);
+    const maxQty = Number(stockInfo?.quantity || 0);
+    if (maxQty <= 0) {
+      alert(`⚠ "${product.name}" агуулахад байхгүй байна!\n\n${sourceWh?.name}-д орлого хийсний дараа дахин оролдоно уу.`);
+      return;
+    }
     setSelectedItems([...selectedItems, {
       product_id: product.id,
       product_name: product.name,
       product_sku: product.sku,
       product_image: product.image_url,
       quantity: 1,
-      maxQty: Number(stockInfo?.quantity || 0),
+      maxQty: maxQty,
     }]);
   };
 
@@ -16804,8 +16812,13 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
             {filtered.length === 0 ? (
               <div className="text-center py-4">
                 <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-                  {availableProducts.length === 0 ? "Боломжит бараа байхгүй" : "Олдсонгүй"}
+                  {availableProducts.length === 0 ? "📦 Бараа бүртгэгдээгүй байна" : "Олдсонгүй"}
                 </div>
+                {availableProducts.length === 0 && (
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                    Админ "Бараа нөөц" хэсгээс бараа нэмэх ёстой
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-1" style={{ maxHeight: 250, overflowY: "auto" }}>
@@ -16813,16 +16826,18 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
                   const stockInfo = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === p.id);
                   const inStock = Number(stockInfo?.quantity || 0);
                   const selected = selectedItems.find((x) => x.product_id === p.id);
+                  const noStock = inStock <= 0;
                   return (
-                    <button key={p.id} onClick={() => addItem(p)} disabled={!!selected}
+                    <button key={p.id} onClick={() => addItem(p)} disabled={!!selected || noStock}
                       className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
                       style={{
-                        background: selected ? "rgba(14,165,233,0.1)" : T.surfaceAlt,
-                        opacity: selected ? 0.6 : 1,
+                        background: selected ? "rgba(14,165,233,0.1)" : noStock ? "rgba(239,68,68,0.05)" : T.surfaceAlt,
+                        opacity: selected ? 0.6 : noStock ? 0.5 : 1,
+                        cursor: noStock ? "not-allowed" : "pointer",
                       }}>
                       {p.image_url && (
                         <img src={p.image_url} alt=""
-                          style={{ width: 32, height: 40, objectFit: "cover", borderRadius: 4 }} />
+                          style={{ width: 32, height: 40, objectFit: "cover", borderRadius: 4, filter: noStock ? "grayscale(100%)" : "none" }} />
                       )}
                       <div className="flex-1 min-w-0">
                         <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
@@ -16834,8 +16849,12 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
                           </div>
                         )}
                       </div>
-                      <span style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
-                        {inStock} ширхэг
+                      <span style={{
+                        background: noStock ? T.errSoft : inStock <= 5 ? T.warnSoft : "rgba(16,185,129,0.1)",
+                        color: noStock ? T.err : inStock <= 5 ? T.warn : T.ok,
+                        fontFamily: FD, fontWeight: 700,
+                      }} className="text-[10px] px-2 py-0.5 rounded-full tabular-nums">
+                        {noStock ? "✕ 0" : `${inStock} ш`}
                       </span>
                       {selected && <CheckCircle2 size={14} style={{ color: "#0ea5e9" }} />}
                     </button>
