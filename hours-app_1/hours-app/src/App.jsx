@@ -16418,10 +16418,117 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const [notes, setNotes] = useState("");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [calculating, setCalculating] = useState(true);
+  const [autoNote, setAutoNote] = useState("");
 
   // Аль агуулахаас бараа авах вэ?
   const sourceWh = isReturn ? myWarehouse : mainWarehouse;
   const targetWh = isReturn ? mainWarehouse : myWarehouse;
+
+  // ─── Автомат тооцоолол ────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      setCalculating(true);
+      try {
+        if (isReturn) {
+          // ─── БУЦААХ: Driver-ийн агуулахад байгаа БҮХ барааг автомат сонгох
+          const myStock = stock.filter((s) => s.warehouse_id === myWarehouse?.id && Number(s.quantity) > 0);
+          const items = myStock.map((s) => {
+            const product = products.find((p) => p.id === s.product_id);
+            return {
+              product_id: s.product_id,
+              product_name: product?.name || "",
+              product_sku: product?.sku || "",
+              product_image: product?.image_url || null,
+              quantity: Number(s.quantity),
+              maxQty: Number(s.quantity),
+            };
+          });
+          setSelectedItems(items);
+          setAutoNote(
+            items.length > 0
+              ? `🔄 Агуулахад байгаа ${items.length} төрлийн бүх барааг автомат сонгосон`
+              : "Агуулахад буцаах бараа байхгүй"
+          );
+        } else {
+          // ─── АВАХ: Driver-ийн pending+new захиалгуудаас тооцох
+          const { data: ordData } = await supabase
+            .from("biz_orders")
+            .select("id")
+            .eq("driver_id", profile.id)
+            .in("status", ["new", "pending"]);
+
+          const orderIds = (ordData || []).map((o) => o.id);
+
+          if (orderIds.length === 0) {
+            setAutoNote("Хүлээгдэж буй захиалга байхгүй");
+            setCalculating(false);
+            return;
+          }
+
+          const { data: itemData } = await supabase
+            .from("biz_order_items")
+            .select("product_id, quantity")
+            .in("order_id", orderIds);
+
+          // Шаардлагатай бараа тоог нэгтгэх
+          const requiredMap = {};
+          (itemData || []).forEach((it) => {
+            if (!it.product_id) return;
+            requiredMap[it.product_id] = (requiredMap[it.product_id] || 0) + Number(it.quantity || 0);
+          });
+
+          // Driver-ийн агуулахад байгаа тоог авч дутуу тоог тооцох
+          const items = [];
+          let satisfiedCount = 0;
+          Object.entries(requiredMap).forEach(([productId, requiredQty]) => {
+            const myStock = stock.find((s) => s.warehouse_id === myWarehouse?.id && s.product_id === productId);
+            const myQty = Number(myStock?.quantity || 0);
+            const needed = requiredQty - myQty;
+
+            if (needed <= 0) {
+              satisfiedCount++;
+              return; // Хангалттай байгаа
+            }
+
+            // Төв агуулахад хэдэн ширхэг боломжтой?
+            const mainStock = stock.find((s) => s.warehouse_id === mainWarehouse?.id && s.product_id === productId);
+            const availableInMain = Number(mainStock?.quantity || 0);
+            if (availableInMain <= 0) return; // Төв агуулахад байхгүй
+
+            const product = products.find((p) => p.id === productId);
+            if (!product) return;
+
+            const requestQty = Math.min(needed, availableInMain);
+            items.push({
+              product_id: productId,
+              product_name: product.name,
+              product_sku: product.sku,
+              product_image: product.image_url,
+              quantity: requestQty,
+              maxQty: availableInMain,
+            });
+          });
+
+          setSelectedItems(items);
+          if (items.length > 0) {
+            setAutoNote(
+              `📋 ${orderIds.length} захиалга шинжилж дутуу ${items.length} төрлийн бараа автомат тооцсон` +
+              (satisfiedCount > 0 ? ` (${satisfiedCount} төрөл хангалттай)` : "")
+            );
+          } else if (Object.keys(requiredMap).length === 0) {
+            setAutoNote("Захиалгад бараа байхгүй");
+          } else {
+            setAutoNote("✓ Бүх бараа агуулахад хангалттай байна");
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setCalculating(false);
+      }
+    })();
+  }, [isReturn]);
 
   // Available products (тэр агуулахад нөөцтэй)
   const availableProducts = products.filter((p) => {
@@ -16535,6 +16642,31 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
               </div>
             </div>
           </div>
+
+          {/* Auto-calculation banner */}
+          {calculating ? (
+            <div className="flex items-center justify-center gap-2 py-3 rounded-lg"
+              style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}>
+              <Loader2 size={14} className="spin" style={{ color: "#0ea5e9" }} />
+              <span style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                Автомат тооцоолж байна...
+              </span>
+            </div>
+          ) : autoNote ? (
+            <div className="p-2.5 rounded-lg flex items-start gap-2"
+              style={{
+                background: selectedItems.length > 0 ? "rgba(14,165,233,0.1)" : "rgba(245,158,11,0.1)",
+                border: `1px solid ${selectedItems.length > 0 ? "rgba(14,165,233,0.3)" : "rgba(245,158,11,0.3)"}`,
+              }}>
+              <span className="text-base">{selectedItems.length > 0 ? "✨" : "ℹ"}</span>
+              <span style={{
+                color: selectedItems.length > 0 ? "#0ea5e9" : T.warn,
+                fontFamily: FS, fontWeight: 600,
+              }} className="text-[11px] flex-1">
+                {autoNote}
+              </span>
+            </div>
+          ) : null}
 
           {/* Selected items */}
           {selectedItems.length > 0 && (
