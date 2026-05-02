@@ -5728,6 +5728,7 @@ function CallCenterView({ profile }) {
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
+  const [orderTotal, setOrderTotal] = useState(0);
   const [copiedPhone, setCopiedPhone] = useState("");
 
   const loadAll = async () => {
@@ -5755,6 +5756,12 @@ function CallCenterView({ profile }) {
         week: (callData || []).filter((c) => new Date(c.created_at) >= weekAgo).length,
         total: (callData || []).length,
       });
+
+      // Захиалгын тоо
+      const { count: orderCount } = await supabase
+        .from("biz_orders")
+        .select("*", { count: "exact", head: true });
+      setOrderTotal(orderCount || 0);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -5875,27 +5882,74 @@ function CallCenterView({ profile }) {
 
   return (
     <div className="space-y-3">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="glass rounded-2xl p-3">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Өнөөдөр</div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl">
-            {stats.today}
+      {/* Stats — 4 том карт */}
+      {(() => {
+        // Утсаар groupping
+        const phoneGrouped = {};
+        recentCalls.forEach((c) => {
+          if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
+          phoneGrouped[c.phone].push(c);
+        });
+
+        const uniquePhones = Object.keys(phoneGrouped).length;
+        let orderedPhones = 0;
+        let cancelledPhones = 0;
+        Object.entries(phoneGrouped).forEach(([phone, callList]) => {
+          const sorted = [...callList].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          const latest = sorted[0]?.call_status;
+          if (latest === "ordered") orderedPhones++;
+          else if (latest === "cancelled") cancelledPhones++;
+        });
+
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="glass rounded-2xl p-3">
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+                📞 Нийт дугаар
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl tabular-nums">
+                {uniquePhones}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                бүртгэгдсэн
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-3">
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+                ☎ Нийт залгалт
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
+                {stats.total}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                удаа
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-3">
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+                ✅ Захиалга болсон
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
+                {orderedPhones}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                {uniquePhones > 0 ? `${((orderedPhones / uniquePhones) * 100).toFixed(0)}% conversion` : "—"}
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-3">
+              <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+                🗑 Цуцалсан
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-3xl tabular-nums">
+                {cancelledPhones}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                дугаар
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="glass rounded-2xl p-3">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Энэ долоо хоногт</div>
-          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-3xl">
-            {stats.week}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3">
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт</div>
-          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-3xl">
-            {stats.total}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Big call button */}
       <button onClick={() => setShowCallModal(true)}
@@ -8299,204 +8353,62 @@ function OrdersView({ profile }) {
     );
   }
 
-  // Дуудлагын мэдээлэл татах
-  const [calls, setCalls] = useState([]);
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("biz_calls").select("phone, call_status, created_at");
-      setCalls(data || []);
-    })();
-  }, [orders]);
-
-  // Статистик
-  const stats = useMemo(() => {
-    // Утсаар groupping (давхардсан утсыг 1 болгож тоолно)
-    const uniquePhones = new Set();
-    calls.forEach((c) => uniquePhones.add(c.phone));
-
-    // Утас бүрд cycle тооцох
-    const phoneGrouped = {};
-    calls.forEach((c) => {
-      if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
-      phoneGrouped[c.phone].push(c);
-    });
-
-    let orderedPhones = 0;
-    let cancelledPhones = 0;
-    let activePhones = 0;
-    Object.entries(phoneGrouped).forEach(([phone, callList]) => {
-      const sorted = [...callList].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      const latest = sorted[0]?.call_status;
-      if (latest === "ordered") orderedPhones++;
-      else if (latest === "cancelled") cancelledPhones++;
-      else activePhones++;
-    });
-
-    return {
-      totalPhones: uniquePhones.size,        // Нийт бүртгэгдсэн дугаар
-      totalCalls: calls.length,              // Нийт залгасан удаа
-      totalOrders: orders.length,            // Нийт захиалга
-      orderedPhones,                          // Захиалга болсон дугаар
-      cancelledPhones,                        // Цуцалсан дугаар
-      activePhones,                           // Идэвхтэй (залгах) дугаар
-      newOrders: orders.filter((o) => o.status === "new").length,
-      pendingOrders: orders.filter((o) => o.status === "pending").length,
-      deliveredOrders: orders.filter((o) => o.status === "delivered").length,
-      cancelledOrders: orders.filter((o) => o.status === "cancelled").length,
-    };
-  }, [calls, orders]);
+  // Counts
 
   return (
     <div className="space-y-3">
-      {/* Статистик dashboard */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {/* Нийт дугаар */}
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            📞 Нийт дугаар
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl tabular-nums">
-            {stats.totalPhones}
-          </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            бүртгэгдсэн
-          </div>
-        </div>
-
-        {/* Нийт залгалт */}
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            ☎ Нийт залгалт
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
-            {stats.totalCalls}
-          </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            удаа
-          </div>
-        </div>
-
-        {/* Захиалга болсон */}
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            ✅ Захиалга болсон
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
-            {stats.orderedPhones}
-          </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            {stats.totalPhones > 0 ? `${((stats.orderedPhones / stats.totalPhones) * 100).toFixed(0)}% conversion` : "—"}
-          </div>
-        </div>
-
-        {/* Цуцалсан */}
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            🗑 Цуцалсан
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-3xl tabular-nums">
-            {stats.cancelledPhones}
-          </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            дугаар
-          </div>
-        </div>
-      </div>
-
-      {/* Захиалгын статус */}
-      <div className="glass rounded-2xl p-3">
-        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-          Захиалгын статус
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <button onClick={() => setFilter(filter === "new" ? "all" : "new")}
-            className="press-btn rounded-xl p-3 text-left"
-            style={{
-              background: filter === "new" ? "rgba(59,130,246,0.15)" : T.surfaceAlt,
-              border: `2px solid ${filter === "new" ? "#3b82f6" : "transparent"}`,
-            }}>
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-base">🆕</span>
-              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
-                Шинэ
-              </span>
-            </div>
-            <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-2xl tabular-nums">
-              {stats.newOrders}
-            </div>
-          </button>
-
-          <button onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
-            className="press-btn rounded-xl p-3 text-left"
-            style={{
-              background: filter === "pending" ? T.warnSoft : T.surfaceAlt,
-              border: `2px solid ${filter === "pending" ? T.warn : "transparent"}`,
-            }}>
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-base">⏳</span>
-              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
-                Хүлээгдэж
-              </span>
-            </div>
-            <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-2xl tabular-nums">
-              {stats.pendingOrders}
-            </div>
-          </button>
-
-          <button onClick={() => setFilter(filter === "delivered" ? "all" : "delivered")}
-            className="press-btn rounded-xl p-3 text-left"
-            style={{
-              background: filter === "delivered" ? "rgba(16,185,129,0.15)" : T.surfaceAlt,
-              border: `2px solid ${filter === "delivered" ? T.ok : "transparent"}`,
-            }}>
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-base">✓</span>
-              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
-                Хүргэсэн
-              </span>
-            </div>
-            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
-              {stats.deliveredOrders}
-            </div>
-          </button>
-
-          <button onClick={() => setFilter(filter === "cancelled" ? "all" : "cancelled")}
-            className="press-btn rounded-xl p-3 text-left"
-            style={{
-              background: filter === "cancelled" ? T.errSoft : T.surfaceAlt,
-              border: `2px solid ${filter === "cancelled" ? T.err : "transparent"}`,
-            }}>
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-base">✕</span>
-              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
-                Цуцалсан
-              </span>
-            </div>
-            <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-2xl tabular-nums">
-              {stats.cancelledOrders}
-            </div>
-          </button>
-        </div>
-      </div>
-
       {/* Хайлт + active filter pill */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {filter !== "all" && (
-            <button onClick={() => setFilter("all")}
-              style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 600 }}
-              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1">
-              {filter === "new" && "🆕 Шинэ"}
-              {filter === "pending" && "⏳ Хүлээгдэж"}
-              {filter === "delivered" && "✓ Хүргэсэн"}
-              {filter === "cancelled" && "✕ Цуцалсан"}
-              <X size={11} />
-            </button>
-          )}
+          <button onClick={() => setFilter("all")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "all" ? T.highlight : T.surfaceAlt,
+              color: filter === "all" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            📋 Бүх ({orders.length})
+          </button>
+          <button onClick={() => setFilter("new")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "new" ? "#3b82f6" : T.surfaceAlt,
+              color: filter === "new" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            🆕 Шинэ ({orders.filter((o) => o.status === "new").length})
+          </button>
+          <button onClick={() => setFilter("pending")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "pending" ? T.warn : T.surfaceAlt,
+              color: filter === "pending" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            ⏳ Хүлээгдэж ({orders.filter((o) => o.status === "pending").length})
+          </button>
+          <button onClick={() => setFilter("delivered")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "delivered" ? T.ok : T.surfaceAlt,
+              color: filter === "delivered" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            ✓ Хүргэсэн ({orders.filter((o) => o.status === "delivered").length})
+          </button>
+          <button onClick={() => setFilter("cancelled")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "cancelled" ? T.err : T.surfaceAlt,
+              color: filter === "cancelled" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            ✕ Цуцалсан ({orders.filter((o) => o.status === "cancelled").length})
+          </button>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="🔍 Утас, нэр, хаягаар хайх..."
+            placeholder="🔍 Утас, нэрээр..."
             style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-            className="flex-1 min-w-[200px] px-3 py-2 rounded-lg text-xs" />
+            className="flex-1 min-w-[150px] px-3 py-2 rounded-lg text-xs" />
         </div>
       </div>
 
