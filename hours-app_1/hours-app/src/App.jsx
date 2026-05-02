@@ -6916,19 +6916,6 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                           </div>
                         </div>
                       </div>
-
-                      {/* Барааны тайлбар */}
-                      <div>
-                        <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1 flex items-center gap-1">
-                          <FileText size={9} /> Тайлбар
-                        </label>
-                        <textarea value={it.itemNotes || ""}
-                          onChange={(e) => updateItemNotes(it.productId, e.target.value)}
-                          rows={2}
-                          placeholder="Барааны тайлбар, тэмдэглэл..."
-                          style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                          className="w-full px-2 py-1.5 rounded text-[11px] resize-none" />
-                      </div>
                     </div>
                   );
                 })}
