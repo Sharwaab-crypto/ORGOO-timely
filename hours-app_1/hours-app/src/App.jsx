@@ -6056,9 +6056,15 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
+          // Period-ээр шүүсэн дуудлагууд
+          const filteredByPeriod = recentCalls.filter((c) => {
+            const d = new Date(c.created_at);
+            return d >= periodRange.start && d < periodRange.end;
+          });
+
           // Cycle-аар тоолох
           const phoneGrouped = {};
-          recentCalls.forEach((c) => {
+          filteredByPeriod.forEach((c) => {
             if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
             phoneGrouped[c.phone].push(c);
           });
@@ -6149,10 +6155,15 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-2">
             {(() => {
+              // Period-ээр шүүсэн дуудлагууд
+              const filteredByPeriod = recentCalls.filter((c) => {
+                const d = new Date(c.created_at);
+                return d >= periodRange.start && d < periodRange.end;
+              });
+
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
-              // Cycle = "ordered" эсвэл "cancelled" хүртэлх дуудлагуудын багц
               const phoneGrouped = {};
-              recentCalls.forEach((c) => {
+              filteredByPeriod.forEach((c) => {
                 if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
                 phoneGrouped[c.phone].push(c);
               });
