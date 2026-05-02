@@ -9800,7 +9800,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         </div>
 
         {/* Phones + Address */}
-        <button onClick={onClick} className="flex-1 min-w-0 text-left press-btn">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
               {order.customer_phone || "—"}
@@ -9832,7 +9832,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               </div>
             ) : null;
           })()}
-        </button>
+        </div>
 
         {/* Image + qty badge */}
         {firstImage && (
@@ -10756,6 +10756,159 @@ function OrdersView({ profile }) {
   );
 }
 
+// ─── Order detail доторх Газрын зураг + Pin хийх ──────────────────
+function OrderDetailMap({ order }) {
+  const mapRef = useRef(null);
+  const containerRef = useRef(null);
+  const markerRef = useRef(null);
+  const [position, setPosition] = useState(
+    order.delivery_lat && order.delivery_lng
+      ? { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) }
+      : null
+  );
+  const [busy, setBusy] = useState(false);
+  const [savedMessage, setSavedMessage] = useState("");
+
+  useEffect(() => {
+    let map = null;
+    (async () => {
+      const L = (await import("leaflet")).default;
+
+      // CSS-ийн head-д зөвхөн нэг удаа нэмэх
+      if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+
+      if (!containerRef.current) return;
+
+      const initialLat = position?.lat || 47.918873;
+      const initialLng = position?.lng || 106.917701;
+      const initialZoom = position ? 15 : 12;
+
+      map = L.map(containerRef.current).setView([initialLat, initialLng], initialZoom);
+      mapRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OSM",
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Marker
+      const customIcon = L.divIcon({
+        html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+        className: "",
+        iconSize: [24, 24],
+        iconAnchor: [12, 24],
+      });
+
+      if (position) {
+        const m = L.marker([position.lat, position.lng], { icon: customIcon, draggable: true }).addTo(map);
+        markerRef.current = m;
+        m.on("dragend", (e) => {
+          const ll = e.target.getLatLng();
+          setPosition({ lat: ll.lat, lng: ll.lng });
+          setSavedMessage("");
+        });
+      }
+
+      // Click → place marker
+      map.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        if (markerRef.current) {
+          markerRef.current.setLatLng([lat, lng]);
+        } else {
+          const m = L.marker([lat, lng], { icon: customIcon, draggable: true }).addTo(map);
+          markerRef.current = m;
+          m.on("dragend", (ev) => {
+            const ll = ev.target.getLatLng();
+            setPosition({ lat: ll.lat, lng: ll.lng });
+            setSavedMessage("");
+          });
+        }
+        setPosition({ lat, lng });
+        setSavedMessage("");
+      });
+
+      // Forced re-size for hidden parents
+      setTimeout(() => map.invalidateSize(), 100);
+    })();
+
+    return () => {
+      if (mapRef.current) mapRef.current.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, []);
+
+  const handleSave = async () => {
+    if (!position) {
+      alert("Эхлээд газрын зураг дээр pin хийгээрэй");
+      return;
+    }
+    setBusy(true);
+    try {
+      await supabase.from("biz_orders").update({
+        delivery_lat: position.lat,
+        delivery_lng: position.lng,
+      }).eq("id", order.id);
+      setSavedMessage("✓ Хадгалагдлаа");
+      setTimeout(() => setSavedMessage(""), 3000);
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+          📍 Хүргэх байршил
+        </div>
+        {position && (
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+            {position.lat.toFixed(5)}, {position.lng.toFixed(5)}
+          </div>
+        )}
+      </div>
+
+      <div ref={containerRef}
+        style={{
+          width: "100%",
+          height: 300,
+          borderRadius: 12,
+          overflow: "hidden",
+          border: `1px solid ${T.border}`,
+        }} />
+
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1" style={{ color: T.muted, fontFamily: FM }}>
+          {!position ? (
+            <span className="text-[10px]">📍 Газрын зураг дээр дарж pin хийнэ үү</span>
+          ) : savedMessage ? (
+            <span className="text-[11px]" style={{ color: T.ok, fontWeight: 600 }}>
+              {savedMessage}
+            </span>
+          ) : (
+            <span className="text-[10px]">Pin-ыг чирж зөв байршилд тааруулна уу</span>
+          )}
+        </div>
+        <button onClick={handleSave} disabled={busy || !position}
+          className="press-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+          style={{
+            background: !position ? T.surfaceAlt : "linear-gradient(135deg, #6366f1, #4f46e5)",
+            color: !position ? T.muted : "white",
+            fontFamily: FS,
+            opacity: busy ? 0.6 : 1,
+          }}>
+          {busy ? <Loader2 size={12} className="spin" /> : "💾"} Хадгалах
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OrderDetail({ order, items, onClose, onUpdateStatus }) {
   const status = order.status;
   const [activityProfiles, setActivityProfiles] = useState({});
@@ -11017,6 +11170,9 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
           </div>
         </div>
       )}
+
+      {/* Map — Хүргэх байршил */}
+      <OrderDetailMap order={order} />
 
       {/* Actions */}
       {actions.length > 0 && (
