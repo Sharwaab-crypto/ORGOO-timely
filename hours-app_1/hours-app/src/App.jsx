@@ -5895,10 +5895,11 @@ function CallCenterView({ profile }) {
           });
           const counts = { calling: 0, ordered: 0, cancelled: 0 };
           Object.entries(grouped).forEach(([phone, calls]) => {
-            const hasOrdered = calls.some((c) => c.call_status === "ordered");
-            const allCancelled = calls.every((c) => c.call_status === "cancelled");
-            if (hasOrdered) counts.ordered++;
-            else if (allCancelled) counts.cancelled++;
+            const sortedByDate = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestStatus = sortedByDate[0]?.call_status;
+
+            if (latestStatus === "ordered") counts.ordered++;
+            else if (latestStatus === "cancelled") counts.cancelled++;
             else counts.calling++;
           });
 
@@ -5976,16 +5977,17 @@ function CallCenterView({ profile }) {
                 grouped[c.phone].push(c);
               });
 
-              // Утас бүрийн төлөв тогтоох (latest call status-аар)
+              // Утас бүрийн төлөв — ХАМГИЙН СҮҮЛИЙН дуудлагын call_status-аар
               const phoneStatus = {};
               Object.entries(grouped).forEach(([phone, calls]) => {
-                // Захиалга үүссэн эсэх (хамгийн сүүлд ordered)
-                const hasOrdered = calls.some((c) => c.call_status === "ordered");
-                const allCancelled = calls.every((c) => c.call_status === "cancelled");
+                // calls нь created_at desc-ээр sort хийгдсэн (анхны load-д)
+                // Тэгэхээр calls[0] = хамгийн сүүлийн дуудлага
+                const sortedByDate = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                const latestStatus = sortedByDate[0]?.call_status;
 
-                if (hasOrdered) phoneStatus[phone] = "ordered";
-                else if (allCancelled) phoneStatus[phone] = "cancelled";
-                else phoneStatus[phone] = "calling";
+                if (latestStatus === "ordered") phoneStatus[phone] = "ordered";
+                else if (latestStatus === "cancelled") phoneStatus[phone] = "cancelled";
+                else phoneStatus[phone] = "calling"; // pending, no_answer, callback, unreachable, null = calling
               });
 
               // Tab-ийн дагуу filter
