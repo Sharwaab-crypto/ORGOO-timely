@@ -5812,13 +5812,60 @@ function CallCenterView({ profile }) {
                         </span>
                       )}
                     </div>
-                    {c.notes && (
-                      <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1 italic">
-                        "{c.notes}"
-                      </div>
-                    )}
+                    {/* Notes (clean — хуучин формат-аас бараа жагсаалтыг хасах) */}
+                    {c.notes && (() => {
+                      const cleanNotes = c.notes.replace(/\n*📦 СОНИРХСОН БАРАА:[\s\S]*$/, "").trim();
+                      return cleanNotes ? (
+                        <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1 italic">
+                          "{cleanNotes}"
+                        </div>
+                      ) : null;
+                    })()}
 
-                    {/* Сонирхсон бараа — зурагтай grid */}
+                    {/* Хуучин notes-аас бараа нэрийг таних */}
+                    {(!c.interested_products || !Array.isArray(c.interested_products) || c.interested_products.length === 0) &&
+                      c.notes && c.notes.includes("СОНИРХСОН БАРАА") && (() => {
+                        const match = c.notes.match(/📦 СОНИРХСОН БАРАА:\n([\s\S]*?)(?:\n\n|$)/);
+                        if (!match) return null;
+                        const lines = match[1].split("\n").map((l) => l.trim()).filter((l) => l.startsWith("•"));
+                        const oldProducts = lines.map((l) => {
+                          const text = l.replace(/^•\s*/, "");
+                          const qtyMatch = text.match(/\((\d+)\s*ш\)\s*$/);
+                          const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+                          const name = text.replace(/\s*\(\d+\s*ш\)\s*$/, "").trim();
+                          return { name, qty };
+                        });
+                        if (oldProducts.length === 0) return null;
+                        return (
+                          <div className="mt-2">
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                              <ShoppingBag size={10} /> Сонирхсон бараа ({oldProducts.length})
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {oldProducts.map((p, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 rounded-lg p-1.5 pr-2"
+                                  style={{ background: T.highlightSoft, border: `1px solid ${T.border}` }}>
+                                  <div style={{
+                                    width: 28, height: 28, borderRadius: 4, background: T.surface,
+                                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
+                                  }}>📦</div>
+                                  <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-[10px]">
+                                    {p.name}
+                                  </span>
+                                  {p.qty > 1 && (
+                                    <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                      className="text-[10px] px-1.5 py-0.5 rounded-full">
+                                      ×{p.qty}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                    {/* Сонирхсон бараа — зурагтай grid (шинэ формат) */}
                     {c.interested_products && Array.isArray(c.interested_products) && c.interested_products.length > 0 && (
                       <div className="mt-2">
                         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
