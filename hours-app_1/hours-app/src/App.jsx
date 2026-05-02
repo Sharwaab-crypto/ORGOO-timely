@@ -8835,7 +8835,8 @@ function DriverSettlementView({ profile }) {
 
   // Тус хүргэгчийн стат
   const driverStats = useMemo(() => drivers.map((d) => {
-    const dOrders = filteredOrders.filter((o) => o.driver_id === d.id);
+    // settlement_id-тэй захиалгуудыг хасах (тооцоо хаагдсан болохоор)
+    const dOrders = filteredOrders.filter((o) => o.driver_id === d.id && !o.settlement_id);
     const delivered = dOrders.filter((o) => o.status === "delivered");
     const cancelled = dOrders.filter((o) => o.status === "cancelled");
     const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending");
@@ -9004,15 +9005,19 @@ function DriverSettlementView({ profile }) {
               }).select().single();
               if (stErr) throw stErr;
 
-              // 2. Хамаарагдсан захиалгуудад settlement_id оноох + paid_amount = total_amount
-              const orderIds = driver.deliveredOrders.map((o) => o.id);
-              if (orderIds.length > 0) {
-                for (const o of driver.deliveredOrders) {
-                  await supabase.from("biz_orders").update({
-                    settlement_id: stData.id,
-                    paid_amount: Number(o.total_amount || 0),
-                  }).eq("id", o.id);
-                }
+              // 2. Хамаарагдсан захиалгуудад settlement_id оноох
+              //    Delivered: paid_amount = total_amount (бүрэн төлсөн)
+              //    Cancelled: settlement_id л оноох (paid_amount өөрчлөхгүй)
+              for (const o of driver.deliveredOrders) {
+                await supabase.from("biz_orders").update({
+                  settlement_id: stData.id,
+                  paid_amount: Number(o.total_amount || 0),
+                }).eq("id", o.id);
+              }
+              for (const o of driver.cancelledOrders) {
+                await supabase.from("biz_orders").update({
+                  settlement_id: stData.id,
+                }).eq("id", o.id);
               }
 
               alert(`✅ Тооцоо амжилттай хаагдлаа!\n\nТушаагдсан дүн: ${totalSubmitted.toLocaleString()}₮\nТайлан "Тооцооний тайлан" хэсэгт хадгалагдлаа.`);
