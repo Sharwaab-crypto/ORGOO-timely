@@ -9777,6 +9777,8 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
   const balance = total - paid;
 
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const menuButtonRef = useRef(null);
 
   // Items-аас нийт тоо ширхэг + эхний барааны зураг
   const totalQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
@@ -9890,50 +9892,68 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         )}
 
         {/* 3-dot menu */}
-        <div className="relative flex-shrink-0">
-          <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+        <div className="flex-shrink-0">
+          <button
+            ref={(el) => { if (el) menuButtonRef.current = el; }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              setMenuPos({
+                top: rect.bottom + window.scrollY + 4,
+                right: window.innerWidth - rect.right,
+              });
+              setShowMenu(!showMenu);
+            }}
             style={{ color: T.muted }}
             className="press-btn w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-100">
             <span className="text-base font-bold leading-none">⋮</span>
           </button>
-          {showMenu && (
+          {showMenu && createPortal(
             <>
               <div onClick={() => setShowMenu(false)}
-                style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
               <div style={{
-                position: "absolute", right: 0, top: 32, zIndex: 50,
-                background: T.surface, border: `1px solid ${T.border}`,
-                borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                minWidth: 140,
+                position: "fixed",
+                top: menuPos.top,
+                right: menuPos.right,
+                zIndex: 9999,
+                background: "rgba(255, 255, 255, 0.98)",
+                backdropFilter: "blur(24px) saturate(180%)",
+                WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                border: `1px solid ${T.border}`,
+                borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+                minWidth: 180,
+                overflow: "hidden",
               }}>
                 {onEdit && (
                   <button onClick={() => { setShowMenu(false); onEdit(); }}
-                    className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                    className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: T.ink, fontFamily: FS, textAlign: "left" }}>
                     <Edit3 size={12} /> Засварлах
                   </button>
                 )}
                 {onAssignDriver && order.status !== "delivered" && order.status !== "cancelled" && (
                   <button onClick={() => { setShowMenu(false); onAssignDriver(); }}
-                    className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                    className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: "#0ea5e9", fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
                     🚚 Delivery хуваарилах
                   </button>
                 )}
                 {onCancel && order.status !== "cancelled" && (
                   <button onClick={() => { setShowMenu(false); onCancel(); }}
-                    className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                    className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: T.err, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
                     <X size={12} /> Цуцлах
                   </button>
                 )}
                 <button onClick={() => { setShowMenu(false); onClick && onClick(); }}
-                  className="press-btn w-full px-3 py-2 text-xs flex items-center gap-2"
+                  className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                   style={{ color: T.ink, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
                   👁 Дэлгэрэнгүй
                 </button>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
       </div>
