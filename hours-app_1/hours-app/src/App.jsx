@@ -611,7 +611,16 @@ function LoginScreen() {
 //  ADMIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function AdminDashboard({ profile }) {
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("orgoo-admin-view") || "dashboard";
+    } catch { return "dashboard"; }
+  });
+
+  // Save view to localStorage
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-admin-view", view); } catch {}
+  }, [view]);
   const [employees, setEmployees] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
@@ -1705,7 +1714,15 @@ function AdminDashboard({ profile }) {
 //  EMPLOYEE DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function EmployeeDashboard({ profile }) {
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("orgoo-employee-view") || "home";
+    } catch { return "home"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-employee-view", view); } catch {}
+  }, [view]);
   const [mySessions, setMySessions] = useState([]);
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
@@ -11747,7 +11764,15 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  MANAGER DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function ManagerDashboard({ profile }) {
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("orgoo-manager-view") || "dashboard";
+    } catch { return "dashboard"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-manager-view", view); } catch {}
+  }, [view]);
   const [team, setTeam] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
