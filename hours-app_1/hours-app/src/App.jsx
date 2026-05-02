@@ -5914,50 +5914,41 @@ function CallCenterView({ profile }) {
         <SimpleCallModal
           products={products}
           profile={profile}
-          onSave={async ({ phone, name, notes, interestedProducts }) => {
+          onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
             try {
-              // 1. Customer find or create
-              let customerId = null;
-              const { data: existing } = await supabase
-                .from("biz_customers")
-                .select("id, name")
-                .eq("phone", phone)
-                .maybeSingle();
+              // Тус утсаар customer + call бичих
+              for (const phoneEntry of phoneList) {
+                const { phone, notes } = phoneEntry;
 
-              if (existing) {
-                customerId = existing.id;
-                if (name && name !== existing.name) {
-                  await supabase.from("biz_customers").update({
-                    name,
-                    updated_at: new Date().toISOString(),
-                  }).eq("id", customerId);
-                }
-              } else {
-                const { data: newCust } = await supabase
+                // 1. Customer find or create
+                let customerId = null;
+                const { data: existing } = await supabase
                   .from("biz_customers")
-                  .insert({ phone, name })
-                  .select()
-                  .single();
-                customerId = newCust?.id || null;
-              }
+                  .select("id, name")
+                  .eq("phone", phone)
+                  .maybeSingle();
 
-              // 2. Save call log + сонирхсон бараа JSON-аар
-              await supabase.from("biz_calls").insert({
-                phone,
-                customer_id: customerId,
-                customer_name: name,
-                notes: notes || null,
-                interested_products: interestedProducts && interestedProducts.length > 0
-                  ? interestedProducts.map((p) => ({
-                      id: p.id,
-                      name: p.name,
-                      qty: p.qty,
-                      image_url: p.image_url || null,
-                      sku: p.sku || null,
-                    }))
-                  : null,
-                created_by: profile.id,
-              });
+                if (existing) {
+                  customerId = existing.id;
+                } else {
+                  const { data: newCust } = await supabase
+                    .from("biz_customers")
+                    .insert({ phone })
+                    .select()
+                    .single();
+                  customerId = newCust?.id || null;
+                }
+
+                // 2. Call log
+                await supabase.from("biz_calls").insert({
+                  phone,
+                  customer_id: customerId,
+                  notes: notes || null,
+                  fb_page_id: fb_page_id || null,
+                  interested_products,
+                  created_by: profile.id,
+                });
+              }
 
               setShowCallModal(false);
               await loadAll();
@@ -6057,177 +6048,244 @@ function CallCenterView({ profile }) {
   );
 }
 
-// ─── Энгийн дуудлага бүртгэх modal ────────────────────────────────
+// ─── Дугаар нэмэх modal (FB page + олон утас + бараа table) ──────────
 function SimpleCallModal({ products = [], profile, onSave, onClose }) {
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [interestedProducts, setInterestedProducts] = useState([]); // [{ id, name, qty }]
+  const [fbPages, setFbPages] = useState([]);
+  const [fbPageId, setFbPageId] = useState("");
+  const [phones, setPhones] = useState([{ id: 1, phone: "", notes: "" }]);
+  const [items, setItems] = useState([]); // [{ productId, qty, ... }]
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
-  const [activeProduct, setActiveProduct] = useState(null); // popup-д нээгдэх бараа
+  const [activeProduct, setActiveProduct] = useState(null);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
-  const [searching, setSearching] = useState(false);
 
-  // Auto search by phone
+  // FB pages-уудыг ачаалах
   useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("biz_fb_pages")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+      setFbPages(data || []);
+    })();
+  }, []);
+
+  // Customer auto-search (1-р утсаар)
+  useEffect(() => {
+    const phone = phones[0]?.phone?.trim();
     if (!phone || phone.length < 6) {
       setFoundCustomer(null);
       return;
     }
     const timer = setTimeout(async () => {
-      setSearching(true);
       try {
         const { data } = await supabase
           .from("biz_customers")
           .select("*")
           .eq("phone", phone)
           .maybeSingle();
-        if (data) {
-          setFoundCustomer(data);
-          if (!name) setName(data.name || "");
-        } else {
-          setFoundCustomer(null);
-        }
+        setFoundCustomer(data);
       } catch (e) { console.error(e); }
-      finally { setSearching(false); }
     }, 500);
     return () => clearTimeout(timer);
-  }, [phone]);
+  }, [phones[0]?.phone]);
 
-  // Барааны хайлт
+  // Phones management
+  const addPhone = () => setPhones([...phones, { id: Date.now(), phone: "", notes: "" }]);
+  const removePhone = (id) => phones.length > 1 && setPhones(phones.filter((p) => p.id !== id));
+  const updatePhone = (id, field, value) => setPhones(phones.map((p) => p.id === id ? { ...p, [field]: value } : p));
+
+  // Products
   const filteredProducts = useMemo(() => {
     if (!productSearch.trim()) return products;
     const q = productSearch.toLowerCase();
-    return products.filter((p) =>
-      p.name?.toLowerCase().includes(q) ||
-      p.sku?.toLowerCase().includes(q)
-    );
+    return products.filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
   }, [products, productSearch]);
 
-  // Add/remove бараа
   const toggleProduct = (product) => {
-    const exists = interestedProducts.find((p) => p.id === product.id);
+    const exists = items.find((it) => it.productId === product.id);
     if (exists) {
-      setInterestedProducts(interestedProducts.filter((p) => p.id !== product.id));
+      setItems(items.filter((it) => it.productId !== product.id));
     } else {
-      setInterestedProducts([...interestedProducts, { id: product.id, name: product.name, qty: 1, image_url: product.image_url, sku: product.sku }]);
+      setItems([...items, {
+        productId: product.id,
+        product,
+        qty: 1,
+      }]);
     }
   };
 
-  const updateQty = (productId, qty) => {
+  const updateItemQty = (productId, qty) => {
     if (qty <= 0) {
-      setInterestedProducts(interestedProducts.filter((p) => p.id !== productId));
+      setItems(items.filter((it) => it.productId !== productId));
       return;
     }
-    setInterestedProducts(interestedProducts.map((p) => p.id === productId ? { ...p, qty } : p));
+    setItems(items.map((it) => it.productId === productId ? { ...it, qty } : it));
   };
 
-  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+  const removeItem = (productId) => setItems(items.filter((it) => it.productId !== productId));
+
+  const validPhones = phones.filter((p) => p.phone.trim());
+  const canSave = validPhones.length > 0;
+
+  const inputStyle = { background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="modal-content rounded-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between mb-3">
-          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
-            📞 Дуудлага бүртгэх
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
+      <div className="modal-content rounded-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+            Нэмэх
           </h3>
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Phone size={11} /> Утас *
-            </label>
-            <div className="relative">
-              <input value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="99887766"
-                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm"
-                autoFocus />
-              {searching && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <Loader2 className="spin" size={14} style={{ color: T.muted }} />
+        <div className="p-5">
+          {/* Title bar with action buttons */}
+          <div className="flex items-center justify-between mb-4 pb-3"
+            style={{ borderBottom: `2px solid ${T.highlight}`, background: "linear-gradient(180deg, transparent, transparent)" }}>
+            <div className="flex items-center gap-2">
+              <div style={{ width: 4, height: 24, background: T.highlight, borderRadius: 2 }} />
+              <h2 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xl">
+                Дугаар нэмэх
+              </h2>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={onClose} disabled={busy}
+                className="press-btn px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                Болих
+              </button>
+              <button
+                disabled={busy || !canSave}
+                onClick={async () => {
+                  setBusy(true);
+                  await onSave({
+                    fb_page_id: fbPageId || null,
+                    phones: validPhones.map((p) => ({ phone: p.phone.trim(), notes: p.notes.trim() || null })),
+                    interested_products: items.length > 0 ? items.map((it) => ({
+                      id: it.productId,
+                      name: it.product.name,
+                      qty: it.qty,
+                      image_url: it.product.image_url || null,
+                      sku: it.product.sku || null,
+                      price: it.product.sale_price || null,
+                    })) : null,
+                  });
+                  setBusy(false);
+                }}
+                className="press-btn px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                {busy ? "Хадгалаж..." : "Хадгалах"}
+              </button>
+            </div>
+          </div>
+
+          {/* 2 column section: FB + Phones */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+            {/* FB info */}
+            <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+              className="rounded-xl p-4">
+              <h4 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3">
+                Facebook мэдээлэл
+              </h4>
+              <div className="flex items-center gap-2">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-xs whitespace-nowrap">
+                  Маркетинг :
+                </label>
+                <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
+                  style={inputStyle} className="flex-1 px-3 py-2 rounded-lg text-sm">
+                  <option value="">Маркетинг сонгох</option>
+                  {fbPages.map((page) => (
+                    <option key={page.id} value={page.id}>{page.name}</option>
+                  ))}
+                </select>
+              </div>
+              {fbPages.length === 0 && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 italic">
+                  💡 Эхлээд Facebook page нэмнэ үү (Бизнес → Тохиргоо)
                 </div>
               )}
             </div>
-            {foundCustomer && (
-              <div className="mt-1 px-2 py-1 rounded"
-                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
-                <div className="text-[10px]">
-                  ✓ Үйлчлүүлэгч олдлоо · {foundCustomer.total_orders || 0} өмнөх захиалга
-                </div>
-              </div>
-            )}
-          </div>
 
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-              <UserIcon size={11} /> Нэр (заавал биш)
-            </label>
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="Овог нэр"
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-          </div>
-
-          {/* Сонирхсон бараа хэсэг */}
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-              <ShoppingBag size={11} /> Сонирхсон бараа
-            </label>
-
-            {/* Сонгосон жагсаалт */}
-            {interestedProducts.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {interestedProducts.map((p) => (
-                  <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg"
-                    style={{ background: T.highlightSoft }}>
-                    {p.image_url ? (
-                      <img src={p.image_url} alt={p.name}
-                        style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }} />
-                    ) : (
-                      <div style={{
-                        width: 32, height: 32, borderRadius: 4, background: T.surface,
-                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
-                      }}>📦</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate">
-                        {p.name}
-                      </div>
+            {/* Phones */}
+            <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+              className="rounded-xl p-4">
+              <h4 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-3">
+                Утасны дугаарууд
+              </h4>
+              <div className="space-y-2">
+                {phones.map((p, idx) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <div style={{
+                      background: T.highlightSoft, color: T.highlight,
+                      width: 24, height: 24, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontFamily: FD, fontWeight: 700, fontSize: 11, flexShrink: 0,
+                    }}>
+                      {idx + 1}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => updateQty(p.id, p.qty - 1)}
-                        style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
-                        className="w-5 h-5 rounded text-[10px] press-btn">−</button>
-                      <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
-                        className="text-xs tabular-nums w-6 text-center">{p.qty}</span>
-                      <button onClick={() => updateQty(p.id, p.qty + 1)}
-                        style={{ background: T.highlight, color: "white" }}
-                        className="w-5 h-5 rounded text-[10px] press-btn">+</button>
-                    </div>
-                    <button onClick={() => toggleProduct({ id: p.id })}
-                      style={{ color: T.err }} className="press-btn">
-                      <X size={12} />
+                    <input value={p.notes} onChange={(e) => updatePhone(p.id, "notes", e.target.value)}
+                      placeholder="Сэтгэгдэл"
+                      style={inputStyle} className="flex-1 px-2 py-1.5 rounded-lg text-xs min-w-0" />
+                    <input value={p.phone} onChange={(e) => updatePhone(p.id, "phone", e.target.value)}
+                      placeholder="Утас"
+                      style={inputStyle} className="flex-1 px-2 py-1.5 rounded-lg text-xs min-w-0 tabular-nums" />
+                    <button onClick={() => removePhone(p.id)}
+                      disabled={phones.length === 1}
+                      style={{
+                        background: phones.length === 1 ? T.surface : T.err,
+                        color: phones.length === 1 ? T.mutedSoft : "white",
+                      }}
+                      className="press-btn w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <span className="text-base font-bold leading-none">−</span>
                     </button>
+                    {idx === phones.length - 1 && (
+                      <button onClick={addPhone}
+                        style={{ background: T.surface, color: T.muted, border: `1px solid ${T.border}` }}
+                        className="press-btn w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Plus size={12} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
-            )}
+              <button onClick={addPhone}
+                className="press-btn w-full mt-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1"
+                style={{
+                  border: `1px dashed ${T.border}`, background: "transparent",
+                  color: T.muted, fontFamily: FS, fontWeight: 500,
+                }}>
+                <Plus size={12} /> Дугаар нэмэх
+              </button>
+              {foundCustomer && (
+                <div className="mt-2 px-2 py-1 rounded"
+                  style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                  <div className="text-[10px]">
+                    ✓ {foundCustomer.name || "Үйлчлүүлэгч"} · {foundCustomer.total_orders || 0} өмнөх захиалга
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
+          {/* Бараа сонгох */}
+          <div className="mb-4">
             <button onClick={() => setShowProductPicker(!showProductPicker)}
-              className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+              className="press-btn w-full py-2 rounded-lg text-sm flex items-center justify-center gap-1.5"
               style={{
                 background: showProductPicker ? T.highlight : T.surfaceAlt,
                 color: showProductPicker ? "white" : T.ink,
-                border: `1px dashed ${showProductPicker ? T.highlight : T.border}`,
+                border: `1px ${showProductPicker ? "solid" : "dashed"} ${showProductPicker ? T.highlight : T.border}`,
                 fontFamily: FS, fontWeight: 600,
               }}>
-              {showProductPicker ? "Хаах" : `+ Бараа сонгох ${interestedProducts.length > 0 ? `(${interestedProducts.length})` : ""}`}
+              {showProductPicker ? "Хаах" : `+ Бараа сонгох ${items.length > 0 ? `(${items.length})` : ""}`}
             </button>
 
-            {/* Product picker — Grid with images */}
             {showProductPicker && (
               <div className="mt-2 rounded-lg overflow-hidden"
                 style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
@@ -6235,18 +6293,17 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                   placeholder="🔍 Бараа хайх..."
                   style={{ background: T.surface, border: "none", borderBottom: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
                   className="w-full px-3 py-2 text-sm" />
-                <div className="max-h-96 overflow-y-auto p-2">
+                <div className="max-h-72 overflow-y-auto p-2">
                   {filteredProducts.length === 0 ? (
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-center py-6 text-xs">
                       {products.length === 0 ? "Бараа байхгүй" : "Олдсонгүй"}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {filteredProducts.slice(0, 30).map((p) => {
-                        const selected = interestedProducts.find((ip) => ip.id === p.id);
+                        const selected = items.find((ip) => ip.productId === p.id);
                         return (
-                          <button key={p.id}
-                            onClick={() => setActiveProduct(p)}
+                          <button key={p.id} onClick={() => setActiveProduct(p)}
                             className="press-btn rounded-lg overflow-hidden text-left relative"
                             style={{
                               background: T.surface,
@@ -6256,12 +6313,10 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                               <div style={{
                                 position: "absolute", top: 4, right: 4, zIndex: 2,
                                 background: T.highlight, color: "white",
-                                width: 22, height: 22, borderRadius: "50%",
+                                width: 20, height: 20, borderRadius: "50%",
                                 display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: 11, fontWeight: 700,
-                              }}>
-                                {selected.qty}
-                              </div>
+                                fontSize: 10, fontWeight: 700,
+                              }}>{selected.qty}</div>
                             )}
                             <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt }}>
                               {p.image_url ? (
@@ -6271,7 +6326,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                                 <div style={{
                                   width: "100%", height: "100%",
                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                  fontSize: 32,
+                                  fontSize: 28,
                                 }}>📦</div>
                               )}
                             </div>
@@ -6293,143 +6348,183 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
             )}
           </div>
 
-          {/* Барааны дэлгэрэнгүй popup */}
-          {activeProduct && (
-            <div onClick={() => setActiveProduct(null)}
-              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
-              className="flex items-center justify-center p-4">
-              <div onClick={(e) => e.stopPropagation()}
-                className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
-                {/* Том зураг */}
-                <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
-                  {activeProduct.image_url ? (
-                    <img src={activeProduct.image_url} alt={activeProduct.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <div style={{
-                      width: "100%", height: "100%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 80,
-                    }}>📦</div>
-                  )}
-                  <button onClick={() => setActiveProduct(null)}
-                    style={{
-                      position: "absolute", top: 12, right: 12,
-                      background: "rgba(0,0,0,0.6)", color: "white",
-                      width: 32, height: 32, borderRadius: "50%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="p-4 space-y-3">
-                  {/* Нэр + үнэ */}
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                        {activeProduct.name}
-                      </h4>
-                    </div>
-                    {activeProduct.sku && (
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        SKU: {activeProduct.sku}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
-                      {Number(activeProduct.sale_price || 0).toLocaleString()}₮
-                    </span>
-                    <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                      Нөөц: {activeProduct.stock} {activeProduct.unit}
-                    </span>
-                  </div>
-
-                  {/* Тайлбар */}
-                  {activeProduct.description && (
-                    <div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
-                        📄 Тайлбар
-                      </div>
-                      <div
-                        className="text-sm whitespace-pre-wrap p-3 rounded-lg"
-                        style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
-                        {activeProduct.description}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action */}
-                  {(() => {
-                    const selected = interestedProducts.find((ip) => ip.id === activeProduct.id);
-                    if (!selected) {
+          {/* Сонгосон бараа table */}
+          {items.length > 0 && (
+            <div className="rounded-xl overflow-hidden mb-4"
+              style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ minWidth: 700 }}>
+                  <thead>
+                    <tr style={{ background: T.surfaceAlt }}>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>№</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>Зураг</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>Нэр</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>Ангилал</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>Дотоод код</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "left" }}>Баар код</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "right" }}>Үнэ</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "right" }}>Үлдэгдэл</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "center" }}>Тоо ширхэг</th>
+                      <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "10px 8px", textAlign: "center" }}>Үйлдэл</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, idx) => {
+                      const p = it.product;
                       return (
-                        <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
-                          className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
-                          <Plus size={14} /> Сонгох
-                        </button>
+                        <tr key={it.productId} style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM }}>{idx + 1}</td>
+                          <td style={{ padding: "8px" }}>
+                            {p.image_url ? (
+                              <img src={p.image_url} alt={p.name}
+                                style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4 }} />
+                            ) : (
+                              <div style={{
+                                width: 36, height: 36, borderRadius: 4, background: T.surfaceAlt,
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+                              }}>📦</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FS, fontWeight: 500 }}
+                            className="line-clamp-2 max-w-[150px]">
+                            {p.name}
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FS }}>
+                            {p.category || "—"}
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM }}>
+                            {p.sku || "—"}
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM }}>
+                            {p.barcode || p.sku || "—"}
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FD, fontWeight: 600, textAlign: "right" }} className="tabular-nums">
+                            {Number(p.sale_price || 0).toLocaleString()}₮
+                          </td>
+                          <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM, textAlign: "right" }} className="tabular-nums">
+                            {p.stock || 0}
+                          </td>
+                          <td style={{ padding: "10px 8px", textAlign: "center" }}>
+                            <input type="number" value={it.qty}
+                              onChange={(e) => updateItemQty(it.productId, Number(e.target.value) || 0)}
+                              style={{ ...inputStyle, width: 60, textAlign: "center" }}
+                              className="px-2 py-1 rounded text-xs tabular-nums" />
+                          </td>
+                          <td style={{ padding: "10px 8px", textAlign: "center" }}>
+                            <button onClick={() => removeItem(it.productId)}
+                              style={{ color: T.muted }} className="press-btn p-1 rounded">
+                              <span className="text-base">⋮</span>
+                            </button>
+                          </td>
+                        </tr>
                       );
-                    }
-                    return (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between p-3 rounded-lg"
-                          style={{ background: T.highlightSoft }}>
-                          <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                            Тоо ширхэг
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => updateQty(selected.id, selected.qty - 1)}
-                              style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
-                              className="w-8 h-8 rounded text-base press-btn">−</button>
-                            <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}
-                              className="text-2xl tabular-nums w-10 text-center">{selected.qty}</span>
-                            <button onClick={() => updateQty(selected.id, selected.qty + 1)}
-                              style={{ background: T.highlight, color: "white" }}
-                              className="w-8 h-8 rounded text-base press-btn">+</button>
-                          </div>
-                        </div>
-                        <button onClick={() => { toggleProduct({ id: activeProduct.id }); setActiveProduct(null); }}
-                          className="press-btn w-full py-2 rounded-xl text-xs font-semibold"
-                          style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                          ✕ Хасах
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
-
-          <div>
-            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-              <FileText size={11} /> Сэтгэгдэл
-            </label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="ж.нь: Хямдрал асуусан, маргааш дахин залгая гэсэн..."
-              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
-          </div>
-
-          <button
-            disabled={busy || !phone.trim()}
-            onClick={async () => {
-              setBusy(true);
-              await onSave({
-                phone: phone.trim(),
-                name: name.trim() || null,
-                notes: notes.trim() || null,
-                interestedProducts: interestedProducts.length > 0 ? interestedProducts : null,
-              });
-              setBusy(false);
-            }}
-            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : "✓ Хадгалах"}
-          </button>
         </div>
       </div>
+
+      {/* Барааны popup */}
+      {activeProduct && (
+        <div onClick={() => setActiveProduct(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
+          className="flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()}
+            className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
+            <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
+              {activeProduct.image_url ? (
+                <img src={activeProduct.image_url} alt={activeProduct.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <div style={{
+                  width: "100%", height: "100%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 80,
+                }}>📦</div>
+              )}
+              <button onClick={() => setActiveProduct(null)}
+                style={{
+                  position: "absolute", top: 12, right: 12,
+                  background: "rgba(0,0,0,0.6)", color: "white",
+                  width: 32, height: 32, borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                  {activeProduct.name}
+                </h4>
+                {activeProduct.sku && (
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    SKU: {activeProduct.sku}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                  {Number(activeProduct.sale_price || 0).toLocaleString()}₮
+                </span>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                  Нөөц: {activeProduct.stock} {activeProduct.unit}
+                </span>
+              </div>
+              {activeProduct.description && (
+                <div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
+                    📄 Тайлбар
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap p-3 rounded-lg"
+                    style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
+                    {activeProduct.description}
+                  </div>
+                </div>
+              )}
+              {(() => {
+                const selected = items.find((ip) => ip.productId === activeProduct.id);
+                if (!selected) {
+                  return (
+                    <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
+                      className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
+                      <Plus size={14} /> Сонгох
+                    </button>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 rounded-lg"
+                      style={{ background: T.highlightSoft }}>
+                      <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                        Тоо ширхэг
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => updateItemQty(selected.productId, selected.qty - 1)}
+                          style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
+                          className="w-8 h-8 rounded text-base press-btn">−</button>
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}
+                          className="text-2xl tabular-nums w-10 text-center">{selected.qty}</span>
+                        <button onClick={() => updateItemQty(selected.productId, selected.qty + 1)}
+                          style={{ background: T.highlight, color: "white" }}
+                          className="w-8 h-8 rounded text-base press-btn">+</button>
+                      </div>
+                    </div>
+                    <button onClick={() => { toggleProduct({ id: activeProduct.id }); setActiveProduct(null); }}
+                      className="press-btn w-full py-2 rounded-xl text-xs font-semibold"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                      ✕ Хасах
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
