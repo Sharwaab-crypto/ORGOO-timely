@@ -6082,11 +6082,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState("");
   const [name, setName] = useState(initialName || "");
-  const [district, setDistrict] = useState("");
-  const [khoroo, setKhoroo] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([]); // { productId, quantity }
+  const [items, setItems] = useState([]); // { productId, quantity, itemNotes }
   const [deliveryFee, setDeliveryFee] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
   const [callType, setCallType] = useState("called"); // called | walk_in
@@ -6143,8 +6141,13 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
         product: product,
         quantity: 1,
         unitPrice: Number(product.sale_price || 0),
+        itemNotes: product.description || "", // Барааны description-аас auto-fill
       }]);
     }
+  };
+
+  const updateItemNotes = (productId, notes) => {
+    setItems(items.map((it) => it.productId === productId ? { ...it, itemNotes: notes } : it));
   };
 
   const updateQty = (productId, qty) => {
@@ -6181,35 +6184,16 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
           {/* ЗҮҮН: Form */}
           <div className="glass rounded-xl p-4 space-y-3">
-            {/* District + Khoroo */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                  Дүүрэг
-                </label>
-                <input value={district} onChange={(e) => setDistrict(e.target.value)}
-                  placeholder="Сонгох"
-                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-              </div>
-              <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                  Дүүрэг хороо
-                </label>
-                <input value={khoroo} onChange={(e) => setKhoroo(e.target.value)}
-                  placeholder="Дүүрэг хороо"
-                  style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
-              </div>
-            </div>
-
             {/* Phones */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <Phone size={11} style={{ color: T.highlight }} />
                   <span style={{ color: T.err }}>*</span> Дугаар 1
                 </label>
                 <div className="relative">
                   <input value={phone} onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Дугаар 1"
+                    placeholder="99887766"
                     style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
                   {searching && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -6227,31 +6211,45 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                 )}
               </div>
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <Phone size={11} style={{ color: T.muted }} />
                   Дугаар 2
                 </label>
                 <input value={phone2} onChange={(e) => setPhone2(e.target.value)}
-                  placeholder="Дугаар 2"
+                  placeholder="99112233"
                   style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
               </div>
             </div>
 
+            {/* Name */}
+            <div>
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                <UserIcon size={11} style={{ color: T.muted }} />
+                Үйлчлүүлэгчийн нэр
+              </label>
+              <input value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="Овог нэр"
+                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+
             {/* Address */}
             <div>
-              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                <span style={{ color: T.err }}>*</span> Хаяг
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                <MapPin size={11} style={{ color: T.highlight }} />
+                <span style={{ color: T.err }}>*</span> Хүргэх хаяг
               </label>
               <textarea value={address} onChange={(e) => setAddress(e.target.value)}
                 rows={2}
-                placeholder="Хаяг байршил"
+                placeholder="Дүүрэг, хороо, байр, тоот..."
                 style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
             </div>
 
             {/* Subtotal + Total */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                  Үнийн дүн
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <ShoppingBag size={11} style={{ color: T.muted }} />
+                  Бараа дүн
                 </label>
                 <div className="px-3 py-2 rounded-lg text-sm tabular-nums"
                   style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
@@ -6259,7 +6257,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                 </div>
               </div>
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <BarChart3 size={11} style={{ color: T.highlight }} />
                   Нийт дүн
                 </label>
                 <div className="px-3 py-2 rounded-lg text-sm tabular-nums"
@@ -6272,16 +6271,18 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
             {/* Delivery fee + Paid */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                  <span style={{ color: T.err }}>*</span> Хүргэлтийн үнэ
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <Send size={11} style={{ color: T.muted }} />
+                  Хүргэлтийн үнэ
                 </label>
                 <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)}
-                  placeholder="Хүргэлтийн үнэ"
+                  placeholder="0"
                   style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
               </div>
               <div>
-                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                  <span style={{ color: T.err }}>*</span> Төлсөн дүн
+                <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                  <CheckCircle2 size={11} style={{ color: T.ok }} />
+                  Төлсөн дүн
                 </label>
                 <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)}
                   placeholder="0"
@@ -6297,32 +6298,33 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
 
             {/* Type buttons */}
             <div>
-              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 block">
-                Нэмэлт мэдээлэл
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                <FileText size={11} style={{ color: T.muted }} />
+                Захиалгын төрөл
               </label>
               <div className="flex gap-2 mb-2">
                 <button onClick={() => setCallType("called")}
-                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
                   style={{
                     background: callType === "called" ? T.highlight : T.surfaceAlt,
                     color: callType === "called" ? "white" : T.ink,
                     fontFamily: FS, fontWeight: 600,
                   }}>
-                  Залгасан
+                  <Phone size={11} /> Залгасан
                 </button>
                 <button onClick={() => setCallType("walk_in")}
-                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
                   style={{
                     background: callType === "walk_in" ? T.highlight : T.surfaceAlt,
                     color: callType === "walk_in" ? "white" : T.ink,
                     fontFamily: FS, fontWeight: 600,
                   }}>
-                  Орж ирсэн
+                  <UserIcon size={11} /> Орж ирсэн
                 </button>
               </div>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="Нэмэлт мэдээлэл"
+                placeholder="Нэмэлт мэдээлэл..."
                 style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
             </div>
           </div>
@@ -6346,7 +6348,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                   return (
                     <div key={it.productId} className="rounded-xl p-3"
                       style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-                      <div className="flex gap-3 items-start">
+                      <div className="flex gap-3 items-start mb-2">
                         {p.image_url ? (
                           <img src={p.image_url} alt={p.name}
                             style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8 }} />
@@ -6398,6 +6400,19 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                             </div>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Барааны тайлбар */}
+                      <div>
+                        <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <FileText size={9} /> Тайлбар
+                        </label>
+                        <textarea value={it.itemNotes || ""}
+                          onChange={(e) => updateItemNotes(it.productId, e.target.value)}
+                          rows={2}
+                          placeholder="Барааны тайлбар, тэмдэглэл..."
+                          style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                          className="w-full px-2 py-1.5 rounded text-[11px] resize-none" />
                       </div>
                     </div>
                   );
@@ -6464,12 +6479,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
             disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
             onClick={async () => {
               setBusy(true);
-              const fullAddress = [district, khoroo, address].filter(Boolean).join(", ");
               await onSave({
                 phone: phone.trim(),
                 phone2: phone2.trim() || null,
                 name: name.trim() || null,
-                address: fullAddress || null,
+                address: address.trim() || null,
                 notes: notes.trim() || null,
                 callType,
                 subtotal,
@@ -6483,6 +6497,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                   quantity: it.quantity,
                   unit_price: it.unitPrice,
                   total_amount: it.quantity * it.unitPrice,
+                  notes: it.itemNotes || null,
                 })),
               });
               setBusy(false);
