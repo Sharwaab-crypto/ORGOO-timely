@@ -5979,6 +5979,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [interestedProducts, setInterestedProducts] = useState([]); // [{ id, name, qty }]
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [activeProduct, setActiveProduct] = useState(null); // popup-д нээгдэх бараа
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -6140,7 +6141,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               {showProductPicker ? "Хаах" : `+ Бараа сонгох ${interestedProducts.length > 0 ? `(${interestedProducts.length})` : ""}`}
             </button>
 
-            {/* Product picker */}
+            {/* Product picker — Grid with images */}
             {showProductPicker && (
               <div className="mt-2 rounded-lg overflow-hidden"
                 style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
@@ -6148,49 +6149,173 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                   placeholder="🔍 Бараа хайх..."
                   style={{ background: T.surface, border: "none", borderBottom: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
                   className="w-full px-3 py-2 text-sm" />
-                <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                <div className="max-h-96 overflow-y-auto p-2">
                   {filteredProducts.length === 0 ? (
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-center py-6 text-xs">
                       {products.length === 0 ? "Бараа байхгүй" : "Олдсонгүй"}
                     </div>
                   ) : (
-                    filteredProducts.slice(0, 30).map((p) => {
-                      const selected = interestedProducts.find((ip) => ip.id === p.id);
-                      return (
-                        <button key={p.id} onClick={() => toggleProduct(p)}
-                          className="press-btn w-full p-1.5 rounded flex items-center gap-2 text-left"
-                          style={{
-                            background: selected ? T.highlightSoft : T.surface,
-                            border: `1px solid ${selected ? T.highlight : "transparent"}`,
-                          }}>
-                          {p.image_url ? (
-                            <img src={p.image_url} alt={p.name}
-                              style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} />
-                          ) : (
-                            <div style={{
-                              width: 28, height: 28, borderRadius: 4, background: T.surfaceAlt,
-                              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
-                            }}>📦</div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                              className="text-[11px] truncate">{p.name}</div>
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                              {Number(p.sale_price || 0).toLocaleString()}₮
+                    <div className="grid grid-cols-3 gap-2">
+                      {filteredProducts.slice(0, 30).map((p) => {
+                        const selected = interestedProducts.find((ip) => ip.id === p.id);
+                        return (
+                          <button key={p.id}
+                            onClick={() => setActiveProduct(p)}
+                            className="press-btn rounded-lg overflow-hidden text-left relative"
+                            style={{
+                              background: T.surface,
+                              border: `2px solid ${selected ? T.highlight : T.border}`,
+                            }}>
+                            {selected && (
+                              <div style={{
+                                position: "absolute", top: 4, right: 4, zIndex: 2,
+                                background: T.highlight, color: "white",
+                                width: 22, height: 22, borderRadius: "50%",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 11, fontWeight: 700,
+                              }}>
+                                {selected.qty}
+                              </div>
+                            )}
+                            <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt }}>
+                              {p.image_url ? (
+                                <img src={p.image_url} alt={p.name}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              ) : (
+                                <div style={{
+                                  width: "100%", height: "100%",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: 32,
+                                }}>📦</div>
+                              )}
                             </div>
-                          </div>
-                          {selected && (
-                            <span style={{ background: T.highlight, color: "white" }}
-                              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">✓</span>
-                          )}
-                        </button>
-                      );
-                    })
+                            <div className="p-1.5">
+                              <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                                className="text-[10px] truncate">{p.name}</div>
+                              <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}
+                                className="text-[10px] tabular-nums">
+                                {Number(p.sale_price || 0).toLocaleString()}₮
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
             )}
           </div>
+
+          {/* Барааны дэлгэрэнгүй popup */}
+          {activeProduct && (
+            <div onClick={() => setActiveProduct(null)}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
+              className="flex items-center justify-center p-4">
+              <div onClick={(e) => e.stopPropagation()}
+                className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
+                {/* Том зураг */}
+                <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
+                  {activeProduct.image_url ? (
+                    <img src={activeProduct.image_url} alt={activeProduct.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <div style={{
+                      width: "100%", height: "100%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 80,
+                    }}>📦</div>
+                  )}
+                  <button onClick={() => setActiveProduct(null)}
+                    style={{
+                      position: "absolute", top: 12, right: 12,
+                      background: "rgba(0,0,0,0.6)", color: "white",
+                      width: 32, height: 32, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  {/* Нэр + үнэ */}
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                        {activeProduct.name}
+                      </h4>
+                    </div>
+                    {activeProduct.sku && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        SKU: {activeProduct.sku}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                      {Number(activeProduct.sale_price || 0).toLocaleString()}₮
+                    </span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                      Нөөц: {activeProduct.stock} {activeProduct.unit}
+                    </span>
+                  </div>
+
+                  {/* Тайлбар */}
+                  {activeProduct.description && (
+                    <div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
+                        📄 Тайлбар
+                      </div>
+                      <div
+                        className="text-sm whitespace-pre-wrap p-3 rounded-lg"
+                        style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
+                        {activeProduct.description}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action */}
+                  {(() => {
+                    const selected = interestedProducts.find((ip) => ip.id === activeProduct.id);
+                    if (!selected) {
+                      return (
+                        <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
+                          className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
+                          <Plus size={14} /> Сонгох
+                        </button>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-3 rounded-lg"
+                          style={{ background: T.highlightSoft }}>
+                          <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                            Тоо ширхэг
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => updateQty(selected.id, selected.qty - 1)}
+                              style={{ background: T.surface, color: T.ink, border: `1px solid ${T.border}` }}
+                              className="w-8 h-8 rounded text-base press-btn">−</button>
+                            <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}
+                              className="text-2xl tabular-nums w-10 text-center">{selected.qty}</span>
+                            <button onClick={() => updateQty(selected.id, selected.qty + 1)}
+                              style={{ background: T.highlight, color: "white" }}
+                              className="w-8 h-8 rounded text-base press-btn">+</button>
+                          </div>
+                        </div>
+                        <button onClick={() => { toggleProduct({ id: activeProduct.id }); setActiveProduct(null); }}
+                          className="press-btn w-full py-2 rounded-xl text-xs font-semibold"
+                          style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                          ✕ Хасах
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
