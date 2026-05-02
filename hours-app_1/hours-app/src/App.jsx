@@ -16420,28 +16420,38 @@ function DriverRequestsView({ profile }) {
   );
 }
 
-// ─── Шинэ хүсэлт modal ──────────────────────────────────────────────
+// ─── Шинэ хүсэлт modal — Categories + Grid layout ────────────────
 function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, stock, profile, onSave, onClose }) {
   const mainWarehouse = warehouses.find((w) => w.type === "main");
-  const [selectedItems, setSelectedItems] = useState([]); // [{ product_id, quantity }]
+  const [selectedItems, setSelectedItems] = useState([]);
   const [notes, setNotes] = useState("");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [calculating, setCalculating] = useState(true);
   const [autoNote, setAutoNote] = useState("");
-  const [orderSummary, setOrderSummary] = useState(null); // { orderCount, totalQty, breakdown }
+  const [orderSummary, setOrderSummary] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [activeCat, setActiveCat] = useState("all");
+  const [showSidebar, setShowSidebar] = useState(false); // mobile
 
-  // Аль агуулахаас бараа авах вэ?
   const sourceWh = isReturn ? myWarehouse : mainWarehouse;
   const targetWh = isReturn ? mainWarehouse : myWarehouse;
 
-  // ─── Автомат тооцоолол ────────────────────────────────────────
+  // Categories load
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("inv_categories").select("id, name").order("name");
+      setCategories(data || []);
+    })();
+  }, []);
+
+  // Auto calculate
   useEffect(() => {
     (async () => {
       setCalculating(true);
       try {
         if (isReturn) {
-          // ─── БУЦААХ: Driver-ийн агуулахад байгаа БҮХ барааг автомат сонгох
+          // БУЦААХ
           const myStock = stock.filter((s) => s.warehouse_id === myWarehouse?.id && Number(s.quantity) > 0);
           const items = myStock.map((s) => {
             const product = products.find((p) => p.id === s.product_id);
@@ -16450,61 +16460,46 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
               product_name: product?.name || "",
               product_sku: product?.sku || "",
               product_image: product?.image_url || null,
+              product_price: Number(product?.price || 0),
               quantity: Number(s.quantity),
               maxQty: Number(s.quantity),
             };
           });
           setSelectedItems(items);
-          setAutoNote(
-            items.length > 0
-              ? `🔄 Агуулахад байгаа ${items.length} төрлийн бүх барааг автомат сонгосон`
-              : "Агуулахад буцаах бараа байхгүй"
-          );
+          setAutoNote(items.length > 0 ? `🔄 ${items.length} төрлийн бүх барааг автомат сонгосон` : "Агуулахад буцаах бараа байхгүй");
         } else {
-          // ─── АВАХ: Driver-ийн pending+new захиалгуудаас тооцох
+          // АВАХ
           const { data: ordData } = await supabase
-            .from("biz_orders")
-            .select("id, status, customer_phone, customer_name")
-            .eq("driver_id", profile.id)
-            .in("status", ["new", "pending"]);
-
+            .from("biz_orders").select("id")
+            .eq("driver_id", profile.id).in("status", ["new", "pending"]);
           const orderIds = (ordData || []).map((o) => o.id);
 
           if (orderIds.length === 0) {
-            setAutoNote("⚠ Хүргэх захиалга байхгүй байна");
+            setAutoNote("⚠ Хүргэх захиалга байхгүй");
             setOrderSummary({ orderCount: 0, totalQty: 0, breakdown: [] });
             setCalculating(false);
             return;
           }
 
           const { data: itemData } = await supabase
-            .from("biz_order_items")
-            .select("product_id, product_name, quantity")
+            .from("biz_order_items").select("product_id, product_name, quantity")
             .in("order_id", orderIds);
 
-          // Шаардлагатай бараа тоог нэгтгэх
           const requiredMap = {};
           (itemData || []).forEach((it) => {
             if (!it.product_id) return;
             if (!requiredMap[it.product_id]) {
-              requiredMap[it.product_id] = {
-                product_id: it.product_id,
-                product_name: it.product_name,
-                requiredQty: 0,
-              };
+              requiredMap[it.product_id] = { product_id: it.product_id, product_name: it.product_name, requiredQty: 0 };
             }
             requiredMap[it.product_id].requiredQty += Number(it.quantity || 0);
           });
 
-          // Захиалгын дэлгэрэнгүй summary
           const breakdown = Object.values(requiredMap).map((r) => {
             const myStock = stock.find((s) => s.warehouse_id === myWarehouse?.id && s.product_id === r.product_id);
             const myQty = Number(myStock?.quantity || 0);
             return {
-              product_id: r.product_id,
-              product_name: r.product_name,
-              required: r.requiredQty,
-              myStock: myQty,
+              product_id: r.product_id, product_name: r.product_name,
+              required: r.requiredQty, myStock: myQty,
               missing: Math.max(0, r.requiredQty - myQty),
             };
           });
@@ -16514,121 +16509,99 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
             breakdown,
           });
 
-          // Driver-ийн агуулахад байгаа тоог авч дутуу тоог тооцох
           const items = [];
-          let satisfiedCount = 0;
+          let satisfied = 0;
           breakdown.forEach((b) => {
-            if (b.missing <= 0) {
-              satisfiedCount++;
-              return; // Хангалттай байгаа
-            }
-
-            // Төв агуулахад хэдэн ширхэг боломжтой?
+            if (b.missing <= 0) { satisfied++; return; }
             const mainStock = stock.find((s) => s.warehouse_id === mainWarehouse?.id && s.product_id === b.product_id);
-            const availableInMain = Number(mainStock?.quantity || 0);
-            if (availableInMain <= 0) return; // Төв агуулахад байхгүй
-
+            const avail = Number(mainStock?.quantity || 0);
+            if (avail <= 0) return;
             const product = products.find((p) => p.id === b.product_id);
             if (!product) return;
-
-            const requestQty = Math.min(b.missing, availableInMain);
             items.push({
-              product_id: b.product_id,
-              product_name: product.name,
-              product_sku: product.sku,
-              product_image: product.image_url,
-              quantity: requestQty,
-              maxQty: availableInMain,
+              product_id: b.product_id, product_name: product.name, product_sku: product.sku,
+              product_image: product.image_url, product_price: Number(product.price || 0),
+              quantity: Math.min(b.missing, avail), maxQty: avail,
             });
           });
-
           setSelectedItems(items);
           if (items.length > 0) {
-            setAutoNote(
-              `📋 ${orderIds.length} захиалга шинжилж дутуу ${items.length} төрлийн бараа автомат тооцсон` +
-              (satisfiedCount > 0 ? ` (${satisfiedCount} төрөл хангалттай)` : "")
-            );
+            setAutoNote(`📋 ${orderIds.length} захиалга → ${items.length} дутуу бараа автомат тооцсон` + (satisfied > 0 ? ` (${satisfied} төрөл хангалттай)` : ""));
           } else if (Object.keys(requiredMap).length === 0) {
             setAutoNote("Захиалгад бараа байхгүй");
           } else {
-            setAutoNote("✓ Бүх бараа агуулахад хангалттай байна");
+            setAutoNote("✓ Бүх бараа хангалттай");
           }
         }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setCalculating(false);
-      }
+      } catch (e) { console.error(e); }
+      finally { setCalculating(false); }
     })();
   }, [isReturn]);
 
-  // Available products (бүх бараа, нөөцтэй эсэхийг харуулах)
-  const availableProducts = [...products].sort((a, b) => {
-    const sA = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === a.id)?.quantity || 0);
-    const sB = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === b.id)?.quantity || 0);
-    if (sA > 0 && sB <= 0) return -1;
-    if (sA <= 0 && sB > 0) return 1;
-    return (a.name || "").localeCompare(b.name || "");
-  });
-
-  const filtered = search.trim()
-    ? availableProducts.filter((p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()))
-    : availableProducts;
-
-  const addItem = (product) => {
-    if (selectedItems.find((x) => x.product_id === product.id)) return;
-    const stockInfo = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === product.id);
-    const maxQty = Number(stockInfo?.quantity || 0);
-    if (maxQty <= 0) {
-      alert(`⚠ "${product.name}" агуулахад байхгүй байна!\n\n${sourceWh?.name}-д орлого хийсний дараа дахин оролдоно уу.`);
-      return;
+  // Filter products by category + search
+  const filteredProducts = useMemo(() => {
+    let result = [...products];
+    if (activeCat !== "all") result = result.filter((p) => p.category_id === activeCat);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
     }
-    setSelectedItems([...selectedItems, {
-      product_id: product.id,
-      product_name: product.name,
-      product_sku: product.sku,
-      product_image: product.image_url,
-      quantity: 1,
-      maxQty: maxQty,
-    }]);
-  };
+    // Sort: in-stock first
+    return result.sort((a, b) => {
+      const sA = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === a.id)?.quantity || 0);
+      const sB = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === b.id)?.quantity || 0);
+      if (sA > 0 && sB <= 0) return -1;
+      if (sA <= 0 && sB > 0) return 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+  }, [products, activeCat, search, stock, sourceWh]);
 
   const updateQty = (productId, delta) => {
-    setSelectedItems(selectedItems.map((it) => {
-      if (it.product_id !== productId) return it;
-      const newQty = Math.max(1, Math.min(it.maxQty, it.quantity + delta));
-      return { ...it, quantity: newQty };
-    }));
+    setSelectedItems((prev) => {
+      const existing = prev.find((x) => x.product_id === productId);
+      if (existing) {
+        const newQty = existing.quantity + delta;
+        if (newQty <= 0) return prev.filter((x) => x.product_id !== productId);
+        if (newQty > existing.maxQty) return prev;
+        return prev.map((x) => x.product_id === productId ? { ...x, quantity: newQty } : x);
+      } else if (delta > 0) {
+        const product = products.find((p) => p.id === productId);
+        const stockInfo = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === productId);
+        const maxQty = Number(stockInfo?.quantity || 0);
+        if (maxQty <= 0) return prev;
+        return [...prev, {
+          product_id: productId, product_name: product.name, product_sku: product.sku,
+          product_image: product.image_url, product_price: Number(product.price || 0),
+          quantity: 1, maxQty: maxQty,
+        }];
+      }
+      return prev;
+    });
   };
 
   const removeItem = (productId) => {
     setSelectedItems(selectedItems.filter((it) => it.product_id !== productId));
   };
 
+  const totalQty = selectedItems.reduce((s, x) => s + x.quantity, 0);
+  const totalPrice = selectedItems.reduce((s, x) => s + (x.quantity * x.product_price), 0);
+
   const handleSubmit = async () => {
-    if (selectedItems.length === 0) {
-      alert("Бараа сонгоно уу");
-      return;
-    }
+    if (selectedItems.length === 0) { alert("Бараа сонгоно уу"); return; }
     setBusy(true);
     try {
-      // Create request
       const { data: req, error: reqErr } = await supabase.from("inv_transfer_requests").insert({
         requester_id: profile.id,
         from_warehouse_id: sourceWh.id,
         to_warehouse_id: targetWh.id,
-        status: "pending",
-        is_return: isReturn,
+        status: "pending", is_return: isReturn,
         notes: notes.trim() || null,
       }).select().single();
       if (reqErr) throw reqErr;
 
-      // Create items
       const itemsToInsert = selectedItems.map((it) => ({
-        request_id: req.id,
-        product_id: it.product_id,
-        product_name: it.product_name,
-        product_sku: it.product_sku,
+        request_id: req.id, product_id: it.product_id,
+        product_name: it.product_name, product_sku: it.product_sku,
         quantity: it.quantity,
       }));
       const { error: itemsErr } = await supabase.from("inv_transfer_items").insert(itemsToInsert);
@@ -16640,259 +16613,367 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
     finally { setBusy(false); }
   };
 
+  // Category counts
+  const catCounts = useMemo(() => {
+    const counts = { all: products.length };
+    categories.forEach((c) => {
+      counts[c.id] = products.filter((p) => p.category_id === c.id).length;
+    });
+    return counts;
+  }, [products, categories]);
+
   return createPortal(
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
-      display: "flex", alignItems: "flex-end", justifyContent: "center",
       background: "rgba(244, 114, 182, 0.15)", backdropFilter: "blur(8px)",
     }} onClick={onClose}>
       <div style={{
         background: "rgba(255, 255, 255, 0.98)", backdropFilter: "blur(24px)",
         border: "1px solid rgba(255, 255, 255, 0.8)",
         boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
-        borderRadius: "16px 16px 0 0",
-        width: "100%", maxWidth: 500,
-        maxHeight: "90vh",
+        borderRadius: 16,
+        position: "absolute", top: 8, left: 8, right: 8, bottom: 8,
         display: "flex", flexDirection: "column",
+        overflow: "hidden",
       }} onClick={(e) => e.stopPropagation()}>
-        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${T.border}` }}>
+        {/* Header */}
+        <div className="px-4 py-3 flex items-center justify-between gap-2"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
           <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
             {isReturn ? "🔄 Бараа буцаах" : "📨 Бараа авах"}
           </h3>
-          <button onClick={onClose} style={{ color: T.muted }}>
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            {selectedItems.length > 0 && (
+              <button onClick={() => setShowSidebar(!showSidebar)}
+                className="md:hidden press-btn relative px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+                style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                🛒 {selectedItems.length}
+              </button>
+            )}
+            <button onClick={onClose} style={{ color: T.muted }}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        <div style={{ overflowY: "auto", flex: 1 }} className="p-3 space-y-3">
-          {/* Direction */}
-          <div className="flex items-center gap-2 p-2 rounded-lg"
-            style={{ background: T.surfaceAlt }}>
-            <div className="flex-1 text-center">
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">Хаанаас</div>
-              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                {sourceWh?.type === "main" ? "🏢" : "🚚"} {sourceWh?.name}
-              </div>
-            </div>
-            <span style={{ color: T.highlight }}>→</span>
-            <div className="flex-1 text-center">
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">Хаашаа</div>
-              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                {targetWh?.type === "main" ? "🏢" : "🚚"} {targetWh?.name}
-              </div>
-            </div>
-          </div>
+        <div className="flex-1 flex overflow-hidden">
+          {/* LEFT — Products */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Search + auto note */}
+            <div style={{ padding: 8, borderBottom: `1px solid ${T.borderSoft}` }} className="space-y-2">
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="🔍 Бараа хайх..."
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
 
-          {/* Auto-calculation banner */}
-          {calculating ? (
-            <div className="flex items-center justify-center gap-2 py-3 rounded-lg"
-              style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}>
-              <Loader2 size={14} className="spin" style={{ color: "#0ea5e9" }} />
-              <span style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }} className="text-xs">
-                Автомат тооцоолж байна...
-              </span>
+              {calculating ? (
+                <div className="flex items-center gap-2 px-2">
+                  <Loader2 size={12} className="spin" style={{ color: "#0ea5e9" }} />
+                  <span style={{ color: "#0ea5e9", fontFamily: FS }} className="text-[10px]">Тооцоолж байна...</span>
+                </div>
+              ) : autoNote ? (
+                <div className="px-2 py-1.5 rounded-lg flex items-start gap-1.5"
+                  style={{
+                    background: selectedItems.length > 0 ? "rgba(14,165,233,0.1)" : "rgba(245,158,11,0.1)",
+                  }}>
+                  <span className="text-xs">{selectedItems.length > 0 ? "✨" : "ℹ"}</span>
+                  <span style={{ color: selectedItems.length > 0 ? "#0ea5e9" : T.warn, fontFamily: FS, fontWeight: 600 }}
+                    className="text-[10px] flex-1">{autoNote}</span>
+                </div>
+              ) : null}
             </div>
-          ) : autoNote ? (
-            <div className="p-2.5 rounded-lg flex items-start gap-2"
-              style={{
-                background: selectedItems.length > 0 ? "rgba(14,165,233,0.1)" : "rgba(245,158,11,0.1)",
-                border: `1px solid ${selectedItems.length > 0 ? "rgba(14,165,233,0.3)" : "rgba(245,158,11,0.3)"}`,
-              }}>
-              <span className="text-base">{selectedItems.length > 0 ? "✨" : "ℹ"}</span>
-              <span style={{
-                color: selectedItems.length > 0 ? "#0ea5e9" : T.warn,
-                fontFamily: FS, fontWeight: 600,
-              }} className="text-[11px] flex-1">
-                {autoNote}
-              </span>
-            </div>
-          ) : null}
 
-          {/* Order summary breakdown — Captured items */}
-          {!isReturn && orderSummary && orderSummary.breakdown.length > 0 && (
-            <div className="rounded-xl p-2.5"
-              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <div style={{ color: T.muted, fontFamily: FM, fontWeight: 700 }} className="text-[10px] uppercase">
-                  📋 Хүргэх захиалгын барааны нэгтгэл
-                </div>
-                <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-[10px] tabular-nums">
-                  {orderSummary.orderCount} захиалга · {orderSummary.totalQty} ширхэг
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="grid grid-cols-12 gap-1 text-[9px] uppercase pb-1"
-                  style={{ borderBottom: `1px solid ${T.borderSoft}`, color: T.muted, fontFamily: FM }}>
-                  <span className="col-span-5">Бараа</span>
-                  <span className="col-span-2 text-right">Шаард</span>
-                  <span className="col-span-2 text-right">Миний</span>
-                  <span className="col-span-3 text-right">Дутуу</span>
-                </div>
-                {orderSummary.breakdown.map((b) => (
-                  <div key={b.product_id} className="grid grid-cols-12 gap-1 items-center py-1">
-                    <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                      className="col-span-5 text-[10px] truncate">
-                      {b.product_name}
-                    </span>
-                    <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
-                      className="col-span-2 text-[10px] text-right tabular-nums">
-                      {b.required}
-                    </span>
-                    <span style={{ fontFamily: FD, fontWeight: 600, color: b.myStock > 0 ? T.ok : T.muted }}
-                      className="col-span-2 text-[10px] text-right tabular-nums">
-                      {b.myStock}
-                    </span>
+            {/* Categories */}
+            <div style={{ padding: "8px", borderBottom: `1px solid ${T.borderSoft}`, overflowX: "auto" }}>
+              <div className="flex gap-1.5" style={{ minWidth: "max-content" }}>
+                <button onClick={() => setActiveCat("all")}
+                  className="press-btn px-3 py-1.5 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap"
+                  style={{
+                    background: activeCat === "all" ? T.highlight : T.surfaceAlt,
+                    color: activeCat === "all" ? "white" : T.ink,
+                    fontFamily: FS, fontWeight: 600,
+                  }}>
+                  <span>Бүгд</span>
+                  <span style={{
+                    background: activeCat === "all" ? "rgba(255,255,255,0.2)" : T.surface,
+                    color: activeCat === "all" ? "white" : T.muted,
+                  }} className="text-[9px] px-1.5 rounded-full">{catCounts.all}</span>
+                </button>
+                {categories.map((c) => catCounts[c.id] > 0 && (
+                  <button key={c.id} onClick={() => setActiveCat(c.id)}
+                    className="press-btn px-3 py-1.5 rounded-full text-[10px] flex items-center gap-1 whitespace-nowrap"
+                    style={{
+                      background: activeCat === c.id ? T.highlight : T.surfaceAlt,
+                      color: activeCat === c.id ? "white" : T.ink,
+                      fontFamily: FS, fontWeight: 600,
+                    }}>
+                    <span>{c.name}</span>
                     <span style={{
-                      fontFamily: FD, fontWeight: 700,
-                      color: b.missing > 0 ? T.warn : T.ok,
-                    }} className="col-span-3 text-[10px] text-right tabular-nums">
-                      {b.missing > 0 ? `⚠ ${b.missing}` : "✓ хан."}
-                    </span>
-                  </div>
+                      background: activeCat === c.id ? "rgba(255,255,255,0.2)" : T.surface,
+                      color: activeCat === c.id ? "white" : T.muted,
+                    }} className="text-[9px] px-1.5 rounded-full">{catCounts[c.id]}</span>
+                  </button>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Selected items */}
-          {selectedItems.length > 0 && (
-            <div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-1.5">
-                Сонгосон ({selectedItems.length})
-              </div>
-              <div className="space-y-1.5">
-                {selectedItems.map((it) => (
-                  <div key={it.product_id} className="flex items-center gap-2 p-2 rounded-lg"
-                    style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}>
-                    {it.product_image && (
-                      <img src={it.product_image} alt=""
-                        style={{ width: 32, height: 40, objectFit: "cover", borderRadius: 4 }} />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
-                        {it.product_name}
-                      </div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        Боломжит: {it.maxQty}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => updateQty(it.product_id, -1)}
-                        className="press-btn w-7 h-7 rounded-full flex items-center justify-center"
-                        style={{ background: T.surfaceAlt, color: T.ink, fontWeight: 700 }}>−</button>
-                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink, minWidth: 24 }}
-                        className="text-sm text-center tabular-nums">
-                        {it.quantity}
-                      </span>
-                      <button onClick={() => updateQty(it.product_id, +1)}
-                        className="press-btn w-7 h-7 rounded-full flex items-center justify-center"
-                        style={{ background: T.highlight, color: "white", fontWeight: 700 }}>+</button>
-                    </div>
-                    <button onClick={() => removeItem(it.product_id)}
-                      style={{ color: T.err }}
-                      className="press-btn p-1">
-                      <X size={14} />
-                    </button>
+            {/* Product list */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+              {filteredProducts.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2">📦</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    {products.length === 0 ? "Бараа бүртгэгдээгүй" : "Олдсонгүй"}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Search */}
-          <div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-1.5">
-              Бараа сонгох
-            </div>
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="🔍 Хайх..."
-              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-              className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
-
-            {filtered.length === 0 ? (
-              <div className="text-center py-4">
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-                  {availableProducts.length === 0 ? "📦 Бараа бүртгэгдээгүй байна" : "Олдсонгүй"}
                 </div>
-                {availableProducts.length === 0 && (
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
-                    Админ "Бараа нөөц" хэсгээс бараа нэмэх ёстой
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1" style={{ maxHeight: 250, overflowY: "auto" }}>
-                {filtered.map((p) => {
+              ) : (
+                filteredProducts.map((p) => {
                   const stockInfo = stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === p.id);
                   const inStock = Number(stockInfo?.quantity || 0);
-                  const selected = selectedItems.find((x) => x.product_id === p.id);
                   const noStock = inStock <= 0;
+                  const selected = selectedItems.find((x) => x.product_id === p.id);
+                  const cat = categories.find((c) => c.id === p.category_id);
+
                   return (
-                    <button key={p.id} onClick={() => addItem(p)} disabled={!!selected || noStock}
-                      className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
+                    <div key={p.id} className="rounded-xl p-2 flex items-center gap-2.5"
                       style={{
-                        background: selected ? "rgba(14,165,233,0.1)" : noStock ? "rgba(239,68,68,0.05)" : T.surfaceAlt,
-                        opacity: selected ? 0.6 : noStock ? 0.5 : 1,
-                        cursor: noStock ? "not-allowed" : "pointer",
+                        background: selected ? "rgba(14,165,233,0.05)" : T.surfaceAlt,
+                        border: selected ? `1px solid rgba(14,165,233,0.3)` : `1px solid ${T.border}`,
+                        opacity: noStock && !selected ? 0.5 : 1,
                       }}>
-                      {p.image_url && (
+                      {p.image_url ? (
                         <img src={p.image_url} alt=""
-                          style={{ width: 32, height: 40, objectFit: "cover", borderRadius: 4, filter: noStock ? "grayscale(100%)" : "none" }} />
+                          style={{
+                            width: 48, height: 48, objectFit: "cover", borderRadius: 8,
+                            filter: noStock ? "grayscale(100%)" : "none",
+                          }} />
+                      ) : (
+                        <div style={{ width: 48, height: 48, background: T.border, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          📦
+                        </div>
                       )}
+
                       <div className="flex-1 min-w-0">
                         <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
                           {p.name}
                         </div>
-                        {p.sku && (
-                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                            {p.sku}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {cat && (
+                            <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[9px] px-1.5 py-0.5 rounded-full">
+                              {cat.name}
+                            </span>
+                          )}
+                          {p.sku && (
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                              #{p.sku}
+                            </span>
+                          )}
+                          <span style={{
+                            background: noStock ? T.errSoft : inStock <= 5 ? T.warnSoft : "rgba(16,185,129,0.1)",
+                            color: noStock ? T.err : inStock <= 5 ? T.warn : T.ok,
+                            fontFamily: FS, fontWeight: 600,
+                          }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                            Үлд {inStock}
+                          </span>
+                        </div>
+                        {Number(p.price) > 0 && (
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xs mt-0.5 tabular-nums">
+                            {Number(p.price).toLocaleString()}₮
                           </div>
                         )}
                       </div>
-                      <span style={{
-                        background: noStock ? T.errSoft : inStock <= 5 ? T.warnSoft : "rgba(16,185,129,0.1)",
-                        color: noStock ? T.err : inStock <= 5 ? T.warn : T.ok,
-                        fontFamily: FD, fontWeight: 700,
-                      }} className="text-[10px] px-2 py-0.5 rounded-full tabular-nums">
-                        {noStock ? "✕ 0" : `${inStock} ш`}
-                      </span>
-                      {selected && <CheckCircle2 size={14} style={{ color: "#0ea5e9" }} />}
-                    </button>
+
+                      {/* Qty controls */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => updateQty(p.id, -1)}
+                          disabled={!selected}
+                          className="press-btn w-7 h-7 rounded-full flex items-center justify-center text-base font-bold"
+                          style={{
+                            background: selected ? T.surfaceAlt : "transparent",
+                            color: selected ? T.ink : T.muted,
+                            opacity: selected ? 1 : 0.3,
+                          }}>−</button>
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink, minWidth: 28 }}
+                          className="text-sm text-center tabular-nums">
+                          {selected ? selected.quantity : 0}
+                        </span>
+                        <button onClick={() => updateQty(p.id, +1)}
+                          disabled={noStock || (selected && selected.quantity >= selected.maxQty)}
+                          className="press-btn w-7 h-7 rounded-full flex items-center justify-center text-base font-bold"
+                          style={{
+                            background: noStock ? T.surfaceAlt : T.highlight,
+                            color: noStock ? T.muted : "white",
+                            opacity: noStock ? 0.3 : 1,
+                          }}>+</button>
+                        {selected && (
+                          <button onClick={() => removeItem(p.id)}
+                            className="press-btn w-7 h-7 rounded-full flex items-center justify-center"
+                            style={{ color: T.err }}>
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Notes */}
-          <div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-1.5">
-              Тэмдэглэл (заавал биш)
+                })
+              )}
             </div>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-              placeholder="Шалтгаан, тайлбар..."
-              rows={2}
-              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-              className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
-        </div>
 
-        <div className="p-3 flex gap-2" style={{ borderTop: `1px solid ${T.border}` }}>
-          <button onClick={onClose}
-            className="press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
-            Болих
-          </button>
-          <button onClick={handleSubmit} disabled={busy || selectedItems.length === 0}
-            className="press-btn flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1"
-            style={{
-              background: selectedItems.length === 0 ? T.surfaceAlt : "#0ea5e9",
-              color: selectedItems.length === 0 ? T.muted : "white",
-              fontFamily: FS,
-              opacity: busy ? 0.6 : 1,
-            }}>
-            {busy ? <Loader2 size={14} className="spin" /> : "📨"} Илгээх
-          </button>
+          {/* RIGHT — Summary sidebar (desktop) */}
+          <div className="hidden md:flex flex-col" style={{ width: 280, borderLeft: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+            <div className="px-3 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                  Хүсэлт
+                </span>
+                <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                  className="text-[10px] px-2 py-0.5 rounded-full">
+                  {selectedItems.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: T.muted, fontFamily: FM }}>Бараа</span>
+                <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="tabular-nums">
+                  {totalQty} ширхэг
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs mt-1">
+                <span style={{ color: T.muted, fontFamily: FM }}>Нийт дүн</span>
+                <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                  {totalPrice.toLocaleString()}₮
+                </span>
+              </div>
+            </div>
+
+            <div className="px-3 py-2" style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mb-0.5">Хаанаас</div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                {sourceWh?.type === "main" ? "🏢" : "🚚"} {sourceWh?.name}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1.5 mb-0.5">Хаашаа</div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                {targetWh?.type === "main" ? "🏢" : "🚚"} {targetWh?.name}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {selectedItems.length === 0 ? (
+                <div className="text-center py-6">
+                  <div className="text-2xl mb-1">🛒</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                    Бараа сонгоогүй
+                  </div>
+                </div>
+              ) : (
+                selectedItems.map((it) => (
+                  <div key={it.product_id} className="flex items-center gap-1.5 p-1.5 rounded-lg"
+                    style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    {it.product_image && (
+                      <img src={it.product_image} alt=""
+                        style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-[10px] truncate">
+                        {it.product_name}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FD }} className="text-[9px] tabular-nums">
+                        ×{it.quantity}{it.product_price > 0 ? ` · ${(it.quantity * it.product_price).toLocaleString()}₮` : ""}
+                      </div>
+                    </div>
+                    <button onClick={() => removeItem(it.product_id)}
+                      className="press-btn w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ color: T.err }}>
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-2" style={{ borderTop: `1px solid ${T.border}` }}>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+                placeholder="Тэмдэглэл..."
+                rows={2}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-2 py-1.5 rounded-lg text-[11px] resize-none mb-2" />
+              <button onClick={handleSubmit} disabled={busy || selectedItems.length === 0}
+                className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+                style={{
+                  background: selectedItems.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                  color: selectedItems.length === 0 ? T.muted : "white",
+                  fontFamily: FS, opacity: busy ? 0.6 : 1,
+                }}>
+                {busy ? <Loader2 size={14} className="spin" /> : "📨"} Хадгалах
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile sidebar - bottom sheet */}
+          {showSidebar && (
+            <div className="md:hidden fixed inset-0 z-50 flex items-end"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+              onClick={() => setShowSidebar(false)}>
+              <div className="w-full max-h-[85vh] flex flex-col"
+                style={{ background: T.surface, borderRadius: "16px 16px 0 0" }}
+                onClick={(e) => e.stopPropagation()}>
+                <div className="px-3 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <div>
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                      Хүсэлт ({selectedItems.length})
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      {totalQty} ширхэг · {totalPrice.toLocaleString()}₮
+                    </div>
+                  </div>
+                  <button onClick={() => setShowSidebar(false)} style={{ color: T.muted }}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                  {selectedItems.map((it) => (
+                    <div key={it.product_id} className="flex items-center gap-1.5 p-1.5 rounded-lg"
+                      style={{ background: T.surfaceAlt }}>
+                      {it.product_image && (
+                        <img src={it.product_image} alt=""
+                          style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                          {it.product_name}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px] tabular-nums">
+                          ×{it.quantity}
+                        </div>
+                      </div>
+                      <button onClick={() => removeItem(it.product_id)}
+                        className="press-btn w-6 h-6 rounded-full flex items-center justify-center"
+                        style={{ color: T.err }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-2" style={{ borderTop: `1px solid ${T.border}` }}>
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Тэмдэглэл..."
+                    rows={2}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="w-full px-2 py-1.5 rounded-lg text-xs resize-none mb-2" />
+                  <button onClick={handleSubmit} disabled={busy || selectedItems.length === 0}
+                    className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+                    style={{
+                      background: selectedItems.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                      color: selectedItems.length === 0 ? T.muted : "white",
+                      fontFamily: FS,
+                    }}>
+                    {busy ? <Loader2 size={14} className="spin" /> : "📨"} Хадгалах ({selectedItems.length})
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>,
