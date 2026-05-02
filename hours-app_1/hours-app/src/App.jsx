@@ -1266,7 +1266,6 @@ function AdminDashboard({ profile }) {
             <SidebarSection label="Бизнес">
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
-              <SidebarTab active={view === "customers"} onClick={() => { setView("customers"); setSidebarOpen(false); }} icon={Users}>Үйлчлүүлэгч</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
@@ -12631,7 +12630,6 @@ function OperatorDashboard({ profile }) {
           <SidebarSection label="Бизнес">
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
-            <SidebarTab active={view === "customers"} onClick={() => { setView("customers"); setSidebarOpen(false); }} icon={Users}>Үйлчлүүлэгч</SidebarTab>
           </SidebarSection>
         </nav>
 
