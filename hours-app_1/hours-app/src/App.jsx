@@ -5817,7 +5817,42 @@ function CallCenterView({ profile }) {
                         "{c.notes}"
                       </div>
                     )}
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+
+                    {/* Сонирхсон бараа — зурагтай grid */}
+                    {c.interested_products && Array.isArray(c.interested_products) && c.interested_products.length > 0 && (
+                      <div className="mt-2">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <ShoppingBag size={10} /> Сонирхсон бараа ({c.interested_products.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {c.interested_products.map((p, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 rounded-lg p-1.5 pr-2"
+                              style={{ background: T.highlightSoft, border: `1px solid ${T.border}` }}>
+                              {p.image_url ? (
+                                <img src={p.image_url} alt={p.name}
+                                  style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                              ) : (
+                                <div style={{
+                                  width: 28, height: 28, borderRadius: 4, background: T.surface,
+                                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
+                                }}>📦</div>
+                              )}
+                              <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-[10px]">
+                                {p.name}
+                              </span>
+                              {p.qty > 1 && (
+                                <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                  className="text-[10px] px-1.5 py-0.5 rounded-full">
+                                  ×{p.qty}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2">
                       🕐 {new Date(c.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
@@ -5859,17 +5894,21 @@ function CallCenterView({ profile }) {
                 customerId = newCust?.id || null;
               }
 
-              // 2. Save call log + сонирхсон бараа жагсаалт
-              const productList = interestedProducts && interestedProducts.length > 0
-                ? interestedProducts.map((p) => `• ${p.name}${p.qty > 1 ? ` (${p.qty} ш)` : ""}`).join("\n")
-                : "";
-              const fullNotes = [notes, productList ? `\n📦 СОНИРХСОН БАРАА:\n${productList}` : ""].filter(Boolean).join("\n");
-
+              // 2. Save call log + сонирхсон бараа JSON-аар
               await supabase.from("biz_calls").insert({
                 phone,
                 customer_id: customerId,
                 customer_name: name,
-                notes: fullNotes || null,
+                notes: notes || null,
+                interested_products: interestedProducts && interestedProducts.length > 0
+                  ? interestedProducts.map((p) => ({
+                      id: p.id,
+                      name: p.name,
+                      qty: p.qty,
+                      image_url: p.image_url || null,
+                      sku: p.sku || null,
+                    }))
+                  : null,
                 created_by: profile.id,
               });
 
