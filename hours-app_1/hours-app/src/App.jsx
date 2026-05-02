@@ -6056,13 +6056,20 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
-          // Period-ээр шүүсэн дуудлагууд
+          // Period-ээр шүүсэн (ordered, cancelled tab-д)
           const filteredByPeriod = recentCalls.filter((c) => {
             const d = new Date(c.created_at);
             return d >= periodRange.start && d < periodRange.end;
           });
 
-          // Cycle-аар тоолох
+          // Calling tab — period үл хамааран
+          const phoneGroupedAll = {};
+          recentCalls.forEach((c) => {
+            if (!phoneGroupedAll[c.phone]) phoneGroupedAll[c.phone] = [];
+            phoneGroupedAll[c.phone].push(c);
+          });
+
+          // Period-ээр шүүсэн (ordered, cancelled-д)
           const phoneGrouped = {};
           filteredByPeriod.forEach((c) => {
             if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
@@ -6070,22 +6077,27 @@ function CallCenterView({ profile }) {
           });
 
           const counts = { calling: 0, ordered: 0, cancelled: 0 };
-          Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+
+          // Calling — бүх дугаарыг тоолох (period хамаарахгүй)
+          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
             const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             let currentCycle = [];
-
             sorted.forEach((call) => {
               currentCycle.push(call);
-              if (call.call_status === "ordered") {
-                counts.ordered++;
-                currentCycle = [];
-              } else if (call.call_status === "cancelled") {
-                counts.cancelled++;
+              if (call.call_status === "ordered" || call.call_status === "cancelled") {
                 currentCycle = [];
               }
             });
-            // Open cycle
             if (currentCycle.length > 0) counts.calling++;
+          });
+
+          // Ordered/Cancelled — period-ээр шүүж тоолох
+          Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+            const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            sorted.forEach((call) => {
+              if (call.call_status === "ordered") counts.ordered++;
+              else if (call.call_status === "cancelled") counts.cancelled++;
+            });
           });
 
           return (
@@ -6155,11 +6167,14 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-2">
             {(() => {
-              // Period-ээр шүүсэн дуудлагууд
-              const filteredByPeriod = recentCalls.filter((c) => {
-                const d = new Date(c.created_at);
-                return d >= periodRange.start && d < periodRange.end;
-              });
+              // "Залгах дугаар" tab-д бүх дугаарыг харуулах (period үл хамааран)
+              // Бусад tab-уудад period-ээр шүүх
+              const filteredByPeriod = activeTab === "calling"
+                ? recentCalls
+                : recentCalls.filter((c) => {
+                    const d = new Date(c.created_at);
+                    return d >= periodRange.start && d < periodRange.end;
+                  });
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
