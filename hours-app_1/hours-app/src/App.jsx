@@ -2566,7 +2566,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
       const groups = {
         employee: { key: "employee", label: "Ажилтан", icon: "👤", items: [] },
         operator: { key: "operator", label: "Оператор", icon: "🎧", items: [] },
-        driver: { key: "driver", label: "Хүргэгч", icon: "🚚", items: [] },
+        driver: { key: "driver", label: "Delivery", icon: "🚚", items: [] },
       };
       filtered.forEach((e) => {
         if (groups[e.role]) groups[e.role].items.push(e);
@@ -2615,7 +2615,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
             { id: "all", label: "Бүгд", icon: "👥", count: employees.length },
             { id: "employee", label: "Ажилтан", icon: "👤", count: employees.filter((e) => e.role === "employee").length },
             { id: "operator", label: "Оператор", icon: "🎧", count: employees.filter((e) => e.role === "operator").length },
-            { id: "driver", label: "Хүргэгч", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
+            { id: "driver", label: "Delivery", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
           ].map((f) => (
             <button key={f.id} onClick={() => setFilterRole(f.id)}
               className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -2719,7 +2719,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   {emp.role === "driver" && (
                     <span style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }}
                       className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                      🚚 Хүргэгч
+                      🚚 Delivery
                     </span>
                   )}
                 </div>
@@ -3454,7 +3454,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
       job_title: jobTitle.trim() || (
         role === "manager" ? "Ахлагч"
         : role === "operator" ? "Оператор"
-        : role === "driver" ? "Хүргэгч"
+        : role === "driver" ? "Delivery"
         : "Ажилтан"
       ),
       hourly_rate: parseFloat(rate) || 0,
@@ -3522,7 +3522,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                          color: role === "driver" ? "white" : T.ink,
                          borderColor: role === "driver" ? "#0ea5e9" : T.border, fontFamily: FM }}
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
-                🚚 Хүргэгч
+                🚚 Delivery
               </button>
             </div>
             {role === "manager" && (
@@ -3537,7 +3537,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
             )}
             {role === "driver" && (
               <p style={{ color: "#0ea5e9" }} className="text-[11px] mt-1.5">
-                🚚 Хүргэгч: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
+                🚚 Delivery: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
               </p>
             )}
           </div>
@@ -10015,11 +10015,11 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
         </div>
       </div>
 
-      {/* Хүргэгч сонгох */}
+      {/* Delivery сонгох */}
       <div className="glass rounded-2xl p-4">
         <div className="flex items-center justify-between mb-2">
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
-            🚚 Хүргэгч
+            🚚 Delivery
           </div>
           {assignedDriver && (
             <button onClick={() => setShowDriverPicker(!showDriverPicker)}
@@ -10057,7 +10057,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
           <button onClick={() => setShowDriverPicker(!showDriverPicker)}
             className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-1"
             style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600, border: `1px dashed #0ea5e9` }}>
-            🚚 Хүргэгч сонгох
+            🚚 Delivery сонгох
           </button>
         )}
 
@@ -10066,7 +10066,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
           <div className="mt-2 space-y-1" style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 8 }}>
             {drivers.length === 0 ? (
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] text-center py-2">
-                Хүргэгч хараахан бүртгэгдээгүй байна
+                Delivery хараахан бүртгэгдээгүй байна
               </div>
             ) : (
               drivers.map((d) => (
@@ -14455,7 +14455,7 @@ function DriverDashboard({ profile }) {
         </div>
         <div className="flex-1">
           <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-            🚚 Хүргэгч
+            🚚 Delivery
           </h1>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
             {profile.name || "—"}
