@@ -5716,10 +5716,35 @@ function CallCenterView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Дугаарыг хуулах + захиалга нээх
+  // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
-      // Clipboard-руу хуулах
+      // 1. Lock шалгах
+      const { data: existingLock } = await supabase
+        .from("biz_call_locks")
+        .select("*")
+        .eq("phone", phone)
+        .maybeSingle();
+
+      if (existingLock && existingLock.locked_by !== profile.id) {
+        const lockTime = new Date(existingLock.locked_at);
+        const diffMin = (Date.now() - lockTime.getTime()) / 60000;
+        if (diffMin < 5) {
+          alert(`⚠ Энэ дугаарыг "${existingLock.locked_by_name || "өөр ажилтан"}" зэрэг залгаж байна!\n\nЗахиалга бүртгэх боломжгүй.`);
+          return;
+        }
+        await supabase.from("biz_call_locks").delete().eq("phone", phone);
+      }
+
+      // 2. Lock үүсгэх
+      await supabase.from("biz_call_locks").upsert({
+        phone,
+        locked_by: profile.id,
+        locked_by_name: profile.name || "—",
+        locked_at: new Date().toISOString(),
+      }, { onConflict: "phone" });
+
+      // 3. Clipboard-руу хуулах
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(phone);
       } else {
@@ -5735,7 +5760,6 @@ function CallCenterView({ profile }) {
       setCopiedPhone(phone);
       setTimeout(() => setCopiedPhone(""), 1500);
 
-      // Захиалгын modal нээх (сэтгэгдэл + сонирхсон бараа дамжуулах)
       setOrderForCall({
         phone,
         name: customerName,
@@ -5743,10 +5767,49 @@ function CallCenterView({ profile }) {
         products: callProducts,
         callId,
       });
+      await loadAll();
     } catch (e) {
-      console.error("Copy error:", e);
+      console.error("Error:", e);
       setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts, callId });
     }
+  };
+
+  // Lock release
+  const releaseLock = async (phone) => {
+    try {
+      await supabase.from("biz_call_locks").delete().eq("phone", phone).eq("locked_by", profile.id);
+    } catch (e) { console.error(e); }
+  };
+
+  // Status popup
+  const [statusPopupCall, setStatusPopupCall] = useState(null);
+  const [callLocks, setCallLocks] = useState([]);
+
+  // Lock-уудыг ачаалах
+  useEffect(() => {
+    const loadLocks = async () => {
+      const { data } = await supabase.from("biz_call_locks").select("*");
+      setCallLocks(data || []);
+    };
+    loadLocks();
+    const interval = setInterval(loadLocks, 10000); // 10 sec бүр
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStatusSelect = async (status, statusLabel) => {
+    if (!statusPopupCall) return;
+    try {
+      await supabase.from("biz_calls").insert({
+        phone: statusPopupCall.phone,
+        customer_id: statusPopupCall.customerId || null,
+        notes: `[${statusLabel}]`,
+        call_status: status,
+        created_by: profile.id,
+      });
+      await releaseLock(statusPopupCall.phone);
+      setStatusPopupCall(null);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
   };
 
   // Дуудлага устгах
@@ -5869,12 +5932,42 @@ function CallCenterView({ profile }) {
                           {customer.name}
                         </span>
                       )}
-                      <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, latestCall.interested_products, latestCall.id)}
-                        className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
-                        style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
-                        <X size={11} style={{ color: T.muted }} />
-                        <span className="text-xs">Calling. {phone}</span>
-                      </button>
+                      {(() => {
+                        const lock = callLocks.find((l) => l.phone === phone);
+                        const isLockedByOther = lock && lock.locked_by !== profile.id;
+                        const isLockedByMe = lock && lock.locked_by === profile.id;
+
+                        return (
+                          <>
+                            <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, latestCall.interested_products, latestCall.id)}
+                              disabled={isLockedByOther}
+                              className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
+                              style={{
+                                background: isLockedByOther ? T.errSoft : (isLockedByMe ? T.highlightSoft : T.surfaceAlt),
+                                color: isLockedByOther ? T.err : (isLockedByMe ? T.highlight : T.ink),
+                                fontFamily: FS, fontWeight: 500,
+                                opacity: isLockedByOther ? 0.7 : 1,
+                              }}>
+                              {isLockedByOther ? (
+                                <>
+                                  <Phone size={11} style={{ color: T.err }} />
+                                  <span className="text-xs">🔒 {lock.locked_by_name} зэрэг залгаж байна</span>
+                                </>
+                              ) : isLockedByMe ? (
+                                <>
+                                  <Phone size={11} className="animate-pulse" style={{ color: T.highlight }} />
+                                  <span className="text-xs">📞 Залгаж байна. {phone}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Phone size={11} style={{ color: T.muted }} />
+                                  <span className="text-xs">Calling. {phone}</span>
+                                </>
+                              )}
+                            </button>
+                          </>
+                        );
+                      })()}
                       {copiedPhone === phone && (
                         <span style={{ background: T.ok, color: "white" }}
                           className="text-[8px] px-1.5 py-0.5 rounded-full font-medium">
@@ -5941,13 +6034,18 @@ function CallCenterView({ profile }) {
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
                             const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
 
-                            // Status detection from notes
+                            // Status from call_status field or notes fallback
                             let status = null;
-                            if (isCancelled) status = { label: "Цуцалсан", color: T.err, bg: T.errSoft };
-                            else if (cleanNotes?.toLowerCase().includes("дуудаад") || cleanNotes?.toLowerCase().includes("авахгүй") || cleanNotes?.toLowerCase().includes("авлаагүй")) {
+                            if (c.call_status === "ordered") {
+                              status = { label: "Захиалга өгсөн", color: T.ok, bg: "rgba(16,185,129,0.1)" };
+                            } else if (c.call_status === "no_answer") {
                               status = { label: "Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
-                            } else if (cleanNotes?.toLowerCase().includes("холбог") || cleanNotes?.toLowerCase().includes("дараа")) {
-                              status = { label: "Холбогдох боломжгүй", color: T.warn, bg: T.warnSoft };
+                            } else if (c.call_status === "unreachable") {
+                              status = { label: "Холбогдох боломжгүй", color: T.err, bg: T.errSoft };
+                            } else if (c.call_status === "callback") {
+                              status = { label: "Эргэн холбогдох", color: T.highlight, bg: T.highlightSoft };
+                            } else if (isCancelled) {
+                              status = { label: "Цуцалсан", color: T.err, bg: T.errSoft };
                             }
 
                             return (
@@ -6112,6 +6210,11 @@ function CallCenterView({ profile }) {
           initialName={orderForCall.name}
           initialNotes={orderForCall.notes}
           initialProducts={orderForCall.products}
+          onCallback={(phone) => {
+            // Захиалга modal-аас status popup-руу шилжих
+            setOrderForCall(null);
+            setStatusPopupCall({ phone, callId: orderForCall.callId });
+          }}
           onSave={async (data) => {
             try {
               // ─── ACTION: callback (дараа холбогдох) ───────────
@@ -6216,13 +6319,75 @@ function CallCenterView({ profile }) {
               }));
               await supabase.from("biz_order_items").insert(orderItems);
 
+              // Захиалга үүссэний дараа lock release + дуудлагын status шинэчлэх
+              await releaseLock(data.phone);
+              if (orderForCall.callId) {
+                await supabase.from("biz_calls").update({
+                  call_status: "ordered",
+                }).eq("id", orderForCall.callId);
+              }
+
               setOrderForCall(null);
               await loadAll();
               alert(`✅ Захиалга #${orderNumber} амжилттай!\n${data.totalAmount.toLocaleString()}₮`);
             } catch (e) { alert("Алдаа: " + e.message); }
           }}
-          onClose={() => setOrderForCall(null)}
+          onClose={() => {
+            if (orderForCall?.phone) releaseLock(orderForCall.phone);
+            setOrderForCall(null);
+          }}
         />
+      )}
+
+      {/* Status сонгох popup */}
+      {statusPopupCall && (
+        <div onClick={() => {
+            if (statusPopupCall?.phone) releaseLock(statusPopupCall.phone);
+            setStatusPopupCall(null);
+          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
+          className="flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()}
+            className="modal-content rounded-2xl w-full max-w-sm p-5">
+            <div className="flex items-start justify-between mb-4">
+              <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">
+                ⏳ Дараа холбогдох
+              </h3>
+              <button onClick={() => {
+                  if (statusPopupCall?.phone) releaseLock(statusPopupCall.phone);
+                  setStatusPopupCall(null);
+                }}
+                style={{ color: T.muted }}><X size={16} /></button>
+            </div>
+
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
+              Шалтгааныг сонгоно уу:
+            </div>
+
+            <div className="space-y-2">
+              <button onClick={() => handleStatusSelect("no_answer", "Дуудаад авахгүй")}
+                className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
+                style={{ background: T.warnSoft, color: T.warn, fontFamily: FS }}>
+                <span className="text-lg">📵</span>
+                <span>Дуудаад авахгүй</span>
+              </button>
+
+              <button onClick={() => handleStatusSelect("unreachable", "Холбогдох боломжгүй")}
+                className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
+                style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                <span className="text-lg">🚫</span>
+                <span>Холбогдох боломжгүй</span>
+              </button>
+
+              <button onClick={() => handleStatusSelect("callback", "Эргэн холбогдох")}
+                className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
+                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                <span className="text-lg">🔔</span>
+                <span>Эргэн холбогдох</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -6742,7 +6907,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, onSave, onClose }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, onSave, onCallback, onClose }) {
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState("");
   const [name, setName] = useState(initialName || "");
@@ -7282,16 +7447,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           <div className="grid grid-cols-2 gap-2">
             <button
               disabled={busy || !phone.trim()}
-              onClick={async () => {
-                setBusy(true);
-                await onSave({
-                  action: "callback",
-                  phone: phone.trim(),
-                  phone2: phone2.trim() || null,
-                  name: name.trim() || null,
-                  notes: notes.trim() || null,
-                });
-                setBusy(false);
+              onClick={() => {
+                if (onCallback) onCallback(phone.trim());
               }}
               className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
               style={{ background: T.warnSoft, color: T.warn, fontFamily: FS }}>
