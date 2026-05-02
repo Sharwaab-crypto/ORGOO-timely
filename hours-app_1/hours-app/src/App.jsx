@@ -9708,78 +9708,86 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
         </button>
       )}
 
-      {/* Dropdown */}
+      {/* Dropdown — Modal */}
       {open && !selected && (
-        <>
-          <div onClick={() => setOpen(false)}
-            style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{
-            position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4,
-            zIndex: 50, background: T.surface, border: `1px solid ${T.border}`,
-            borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
-            maxHeight: 360, overflowY: "auto",
-          }}>
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-start justify-center p-2 pt-20"
+          onClick={() => setOpen(false)}>
+          <div className="modal-content rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
+            style={{ maxHeight: "70vh" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3"
+              style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+                🚚 Delivery ажилтан сонгох
+              </h3>
+              <button onClick={() => setOpen(false)} style={{ color: T.muted }}>
+                <X size={16} />
+              </button>
+            </div>
+
             {/* Searchbar */}
-            <div style={{ position: "sticky", top: 0, background: T.surface, padding: 8, borderBottom: `1px solid ${T.borderSoft}` }}>
+            <div style={{ padding: 8, borderBottom: `1px solid ${T.borderSoft}` }}>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="🔍 Хайх..."
+                placeholder="🔍 Нэрээр хайх..."
                 autoFocus
                 style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                className="w-full px-3 py-2 rounded-lg text-xs"
+                className="w-full px-3 py-2 rounded-lg text-sm"
               />
             </div>
 
-            {filtered.length === 0 ? (
-              <div className="text-center py-6">
-                <div className="text-2xl mb-1">🔍</div>
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                  Олдсонгүй
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {filtered.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-2">🔍</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Олдсонгүй
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="p-1">
-                {filtered.map((d) => {
-                  const count = orders.filter((o) => o.driver_id === d.id).length;
-                  const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending")).length;
-                  return (
-                    <button key={d.id}
-                      onClick={() => { onChange(d.id); setOpen(false); setSearch(""); }}
-                      className="press-btn w-full p-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
-                      style={{ textAlign: "left" }}>
-                      <div style={{ background: "#0ea5e9", color: "white" }}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
-                        {d.name?.charAt(0) || "🚚"}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
-                          {d.name}
+              ) : (
+                <div className="p-1.5 space-y-1">
+                  {filtered.map((d) => {
+                    const count = orders.filter((o) => o.driver_id === d.id).length;
+                    const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending")).length;
+                    return (
+                      <button key={d.id}
+                        onClick={() => { onChange(d.id); setOpen(false); setSearch(""); }}
+                        className="press-btn w-full p-2.5 rounded-lg flex items-center gap-2.5"
+                        style={{ background: T.surfaceAlt, textAlign: "left" }}>
+                        <div style={{ background: "#0ea5e9", color: "white" }}
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                          {d.name?.charAt(0) || "🚚"}
                         </div>
-                        {d.job_title && (
-                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                            {d.job_title}
+                        <div className="flex-1 min-w-0">
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                            {d.name}
                           </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-0.5">
-                        {activeCount > 0 && (
-                          <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
-                            className="text-[9px] px-1.5 py-0.5 rounded-full">
-                            ⏳ {activeCount}
+                          {d.job_title && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                              {d.job_title}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5">
+                          {activeCount > 0 && (
+                            <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[10px] px-1.5 py-0.5 rounded-full">
+                              ⏳ {activeCount}
+                            </span>
+                          )}
+                          <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-[10px] tabular-nums">
+                            {count} захиалга
                           </span>
-                        )}
-                        <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-[10px] tabular-nums">
-                          {count} захиалга
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
