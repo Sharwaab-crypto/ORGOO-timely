@@ -16429,6 +16429,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const [busy, setBusy] = useState(false);
   const [calculating, setCalculating] = useState(true);
   const [autoNote, setAutoNote] = useState("");
+  const [orderSummary, setOrderSummary] = useState(null); // { orderCount, totalQty, breakdown }
 
   // Аль агуулахаас бараа авах вэ?
   const sourceWh = isReturn ? myWarehouse : mainWarehouse;
@@ -16463,54 +16464,76 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
           // ─── АВАХ: Driver-ийн pending+new захиалгуудаас тооцох
           const { data: ordData } = await supabase
             .from("biz_orders")
-            .select("id")
+            .select("id, status, customer_phone, customer_name")
             .eq("driver_id", profile.id)
             .in("status", ["new", "pending"]);
 
           const orderIds = (ordData || []).map((o) => o.id);
 
           if (orderIds.length === 0) {
-            setAutoNote("Хүлээгдэж буй захиалга байхгүй");
+            setAutoNote("⚠ Хүргэх захиалга байхгүй байна");
+            setOrderSummary({ orderCount: 0, totalQty: 0, breakdown: [] });
             setCalculating(false);
             return;
           }
 
           const { data: itemData } = await supabase
             .from("biz_order_items")
-            .select("product_id, quantity")
+            .select("product_id, product_name, quantity")
             .in("order_id", orderIds);
 
           // Шаардлагатай бараа тоог нэгтгэх
           const requiredMap = {};
           (itemData || []).forEach((it) => {
             if (!it.product_id) return;
-            requiredMap[it.product_id] = (requiredMap[it.product_id] || 0) + Number(it.quantity || 0);
+            if (!requiredMap[it.product_id]) {
+              requiredMap[it.product_id] = {
+                product_id: it.product_id,
+                product_name: it.product_name,
+                requiredQty: 0,
+              };
+            }
+            requiredMap[it.product_id].requiredQty += Number(it.quantity || 0);
+          });
+
+          // Захиалгын дэлгэрэнгүй summary
+          const breakdown = Object.values(requiredMap).map((r) => {
+            const myStock = stock.find((s) => s.warehouse_id === myWarehouse?.id && s.product_id === r.product_id);
+            const myQty = Number(myStock?.quantity || 0);
+            return {
+              product_id: r.product_id,
+              product_name: r.product_name,
+              required: r.requiredQty,
+              myStock: myQty,
+              missing: Math.max(0, r.requiredQty - myQty),
+            };
+          });
+          setOrderSummary({
+            orderCount: orderIds.length,
+            totalQty: Object.values(requiredMap).reduce((s, r) => s + r.requiredQty, 0),
+            breakdown,
           });
 
           // Driver-ийн агуулахад байгаа тоог авч дутуу тоог тооцох
           const items = [];
           let satisfiedCount = 0;
-          Object.entries(requiredMap).forEach(([productId, requiredQty]) => {
-            const myStock = stock.find((s) => s.warehouse_id === myWarehouse?.id && s.product_id === productId);
-            const myQty = Number(myStock?.quantity || 0);
-            const needed = requiredQty - myQty;
-
-            if (needed <= 0) {
+          breakdown.forEach((b) => {
+            if (b.missing <= 0) {
               satisfiedCount++;
               return; // Хангалттай байгаа
             }
 
             // Төв агуулахад хэдэн ширхэг боломжтой?
-            const mainStock = stock.find((s) => s.warehouse_id === mainWarehouse?.id && s.product_id === productId);
+            const mainStock = stock.find((s) => s.warehouse_id === mainWarehouse?.id && s.product_id === b.product_id);
             const availableInMain = Number(mainStock?.quantity || 0);
             if (availableInMain <= 0) return; // Төв агуулахад байхгүй
 
-            const product = products.find((p) => p.id === productId);
+            const product = products.find((p) => p.id === b.product_id);
             if (!product) return;
 
-            const requestQty = Math.min(needed, availableInMain);
+            const requestQty = Math.min(b.missing, availableInMain);
             items.push({
-              product_id: productId,
+              product_id: b.product_id,
               product_name: product.name,
               product_sku: product.sku,
               product_image: product.image_url,
@@ -16676,6 +16699,52 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
               </span>
             </div>
           ) : null}
+
+          {/* Order summary breakdown — Captured items */}
+          {!isReturn && orderSummary && orderSummary.breakdown.length > 0 && (
+            <div className="rounded-xl p-2.5"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <div style={{ color: T.muted, fontFamily: FM, fontWeight: 700 }} className="text-[10px] uppercase">
+                  📋 Хүргэх захиалгын барааны нэгтгэл
+                </div>
+                <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-[10px] tabular-nums">
+                  {orderSummary.orderCount} захиалга · {orderSummary.totalQty} ширхэг
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="grid grid-cols-12 gap-1 text-[9px] uppercase pb-1"
+                  style={{ borderBottom: `1px solid ${T.borderSoft}`, color: T.muted, fontFamily: FM }}>
+                  <span className="col-span-5">Бараа</span>
+                  <span className="col-span-2 text-right">Шаард</span>
+                  <span className="col-span-2 text-right">Миний</span>
+                  <span className="col-span-3 text-right">Дутуу</span>
+                </div>
+                {orderSummary.breakdown.map((b) => (
+                  <div key={b.product_id} className="grid grid-cols-12 gap-1 items-center py-1">
+                    <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                      className="col-span-5 text-[10px] truncate">
+                      {b.product_name}
+                    </span>
+                    <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
+                      className="col-span-2 text-[10px] text-right tabular-nums">
+                      {b.required}
+                    </span>
+                    <span style={{ fontFamily: FD, fontWeight: 600, color: b.myStock > 0 ? T.ok : T.muted }}
+                      className="col-span-2 text-[10px] text-right tabular-nums">
+                      {b.myStock}
+                    </span>
+                    <span style={{
+                      fontFamily: FD, fontWeight: 700,
+                      color: b.missing > 0 ? T.warn : T.ok,
+                    }} className="col-span-3 text-[10px] text-right tabular-nums">
+                      {b.missing > 0 ? `⚠ ${b.missing}` : "✓ хан."}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Selected items */}
           {selectedItems.length > 0 && (
