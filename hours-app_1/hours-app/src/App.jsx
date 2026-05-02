@@ -332,6 +332,8 @@ export default function App() {
       <NotificationManager profile={profile} />
       {profile.role === "admin" ? <AdminDashboard profile={profile} />
         : profile.role === "manager" ? <ManagerDashboard profile={profile} />
+        : profile.role === "operator" ? <OperatorDashboard profile={profile} />
+        : profile.role === "driver" ? <DriverDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
     </>
   );
@@ -3346,25 +3348,49 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
 
           <div>
             <Label>Эрх</Label>
-            <div className="flex gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               <button onClick={() => setRole("employee")}
                 style={{ background: role === "employee" ? T.ink : "transparent",
                          color: role === "employee" ? T.surface : T.ink,
                          borderColor: role === "employee" ? T.ink : T.border, fontFamily: FM }}
-                className="flex-1 px-3 py-2 text-[10px] uppercase tracking-[0.2em] border rounded-lg hover:opacity-80">
-                Ажилтан
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                👤 Ажилтан
               </button>
               <button onClick={() => setRole("manager")}
                 style={{ background: role === "manager" ? T.ink : "transparent",
                          color: role === "manager" ? T.surface : T.ink,
                          borderColor: role === "manager" ? T.ink : T.border, fontFamily: FM }}
-                className="flex-1 px-3 py-2 text-[10px] uppercase tracking-[0.2em] border rounded-lg hover:opacity-80">
-                Ахлагч
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                ⭐ Ахлагч
+              </button>
+              <button onClick={() => setRole("operator")}
+                style={{ background: role === "operator" ? "#9333ea" : "transparent",
+                         color: role === "operator" ? "white" : T.ink,
+                         borderColor: role === "operator" ? "#9333ea" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                🎧 Оператор
+              </button>
+              <button onClick={() => setRole("driver")}
+                style={{ background: role === "driver" ? "#0ea5e9" : "transparent",
+                         color: role === "driver" ? "white" : T.ink,
+                         borderColor: role === "driver" ? "#0ea5e9" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                🚚 Хүргэлт
               </button>
             </div>
             {role === "manager" && (
               <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
-                Ахлагч өөрийн багт оноосон ажилтнуудыг хардаг. Багийг "Ахлагчид" табаас оноодог.
+                ⭐ Ахлагч: Өөрийн багт оноосон ажилтнуудыг хардаг.
+              </p>
+            )}
+            {role === "operator" && (
+              <p style={{ color: "#9333ea" }} className="text-[11px] mt-1.5">
+                🎧 Оператор: Зөвхөн дуудлага бүртгэж, захиалга авна.
+              </p>
+            )}
+            {role === "driver" && (
+              <p style={{ color: "#0ea5e9" }} className="text-[11px] mt-1.5">
+                🚚 Хүргэлт: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
               </p>
             )}
           </div>
@@ -12386,6 +12412,377 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
         </button>
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MANAGER DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR DASHBOARD — Зөвхөн дуудлага + захиалга
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorDashboard({ profile }) {
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("orgoo-operator-view") || "callcenter"; } catch { return "callcenter"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-operator-view", view); } catch {}
+  }, [view]);
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleLogout = async () => {
+    if (!confirm("Гарах уу?")) return;
+    await supabase.auth.signOut();
+  };
+
+  return (
+    <div className="min-h-screen flex" style={{ background: T.bg }}>
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 30 }}
+          className="lg:hidden" />
+      )}
+
+      <aside style={{
+        background: T.surface, borderRight: `1px solid ${T.border}`,
+        position: "fixed", left: 0, top: 0, bottom: 0,
+        width: 260, zIndex: 40,
+        transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.3s",
+      }} className="lg:!transform-none lg:!relative lg:!w-64 flex flex-col">
+        <div className="px-4 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
+          <span style={{ fontFamily: FD, fontWeight: 700, fontSize: 18, color: T.ink }}>
+            ORGOO
+          </span>
+          <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+            className="text-[10px] px-2 py-0.5 rounded-full uppercase">
+            🎧 Оператор
+          </span>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto py-2">
+          <SidebarSection label="Бизнес">
+            <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
+            <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+            <SidebarTab active={view === "customers"} onClick={() => { setView("customers"); setSidebarOpen(false); }} icon={Users}>Үйлчлүүлэгч</SidebarTab>
+          </SidebarSection>
+        </nav>
+
+        <div className="px-3 py-3" style={{ borderTop: `1px solid ${T.border}` }}>
+          <div className="flex items-center gap-2 mb-2">
+            <div style={{ background: "#9333ea", color: "white" }}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold">
+              {profile.name?.charAt(0) || "🎧"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                {profile.name || "—"}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                Оператор
+              </div>
+            </div>
+          </div>
+          <button onClick={handleLogout}
+            className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1"
+            style={{ background: T.surfaceAlt, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+            <LogOut size={12} /> Гарах
+          </button>
+        </div>
+      </aside>
+
+      <main className="flex-1 lg:ml-0">
+        <header className="sticky top-0 z-20 px-4 py-3 flex items-center gap-2"
+          style={{ background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden press-btn p-2 rounded-lg" style={{ color: T.ink }}>
+            ☰
+          </button>
+          <div className="flex-1">
+            <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {view === "callcenter" && "📞 Дуудлага"}
+              {view === "orders" && "🛍 Захиалга"}
+              {view === "customers" && "👥 Үйлчлүүлэгч"}
+            </h1>
+          </div>
+        </header>
+
+        <div className="p-4 max-w-6xl mx-auto">
+          {view === "callcenter" && <CallCenterView profile={profile} />}
+          {view === "orders" && <OrdersView profile={profile} />}
+          {view === "customers" && <CustomersView profile={profile} />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DRIVER DASHBOARD — Зөвхөн өөрт оноосон хүргэлт
+// ═══════════════════════════════════════════════════════════════════════════
+function DriverDashboard({ profile }) {
+  const [orders, setOrders] = useState([]);
+  const [items, setItems] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [activeOrder, setActiveOrder] = useState(null);
+  const [filter, setFilter] = useState(() => {
+    try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-driver-filter", filter); } catch {}
+  }, [filter]);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const { data: ordData } = await supabase
+        .from("biz_orders")
+        .select("*")
+        .eq("driver_id", profile.id)
+        .order("created_at", { ascending: false });
+
+      setOrders(ordData || []);
+
+      if (ordData && ordData.length > 0) {
+        const orderIds = ordData.map((o) => o.id);
+        const { data: itemData } = await supabase
+          .from("biz_order_items")
+          .select("*")
+          .in("order_id", orderIds);
+
+        const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
+        const { data: prodData } = productIds.length > 0
+          ? await supabase.from("inv_products").select("id, image_url").in("id", productIds)
+          : { data: [] };
+        const prodMap = {};
+        (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
+
+        const itemMap = {};
+        (itemData || []).forEach((it) => {
+          if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
+          itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
+        });
+        setItems(itemMap);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  const handleLogout = async () => {
+    if (!confirm("Гарах уу?")) return;
+    await supabase.auth.signOut();
+  };
+
+  const updateStatus = async (orderId, newStatus) => {
+    const updates = { status: newStatus };
+    if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
+    try {
+      await supabase.from("biz_orders").update(updates).eq("id", orderId);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  // Filter
+  const filtered = orders.filter((o) => {
+    if (filter === "active") return o.status === "new" || o.status === "pending";
+    if (filter === "delivered") return o.status === "delivered";
+    if (filter === "cancelled") return o.status === "cancelled";
+    return true;
+  });
+
+  const counts = {
+    active: orders.filter((o) => o.status === "new" || o.status === "pending").length,
+    delivered: orders.filter((o) => o.status === "delivered").length,
+    cancelled: orders.filter((o) => o.status === "cancelled").length,
+  };
+
+  return (
+    <div className="min-h-screen" style={{ background: T.bg }}>
+      <header className="sticky top-0 z-20 px-4 py-3 flex items-center gap-2"
+        style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ background: "#0ea5e9", color: "white" }}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-base">
+          🚚
+        </div>
+        <div className="flex-1">
+          <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+            Хүргэлт
+          </h1>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+            {profile.name || "—"}
+          </div>
+        </div>
+        <button onClick={handleLogout}
+          className="press-btn p-2 rounded-lg"
+          style={{ color: T.err }}>
+          <LogOut size={16} />
+        </button>
+      </header>
+
+      <div className="p-3 max-w-2xl mx-auto space-y-3">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="glass rounded-2xl p-3 text-center">
+            <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Хүргэх</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: "#0ea5e9" }} className="text-2xl">
+              {counts.active}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3 text-center">
+            <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Хүргэсэн</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl">
+              {counts.delivered}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3 text-center">
+            <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Цуцлагдсан</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-2xl">
+              {counts.cancelled}
+            </div>
+          </div>
+        </div>
+
+        {/* Filter tabs */}
+        <div className="glass rounded-2xl p-2 flex gap-1">
+          <button onClick={() => setFilter("active")}
+            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{
+              background: filter === "active" ? "#0ea5e9" : T.surfaceAlt,
+              color: filter === "active" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            🚚 Хүргэх ({counts.active})
+          </button>
+          <button onClick={() => setFilter("delivered")}
+            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{
+              background: filter === "delivered" ? T.ok : T.surfaceAlt,
+              color: filter === "delivered" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            ✓ Хүргэсэн ({counts.delivered})
+          </button>
+        </div>
+
+        {/* Orders list */}
+        {loading ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">🚚</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              {filter === "active" ? "Хүргэх захиалга алга" : "Хоосон"}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((o, idx) => (
+              <div key={o.id} className="glass rounded-xl p-3">
+                <div className="flex items-start gap-2">
+                  <div style={{
+                    background: "rgba(14,165,233,0.1)", color: "#0ea5e9",
+                    fontFamily: FD, fontWeight: 700,
+                  }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                    {idx + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <a href={`tel:${o.customer_phone}`}
+                        style={{ color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
+                        className="text-sm tabular-nums hover:underline">
+                        📞 {o.customer_phone}
+                      </a>
+                      {o.customer_name && (
+                        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                          {o.customer_name}
+                        </span>
+                      )}
+                    </div>
+                    {o.delivery_address && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2 flex items-start gap-1">
+                        <MapPin size={11} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
+                        <span>{o.delivery_address}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                        {Number(o.total_amount).toLocaleString()}₮
+                      </span>
+                      {Number(o.balance_due || 0) > 0 && (
+                        <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                          className="text-[10px] px-1.5 py-0.5 rounded-full">
+                          ⚠ Үлдэгдэл: {Number(o.balance_due).toLocaleString()}₮
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {o.delivery_lat && o.delivery_lng && (
+                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${o.delivery_lat},${o.delivery_lng}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                        color: "white",
+                      }}
+                      title="Маршрут">
+                      <MapPin size={14} />
+                    </a>
+                  )}
+                </div>
+
+                {/* Items */}
+                {(items[o.id] || []).length > 0 && (
+                  <div className="mt-2 pt-2 flex gap-1.5 overflow-x-auto" style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                    {(items[o.id] || []).slice(0, 5).map((it, i) => (
+                      <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0"
+                        style={{ background: T.surfaceAlt }}>
+                        {it.product_image && (
+                          <img src={it.product_image} alt=""
+                            style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }} />
+                        )}
+                        <span style={{ color: T.ink, fontFamily: FM, fontWeight: 500 }} className="text-[10px]">
+                          {it.product_name}
+                        </span>
+                        <span style={{ background: "#0ea5e9", color: "white", fontFamily: FD, fontWeight: 700 }}
+                          className="text-[9px] px-1 rounded-full">
+                          ×{it.quantity}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {(o.status === "new" || o.status === "pending") && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button onClick={() => updateStatus(o.id, "delivered")}
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                      ✓ Хүргэсэн
+                    </button>
+                    <button onClick={() => {
+                        if (!confirm("Хүргэх боломжгүй гэж тэмдэглэх үү?")) return;
+                        updateStatus(o.id, "cancelled");
+                      }}
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                      ✕ Хүргэх боломжгүй
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
