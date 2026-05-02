@@ -8747,6 +8747,7 @@ function DriverSettlementView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeDriver, setActiveDriver] = useState(null);
+  const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-settlement-period") || "today"; } catch { return "today"; }
   });
@@ -9106,9 +9107,8 @@ function DriverSettlementView({ profile }) {
       ) : (
         <div className="space-y-2">
           {driverStats.map((d) => (
-            <button key={d.id}
-              onClick={() => setActiveDriver(d.id)}
-              className="press-btn glass lift rounded-2xl p-3 w-full text-left"
+            <div key={d.id}
+              className="glass rounded-2xl p-3"
               style={{ borderLeft: d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
               <div className="flex items-center gap-3 mb-2">
                 <div style={{ background: "#0ea5e9", color: "white" }}
@@ -9135,7 +9135,7 @@ function DriverSettlementView({ profile }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5 mb-2">
                 <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✓ Хүрг.</div>
                   <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
@@ -9161,10 +9161,56 @@ function DriverSettlementView({ profile }) {
                   </div>
                 </div>
               </div>
-            </button>
+
+              {/* Тооцоо нээх товч */}
+              <button
+                onClick={() => setConfirmingDriverId(d.id)}
+                className="press-btn glow-primary w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ fontFamily: FS, fontWeight: 700 }}>
+                📂 Тооцоо нээх
+              </button>
+            </div>
           ))}
         </div>
       )}
+
+      {/* Тооцоо нээх баталгаажуулах popup */}
+      {confirmingDriverId && (() => {
+        const driver = driverStats.find((d) => d.id === confirmingDriverId);
+        if (!driver) return null;
+        return (
+          <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="modal-content rounded-2xl w-full max-w-sm p-5">
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">📂</div>
+                <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg mb-1">
+                  Тооцоо нээх
+                </h3>
+                <p style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                  Та <strong style={{ color: T.ink }}>{driver.name}</strong>-ийн тооцоог нээхдээ итгэлтэй байна уу?
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setConfirmingDriverId(null)}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+                  ✕ Үгүй
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveDriver(confirmingDriverId);
+                    setConfirmingDriverId(null);
+                  }}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                  ✓ Тийм
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
