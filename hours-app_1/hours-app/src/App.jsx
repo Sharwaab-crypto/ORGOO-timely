@@ -5801,6 +5801,13 @@ function CallCenterView({ profile }) {
   // Status popup
   const [statusPopupCall, setStatusPopupCall] = useState(null);
   const [callLocks, setCallLocks] = useState([]);
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
+  }, [activeTab]);
 
   // Lock-уудыг ачаалах
   useEffect(() => {
@@ -5874,11 +5881,77 @@ function CallCenterView({ profile }) {
         📞 Дугаар бүртгэх
       </button>
 
-      {/* Recent calls */}
+      {/* Recent calls + Tabs */}
       <div>
-        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 px-1">
-          Сүүлийн дуудлагууд
-        </div>
+        {(() => {
+          // Tab counts
+          const grouped = {};
+          recentCalls.forEach((c) => {
+            if (!grouped[c.phone]) grouped[c.phone] = [];
+            grouped[c.phone].push(c);
+          });
+          const counts = { calling: 0, ordered: 0, cancelled: 0 };
+          Object.entries(grouped).forEach(([phone, calls]) => {
+            const hasOrdered = calls.some((c) => c.call_status === "ordered");
+            const allCancelled = calls.every((c) => c.call_status === "cancelled");
+            if (hasOrdered) counts.ordered++;
+            else if (allCancelled) counts.cancelled++;
+            else counts.calling++;
+          });
+
+          return (
+            <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
+              <button onClick={() => setActiveTab("calling")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "calling" ? T.highlight : T.surfaceAlt,
+                  color: activeTab === "calling" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>📞</span>
+                <span>Залгах дугаар</span>
+                <span style={{
+                  background: activeTab === "calling" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "calling" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {counts.calling}
+                </span>
+              </button>
+              <button onClick={() => setActiveTab("ordered")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "ordered" ? T.ok : T.surfaceAlt,
+                  color: activeTab === "ordered" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>✅</span>
+                <span>Захиалга болсон</span>
+                <span style={{
+                  background: activeTab === "ordered" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "ordered" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {counts.ordered}
+                </span>
+              </button>
+              <button onClick={() => setActiveTab("cancelled")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "cancelled" ? T.err : T.surfaceAlt,
+                  color: activeTab === "cancelled" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>🗑</span>
+                <span>Устгагдсан</span>
+                <span style={{
+                  background: activeTab === "cancelled" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "cancelled" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {counts.cancelled}
+                </span>
+              </button>
+            </div>
+          );
+        })()}
         {loading ? (
           <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
             <Loader2 className="spin mx-auto mb-2" size={20} />
@@ -5899,9 +5972,45 @@ function CallCenterView({ profile }) {
                 if (!grouped[c.phone]) grouped[c.phone] = [];
                 grouped[c.phone].push(c);
               });
-              const phoneOrder = Object.keys(grouped).sort((a, b) =>
+
+              // Утас бүрийн төлөв тогтоох (latest call status-аар)
+              const phoneStatus = {};
+              Object.entries(grouped).forEach(([phone, calls]) => {
+                // Захиалга үүссэн эсэх (хамгийн сүүлд ordered)
+                const hasOrdered = calls.some((c) => c.call_status === "ordered");
+                const allCancelled = calls.every((c) => c.call_status === "cancelled");
+
+                if (hasOrdered) phoneStatus[phone] = "ordered";
+                else if (allCancelled) phoneStatus[phone] = "cancelled";
+                else phoneStatus[phone] = "calling";
+              });
+
+              // Tab-ийн дагуу filter
+              const filteredPhones = Object.keys(grouped).filter((phone) => {
+                if (activeTab === "calling") return phoneStatus[phone] === "calling";
+                if (activeTab === "ordered") return phoneStatus[phone] === "ordered";
+                if (activeTab === "cancelled") return phoneStatus[phone] === "cancelled";
+                return true;
+              });
+
+              const phoneOrder = filteredPhones.sort((a, b) =>
                 new Date(grouped[b][0].created_at) - new Date(grouped[a][0].created_at)
               );
+
+              if (phoneOrder.length === 0) {
+                return (
+                  <div className="glass rounded-2xl p-8 text-center">
+                    <div className="text-4xl mb-2">
+                      {activeTab === "calling" ? "📞" : activeTab === "ordered" ? "✅" : "🗑"}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                      {activeTab === "calling" && "Залгах дугаар алга"}
+                      {activeTab === "ordered" && "Захиалга болсон дугаар алга"}
+                      {activeTab === "cancelled" && "Устгагдсан дугаар алга"}
+                    </div>
+                  </div>
+                );
+              }
 
               return phoneOrder.slice(0, 30).map((phone) => {
                 const calls = grouped[phone];
@@ -6250,18 +6359,24 @@ function CallCenterView({ profile }) {
 
               // ─── ACTION: cancelled (цуцлах + дугаар устгах) ──────
               if (data.action === "cancelled") {
-                // Сэтгэгдлийг update
-                if (orderForCall.callId) {
-                  await supabase.from("biz_calls").update({
-                    notes: `[ЦУЦАЛСАН] ${data.notes}`,
-                  }).eq("id", orderForCall.callId);
-                }
-                // Тус утсаар бүх дуудлагыг устгах
-                await supabase.from("biz_calls").delete().eq("phone", data.phone);
+                // Шинэ дуудлагын бүртгэл — cancelled status
+                await supabase.from("biz_calls").insert({
+                  phone: data.phone,
+                  customer_id: null,
+                  notes: `[ЦУЦАЛСАН] ${data.notes}`,
+                  call_status: "cancelled",
+                  created_by: profile.id,
+                });
+                // Тэр утсаар бүх pending/no_answer/callback-н статусыг "cancelled" болгох
+                await supabase.from("biz_calls")
+                  .update({ call_status: "cancelled" })
+                  .eq("phone", data.phone)
+                  .or("call_status.is.null,call_status.in.(no_answer,unreachable,callback)");
 
+                await releaseLock(data.phone);
                 setOrderForCall(null);
                 await loadAll();
-                alert(`❌ Цуцлагдсан. Дугаар устгагдлаа.`);
+                alert(`❌ Цуцлагдсан. Устгагдсан хэсэгт шилжсэн.`);
                 return;
               }
 
