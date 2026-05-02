@@ -1273,6 +1273,8 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
+              <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
+              <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
 
@@ -1344,6 +1346,8 @@ function AdminDashboard({ profile }) {
                 {view === "polls" && "Санал асуулга"}
                 {view === "hrfile" && "HR хувийн файл"}
                 {view === "inventory" && "Бараа нөөц"}
+                {view === "warehouses" && "Агуулах"}
+                {view === "transfers" && "Бараа хүсэлт"}
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
@@ -1372,6 +1376,8 @@ function AdminDashboard({ profile }) {
                 {view === "polls" && "Ажилтнуудаас санал авах"}
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
+                {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
+                {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
@@ -1563,6 +1569,14 @@ function AdminDashboard({ profile }) {
 
         {view === "inventory" && (
           <InventoryView profile={profile} isAdmin={true} />
+        )}
+
+        {view === "warehouses" && (
+          <WarehousesView profile={profile} />
+        )}
+
+        {view === "transfers" && (
+          <TransferRequestsView profile={profile} />
         )}
 
         {view === "stockcount" && (
@@ -4525,6 +4539,601 @@ function InventoryView({ profile, isAdmin = false }) {
           }}
           onClose={() => setShowBulkReceive(false)}
         />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  WAREHOUSES VIEW — Агуулахын нөөц хяналт
+// ═══════════════════════════════════════════════════════════════════════════
+function WarehousesView({ profile }) {
+  const [warehouses, setWarehouses] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [activeWarehouse, setActiveWarehouse] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: whData }, { data: stkData }, { data: prdData }, { data: drvData }] = await Promise.all([
+        supabase.from("inv_warehouses").select("*").eq("is_active", true).order("type").order("name"),
+        supabase.from("inv_stock").select("*"),
+        supabase.from("inv_products").select("id, name, sku, image_url, price"),
+        supabase.from("profiles").select("id, name, role").eq("role", "driver"),
+      ]);
+      setWarehouses(whData || []);
+      setStock(stkData || []);
+      setProducts(prdData || []);
+      setDrivers(drvData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Тус агуулахын stock тоо
+  const getWarehouseStock = (whId) => {
+    const items = stock.filter((s) => s.warehouse_id === whId);
+    return {
+      totalItems: items.length,
+      totalQty: items.reduce((s, x) => s + Number(x.quantity || 0), 0),
+      lowStock: items.filter((x) => Number(x.quantity) <= 5).length,
+      outOfStock: items.filter((x) => Number(x.quantity) <= 0).length,
+    };
+  };
+
+  // Detail харах
+  if (activeWarehouse) {
+    const wh = warehouses.find((w) => w.id === activeWarehouse);
+    if (!wh) {
+      return (
+        <div className="glass rounded-2xl p-6 text-center">
+          <button onClick={() => setActiveWarehouse(null)} style={{ color: T.muted }}>← Буцах</button>
+        </div>
+      );
+    }
+
+    const whStock = stock.filter((s) => s.warehouse_id === activeWarehouse);
+    const stockData = whStock.map((s) => ({
+      ...s,
+      product: products.find((p) => p.id === s.product_id),
+    })).filter((x) => x.product);
+
+    return (
+      <div className="space-y-3">
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <button onClick={() => setActiveWarehouse(null)}
+            className="press-btn p-1.5 rounded-lg" style={{ color: T.ink }}>
+            ←
+          </button>
+          <div style={{
+            background: wh.type === "main" ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "linear-gradient(135deg, #0ea5e9, #0284c7)",
+            color: "white",
+          }} className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+            {wh.type === "main" ? "🏢" : "🚚"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {wh.name}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {wh.type === "main" ? "Төв агуулах" : "Хүргэгчийн агуулах"}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Бараа төрөл</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+              {stockData.length}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт ширхэг</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-2xl tabular-nums">
+              {stockData.reduce((s, x) => s + Number(x.quantity || 0), 0)}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">⚠ Бага үлдсэн</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-2xl tabular-nums">
+              {stockData.filter((x) => Number(x.quantity) > 0 && Number(x.quantity) <= 5).length}
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✕ Дууссан</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-2xl tabular-nums">
+              {stockData.filter((x) => Number(x.quantity) <= 0).length}
+            </div>
+          </div>
+        </div>
+
+        {stockData.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">📦</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Бараа байхгүй</div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {stockData
+              .sort((a, b) => Number(a.quantity) - Number(b.quantity))
+              .map((s) => (
+                <div key={s.id} className="glass rounded-xl p-2.5 flex items-center gap-3">
+                  {s.product.image_url && (
+                    <img src={s.product.image_url} alt=""
+                      style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                      {s.product.name}
+                    </div>
+                    {s.product.sku && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        SKU: {s.product.sku}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div style={{
+                      fontFamily: FD, fontWeight: 700,
+                      color: Number(s.quantity) <= 0 ? T.err : Number(s.quantity) <= 5 ? T.warn : T.ok,
+                    }} className="text-lg tabular-nums">
+                      {Number(s.quantity)}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">ширхэг</div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {warehouses.map((wh) => {
+            const stat = getWarehouseStock(wh.id);
+            return (
+              <button key={wh.id}
+                onClick={() => setActiveWarehouse(wh.id)}
+                className="press-btn glass lift rounded-2xl p-3 w-full text-left">
+                <div className="flex items-center gap-3 mb-2">
+                  <div style={{
+                    background: wh.type === "main" ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                    color: "white",
+                  }} className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+                    {wh.type === "main" ? "🏢" : "🚚"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                      {wh.name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {wh.type === "main" ? "🏢 Төв агуулах" : "🚚 Хүргэгчийн агуулах"}
+                    </div>
+                  </div>
+                  <div style={{ color: T.muted }} className="text-xl">›</div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5">
+                  <div style={{ background: T.highlightSoft }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Бараа</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                      {stat.totalItems}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ширхэг</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-base tabular-nums">
+                      {stat.totalQty}
+                    </div>
+                  </div>
+                  <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">⚠ Бага</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
+                      {stat.lowStock}
+                    </div>
+                  </div>
+                  <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✕ Дууссан</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
+                      {stat.outOfStock}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TRANSFER REQUESTS VIEW — Хүргэгчдийн бараа авах/буцаах хүсэлт
+// ═══════════════════════════════════════════════════════════════════════════
+function TransferRequestsView({ profile }) {
+  const [requests, setRequests] = useState([]);
+  const [items, setItems] = useState({});
+  const [profiles, setProfilesData] = useState({});
+  const [warehouses, setWarehouses] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [activeReq, setActiveReq] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("pending");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: reqData }, { data: whData }, { data: prdData }, { data: stkData }] = await Promise.all([
+        supabase.from("inv_transfer_requests").select("*").order("created_at", { ascending: false }),
+        supabase.from("inv_warehouses").select("*"),
+        supabase.from("inv_products").select("id, name, sku, image_url"),
+        supabase.from("inv_stock").select("*"),
+      ]);
+      setRequests(reqData || []);
+      setWarehouses(whData || []);
+      setProducts(prdData || []);
+      setStock(stkData || []);
+
+      // Items
+      if (reqData && reqData.length > 0) {
+        const ids = reqData.map((r) => r.id);
+        const { data: itemData } = await supabase.from("inv_transfer_items").select("*").in("request_id", ids);
+        const map = {};
+        (itemData || []).forEach((i) => {
+          if (!map[i.request_id]) map[i.request_id] = [];
+          map[i.request_id].push(i);
+        });
+        setItems(map);
+
+        // Profiles
+        const profileIds = [...new Set(reqData.map((r) => r.requester_id).filter(Boolean))];
+        if (profileIds.length > 0) {
+          const { data: prfData } = await supabase.from("profiles").select("id, name, job_title").in("id", profileIds);
+          const pMap = {};
+          (prfData || []).forEach((p) => { pMap[p.id] = p; });
+          setProfilesData(pMap);
+        }
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Зөвшөөрөх
+  const approveRequest = async (req) => {
+    const reqItems = items[req.id] || [];
+    if (reqItems.length === 0) {
+      alert("Хүсэлтэд бараа байхгүй");
+      return;
+    }
+
+    if (!confirm(`Хүсэлтийг зөвшөөрөх үү?\n\nХэрэглэгч: ${profiles[req.requester_id]?.name || "—"}\n${reqItems.length} төрлийн бараа\n\n${req.is_return ? "БУЦААГДАХ" : "ШИЛЖҮҮЛЭГДЭХ"}`)) return;
+
+    try {
+      const fromWhId = req.from_warehouse_id;
+      const toWhId = req.to_warehouse_id;
+
+      // Stock хөдөлгөөн хийх
+      for (const it of reqItems) {
+        // From warehouse-аас хасах
+        const fromStock = stock.find((s) => s.warehouse_id === fromWhId && s.product_id === it.product_id);
+        const fromQty = Number(fromStock?.quantity || 0);
+        await supabase.from("inv_stock").upsert({
+          warehouse_id: fromWhId,
+          product_id: it.product_id,
+          quantity: fromQty - Number(it.quantity),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "warehouse_id,product_id" });
+
+        // To warehouse-д нэмэх
+        const toStock = stock.find((s) => s.warehouse_id === toWhId && s.product_id === it.product_id);
+        const toQty = Number(toStock?.quantity || 0);
+        await supabase.from("inv_stock").upsert({
+          warehouse_id: toWhId,
+          product_id: it.product_id,
+          quantity: toQty + Number(it.quantity),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "warehouse_id,product_id" });
+
+        // Movement бичих
+        await supabase.from("inv_movements").insert({
+          product_id: it.product_id,
+          movement_type: "transfer",
+          quantity: Number(it.quantity),
+          warehouse_id: fromWhId,
+          to_warehouse_id: toWhId,
+          notes: req.is_return ? "Буцаалт" : "Шилжүүлэг",
+          created_by: profile.id,
+        });
+      }
+
+      // Хүсэлт төлөв шинэчлэх
+      await supabase.from("inv_transfer_requests").update({
+        status: "completed",
+        approved_by: profile.id,
+        approved_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      }).eq("id", req.id);
+
+      alert("✅ Зөвшөөрөгдлөө!");
+      setActiveReq(null);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const rejectRequest = async (req) => {
+    if (!confirm(`Хүсэлт татгалзах уу?`)) return;
+    try {
+      await supabase.from("inv_transfer_requests").update({
+        status: "rejected",
+        approved_by: profile.id,
+        approved_at: new Date().toISOString(),
+      }).eq("id", req.id);
+      setActiveReq(null);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  // Filter
+  const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+
+  const counts = {
+    pending: requests.filter((r) => r.status === "pending").length,
+    completed: requests.filter((r) => r.status === "completed").length,
+    rejected: requests.filter((r) => r.status === "rejected").length,
+  };
+
+  // Detail харах
+  if (activeReq) {
+    const reqItems = items[activeReq.id] || [];
+    const requester = profiles[activeReq.requester_id];
+    const fromWh = warehouses.find((w) => w.id === activeReq.from_warehouse_id);
+    const toWh = warehouses.find((w) => w.id === activeReq.to_warehouse_id);
+
+    return (
+      <div className="space-y-3">
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <button onClick={() => setActiveReq(null)} className="press-btn p-1.5 rounded-lg" style={{ color: T.ink }}>←</button>
+          <div className="flex-1">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+              {activeReq.is_return ? "🔄 Буцаах хүсэлт" : "📨 Бараа авах хүсэлт"}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              {new Date(activeReq.created_at).toLocaleString("mn-MN")}
+            </div>
+          </div>
+          <span style={{
+            background: activeReq.status === "pending" ? T.warnSoft : activeReq.status === "completed" ? "rgba(16,185,129,0.1)" : T.errSoft,
+            color: activeReq.status === "pending" ? T.warn : activeReq.status === "completed" ? T.ok : T.err,
+            fontFamily: FS, fontWeight: 600,
+          }} className="text-[10px] px-2 py-1 rounded-full">
+            {activeReq.status === "pending" ? "⏳ Хүлээгдэж" : activeReq.status === "completed" ? "✓ Зөвшөөрсөн" : "✕ Татгалзсан"}
+          </span>
+        </div>
+
+        {/* Хэн */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+            Хүсэлт гаргасан
+          </div>
+          <div className="flex items-center gap-2">
+            <div style={{ background: "#0ea5e9", color: "white" }}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold">
+              {requester?.name?.charAt(0) || "🚚"}
+            </div>
+            <div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                🚚 {requester?.name || "—"}
+              </div>
+              {requester?.job_title && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                  {requester.job_title}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Шилжих чиглэл */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+            Шилжих чиглэл
+          </div>
+          <div className="flex items-center gap-2">
+            <div style={{ background: T.surfaceAlt, padding: 8, borderRadius: 8, flex: 1 }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">Хаанаас</div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                {fromWh?.type === "main" ? "🏢" : "🚚"} {fromWh?.name || "—"}
+              </div>
+            </div>
+            <span style={{ color: T.highlight }} className="text-xl">→</span>
+            <div style={{ background: T.surfaceAlt, padding: 8, borderRadius: 8, flex: 1 }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">Хаашаа</div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                {toWh?.type === "main" ? "🏢" : "🚚"} {toWh?.name || "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Бараанууд */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+            Бараа ({reqItems.length})
+          </div>
+          <div className="space-y-1.5">
+            {reqItems.map((it) => {
+              const prod = products.find((p) => p.id === it.product_id);
+              return (
+                <div key={it.id} className="flex items-center gap-2.5 p-2 rounded-lg"
+                  style={{ background: T.surfaceAlt }}>
+                  {prod?.image_url && (
+                    <img src={prod.image_url} alt=""
+                      style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                      {it.product_name || prod?.name}
+                    </div>
+                    {(it.product_sku || prod?.sku) && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        {it.product_sku || prod?.sku}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{
+                    background: T.highlight, color: "white",
+                    fontFamily: FD, fontWeight: 700,
+                  }} className="text-sm px-3 py-1 rounded-full tabular-nums">
+                    ×{Number(it.quantity)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Notes */}
+        {activeReq.notes && (
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+              Тэмдэглэл
+            </div>
+            <div style={{ fontFamily: FS, color: T.ink, fontStyle: "italic" }} className="text-sm">
+              "{activeReq.notes}"
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        {activeReq.status === "pending" && (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => rejectRequest(activeReq)}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+              ✕ Татгалзах
+            </button>
+            <button onClick={() => approveRequest(activeReq)}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.ok, color: "white", fontFamily: FS }}>
+              ✓ Зөвшөөрөх
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Filter */}
+      <div className="glass rounded-2xl p-2 flex gap-1">
+        {[
+          { id: "pending", label: "⏳ Хүлээгдэж", count: counts.pending, color: T.warn },
+          { id: "completed", label: "✓ Зөвшөөрсөн", count: counts.completed, color: T.ok },
+          { id: "rejected", label: "✕ Татгалзсан", count: counts.rejected, color: T.err },
+          { id: "all", label: "Бүгд", count: requests.length, color: T.ink },
+        ].map((f) => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+            style={{
+              background: filter === f.id ? f.color : T.surfaceAlt,
+              color: filter === f.id ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            <span>{f.label}</span>
+            {f.count > 0 && (
+              <span style={{
+                background: filter === f.id ? "rgba(255,255,255,0.2)" : T.surface,
+                color: filter === f.id ? "white" : T.muted,
+              }} className="text-[9px] px-1.5 rounded-full">{f.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📨</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Хүсэлт байхгүй</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((req) => {
+            const reqItems = items[req.id] || [];
+            const requester = profiles[req.requester_id];
+            const fromWh = warehouses.find((w) => w.id === req.from_warehouse_id);
+            return (
+              <button key={req.id} onClick={() => setActiveReq(req)}
+                className="press-btn glass lift rounded-2xl p-3 w-full text-left"
+                style={{
+                  borderLeft: `4px solid ${
+                    req.status === "pending" ? T.warn :
+                    req.status === "completed" ? T.ok : T.err
+                  }`,
+                }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div style={{ background: "#0ea5e9", color: "white" }}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                    {requester?.name?.charAt(0) || "🚚"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                        🚚 {requester?.name || "—"}
+                      </span>
+                      {req.is_return && (
+                        <span style={{ background: "rgba(245,158,11,0.1)", color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full">
+                          🔄 Буцаалт
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      {new Date(req.created_at).toLocaleString("mn-MN")} · {fromWh?.name || "—"}
+                    </div>
+                  </div>
+                  <span style={{
+                    background: req.status === "pending" ? T.warnSoft : req.status === "completed" ? "rgba(16,185,129,0.1)" : T.errSoft,
+                    color: req.status === "pending" ? T.warn : req.status === "completed" ? T.ok : T.err,
+                    fontFamily: FS, fontWeight: 600,
+                  }} className="text-[10px] px-2 py-0.5 rounded-full">
+                    {req.status === "pending" ? "⏳" : req.status === "completed" ? "✓" : "✕"}
+                  </span>
+                </div>
+
+                <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 flex items-center gap-2">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    📦 {reqItems.length} төрлийн бараа · нийт
+                  </span>
+                  <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-sm tabular-nums">
+                    {reqItems.reduce((s, x) => s + Number(x.quantity || 0), 0)} ширхэг
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
