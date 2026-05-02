@@ -16252,7 +16252,7 @@ function DriverRequestsView({ profile }) {
       const [{ data: reqData, error: reqErr }, { data: whData, error: whErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         supabase.from("inv_transfer_requests").select("*").eq("requester_id", profile.id).order("created_at", { ascending: false }),
         supabase.from("inv_warehouses").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url, is_active"),
+        supabase.from("inv_products").select("id, name, sku, image_url"),
         supabase.from("inv_stock").select("*"),
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
@@ -16266,7 +16266,7 @@ function DriverRequestsView({ profile }) {
       });
       setRequests(reqData || []);
       setWarehouses(whData || []);
-      setProducts((prdData || []).filter((p) => p.is_active !== false));
+      setProducts(prdData || []);
       setStock(stkData || []);
       setMyWarehouse((whData || []).find((w) => w.driver_id === profile.id));
 
