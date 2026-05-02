@@ -4562,7 +4562,7 @@ function WarehousesView({ profile }) {
       const [{ data: whData, error: whErr }, { data: stkData, error: stkErr }, { data: prdData, error: prdErr }, { data: drvData }] = await Promise.all([
         supabase.from("inv_warehouses").select("*").order("type").order("name"),
         supabase.from("inv_stock").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url, cost_price"),
+        supabase.from("inv_products").select("id, name, sku, image_url"),
         supabase.from("profiles").select("id, name, role").eq("role", "driver"),
       ]);
       if (whErr) console.error("Warehouse load error:", whErr);
@@ -16151,7 +16151,7 @@ function DriverWarehouseView({ profile }) {
       if (whData) {
         const [{ data: stkData }, { data: prdData }] = await Promise.all([
           supabase.from("inv_stock").select("*").eq("warehouse_id", whData.id),
-          supabase.from("inv_products").select("id, name, sku, image_url, cost_price"),
+          supabase.from("inv_products").select("id, name, sku, image_url"),
         ]);
         setStock(stkData || []);
         setProducts(prdData || []);
