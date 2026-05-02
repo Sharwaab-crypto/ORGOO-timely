@@ -9640,6 +9640,151 @@ function MapPickerModal({ order, onSave, onClose }) {
   );
 }
 
+// ─── Driver searchbar dropdown ────────────────────────────────────
+function DriverSearchSelect({ drivers, orders, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const selected = drivers.find((d) => d.id === value);
+
+  // Үсгийн дараалал + хайлт
+  const filtered = useMemo(() => {
+    const sorted = [...drivers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "mn"));
+    if (!search.trim()) return sorted;
+    const q = search.toLowerCase();
+    return sorted.filter((d) =>
+      (d.name || "").toLowerCase().includes(q) ||
+      (d.job_title || "").toLowerCase().includes(q)
+    );
+  }, [drivers, search]);
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-2 mb-1">
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+          🚚 Delivery ажилтан:
+        </span>
+      </div>
+
+      {/* Selected pill / Open button */}
+      {selected ? (
+        <div className="flex items-center gap-2">
+          <div className="press-btn flex-1 flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ background: "rgba(14,165,233,0.1)", border: "1px solid #0ea5e9" }}>
+            <div style={{ background: "#0ea5e9", color: "white" }}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+              {selected.name?.charAt(0) || "🚚"}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs truncate">
+                🚚 {selected.name}
+              </div>
+              {selected.job_title && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                  {selected.job_title}
+                </div>
+              )}
+            </div>
+            <span style={{ background: "rgba(14,165,233,0.15)", color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
+              className="text-[10px] px-2 py-0.5 rounded-full tabular-nums">
+              {orders.filter((o) => o.driver_id === selected.id).length} захиалга
+            </span>
+          </div>
+          <button onClick={() => onChange("all")}
+            className="press-btn p-2 rounded-xl"
+            style={{ background: T.errSoft, color: T.err }}>
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setOpen(!open)}
+          className="press-btn w-full px-3 py-2.5 rounded-xl flex items-center gap-2"
+          style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
+          <span style={{ color: T.muted }}>🔍</span>
+          <span style={{ color: T.muted, fontFamily: FS }} className="text-xs flex-1 text-left">
+            Delivery ажилтан сонгох...
+          </span>
+          <ChevronDown size={14} style={{ color: T.muted, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+        </button>
+      )}
+
+      {/* Dropdown */}
+      {open && !selected && (
+        <>
+          <div onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{
+            position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4,
+            zIndex: 50, background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+            maxHeight: 360, overflowY: "auto",
+          }}>
+            {/* Searchbar */}
+            <div style={{ position: "sticky", top: 0, background: T.surface, padding: 8, borderBottom: `1px solid ${T.borderSoft}` }}>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="🔍 Хайх..."
+                autoFocus
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-xs"
+              />
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="text-center py-6">
+                <div className="text-2xl mb-1">🔍</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                  Олдсонгүй
+                </div>
+              </div>
+            ) : (
+              <div className="p-1">
+                {filtered.map((d) => {
+                  const count = orders.filter((o) => o.driver_id === d.id).length;
+                  const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending")).length;
+                  return (
+                    <button key={d.id}
+                      onClick={() => { onChange(d.id); setOpen(false); setSearch(""); }}
+                      className="press-btn w-full p-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
+                      style={{ textAlign: "left" }}>
+                      <div style={{ background: "#0ea5e9", color: "white" }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {d.name?.charAt(0) || "🚚"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                          {d.name}
+                        </div>
+                        {d.job_title && (
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                            {d.job_title}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        {activeCount > 0 && (
+                          <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full">
+                            ⏳ {activeCount}
+                          </span>
+                        )}
+                        <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-[10px] tabular-nums">
+                          {count} захиалга
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function OrdersView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
@@ -9802,52 +9947,13 @@ function OrdersView({ profile }) {
         </div>
       </div>
 
-      {/* Delivery filter */}
+      {/* Delivery filter — Searchbar dropdown */}
       <div className="glass rounded-2xl p-3">
-        <div className="flex items-center gap-2 flex-wrap mb-2">
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">🚚 Delivery:</span>
-          <button onClick={() => setDriverFilter("all")}
-            className="press-btn px-2.5 py-1 rounded-full text-[10px]"
-            style={{
-              background: driverFilter === "all" ? T.ink : T.surfaceAlt,
-              color: driverFilter === "all" ? T.surface : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            Бүгд
-          </button>
-          <button onClick={() => setDriverFilter("unassigned")}
-            className="press-btn px-2.5 py-1 rounded-full text-[10px] flex items-center gap-1"
-            style={{
-              background: driverFilter === "unassigned" ? T.warn : T.surfaceAlt,
-              color: driverFilter === "unassigned" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            ⚠ Хуваарлаагүй
-            <span style={{
-              background: driverFilter === "unassigned" ? "rgba(255,255,255,0.2)" : T.warnSoft,
-              color: driverFilter === "unassigned" ? "white" : T.warn,
-            }} className="text-[9px] px-1.5 rounded-full">
-              {orders.filter((o) => !o.driver_id).length}
-            </span>
-          </button>
-          {drivers.map((d) => (
-            <button key={d.id} onClick={() => setDriverFilter(d.id)}
-              className="press-btn px-2.5 py-1 rounded-full text-[10px] flex items-center gap-1"
-              style={{
-                background: driverFilter === d.id ? "#0ea5e9" : T.surfaceAlt,
-                color: driverFilter === d.id ? "white" : T.ink,
-                fontFamily: FS, fontWeight: 600,
-              }}>
-              🚚 {d.name}
-              <span style={{
-                background: driverFilter === d.id ? "rgba(255,255,255,0.2)" : "rgba(14,165,233,0.1)",
-                color: driverFilter === d.id ? "white" : "#0ea5e9",
-              }} className="text-[9px] px-1.5 rounded-full">
-                {orders.filter((o) => o.driver_id === d.id).length}
-              </span>
-            </button>
-          ))}
-        </div>
+        <DriverSearchSelect
+          drivers={drivers}
+          orders={orders}
+          value={driverFilter}
+          onChange={setDriverFilter} />
 
         {/* Driver stats — Сонгосон үед тэр driver-ийн stats */}
         {driverFilter !== "all" && driverFilter !== "unassigned" && (() => {
@@ -10109,7 +10215,10 @@ function OrdersView({ profile }) {
                       <button key={d.id}
                         onClick={async () => {
                           try {
-                            await supabase.from("biz_orders").update({ driver_id: d.id }).eq("id", assignDriverOrder.id);
+                            await supabase.from("biz_orders").update({
+                              driver_id: d.id,
+                              status: "pending",  // Автомат "Хүлээгдэж" статус
+                            }).eq("id", assignDriverOrder.id);
                             setAssignDriverOrder(null);
                             await loadAll();
                           } catch (e) { alert("Алдаа: " + e.message); }
