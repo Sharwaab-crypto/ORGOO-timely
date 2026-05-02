@@ -6519,7 +6519,7 @@ function CallCenterView({ profile }) {
 
               setOrderForCall(null);
               await loadAll();
-              alert(`✅ Захиалга #${orderNumber} амжилттай!\n${data.totalAmount.toLocaleString()}₮`);
+              alert(`✅ Захиалга амжилттай үүсгэгдлээ!\n${data.totalAmount.toLocaleString()}₮`);
             } catch (e) { alert("Алдаа: " + e.message); }
           }}
           onClose={() => {
@@ -7809,35 +7809,48 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 function OrderCard({ order, compact = false, onClick }) {
   const statusInfo = {
     new: { label: "Шинэ", color: T.highlight, bg: T.highlightSoft, icon: "🆕" },
-    preparing: { label: "Бэлтгэгдэж", color: T.warn, bg: T.warnSoft, icon: "👨‍🍳" },
     delivered: { label: "Хүргэгдсэн", color: T.ok, bg: "rgba(16,185,129,0.1)", icon: "✓" },
     cancelled: { label: "Цуцалсан", color: T.err, bg: T.errSoft, icon: "✕" },
   };
   const status = statusInfo[order.status] || statusInfo.new;
+  const paid = Number(order.paid_amount || 0);
+  const total = Number(order.total_amount || 0);
+  const isFullyPaid = paid >= total && total > 0;
 
   return (
-    <button onClick={onClick}
-      className={`glass ${onClick ? "lift" : ""} rounded-xl p-3 w-full text-left block`}>
+    <div className={`glass rounded-xl p-3 ${onClick ? "lift" : ""}`}>
       <div className="flex items-start gap-3">
-        <div style={{
-          background: status.bg, color: status.color,
-        }} className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+        <button onClick={onClick}
+          style={{ background: status.bg, color: status.color }}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0 press-btn">
           {status.icon}
-        </div>
+        </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
-              #{order.order_number}
-            </span>
+            {order.customer_name && (
+              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                {order.customer_name}
+              </span>
+            )}
             <span style={{
               background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
             }} className="text-[9px] px-1.5 py-0.5 rounded-full">
               {status.label}
             </span>
+            {isFullyPaid && (
+              <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                className="text-[9px] px-1.5 py-0.5 rounded-full">
+                ✓ ТӨЛСӨН
+              </span>
+            )}
           </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-            📱 {order.customer_phone || "—"} {order.customer_name ? `· ${order.customer_name}` : ""}
-          </div>
+          {order.customer_phone && (
+            <a href={`tel:${order.customer_phone}`}
+              style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}
+              className="text-xs mt-1 inline-flex items-center gap-1 hover:underline press-btn">
+              📞 {order.customer_phone}
+            </a>
+          )}
           {!compact && order.delivery_address && (
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
               📍 {order.delivery_address}
@@ -7847,11 +7860,18 @@ function OrderCard({ order, compact = false, onClick }) {
             🕐 {new Date(order.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </div>
         </div>
-        <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
-          {Number(order.total_amount).toLocaleString()}₮
-        </div>
+        <button onClick={onClick} className="text-right press-btn">
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
+            {total.toLocaleString()}₮
+          </div>
+          {paid > 0 && (
+            <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-[11px] tabular-nums whitespace-nowrap">
+              ✓ {paid.toLocaleString()}₮
+            </div>
+          )}
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -7950,7 +7970,6 @@ function OrdersView({ profile }) {
           {[
             { key: "all", label: "Бүх", icon: "📋" },
             { key: "new", label: "Шинэ", icon: "🆕" },
-            { key: "preparing", label: "Бэлтгэж", icon: "👨‍🍳" },
             { key: "delivered", label: "Хүргэсэн", icon: "✓" },
             { key: "cancelled", label: "Цуцалсан", icon: "✕" },
           ].map((f) => (
@@ -8005,11 +8024,6 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
 
   const statusActions = {
     new: [
-      { label: "Бэлтгэж эхлэх", action: "preparing", color: T.warn, icon: "👨‍🍳" },
-      { label: "Шууд хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
-    ],
-    preparing: [
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
@@ -8029,7 +8043,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
         </button>
         <div className="flex-1 min-w-0">
           <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-            #{order.order_number}
+            {order.customer_name || "Захиалга"}
           </div>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
             {new Date(order.created_at).toLocaleString("mn-MN")}
