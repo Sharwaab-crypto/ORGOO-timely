@@ -4593,9 +4593,10 @@ function WarehousesView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Тус агуулахын stock тоо
+  // Тус агуулахын stock тоо (зөвхөн идэвхтэй бараа)
   const getWarehouseStock = (whId) => {
-    const items = stock.filter((s) => s.warehouse_id === whId);
+    const validIds = new Set(products.map((p) => p.id));
+    const items = stock.filter((s) => s.warehouse_id === whId && validIds.has(s.product_id));
     return {
       totalItems: items.length,
       totalQty: items.reduce((s, x) => s + Number(x.quantity || 0), 0),
@@ -16319,7 +16320,7 @@ function DriverRequestsView({ profile }) {
       const [{ data: reqData, error: reqErr }, { data: whData, error: whErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         supabase.from("inv_transfer_requests").select("*").eq("requester_id", profile.id).order("created_at", { ascending: false }),
         supabase.from("inv_warehouses").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url"),
+        supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("inv_stock").select("*"),
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
