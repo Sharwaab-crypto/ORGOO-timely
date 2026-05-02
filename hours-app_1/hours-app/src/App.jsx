@@ -4559,13 +4559,21 @@ function WarehousesView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: whData }, { data: stkData }, { data: prdData }, { data: drvData }] = await Promise.all([
-        supabase.from("inv_warehouses").select("*").eq("is_active", true).order("type").order("name"),
+      const [{ data: whData, error: whErr }, { data: stkData, error: stkErr }, { data: prdData, error: prdErr }, { data: drvData }] = await Promise.all([
+        supabase.from("inv_warehouses").select("*").order("type").order("name"),
         supabase.from("inv_stock").select("*"),
         supabase.from("inv_products").select("id, name, sku, image_url, price"),
         supabase.from("profiles").select("id, name, role").eq("role", "driver"),
       ]);
-      setWarehouses(whData || []);
+      if (whErr) console.error("Warehouse load error:", whErr);
+      if (stkErr) console.error("Stock load error:", stkErr);
+      if (prdErr) console.error("Products load error:", prdErr);
+      console.log("WarehousesView loaded:", {
+        warehouses: whData?.length || 0,
+        stock: stkData?.length || 0,
+        products: prdData?.length || 0,
+      });
+      setWarehouses((whData || []).filter((w) => w.is_active !== false));
       setStock(stkData || []);
       setProducts(prdData || []);
       setDrivers(drvData || []);
