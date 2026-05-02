@@ -9710,10 +9710,33 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
 
       {/* Dropdown — Modal */}
       {open && !selected && (
-        <div className="modal-backdrop fixed inset-0 z-50 flex items-start justify-center p-2 pt-20"
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 9999,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+          padding: "5rem 0.5rem 0.5rem 0.5rem",
+          background: "rgba(244, 114, 182, 0.15)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
           onClick={() => setOpen(false)}>
-          <div className="modal-content rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
-            style={{ maxHeight: "70vh" }}
+          <div style={{
+              background: "rgba(255, 255, 255, 0.98)",
+              backdropFilter: "blur(24px) saturate(180%)",
+              WebkitBackdropFilter: "blur(24px) saturate(180%)",
+              border: "1px solid rgba(255, 255, 255, 0.8)",
+              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              borderRadius: 16,
+              width: "100%",
+              maxWidth: 480,
+              maxHeight: "75vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3"
               style={{ borderBottom: `1px solid ${T.border}` }}>
