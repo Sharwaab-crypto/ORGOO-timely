@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus, Play, Square, Trash2, X, Users, Calendar, MapPin, Edit3,
   AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock,
@@ -9708,11 +9709,11 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
         </button>
       )}
 
-      {/* Dropdown — Modal */}
-      {open && !selected && (
+      {/* Dropdown — Portal-аар document.body дээр render */}
+      {open && !selected && createPortal(
         <div style={{
           position: "fixed",
-          inset: 0,
+          top: 0, left: 0, right: 0, bottom: 0,
           zIndex: 9999,
           display: "flex",
           alignItems: "flex-start",
@@ -9810,7 +9811,8 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
