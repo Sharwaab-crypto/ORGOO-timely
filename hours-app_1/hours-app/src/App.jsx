@@ -5700,6 +5700,7 @@ function CallCenterView({ profile }) {
   const [recentCalls, setRecentCalls] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [copiedPhone, setCopiedPhone] = useState("");
@@ -5707,16 +5708,18 @@ function CallCenterView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }] = await Promise.all([
+      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }] = await Promise.all([
         supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("biz_customers").select("*"),
         supabase.from("profiles").select("id, name").limit(200),
+        supabase.from("biz_fb_pages").select("*"),
       ]);
       setRecentCalls(callData || []);
       setProducts(prodData || []);
       setCustomers(custData || []);
       setProfiles(profData || []);
+      setFbPages(fbData || []);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -6106,12 +6109,17 @@ function CallCenterView({ profile }) {
                           NEW
                         </span>
                       )}
-                      {customer?.name && (
-                        <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
-                          className="text-[10px] px-2 py-1 rounded-md uppercase tracking-wider">
-                          {customer.name}
-                        </span>
-                      )}
+                      {(() => {
+                        // FB page from latest call
+                        const fbPage = fbPages.find((fp) => fp.id === latestCall.fb_page_id);
+                        if (!fbPage) return null;
+                        return (
+                          <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+                            className="text-[10px] px-2 py-1 rounded-md uppercase tracking-wider">
+                            {fbPage.name}
+                          </span>
+                        );
+                      })()}
                       <span style={{
                         background: isActive ? "rgba(168,85,247,0.15)" : "rgba(148,163,184,0.2)",
                         color: isActive ? "#9333ea" : T.muted,
@@ -6124,12 +6132,18 @@ function CallCenterView({ profile }) {
                         <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(customer?.created_at || latestCall.created_at)}</span>
                       </div>
                       <div className="flex-1" />
-                      {customer && (
-                        <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, border: `1px solid rgba(16,185,129,0.2)`, fontFamily: FS }}
-                          className="text-xs px-3 py-1 rounded-md flex items-center gap-1">
-                          <UserIcon size={10} /> {customer.name || "Нэргүй"}
-                        </span>
-                      )}
+                      {(() => {
+                        // Дугаарыг бүртгэсэн ажилтан — хамгийн эхний дуудлага (calls байхдаа сүүлд гэснээр sort, тиймээс [calls.length-1])
+                        const firstCall = calls[calls.length - 1];
+                        const creator = profiles.find((p) => p.id === firstCall?.created_by);
+                        if (!creator) return null;
+                        return (
+                          <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, border: `1px solid rgba(16,185,129,0.2)`, fontFamily: FS }}
+                            className="text-xs px-3 py-1 rounded-md flex items-center gap-1">
+                            <UserIcon size={10} /> {creator.name}
+                          </span>
+                        );
+                      })()}
                       <button onClick={() => {
                         if (!confirm(`${phone} - бүх дуудлагыг устгах уу? (${calls.length})`)) return;
                         Promise.all(calls.map((c) => supabase.from("biz_calls").delete().eq("id", c.id))).then(() => loadAll());
