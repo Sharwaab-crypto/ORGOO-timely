@@ -16249,15 +16249,24 @@ function DriverRequestsView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: reqData }, { data: whData }, { data: prdData }, { data: stkData }] = await Promise.all([
+      const [{ data: reqData, error: reqErr }, { data: whData, error: whErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         supabase.from("inv_transfer_requests").select("*").eq("requester_id", profile.id).order("created_at", { ascending: false }),
         supabase.from("inv_warehouses").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url"),
+        supabase.from("inv_products").select("id, name, sku, image_url, is_active"),
         supabase.from("inv_stock").select("*"),
       ]);
+      if (reqErr) console.error("Request fetch error:", reqErr);
+      if (whErr) console.error("Warehouse fetch error:", whErr);
+      if (prdErr) console.error("Product fetch error:", prdErr);
+      if (stkErr) console.error("Stock fetch error:", stkErr);
+      console.log("Loaded:", {
+        warehouses: whData?.length,
+        products: prdData?.length,
+        stock: stkData?.length,
+      });
       setRequests(reqData || []);
       setWarehouses(whData || []);
-      setProducts(prdData || []);
+      setProducts((prdData || []).filter((p) => p.is_active !== false));
       setStock(stkData || []);
       setMyWarehouse((whData || []).find((w) => w.driver_id === profile.id));
 
