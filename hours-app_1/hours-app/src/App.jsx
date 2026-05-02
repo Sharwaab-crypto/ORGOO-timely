@@ -1266,6 +1266,7 @@ function AdminDashboard({ profile }) {
             <SidebarSection label="Бизнес">
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
+              <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
@@ -1343,6 +1344,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
+                {view === "sales" && "Борлуулалтын самбар"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -1369,6 +1371,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
+                {view === "sales" && "FB page тус бүрийн борлуулалтын тайлан"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -1566,6 +1569,10 @@ function AdminDashboard({ profile }) {
 
         {view === "operator-kpi" && (
           <OperatorKPIReportView profile={profile} />
+        )}
+
+        {view === "sales" && (
+          <SalesDashboardView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -7364,6 +7371,522 @@ function OperatorKPIReportView({ profile }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  SALES DASHBOARD — Борлуулалтын самбар (FB page-аар KPI)
+// ═══════════════════════════════════════════════════════════════════════════
+function SalesDashboardView({ profile }) {
+  const [calls, setCalls] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [items, setItems] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [fbPages, setFbPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [period, setPeriod] = useState(() => {
+    try { return localStorage.getItem("orgoo-sales-period") || "month"; } catch { return "month"; }
+  });
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-sales-period", period); } catch {}
+  }, [period]);
+
+  const periodRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+    if (period === "today") return { start: today, end: tomorrow, label: "Өнөөдөр" };
+    if (period === "yesterday") {
+      const y = new Date(today); y.setDate(today.getDate() - 1);
+      return { start: y, end: today, label: "Өчигдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(today); start.setDate(today.getDate() - 6);
+      return { start, end: tomorrow, label: "7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start, end: tomorrow, label: "Энэ сар" };
+    }
+    if (period === "custom") {
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      return {
+        start: new Date(sy, sm - 1, sd, 0, 0, 0),
+        end: new Date(ey, em - 1, ed + 1, 0, 0, 0),
+        label: `${customStart} – ${customEnd}`,
+      };
+    }
+    return { start: new Date(0), end: new Date(8640000000000000), label: "Бүгд" };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [{ data: callData }, { data: ordData }, { data: itmData }, { data: prodData }, { data: fbData }] = await Promise.all([
+          supabase.from("biz_calls").select("*"),
+          supabase.from("biz_orders").select("*"),
+          supabase.from("biz_order_items").select("*"),
+          supabase.from("inv_products").select("id, name, image_url, sku"),
+          supabase.from("biz_fb_pages").select("*"),
+        ]);
+        setCalls(callData || []);
+        setOrders(ordData || []);
+        setItems(itmData || []);
+        setProducts(prodData || []);
+        setFbPages(fbData || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  // Period-ээр шүүх
+  const filteredCalls = useMemo(() => calls.filter((c) => {
+    const d = new Date(c.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [calls, periodRange]);
+
+  const filteredOrders = useMemo(() => orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d >= periodRange.start && d < periodRange.end;
+  }), [orders, periodRange]);
+
+  // FB page-аар групплэх
+  const fbReport = useMemo(() => {
+    const map = {};
+
+    // FB page бүрд default
+    fbPages.forEach((p) => {
+      map[p.id] = {
+        id: p.id,
+        name: p.name,
+        url: p.url,
+        is_active: p.is_active,
+        uniquePhones: new Set(),
+        totalCalls: 0,
+        totalOrders: 0,
+        delivered: 0,
+        cancelled: 0,
+        pending: 0,
+        revenue: 0,
+        deliveredOrderIds: new Set(),
+      };
+    });
+
+    // FB page-гүй (NULL)
+    map["__null__"] = {
+      id: null,
+      name: "Тодорхойгүй",
+      url: null,
+      is_active: true,
+      uniquePhones: new Set(),
+      totalCalls: 0,
+      totalOrders: 0,
+      delivered: 0,
+      cancelled: 0,
+      pending: 0,
+      revenue: 0,
+      deliveredOrderIds: new Set(),
+    };
+
+    // Дуудлагууд
+    filteredCalls.forEach((c) => {
+      const key = c.fb_page_id || "__null__";
+      if (!map[key]) return;
+      map[key].uniquePhones.add(c.phone);
+      map[key].totalCalls++;
+    });
+
+    // Захиалгууд — fb_page_id call дотор хадгалагдсан, тиймээс утсаар хайх
+    // Эсвэл call_id-аар холбогдсон бол. Энд утсаар тооцно.
+    const phoneToFbPage = {};
+    filteredCalls.forEach((c) => {
+      if (c.fb_page_id) phoneToFbPage[c.phone] = c.fb_page_id;
+    });
+
+    filteredOrders.forEach((o) => {
+      const fbPageId = phoneToFbPage[o.customer_phone] || "__null__";
+      const key = fbPageId || "__null__";
+      if (!map[key]) return;
+      map[key].totalOrders++;
+      if (o.status === "delivered") {
+        map[key].delivered++;
+        map[key].revenue += Number(o.total_amount || 0);
+        map[key].deliveredOrderIds.add(o.id);
+      } else if (o.status === "cancelled") {
+        map[key].cancelled++;
+      } else {
+        map[key].pending++;
+      }
+    });
+
+    return Object.values(map)
+      .filter((p) => p.totalCalls > 0 || p.totalOrders > 0)
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [filteredCalls, filteredOrders, fbPages]);
+
+  // Top бараа (хүргэгдсэн захиалгуудаас)
+  const topProducts = useMemo(() => {
+    const productMap = {};
+    const deliveredOrderIds = new Set(filteredOrders.filter((o) => o.status === "delivered").map((o) => o.id));
+
+    items.forEach((it) => {
+      if (!deliveredOrderIds.has(it.order_id)) return;
+      if (!productMap[it.product_id]) {
+        const prod = products.find((p) => p.id === it.product_id);
+        productMap[it.product_id] = {
+          id: it.product_id,
+          name: it.product_name || prod?.name || "—",
+          image: prod?.image_url || null,
+          sku: prod?.sku || "",
+          qty: 0,
+          revenue: 0,
+        };
+      }
+      productMap[it.product_id].qty += Number(it.quantity || 0);
+      productMap[it.product_id].revenue += Number(it.total_amount || 0);
+    });
+
+    return Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [filteredOrders, items, products]);
+
+  // Нийт стат
+  const totals = useMemo(() => ({
+    revenue: filteredOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    delivered: filteredOrders.filter((o) => o.status === "delivered").length,
+    totalOrders: filteredOrders.length,
+    avgOrder: 0,
+  }), [filteredOrders]);
+  totals.avgOrder = totals.delivered > 0 ? totals.revenue / totals.delivered : 0;
+
+  // Excel export
+  const exportExcel = () => {
+    try {
+      const rows = fbReport.map((p, idx) => ({
+        "№": idx + 1,
+        "FB Page": p.name,
+        "Нийт дугаар": p.uniquePhones.size,
+        "Нийт залгалт": p.totalCalls,
+        "Захиалга": p.totalOrders,
+        "Хүргэгдсэн": p.delivered,
+        "Хүлээгдэж": p.pending,
+        "Цуцалсан": p.cancelled,
+        "Conversion %": p.uniquePhones.size > 0 ? Math.round((p.totalOrders / p.uniquePhones.size) * 100) + "%" : "0%",
+        "Амжилт %": p.totalOrders > 0 ? Math.round((p.delivered / p.totalOrders) * 100) + "%" : "0%",
+        "Орлого (₮)": p.revenue.toLocaleString(),
+      }));
+
+      if (rows.length === 0) {
+        alert("Энэ хугацаанд мэдээлэл байхгүй.");
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 20 }, { wch: 13 }, { wch: 13 },
+        { wch: 12 }, { wch: 13 }, { wch: 13 }, { wch: 12 },
+        { wch: 13 }, { wch: 11 }, { wch: 16 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "FB Page Sales");
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Борлуулалт_${periodRange.label}_${dateStr}.xlsx`);
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Period selector + Excel */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "yesterday", label: "Өчигдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "Энэ сар" },
+            { id: "all", label: "Бүгд" },
+            { id: "custom", label: "📅 Гараар" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex items-center gap-1">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+              <span style={{ color: T.muted }}>→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
+                className="px-2 py-1 rounded text-xs" />
+            </div>
+          )}
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
+            {periodRange.label}
+          </span>
+          <button onClick={exportExcel}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5"
+            style={{
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              color: "white",
+              fontFamily: FS, fontWeight: 600,
+              boxShadow: "0 4px 12px rgba(16,185,129,0.3)",
+            }}>
+            <FileSpreadsheet size={12} />
+            Excel татах
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : (
+        <>
+          {/* Нийт стат */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+              <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                💰
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
+                {totals.revenue.toLocaleString()}₮
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Нийт орлого
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+              <div style={{ background: T.highlightSoft, color: T.highlight }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <ShoppingBag size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                {totals.delivered}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Хүргэгдсэн захиалга
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #3b82f6` }}>
+              <div style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                📊
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-2xl tabular-nums">
+                {Math.round(totals.avgOrder).toLocaleString()}₮
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Дундаж захиалга
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #9333ea` }}>
+              <div style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Send size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-2xl tabular-nums">
+                {fbReport.length}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Идэвхтэй FB Page
+              </div>
+            </div>
+          </div>
+
+          {/* FB Pages report */}
+          <div>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm mb-2 flex items-center gap-2">
+              📘 FB Page-аар KPI
+            </div>
+            {fbReport.length === 0 ? (
+              <div className="glass rounded-2xl p-8 text-center">
+                <div className="text-4xl mb-2">📊</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                  Энэ хугацаанд мэдээлэл байхгүй
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {fbReport.map((p, idx) => {
+                  const successRate = p.totalOrders > 0
+                    ? Math.round((p.delivered / p.totalOrders) * 100)
+                    : 0;
+                  const conversion = p.uniquePhones.size > 0
+                    ? Math.round((p.totalOrders / p.uniquePhones.size) * 100)
+                    : 0;
+                  const maxRevenue = Math.max(...fbReport.map((x) => x.revenue), 1);
+                  const revenuePercent = (p.revenue / maxRevenue) * 100;
+
+                  return (
+                    <div key={p.id || "null"} className="glass rounded-2xl p-3">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div style={{
+                          background: idx === 0 ? "linear-gradient(135deg, #f59e0b, #f97316)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                          color: "white", fontFamily: FD, fontWeight: 700,
+                        }} className="w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+                          {idx === 0 ? "🏆" : idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                              📘 {p.name}
+                            </span>
+                            {!p.is_active && (
+                              <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full">
+                                Идэвхгүй
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                            {p.revenue.toLocaleString()}₮
+                          </div>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                            {successRate}% амжилт
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Revenue bar */}
+                      <div style={{ background: T.surfaceAlt, height: 4, borderRadius: 2 }} className="mb-2 overflow-hidden">
+                        <div style={{
+                          width: `${revenuePercent}%`,
+                          height: "100%",
+                          background: "linear-gradient(90deg, #10b981, #059669)",
+                          transition: "width 0.5s",
+                        }} />
+                      </div>
+
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5">
+                        <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Дугаар</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                            {p.uniquePhones.size}
+                          </div>
+                        </div>
+                        <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Залгалт</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-base tabular-nums">
+                            {p.totalCalls}
+                          </div>
+                        </div>
+                        <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Захиалга</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-base tabular-nums">
+                            {p.totalOrders}
+                          </div>
+                        </div>
+                        <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✓</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                            {p.delivered}
+                          </div>
+                        </div>
+                        <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">⏳</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
+                            {p.pending}
+                          </div>
+                        </div>
+                        <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✕</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
+                            {p.cancelled}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          Conversion:
+                        </span>
+                        <div style={{ background: T.surfaceAlt, height: 4, borderRadius: 2 }} className="flex-1 overflow-hidden">
+                          <div style={{
+                            width: `${Math.min(conversion, 100)}%`,
+                            height: "100%",
+                            background: T.highlight,
+                            transition: "width 0.5s",
+                          }} />
+                        </div>
+                        <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">
+                          {conversion}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Top бараа */}
+          {topProducts.length > 0 && (
+            <div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm mb-2 flex items-center gap-2">
+                🏆 Топ зарагдсан бараа
+              </div>
+              <div className="space-y-1.5">
+                {topProducts.map((prod, idx) => (
+                  <div key={prod.id} className="glass rounded-xl p-3 flex items-center gap-3">
+                    <div style={{
+                      background: idx === 0 ? "linear-gradient(135deg, #f59e0b, #f97316)" : T.surfaceAlt,
+                      color: idx === 0 ? "white" : T.muted,
+                      fontFamily: FD, fontWeight: 700,
+                    }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                      {idx + 1}
+                    </div>
+                    {prod.image && (
+                      <img src={prod.image} alt=""
+                        style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm truncate">
+                        {prod.name}
+                      </div>
+                      {prod.sku && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          SKU: {prod.sku}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-sm tabular-nums">
+                        {prod.revenue.toLocaleString()}₮
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
+                        {prod.qty} ширхэг
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Дугаар нэмэх modal (FB page + олон утас + бараа table) ──────────
 function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [fbPages, setFbPages] = useState([]);
@@ -9262,6 +9785,33 @@ function OrdersView({ profile }) {
 
 function OrderDetail({ order, items, onClose, onUpdateStatus }) {
   const status = order.status;
+  const [drivers, setDrivers] = useState([]);
+  const [assignedDriverId, setAssignedDriverId] = useState(order.driver_id || "");
+  const [showDriverPicker, setShowDriverPicker] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, name, phone, job_title")
+        .eq("role", "driver")
+        .order("name");
+      setDrivers(data || []);
+    })();
+  }, []);
+
+  const assignDriver = async (driverId) => {
+    setBusy(true);
+    try {
+      await supabase.from("biz_orders").update({ driver_id: driverId || null }).eq("id", order.id);
+      setAssignedDriverId(driverId);
+      setShowDriverPicker(false);
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  const assignedDriver = drivers.find((d) => d.id === assignedDriverId);
 
   const statusActions = {
     new: [
@@ -9328,6 +9878,92 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Хүргэгч сонгох */}
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider flex items-center gap-1">
+            🚚 Хүргэгч
+          </div>
+          {assignedDriver && (
+            <button onClick={() => setShowDriverPicker(!showDriverPicker)}
+              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+              className="text-xs press-btn">
+              Солих
+            </button>
+          )}
+        </div>
+
+        {assignedDriver ? (
+          <div className="flex items-center gap-3">
+            <div style={{ background: "#0ea5e9", color: "white" }}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold">
+              {assignedDriver.name?.charAt(0) || "🚚"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                {assignedDriver.name}
+              </div>
+              {assignedDriver.phone && (
+                <a href={`tel:${assignedDriver.phone}`}
+                  style={{ color: "#0ea5e9", fontFamily: FM }}
+                  className="text-[11px]">
+                  📞 {assignedDriver.phone}
+                </a>
+              )}
+            </div>
+            <button onClick={() => assignDriver("")} disabled={busy}
+              className="press-btn px-2 py-1 rounded-lg text-[10px]"
+              style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+              Авах
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setShowDriverPicker(!showDriverPicker)}
+            className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-1"
+            style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600, border: `1px dashed #0ea5e9` }}>
+            🚚 Хүргэгч сонгох
+          </button>
+        )}
+
+        {/* Driver picker dropdown */}
+        {showDriverPicker && (
+          <div className="mt-2 space-y-1" style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 8 }}>
+            {drivers.length === 0 ? (
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] text-center py-2">
+                Хүргэгч хараахан бүртгэгдээгүй байна
+              </div>
+            ) : (
+              drivers.map((d) => (
+                <button key={d.id} onClick={() => assignDriver(d.id)} disabled={busy}
+                  className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
+                  style={{
+                    background: assignedDriverId === d.id ? "rgba(14,165,233,0.15)" : T.surfaceAlt,
+                    border: assignedDriverId === d.id ? `1px solid #0ea5e9` : `1px solid transparent`,
+                  }}>
+                  <div style={{ background: "#0ea5e9", color: "white" }}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
+                    {d.name?.charAt(0) || "🚚"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                      {d.name}
+                    </div>
+                    {d.phone && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        📞 {d.phone}
+                      </div>
+                    )}
+                  </div>
+                  {assignedDriverId === d.id && (
+                    <CheckCircle2 size={14} style={{ color: "#0ea5e9" }} />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Items */}
