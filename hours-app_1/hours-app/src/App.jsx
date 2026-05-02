@@ -5744,8 +5744,9 @@ function CallCenterView({ profile }) {
 
   // Period range
   const periodRange = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    // Local-аар өнөөдрийн 00:00:00 (timezone safe)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
@@ -5767,11 +5768,10 @@ function CallCenterView({ profile }) {
       return { start, end: tomorrow, label: "Энэ сар" };
     }
     if (period === "custom") {
-      const start = new Date(customStart);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(customEnd);
-      end.setDate(end.getDate() + 1);
-      end.setHours(0, 0, 0, 0);
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      const start = new Date(sy, sm - 1, sd, 0, 0, 0);
+      const end = new Date(ey, em - 1, ed + 1, 0, 0, 0);
       return { start, end, label: `${customStart} – ${customEnd}` };
     }
     return { start: new Date(0), end: new Date(8640000000000000), label: "Бүх цаг" };
@@ -5781,7 +5781,7 @@ function CallCenterView({ profile }) {
     setLoading(true);
     try {
       const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }] = await Promise.all([
-        supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("biz_calls").select("*").order("created_at", { ascending: false }),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("biz_customers").select("*"),
         supabase.from("profiles").select("id, name").limit(200),
