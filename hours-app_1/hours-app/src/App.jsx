@@ -4109,12 +4109,22 @@ function InventoryView({ profile, isAdmin = false }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: prodData }, { data: catData }, { data: movData }] = await Promise.all([
+      const [{ data: prodData }, { data: catData }, { data: movData }, { data: stkData }] = await Promise.all([
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("inv_stock").select("product_id, quantity"),
       ]);
-      setProducts(prodData || []);
+      // Бараа тус бүрийн нийт нөөцийг inv_stock-аас тооцоолох (multi-warehouse)
+      const stockByProduct = {};
+      (stkData || []).forEach((s) => {
+        stockByProduct[s.product_id] = (stockByProduct[s.product_id] || 0) + Number(s.quantity || 0);
+      });
+      const productsWithStock = (prodData || []).map((p) => ({
+        ...p,
+        stock: stockByProduct[p.id] || 0,
+      }));
+      setProducts(productsWithStock);
       setCategories(catData || []);
       setMovements(movData || []);
     } catch (e) { console.error(e); }
@@ -4562,7 +4572,7 @@ function WarehousesView({ profile }) {
       const [{ data: whData, error: whErr }, { data: stkData, error: stkErr }, { data: prdData, error: prdErr }, { data: drvData }] = await Promise.all([
         supabase.from("inv_warehouses").select("*").order("type").order("name"),
         supabase.from("inv_stock").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url"),
+        supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("profiles").select("id, name, role").eq("role", "driver"),
       ]);
       if (whErr) console.error("Warehouse load error:", whErr);
@@ -16151,7 +16161,7 @@ function DriverWarehouseView({ profile }) {
       if (whData) {
         const [{ data: stkData }, { data: prdData }] = await Promise.all([
           supabase.from("inv_stock").select("*").eq("warehouse_id", whData.id),
-          supabase.from("inv_products").select("id, name, sku, image_url"),
+          supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         ]);
         setStock(stkData || []);
         setProducts(prdData || []);
