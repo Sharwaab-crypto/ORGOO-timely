@@ -5963,6 +5963,150 @@ function CallCenterView({ profile }) {
           <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
             {periodRange.label}
           </span>
+          {(profile?.role === "admin" || profile?.role === "manager") && (
+            <button onClick={async () => {
+                try {
+                  // Operator-уудын мэдээлэл татах
+                  const { data: operators } = await supabase
+                    .from("profiles")
+                    .select("id, name, role, job_title")
+                    .in("role", ["admin", "manager", "operator"]);
+
+                  // Бүх захиалга татах
+                  const { data: allOrders } = await supabase
+                    .from("biz_orders")
+                    .select("*");
+
+                  // Period-ээр шүүсэн дуудлагууд
+                  const filteredCalls = recentCalls.filter((c) => {
+                    const d = new Date(c.created_at);
+                    return d >= periodRange.start && d < periodRange.end;
+                  });
+                  const filteredOrders = (allOrders || []).filter((o) => {
+                    const d = new Date(o.created_at);
+                    return d >= periodRange.start && d < periodRange.end;
+                  });
+
+                  // Тус ажилтнаар групплэх
+                  const opMap = {};
+                  (operators || []).forEach((op) => {
+                    opMap[op.id] = {
+                      name: op.name || "—",
+                      role: op.role,
+                      title: op.job_title || "",
+                      uniquePhones: new Set(),
+                      totalCalls: 0,
+                      totalOrders: 0,
+                      delivered: 0,
+                      cancelled: 0,
+                      pending: 0,
+                      revenue: 0,
+                    };
+                  });
+
+                  // Дуудлагуудыг тоолох
+                  filteredCalls.forEach((c) => {
+                    if (!c.created_by) return;
+                    if (!opMap[c.created_by]) return;
+                    opMap[c.created_by].uniquePhones.add(c.phone);
+                    opMap[c.created_by].totalCalls++;
+                  });
+
+                  // Захиалгуудыг тоолох
+                  filteredOrders.forEach((o) => {
+                    if (!o.taken_by) return;
+                    if (!opMap[o.taken_by]) return;
+                    opMap[o.taken_by].totalOrders++;
+                    if (o.status === "delivered") {
+                      opMap[o.taken_by].delivered++;
+                      opMap[o.taken_by].revenue += Number(o.total_amount || 0);
+                    } else if (o.status === "cancelled") {
+                      opMap[o.taken_by].cancelled++;
+                    } else {
+                      opMap[o.taken_by].pending++;
+                    }
+                  });
+
+                  // Excel мөрүүд
+                  const rows = Object.values(opMap)
+                    .filter((op) => op.totalCalls > 0 || op.totalOrders > 0) // зөвхөн идэвхтэй
+                    .map((op, idx) => {
+                      const successRate = op.totalOrders > 0
+                        ? Math.round((op.delivered / op.totalOrders) * 100)
+                        : 0;
+                      const conversion = op.uniquePhones.size > 0
+                        ? Math.round((op.totalOrders / op.uniquePhones.size) * 100)
+                        : 0;
+
+                      return {
+                        "№": idx + 1,
+                        "Ажилтны нэр": op.name,
+                        "Албан тушаал": op.title,
+                        "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : "Оператор",
+                        "Бүртгэсэн дугаар": op.uniquePhones.size,
+                        "Нийт залгалт": op.totalCalls,
+                        "Бүртгэсэн захиалга": op.totalOrders,
+                        "Амжилттай хүргэгдсэн": op.delivered,
+                        "Хүргэлтэнд": op.pending,
+                        "Цуцлагдсан": op.cancelled,
+                        "Амжилтын %": successRate + "%",
+                        "Conversion %": conversion + "%",
+                        "Нийт орлого (₮)": op.revenue.toLocaleString(),
+                      };
+                    });
+
+                  if (rows.length === 0) {
+                    alert("Энэ хугацаанд идэвхтэй ажилтан байхгүй байна.");
+                    return;
+                  }
+
+                  // Нийт мөр
+                  const totalRow = {
+                    "№": "",
+                    "Ажилтны нэр": "НИЙТ",
+                    "Албан тушаал": "",
+                    "Эрх": "",
+                    "Бүртгэсэн дугаар": rows.reduce((s, r) => s + r["Бүртгэсэн дугаар"], 0),
+                    "Нийт залгалт": rows.reduce((s, r) => s + r["Нийт залгалт"], 0),
+                    "Бүртгэсэн захиалга": rows.reduce((s, r) => s + r["Бүртгэсэн захиалга"], 0),
+                    "Амжилттай хүргэгдсэн": rows.reduce((s, r) => s + r["Амжилттай хүргэгдсэн"], 0),
+                    "Хүргэлтэнд": rows.reduce((s, r) => s + r["Хүргэлтэнд"], 0),
+                    "Цуцлагдсан": rows.reduce((s, r) => s + r["Цуцлагдсан"], 0),
+                    "Амжилтын %": "",
+                    "Conversion %": "",
+                    "Нийт орлого (₮)": Object.values(opMap).reduce((s, op) => s + op.revenue, 0).toLocaleString(),
+                  };
+                  rows.push(totalRow);
+
+                  // Excel
+                  const ws = XLSX.utils.json_to_sheet(rows);
+                  ws["!cols"] = [
+                    { wch: 5 }, { wch: 18 }, { wch: 15 }, { wch: 10 },
+                    { wch: 16 }, { wch: 13 }, { wch: 18 }, { wch: 20 },
+                    { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 13 },
+                    { wch: 16 },
+                  ];
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "Ажилтны KPI");
+
+                  const dateStr = new Date().toISOString().slice(0, 10);
+                  const fileName = `Ажилтны_KPI_${periodRange.label}_${dateStr}.xlsx`;
+                  XLSX.writeFile(wb, fileName);
+                } catch (e) {
+                  alert("Алдаа: " + e.message);
+                }
+              }}
+              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5"
+              style={{
+                background: "linear-gradient(135deg, #10b981, #059669)",
+                color: "white",
+                fontFamily: FS, fontWeight: 600,
+                boxShadow: "0 4px 12px rgba(16,185,129,0.3)",
+              }}>
+              <FileSpreadsheet size={12} />
+              📊 Excel татах
+            </button>
+          )}
         </div>
       </div>
 
