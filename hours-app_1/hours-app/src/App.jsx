@@ -1270,6 +1270,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
+              <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
@@ -1353,6 +1354,7 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
+                {view === "settlement-reports" && "Тооцооний тайлан"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -1383,6 +1385,7 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
                 {view === "sales" && "FB page тус бүрийн борлуулалтын тайлан"}
                 {view === "settlement" && "Хүргэгч тус бүрийн тооцоо нэгтгэл"}
+                {view === "settlement-reports" && "Хаагдсан тооцооны түүх"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -1597,6 +1600,10 @@ function AdminDashboard({ profile }) {
 
         {view === "settlement" && (
           <DriverSettlementView profile={profile} />
+        )}
+
+        {view === "settlement-reports" && (
+          <SettlementReportsView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -8748,6 +8755,23 @@ function DriverSettlementView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [activeDriver, setActiveDriver] = useState(null);
   const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
+
+  // Тооцоо хаах form
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashNotes, setCashNotes] = useState("");
+  const [bankAmount, setBankAmount] = useState("");
+  const [bankNotes, setBankNotes] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseNotes, setExpenseNotes] = useState("");
+  const [closingSettlement, setClosingSettlement] = useState(false);
+
+  // activeDriver солигдоход form-уудыг reset хийх
+  useEffect(() => {
+    setCashAmount(""); setCashNotes("");
+    setBankAmount(""); setBankNotes("");
+    setExpenseAmount(""); setExpenseNotes("");
+  }, [activeDriver]);
+
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-settlement-period") || "today"; } catch { return "today"; }
   });
@@ -8939,6 +8963,144 @@ function DriverSettlementView({ profile }) {
             </div>
           </div>
         </div>
+
+        {/* Тооцоо хаах хэсэг */}
+        {driver.owed > 0 && (() => {
+          const cash = Number(cashAmount) || 0;
+          const bank = Number(bankAmount) || 0;
+          const expense = Number(expenseAmount) || 0;
+          const totalSubmitted = cash + bank + expense;
+          const diff = driver.owed - totalSubmitted;
+          const balanced = Math.abs(diff) < 0.01;
+
+          const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink };
+          const numInputClass = "w-full px-3 py-2 rounded-lg text-sm tabular-nums";
+          const noteInputClass = "w-full px-3 py-1.5 rounded-lg text-xs mt-1";
+
+          const handleCloseSettlement = async () => {
+            if (!balanced) {
+              alert("⚠ Нийлбэр тушаах дүнтэй тохирохгүй байна!");
+              return;
+            }
+            if (!confirm(`Тооцоо хаах уу?\n\nХүргэгч: ${driver.name}\nТушаах дүн: ${driver.owed.toLocaleString()}₮\n• Бэлнээр: ${cash.toLocaleString()}₮\n• Дансаар: ${bank.toLocaleString()}₮\n• Зарлага: ${expense.toLocaleString()}₮\n\nЭнэ үйлдэл буцах боломжгүй!`)) return;
+
+            setClosingSettlement(true);
+            try {
+              // 1. Settlement тайлан үүсгэх
+              const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
+                driver_id: driver.id,
+                cash_amount: cash, cash_notes: cashNotes.trim() || null,
+                bank_amount: bank, bank_notes: bankNotes.trim() || null,
+                expense_amount: expense, expense_notes: expenseNotes.trim() || null,
+                total_submitted: totalSubmitted,
+                settlement_amount: driver.owed,
+                delivered_total: driver.deliveredTotal,
+                paid_already: driver.paidAlready,
+                period_start: periodRange.start.toISOString(),
+                period_end: periodRange.end.toISOString(),
+                period_label: periodRange.label,
+                order_count: driver.delivered,
+                settled_by: profile.id,
+              }).select().single();
+              if (stErr) throw stErr;
+
+              // 2. Хамаарагдсан захиалгуудад settlement_id оноох + paid_amount = total_amount
+              const orderIds = driver.deliveredOrders.map((o) => o.id);
+              if (orderIds.length > 0) {
+                for (const o of driver.deliveredOrders) {
+                  await supabase.from("biz_orders").update({
+                    settlement_id: stData.id,
+                    paid_amount: Number(o.total_amount || 0),
+                  }).eq("id", o.id);
+                }
+              }
+
+              alert(`✅ Тооцоо амжилттай хаагдлаа!\n\nТушаагдсан дүн: ${totalSubmitted.toLocaleString()}₮\nТайлан "Тооцооний тайлан" хэсэгт хадгалагдлаа.`);
+              setActiveDriver(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+            finally { setClosingSettlement(false); }
+          };
+
+          return (
+            <div className="glass rounded-2xl p-3">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3 flex items-center gap-2">
+                💵 Тооцоо хаах
+              </div>
+
+              <div className="space-y-3">
+                {/* Бэлнээр */}
+                <div>
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    💵 Бэлнээр тушаасан
+                  </label>
+                  <input type="number" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="0"
+                    style={{ ...inputStyle, fontFamily: FD, fontWeight: 600 }} className={numInputClass} />
+                  <input type="text" value={cashNotes} onChange={(e) => setCashNotes(e.target.value)} placeholder="Тэмдэглэл..."
+                    style={{ ...inputStyle, fontFamily: FS }} className={noteInputClass} />
+                </div>
+
+                {/* Дансаар */}
+                <div>
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    🏦 Дансаар тушаасан
+                  </label>
+                  <input type="number" value={bankAmount} onChange={(e) => setBankAmount(e.target.value)} placeholder="0"
+                    style={{ ...inputStyle, fontFamily: FD, fontWeight: 600 }} className={numInputClass} />
+                  <input type="text" value={bankNotes} onChange={(e) => setBankNotes(e.target.value)} placeholder="Тэмдэглэл..."
+                    style={{ ...inputStyle, fontFamily: FS }} className={noteInputClass} />
+                </div>
+
+                {/* Зарлага */}
+                <div>
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    📤 Зарлага
+                  </label>
+                  <input type="number" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="0"
+                    style={{ ...inputStyle, fontFamily: FD, fontWeight: 600 }} className={numInputClass} />
+                  <input type="text" value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} placeholder="Тэмдэглэл..."
+                    style={{ ...inputStyle, fontFamily: FS }} className={noteInputClass} />
+                </div>
+
+                {/* Нэгтгэл */}
+                <div className="grid grid-cols-2 gap-2 pt-3" style={{ borderTop: `1px solid ${T.border}` }}>
+                  <div className="text-center p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт тушаасан</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                      {totalSubmitted.toLocaleString()}₮
+                    </div>
+                  </div>
+                  <div className="text-center p-2 rounded-lg" style={{ background: T.warnSoft }}>
+                    <div style={{ color: T.warn, fontFamily: FM, fontWeight: 600 }} className="text-[9px] uppercase">Тушаах ёстой</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-lg tabular-nums">
+                      {driver.owed.toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+
+                {/* Зөрүү / Товч */}
+                {balanced ? (
+                  <button onClick={handleCloseSettlement} disabled={closingSettlement}
+                    className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                    {closingSettlement ? "Хадгалаж байна..." : "✓ Тооцоо хаах"}
+                  </button>
+                ) : (
+                  <div className="text-center p-3 rounded-xl"
+                    style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                    {totalSubmitted === 0 ? (
+                      <span className="text-xs">💡 Дээрх 3 талбарыг бөглөхөд тооцоо тулгалт автомат хийгдэнэ</span>
+                    ) : diff > 0 ? (
+                      <span className="text-sm">⚠ Дутуу: <strong>{diff.toLocaleString()}₮</strong></span>
+                    ) : (
+                      <span className="text-sm">⚠ Илүү: <strong>{Math.abs(diff).toLocaleString()}₮</strong></span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Захиалгын жагсаалт */}
         <div>
@@ -9211,6 +9373,251 @@ function DriverSettlementView({ profile }) {
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SETTLEMENT REPORTS — Тооцооний тайлан (хаагдсан тооцооны түүх)
+// ═══════════════════════════════════════════════════════════════════════════
+function SettlementReportsView({ profile }) {
+  const [reports, setReports] = useState([]);
+  const [drivers, setDrivers] = useState({});
+  const [profiles_, setProfilesData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [activeReport, setActiveReport] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: rData }, { data: drvData }] = await Promise.all([
+        supabase.from("biz_settlements").select("*").order("settled_at", { ascending: false }),
+        supabase.from("profiles").select("id, name, job_title"),
+      ]);
+      setReports(rData || []);
+      const dMap = {};
+      const pMap = {};
+      (drvData || []).forEach((d) => {
+        dMap[d.id] = d;
+        pMap[d.id] = d;
+      });
+      setDrivers(dMap);
+      setProfilesData(pMap);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Detail харах
+  if (activeReport) {
+    const r = activeReport;
+    const drv = drivers[r.driver_id];
+    const settler = profiles_[r.settled_by];
+    return (
+      <div className="space-y-3">
+        {/* Header */}
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <button onClick={() => setActiveReport(null)}
+            className="press-btn p-1.5 rounded-lg" style={{ color: T.ink }}>
+            ←
+          </button>
+          <div style={{ background: T.ok, color: "white" }}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+            ✓
+          </div>
+          <div className="flex-1 min-w-0">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🚚 {drv?.name || "Хүргэгч"}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+            </div>
+          </div>
+          <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
+            className="text-[10px] px-2 py-1 rounded-full">
+            ✓ Хаагдсан
+          </span>
+        </div>
+
+        {/* Тушаах дүн */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Тушаах ёстой</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-2xl tabular-nums">
+              {Number(r.settlement_amount).toLocaleString()}₮
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт тушаасан</div>
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
+              {Number(r.total_submitted).toLocaleString()}₮
+            </div>
+          </div>
+        </div>
+
+        {/* Дэлгэрэнгүй */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">
+            💰 Тушаалтын задаргаа
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+              <div className="flex-1">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                  💵 Бэлнээр тушаасан
+                </div>
+                {r.cash_notes && (
+                  <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-1">
+                    "{r.cash_notes}"
+                  </div>
+                )}
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums">
+                {Number(r.cash_amount).toLocaleString()}₮
+              </div>
+            </div>
+
+            <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+              <div className="flex-1">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                  🏦 Дансаар тушаасан
+                </div>
+                {r.bank_notes && (
+                  <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-1">
+                    "{r.bank_notes}"
+                  </div>
+                )}
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums">
+                {Number(r.bank_amount).toLocaleString()}₮
+              </div>
+            </div>
+
+            <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+              <div className="flex-1">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                  📤 Зарлага
+                </div>
+                {r.expense_notes && (
+                  <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-1">
+                    "{r.expense_notes}"
+                  </div>
+                )}
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums">
+                {Number(r.expense_amount).toLocaleString()}₮
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Бусад мэдээлэл */}
+        <div className="glass rounded-2xl p-3 space-y-1.5">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+            📊 Бусад мэдээлэл
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хүргэсэн нийт дүн</span>
+            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+              {Number(r.delivered_total).toLocaleString()}₮
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Урьдчилж төлөгдсөн</span>
+            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-sm tabular-nums">
+              {Number(r.paid_already).toLocaleString()}₮
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Захиалгын тоо</span>
+            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+              {r.order_count}
+            </span>
+          </div>
+          {settler && (
+            <div className="flex items-center justify-between py-1">
+              <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Тооцоо хаасан</span>
+              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                {settler.name}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Жагсаалт
+  return (
+    <div className="space-y-3">
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📊</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Тайлан байхгүй
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
+            "Тооцоо тулгах" хэсгээс тооцоо хаахад энд хадгалагдана
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.map((r) => {
+            const drv = drivers[r.driver_id];
+            return (
+              <button key={r.id} onClick={() => setActiveReport(r)}
+                className="press-btn glass lift rounded-2xl p-3 w-full text-left"
+                style={{ borderLeft: `4px solid ${T.ok}` }}>
+                <div className="flex items-center gap-3 mb-2">
+                  <div style={{ background: T.ok, color: "white" }}
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+                    ✓
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                      🚚 {drv?.name || "Хүргэгч"}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Тушаасан</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
+                      {Number(r.total_submitted).toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-1.5 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">💵 Бэлэн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                      {Number(r.cash_amount).toLocaleString()}₮
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-1.5 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">🏦 Данс</div>
+                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                      {Number(r.bank_amount).toLocaleString()}₮
+                    </div>
+                  </div>
+                  <div style={{ background: T.warnSoft }} className="rounded-lg p-1.5 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">📤 Зарл.</div>
+                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                      {Number(r.expense_amount).toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
