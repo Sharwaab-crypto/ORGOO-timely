@@ -1256,6 +1256,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "customers"} onClick={() => { setView("customers"); setSidebarOpen(false); }} icon={Users}>Үйлчлүүлэгч</SidebarTab>
+              <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
             </SidebarSection>
@@ -1332,6 +1333,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
+                {view === "fbpages" && "Facebook Pages"}
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
@@ -1356,6 +1358,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
+                {view === "fbpages" && "Маркетингийн source хяналт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
                 {view === "managers" && "Хэлтсийн ахлагчид"}
                 {view === "sites" && "Цаг бүртгэлийн байршлууд"}
@@ -1554,6 +1557,10 @@ function AdminDashboard({ profile }) {
 
         {view === "customers" && (
           <CustomersView profile={profile} />
+        )}
+
+        {view === "fbpages" && (
+          <FbPagesView profile={profile} />
         )}
 
             <Footer count={sessions.length} />
@@ -8036,6 +8043,317 @@ function CustomerDetail({ customer, orders, calls = [], customerIndex = 1, onClo
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACEBOOK PAGES VIEW — Маркетингийн source CRUD
+// ═══════════════════════════════════════════════════════════════════════════
+function FbPagesView({ profile }) {
+  const [pages, setPages] = useState([]);
+  const [calls, setCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: pagesData }, { data: callsData }] = await Promise.all([
+        supabase.from("biz_fb_pages").select("*").order("display_order").order("name"),
+        supabase.from("biz_calls").select("fb_page_id, created_at"),
+      ]);
+      setPages(pagesData || []);
+      setCalls(callsData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Тус FB page бүрт ирсэн дуудлагын тоо
+  const callsByPage = useMemo(() => {
+    const map = {};
+    calls.forEach((c) => {
+      if (c.fb_page_id) map[c.fb_page_id] = (map[c.fb_page_id] || 0) + 1;
+    });
+    return map;
+  }, [calls]);
+
+  const totalCalls = calls.filter((c) => c.fb_page_id).length;
+  const noPageCalls = calls.filter((c) => !c.fb_page_id).length;
+
+  const handleDelete = async (id) => {
+    if (!confirm("Энэ Facebook page-г устгах уу?\n\nДуудлагууд хэвээр үлдэнэ, харин page-тай холбоо алдагдана.")) return;
+    await supabase.from("biz_fb_pages").delete().eq("id", id);
+    await loadAll();
+  };
+
+  const toggleActive = async (page) => {
+    await supabase.from("biz_fb_pages").update({ is_active: !page.is_active }).eq("id", page.id);
+    await loadAll();
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт page</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-3xl">
+            {pages.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Идэвхтэй</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-3xl">
+            {pages.filter((p) => p.is_active).length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">Нийт дуудлага</div>
+          <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-3xl">
+            {totalCalls}
+          </div>
+        </div>
+      </div>
+
+      {/* Action */}
+      <div className="flex justify-end">
+        <button onClick={() => setEditing({})}
+          className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5">
+          <Plus size={12} /> Шинэ Page
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
+          <Loader2 className="spin mx-auto mb-2" size={20} />
+        </div>
+      ) : pages.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📘</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">
+            Facebook page хараахан нэмэгдээгүй байна
+          </div>
+          <button onClick={() => setEditing({})}
+            className="glow-primary press-btn px-4 py-2 rounded-full text-xs font-semibold">
+            + Анхны page нэмэх
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pages.map((p) => {
+            const callCount = callsByPage[p.id] || 0;
+            const percent = totalCalls > 0 ? (callCount / totalCalls) * 100 : 0;
+            return (
+              <div key={p.id} className="glass rounded-xl p-3">
+                <div className="flex items-start gap-3">
+                  <div style={{
+                    background: p.is_active ? "#1877f2" : T.surfaceAlt,
+                    color: "white",
+                  }} className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-base font-bold">
+                    f
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                        {p.name}
+                      </span>
+                      {!p.is_active && (
+                        <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                          ИДЭВХГҮЙ
+                        </span>
+                      )}
+                      {p.is_active && (
+                        <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                          ИДЭВХТЭЙ
+                        </span>
+                      )}
+                    </div>
+                    {p.url && (
+                      <a href={p.url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: T.highlight, fontFamily: FM }}
+                        className="text-[10px] hover:underline">
+                        🔗 {p.url}
+                      </a>
+                    )}
+                    {p.notes && (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5 italic">
+                        "{p.notes}"
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1">
+                        📞 {callCount} дуудлага
+                      </span>
+                      {percent > 0 && (
+                        <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
+                          {percent.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                    {totalCalls > 0 && (
+                      <div className="mt-2" style={{ background: T.surfaceAlt, height: 4, borderRadius: 2 }}>
+                        <div style={{
+                          width: `${percent}%`,
+                          height: "100%",
+                          background: T.highlight,
+                          borderRadius: 2,
+                          transition: "width 0.5s",
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => toggleActive(p)}
+                      style={{ color: p.is_active ? T.ok : T.muted }}
+                      className="press-btn p-1.5 rounded-lg"
+                      title={p.is_active ? "Идэвхгүй болгох" : "Идэвхжүүлэх"}>
+                      {p.is_active ? "✓" : "○"}
+                    </button>
+                    <button onClick={() => setEditing(p)}
+                      style={{ color: T.muted }} className="press-btn p-1.5 rounded-lg">
+                      <Edit3 size={12} />
+                    </button>
+                    <button onClick={() => handleDelete(p.id)}
+                      style={{ color: T.err }} className="press-btn p-1.5 rounded-lg">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* No FB page calls */}
+          {noPageCalls > 0 && (
+            <div className="glass-soft rounded-xl p-3" style={{ border: `1px dashed ${T.border}` }}>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                💡 <span style={{ fontWeight: 600 }}>{noPageCalls} дуудлага</span> нь FB page-гүйгээр бүртгэгдсэн
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <FbPageFormModal
+          page={editing.id ? editing : null}
+          onSave={async (data) => {
+            try {
+              if (editing.id) {
+                await supabase.from("biz_fb_pages").update(data).eq("id", editing.id);
+              } else {
+                await supabase.from("biz_fb_pages").insert(data);
+              }
+              setEditing(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FbPageFormModal({ page, onSave, onClose }) {
+  const [name, setName] = useState(page?.name || "");
+  const [url, setUrl] = useState(page?.url || "");
+  const [notes, setNotes] = useState(page?.notes || "");
+  const [displayOrder, setDisplayOrder] = useState(page?.display_order || 0);
+  const [isActive, setIsActive] = useState(page?.is_active !== false);
+  const [busy, setBusy] = useState(false);
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-content rounded-2xl w-full max-w-md p-5">
+        <div className="flex items-start justify-between mb-3">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg flex items-center gap-2">
+            <span style={{ background: "#1877f2", color: "white" }}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold">f</span>
+            {page ? "Page засах" : "Шинэ Facebook Page"}
+          </h3>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Page нэр *
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="ж.нь: Маркетинг, Худалдаа..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm"
+              autoFocus />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🔗 URL (заавал биш)
+            </label>
+            <input value={url} onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://facebook.com/yourpage"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Тэмдэглэл
+            </label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              Дараалал
+            </label>
+            <input type="number" value={displayOrder}
+              onChange={(e) => setDisplayOrder(Number(e.target.value) || 0)}
+              placeholder="0"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
+              💡 Бага тоо эхэнд харагдана
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 press-btn p-2 rounded-lg cursor-pointer"
+            style={{ background: isActive ? T.highlightSoft : T.surfaceAlt }}>
+            <input type="checkbox" checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              className="cursor-pointer" />
+            <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-sm">
+              Идэвхтэй (Дуудлага бүртгэхэд харагдана)
+            </span>
+          </label>
+
+          <button
+            disabled={busy || !name.trim()}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({
+                name: name.trim(),
+                url: url.trim() || null,
+                notes: notes.trim() || null,
+                display_order: displayOrder,
+                is_active: isActive,
+              });
+              setBusy(false);
+            }}
+            className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
+            {busy ? "Хадгалаж..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
