@@ -15527,9 +15527,20 @@ function DriverDashboard({ profile }) {
       updates.delivered_by = profile.id;
     }
     try {
-      await supabase.from("biz_orders").update(updates).eq("id", orderId);
+      const { error, data } = await supabase
+        .from("biz_orders")
+        .update(updates)
+        .eq("id", orderId)
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
+        return;
+      }
       await loadAll();
-    } catch (e) { alert("Алдаа: " + e.message); }
+    } catch (e) {
+      alert("Алдаа: " + (e.message || JSON.stringify(e)));
+    }
   };
 
   // Filter
