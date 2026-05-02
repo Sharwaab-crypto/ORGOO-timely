@@ -7097,11 +7097,11 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, onSave, onCallback, onClose }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose }) {
   const [phone, setPhone] = useState(initialPhone || "");
-  const [phone2, setPhone2] = useState("");
+  const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(editOrder?.delivery_address || "");
   const [notes, setNotes] = useState(initialNotes || "");
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
@@ -7118,8 +7118,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
       };
     }).filter(Boolean);
   });
-  const [deliveryFee, setDeliveryFee] = useState("");
-  const [paidAmount, setPaidAmount] = useState("");
+  const [deliveryFee, setDeliveryFee] = useState(editOrder?.delivery_fee?.toString() || "");
+  const [paidAmount, setPaidAmount] = useState(editOrder?.paid_amount?.toString() || "");
   const [callType, setCallType] = useState("called"); // called | walk_in
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
@@ -7597,10 +7597,89 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           </div>
         )}
 
-        {/* Action buttons — 3 status */}
+        {/* Action buttons */}
         <div className="space-y-2 mt-4">
-          {/* Гол товч: Дуудаад авлаа (захиалга үүсгэх) */}
-          <button
+          {isEditMode ? (
+            <>
+              {/* EDIT MODE — Шинэ лүү гаргах + Хадгалах */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
+                  onClick={async () => {
+                    if (!confirm("Захиалгын статусыг 'Шинэ' болгож шилжүүлэх үү?")) return;
+                    setBusy(true);
+                    await onSave({
+                      action: "to_new",
+                      phone: phone.trim(),
+                      phone2: phone2.trim() || null,
+                      name: name.trim() || null,
+                      address: address.trim() || null,
+                      notes: notes.trim() || null,
+                      subtotal,
+                      deliveryFee: fee,
+                      totalAmount: total,
+                      paidAmount: paid,
+                      balanceDue: balance,
+                      items: items.map((it) => ({
+                        product_id: it.productId,
+                        product_name: it.product.name,
+                        quantity: it.quantity,
+                        unit_price: it.unitPrice,
+                        total_amount: it.quantity * it.unitPrice,
+                        notes: it.itemNotes || null,
+                      })),
+                    });
+                    setBusy(false);
+                  }}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+                  style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, border: `1px solid rgba(59,130,246,0.2)` }}>
+                  <RefreshCw size={13} />
+                  🆕 Шине лүү гаргах
+                </button>
+
+                <button
+                  disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
+                  onClick={async () => {
+                    setBusy(true);
+                    await onSave({
+                      action: "save_only",
+                      phone: phone.trim(),
+                      phone2: phone2.trim() || null,
+                      name: name.trim() || null,
+                      address: address.trim() || null,
+                      notes: notes.trim() || null,
+                      subtotal,
+                      deliveryFee: fee,
+                      totalAmount: total,
+                      paidAmount: paid,
+                      balanceDue: balance,
+                      items: items.map((it) => ({
+                        product_id: it.productId,
+                        product_name: it.product.name,
+                        quantity: it.quantity,
+                        unit_price: it.unitPrice,
+                        total_amount: it.quantity * it.unitPrice,
+                        notes: it.itemNotes || null,
+                      })),
+                    });
+                    setBusy(false);
+                  }}
+                  className="glow-primary press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
+                  <CheckCircle2 size={13} />
+                  💾 Хадгалах
+                </button>
+              </div>
+
+              <button onClick={onClose} disabled={busy}
+                className="press-btn w-full py-2 rounded-xl text-xs font-medium"
+                style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+                Болих
+              </button>
+            </>
+          ) : (
+            <>
+              {/* CREATE MODE — Дуудаад авлаа / Дараа холбогдох / Цуцалсан */}
+              <button
             disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
             onClick={async () => {
               setBusy(true);
@@ -7676,6 +7755,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
             Болих
           </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -7968,25 +8049,162 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
 // ═══════════════════════════════════════════════════════════════════════════
 //  ORDERS VIEW — Захиалгын жагсаалт
 // ═══════════════════════════════════════════════════════════════════════════
+// ─── Map Picker Modal — Хүргэлтийн байршил pin хийх ──────────────
+function MapPickerModal({ order, onSave, onClose }) {
+  const [LRef, setLRef] = useState(null);
+  const [marker, setMarker] = useState(
+    order.delivery_lat && order.delivery_lng
+      ? [order.delivery_lat, order.delivery_lng]
+      : [47.9183, 106.9173] // Ulaanbaatar default
+  );
+  const [busy, setBusy] = useState(false);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((leaflet) => {
+      if (!cancelled) setLRef(leaflet.default || leaflet);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!LRef || !mapContainerRef.current || mapRef.current) return;
+    const L = LRef;
+    const map = L.map(mapContainerRef.current).setView(marker, 14);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+    }).addTo(map);
+
+    const customIcon = L.divIcon({
+      html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 24],
+      className: "custom-pin-marker",
+    });
+
+    const m = L.marker(marker, { draggable: true, icon: customIcon }).addTo(map);
+    m.on("dragend", () => {
+      const pos = m.getLatLng();
+      setMarker([pos.lat, pos.lng]);
+    });
+
+    map.on("click", (e) => {
+      m.setLatLng(e.latlng);
+      setMarker([e.latlng.lat, e.latlng.lng]);
+    });
+
+    mapRef.current = map;
+    markerRef.current = m;
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [LRef]);
+
+  const handleSearchAddress = async () => {
+    if (!order.delivery_address) return;
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(order.delivery_address + ", Ulaanbaatar")}&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (mapRef.current && markerRef.current) {
+          mapRef.current.setView([lat, lng], 16);
+          markerRef.current.setLatLng([lat, lng]);
+          setMarker([lat, lng]);
+        }
+      } else {
+        alert("Хаяг олдсонгүй. Та газрын зураг дээр шууд pin хийнэ үү.");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
+      <div className="modal-content rounded-2xl w-full max-w-2xl flex flex-col overflow-hidden" style={{ maxHeight: "90vh" }}>
+        <div className="flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+              <MapPin size={16} style={{ color: T.highlight }} />
+              Хүргэлтийн байршил
+            </h3>
+            {order.delivery_address && (
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                📍 {order.delivery_address}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+        </div>
+
+        <div className="p-3">
+          <button onClick={handleSearchAddress}
+            disabled={!order.delivery_address}
+            className="press-btn w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 mb-2"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+            🔍 Хаягаар хайх
+          </button>
+          <div ref={mapContainerRef}
+            style={{ width: "100%", height: 400, borderRadius: 12, overflow: "hidden", border: `1px solid ${T.border}` }} />
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 text-center">
+            💡 Газрын зураг дээр дарж эсвэл pin-ийг чирж байршлыг сонгоно уу
+          </div>
+        </div>
+
+        <div className="p-3 flex gap-2" style={{ borderTop: `1px solid ${T.border}` }}>
+          <button onClick={onClose} disabled={busy}
+            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+            Болих
+          </button>
+          <button
+            disabled={busy || !marker}
+            onClick={async () => {
+              setBusy(true);
+              await onSave(marker[0], marker[1]);
+              setBusy(false);
+            }}
+            className="glow-primary press-btn flex-[2] py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5">
+            <CheckCircle2 size={14} />
+            {busy ? "Хадгалаж..." : "Хадгалах"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrdersView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all"); // all | new | preparing | delivered | cancelled
+  const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [activeOrder, setActiveOrder] = useState(null);
+  const [editOrder, setEditOrder] = useState(null);
+  const [mapOrder, setMapOrder] = useState(null);
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const { data: ordData } = await supabase
-        .from("biz_orders")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(200);
+      const [{ data: ordData }, { data: prodData }] = await Promise.all([
+        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(200),
+        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+      ]);
       setOrders(ordData || []);
+      setProducts(prodData || []);
 
-      // Items load + product image-уудыг авах
+      // Items load
       if (ordData && ordData.length > 0) {
         const orderIds = ordData.map((o) => o.id);
         const { data: itemData } = await supabase
@@ -7994,11 +8212,6 @@ function OrdersView({ profile }) {
           .select("*")
           .in("order_id", orderIds);
 
-        // Product images
-        const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
-        const { data: prodData } = productIds.length > 0
-          ? await supabase.from("inv_products").select("id, image_url").in("id", productIds)
-          : { data: [] };
         const prodMap = {};
         (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
 
@@ -8113,11 +8326,8 @@ function OrdersView({ profile }) {
           {filtered.map((o, idx) => (
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
               onClick={() => setActiveOrder(o)}
-              onMap={o.delivery_address ? () => {
-                const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.delivery_address)}`;
-                window.open(url, "_blank");
-              } : null}
-              onEdit={() => setActiveOrder(o)}
+              onMap={() => setMapOrder(o)}
+              onEdit={() => setEditOrder(o)}
               onCancel={async () => {
                 if (!confirm(`Захиалгыг цуцлах уу?\n\nҮйлчлүүлэгч: ${o.customer_name || o.customer_phone}\nДүн: ${Number(o.total_amount).toLocaleString()}₮`)) return;
                 try {
@@ -8131,6 +8341,116 @@ function OrdersView({ profile }) {
             />
           ))}
         </div>
+      )}
+
+      {/* Edit modal — CallReceiveModal-тай ижил */}
+      {editOrder && (
+        <CallReceiveModal
+          products={products}
+          profile={profile}
+          initialPhone={editOrder.customer_phone || ""}
+          initialName={editOrder.customer_name || ""}
+          initialNotes={editOrder.notes || ""}
+          initialProducts={(items[editOrder.id] || []).map((it) => ({
+            id: it.product_id,
+            name: it.product_name,
+            qty: it.quantity,
+          }))}
+          isEditMode={true}
+          editOrder={editOrder}
+          onSave={async (data) => {
+            try {
+              if (data.action === "save_only") {
+                // Зөвхөн мэдээлэл шинэчлэх (status хэвээр)
+                await supabase.from("biz_orders").update({
+                  customer_phone: data.phone,
+                  customer_phone2: data.phone2,
+                  customer_name: data.name,
+                  delivery_address: data.address,
+                  notes: data.notes,
+                  subtotal: data.subtotal,
+                  delivery_fee: data.deliveryFee,
+                  total_amount: data.totalAmount,
+                  paid_amount: data.paidAmount,
+                  balance_due: data.balanceDue,
+                }).eq("id", editOrder.id);
+
+                // Items дахин үүсгэх
+                await supabase.from("biz_order_items").delete().eq("order_id", editOrder.id);
+                const orderItems = data.items.map((it) => ({
+                  order_id: editOrder.id,
+                  product_id: it.product_id,
+                  product_name: it.product_name,
+                  quantity: it.quantity,
+                  unit_price: it.unit_price,
+                  total_amount: it.total_amount,
+                }));
+                if (orderItems.length > 0) {
+                  await supabase.from("biz_order_items").insert(orderItems);
+                }
+                setEditOrder(null);
+                await loadAll();
+                alert("✅ Захиалга шинэчлэгдсэн!");
+                return;
+              }
+
+              if (data.action === "to_new") {
+                // Шинэ tab-руу шилжүүлэх
+                await supabase.from("biz_orders").update({
+                  customer_phone: data.phone,
+                  customer_phone2: data.phone2,
+                  customer_name: data.name,
+                  delivery_address: data.address,
+                  notes: data.notes,
+                  subtotal: data.subtotal,
+                  delivery_fee: data.deliveryFee,
+                  total_amount: data.totalAmount,
+                  paid_amount: data.paidAmount,
+                  balance_due: data.balanceDue,
+                  status: "new",
+                  delivered_at: null,
+                  cancelled_at: null,
+                }).eq("id", editOrder.id);
+
+                await supabase.from("biz_order_items").delete().eq("order_id", editOrder.id);
+                const orderItems = data.items.map((it) => ({
+                  order_id: editOrder.id,
+                  product_id: it.product_id,
+                  product_name: it.product_name,
+                  quantity: it.quantity,
+                  unit_price: it.unit_price,
+                  total_amount: it.total_amount,
+                }));
+                if (orderItems.length > 0) {
+                  await supabase.from("biz_order_items").insert(orderItems);
+                }
+                setEditOrder(null);
+                await loadAll();
+                alert("✅ Захиалга 'Шинэ' статус руу шилжсэн!");
+                return;
+              }
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setEditOrder(null)}
+        />
+      )}
+
+      {/* Map popup — Хаяг pin хийх */}
+      {mapOrder && (
+        <MapPickerModal
+          order={mapOrder}
+          onSave={async (lat, lng) => {
+            try {
+              await supabase.from("biz_orders").update({
+                delivery_lat: lat,
+                delivery_lng: lng,
+              }).eq("id", mapOrder.id);
+              setMapOrder(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setMapOrder(null)}
+        />
       )}
     </div>
   );
