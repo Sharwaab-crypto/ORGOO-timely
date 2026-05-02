@@ -5894,10 +5894,11 @@ function CallCenterView({ profile }) {
 
                 if (existing) {
                   customerId = existing.id;
-                  if (data.name !== existing.name || data.address) {
+                  if (data.name !== existing.name || data.address || data.phone2) {
                     await supabase.from("biz_customers").update({
                       name: data.name || existing.name,
                       address: data.address || null,
+                      phone2: data.phone2 || null,
                       updated_at: new Date().toISOString(),
                     }).eq("id", customerId);
                   }
@@ -5906,6 +5907,7 @@ function CallCenterView({ profile }) {
                     .from("biz_customers")
                     .insert({
                       phone: data.phone,
+                      phone2: data.phone2,
                       name: data.name,
                       address: data.address,
                     })
@@ -5923,11 +5925,16 @@ function CallCenterView({ profile }) {
                   order_number: orderNumber,
                   customer_id: customerId,
                   customer_phone: data.phone,
+                  customer_phone2: data.phone2,
                   customer_name: data.name,
                   delivery_address: data.address,
                   source: "phone",
                   status: "new",
+                  subtotal: data.subtotal,
+                  delivery_fee: data.deliveryFee,
                   total_amount: data.totalAmount,
+                  paid_amount: data.paidAmount,
+                  balance_due: data.balanceDue,
                   notes: data.notes,
                   taken_by: profile.id,
                 })
@@ -6070,18 +6077,22 @@ function SimpleCallModal({ profile, onSave, onClose }) {
   );
 }
 
-// ─── Захиалга авах modal ───────────────────────────────────────────
+// ─── Захиалга авах modal — Бүрэн хувилбар ──────────────────────────
 function CallReceiveModal({ products, profile, initialPhone, initialName, onSave, onClose }) {
   const [phone, setPhone] = useState(initialPhone || "");
+  const [phone2, setPhone2] = useState("");
   const [name, setName] = useState(initialName || "");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([{ id: 1, productId: "", quantity: "", unitPrice: "" }]);
+  const [deliveryFee, setDeliveryFee] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(null); // row id
 
-  // Ажиллагсан customer-н дэлгэрэнгүйг автомат татах
+  // Customer auto-search
   useEffect(() => {
     if (!phone || phone.length < 6) {
       setFoundCustomer(null);
@@ -6099,6 +6110,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           setFoundCustomer(data);
           if (!name) setName(data.name || "");
           if (!address && data.address) setAddress(data.address);
+          if (!phone2 && data.phone2) setPhone2(data.phone2);
         } else {
           setFoundCustomer(null);
         }
@@ -6117,9 +6129,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
     setItems(items.map((it) => it.id === rowId ? {
       ...it, productId, unitPrice: p?.sale_price ? String(p.sale_price) : it.unitPrice,
     } : it));
+    setProductSearchOpen(null);
   };
 
-  const total = items.reduce((sum, it) => sum + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), 0);
+  // Тооцоо
+  const subtotal = items.reduce((sum, it) => sum + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), 0);
+  const fee = Number(deliveryFee) || 0;
+  const total = subtotal + fee;
+  const paid = Number(paidAmount) || 0;
+  const balance = total - paid;
   const validItems = items.filter((it) => it.productId && Number(it.quantity) > 0);
 
   const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
@@ -6135,11 +6153,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
 
-        {/* Customer info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        {/* Customer info — 2 утас */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              📱 Утас *
+              📱 Утас 1 *
             </label>
             <div className="relative">
               <input value={phone} onChange={(e) => setPhone(e.target.value)}
@@ -6162,21 +6180,31 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           </div>
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📱 Утас 2
+            </label>
+            <input value={phone2} onChange={(e) => setPhone2(e.target.value)}
+              placeholder="99112233 (нэмэлт)"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               👤 Нэр
             </label>
             <input value={name} onChange={(e) => setName(e.target.value)}
               placeholder="Овог нэр"
               style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
-        </div>
-
-        <div className="mb-3">
-          <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-            📍 Хүргэх хаяг
-          </label>
-          <input value={address} onChange={(e) => setAddress(e.target.value)}
-            placeholder="Дүүрэг, хороо, байр, тоот..."
-            style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📍 Хүргэх хаяг
+            </label>
+            <input value={address} onChange={(e) => setAddress(e.target.value)}
+              placeholder="Дүүрэг, хороо, байр..."
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
         </div>
 
         {/* Items */}
@@ -6203,17 +6231,17 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           <div className="space-y-1.5">
             {items.map((it) => {
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+              const selectedProduct = products.find((p) => p.id === it.productId);
               return (
                 <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
-                  <select value={it.productId} onChange={(e) => selectProduct(it.id, e.target.value)}
-                    style={inputStyle} className={inputClass}>
-                    <option value="">— Сонгох —</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} (нөөц: {p.stock})
-                      </option>
-                    ))}
-                  </select>
+                  <ProductSearchSelect
+                    products={products}
+                    value={it.productId}
+                    onChange={(pid) => selectProduct(it.id, pid)}
+                    isOpen={productSearchOpen === it.id}
+                    onOpen={() => setProductSearchOpen(it.id)}
+                    onClose={() => setProductSearchOpen(null)}
+                  />
                   <input type="number" value={it.quantity}
                     onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
                     placeholder="0"
@@ -6238,6 +6266,26 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           </div>
         </div>
 
+        {/* Хүргэлт + Урьдчилсан төлбөр */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🚚 Хүргэлтийн үнэ
+            </label>
+            <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)}
+              placeholder="0"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              💵 Урьдчилсан төлсөн
+            </label>
+            <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)}
+              placeholder="0"
+              style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+          </div>
+        </div>
+
         <div className="mb-3">
           <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
             📝 Тэмдэглэл
@@ -6248,14 +6296,60 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
             style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
         </div>
 
-        {total > 0 && (
-          <div className="glass-soft rounded-lg p-3 mb-3 flex items-center justify-between">
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-xs uppercase tracking-wider">
-              Нийт ({validItems.length} бараа)
-            </span>
-            <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl">
-              {total.toLocaleString()}₮
-            </span>
+        {/* Тооцооны хэсэг */}
+        {(subtotal > 0 || fee > 0) && (
+          <div className="glass-soft rounded-lg p-3 mb-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                Бараа ({validItems.length})
+              </span>
+              <span style={{ fontFamily: FM, color: T.ink, fontWeight: 500 }} className="text-sm tabular-nums">
+                {subtotal.toLocaleString()}₮
+              </span>
+            </div>
+            {fee > 0 && (
+              <div className="flex items-center justify-between">
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                  🚚 Хүргэлт
+                </span>
+                <span style={{ fontFamily: FM, color: T.ink, fontWeight: 500 }} className="text-sm tabular-nums">
+                  +{fee.toLocaleString()}₮
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2"
+              style={{ borderTop: `1px solid ${T.border}` }}>
+              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                Нийт дүн
+              </span>
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                {total.toLocaleString()}₮
+              </span>
+            </div>
+            {paid > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }} className="text-xs">
+                    💵 Төлсөн
+                  </span>
+                  <span style={{ fontFamily: FM, color: T.ok, fontWeight: 600 }} className="text-sm tabular-nums">
+                    −{paid.toLocaleString()}₮
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-2"
+                  style={{ borderTop: `2px dashed ${T.border}` }}>
+                  <span style={{ fontFamily: FS, fontWeight: 700, color: balance > 0 ? T.warn : T.ok }} className="text-sm">
+                    {balance > 0 ? "⚠ Үлдэгдэл" : balance < 0 ? "💰 Илүү" : "✓ Бүрэн төлсөн"}
+                  </span>
+                  <span style={{
+                    fontFamily: FD, fontWeight: 700,
+                    color: balance > 0 ? T.warn : T.ok,
+                  }} className="text-xl tabular-nums">
+                    {balance >= 0 ? balance.toLocaleString() : Math.abs(balance).toLocaleString()}₮
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -6271,10 +6365,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
               setBusy(true);
               await onSave({
                 phone: phone.trim(),
+                phone2: phone2.trim() || null,
                 name: name.trim() || null,
                 address: address.trim() || null,
                 notes: notes.trim() || null,
+                subtotal,
+                deliveryFee: fee,
                 totalAmount: total,
+                paidAmount: paid,
+                balanceDue: balance,
                 items: validItems.map((it) => {
                   const p = products.find((pp) => pp.id === it.productId);
                   return {
@@ -6293,6 +6392,129 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Бараа хайх + хуудаслах select ────────────────────────────────
+function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClose }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const PER_PAGE = 8;
+  const ref = useRef(null);
+
+  const selected = products.find((p) => p.id === value);
+
+  // Filter
+  const filtered = useMemo(() => {
+    if (!search.trim()) return products;
+    const q = search.toLowerCase();
+    return products.filter((p) =>
+      p.name?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q)
+    );
+  }, [products, search]);
+
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const pageProducts = filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+
+  // Click outside to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen, onClose]);
+
+  const inputStyle = { background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={isOpen ? onClose : onOpen}
+        style={{ ...inputStyle, textAlign: "left", width: "100%" }}
+        className="px-2 py-1.5 rounded text-xs flex items-center justify-between gap-1 truncate">
+        <span className="truncate">
+          {selected ? `${selected.name} (${selected.stock})` : "🔍 Сонгох..."}
+        </span>
+        <ChevronDown size={11} style={{ color: T.muted, flexShrink: 0 }} />
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: "absolute",
+          top: "calc(100% + 4px)",
+          left: 0,
+          right: 0,
+          background: T.surface || "white",
+          border: `1px solid ${T.border}`,
+          borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+          zIndex: 100,
+          minWidth: 250,
+          maxWidth: 320,
+        }} className="p-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Бараа хайх..."
+            style={inputStyle}
+            className="w-full px-2 py-1.5 rounded text-xs mb-2"
+            autoFocus
+          />
+
+          <div className="max-h-60 overflow-y-auto space-y-0.5">
+            {pageProducts.length === 0 ? (
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-3">
+                Бараа олдсонгүй
+              </div>
+            ) : (
+              pageProducts.map((p) => (
+                <button key={p.id} onClick={() => { onChange(p.id); setSearch(""); setPage(0); }}
+                  style={{
+                    background: value === p.id ? T.highlightSoft : "transparent",
+                    color: T.ink, fontFamily: FS,
+                  }}
+                  className="press-btn w-full text-left px-2 py-1.5 rounded hover:bg-black/5 text-xs flex items-center justify-between gap-2">
+                  <span className="truncate flex-1">{p.name}</span>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex-shrink-0">
+                    {p.stock} {p.unit}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-2 pt-2"
+              style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+              <button onClick={() => setPage(Math.max(0, page - 1))}
+                disabled={page === 0}
+                style={{ color: page === 0 ? T.mutedSoft : T.ink }}
+                className="press-btn px-2 py-0.5 rounded text-xs">
+                ‹ Өмнөх
+              </button>
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                {page + 1} / {totalPages} ({filtered.length})
+              </span>
+              <button onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                disabled={page >= totalPages - 1}
+                style={{ color: page >= totalPages - 1 ? T.mutedSoft : T.ink }}
+                className="press-btn px-2 py-0.5 rounded text-xs">
+                Дараах ›
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
