@@ -5681,6 +5681,8 @@ function CallCenterView({ profile }) {
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [copiedPhone, setCopiedPhone] = useState("");
@@ -5688,12 +5690,16 @@ function CallCenterView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: callData }, { data: prodData }] = await Promise.all([
-        supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(50),
+      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }] = await Promise.all([
+        supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        supabase.from("biz_customers").select("*"),
+        supabase.from("profiles").select("id, name").limit(200),
       ]);
       setRecentCalls(callData || []);
       setProducts(prodData || []);
+      setCustomers(custData || []);
+      setProfiles(profData || []);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -5806,137 +5812,251 @@ function CallCenterView({ profile }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {recentCalls.map((c) => (
-              <div key={c.id} className="glass rounded-xl p-3">
-                <div className="flex items-start gap-3">
-                  <div style={{ background: T.highlightSoft, color: T.highlight }}
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
-                    📞
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => handlePhoneClick(c.phone, c.customer_name, c.notes, c.interested_products, c.id)}
-                        style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }}
-                        className="text-sm press-btn hover:opacity-80 flex items-center gap-1">
-                        📱 {c.phone}
-                        {copiedPhone === c.phone && (
-                          <span style={{ background: T.ok, color: "white" }}
-                            className="text-[8px] px-1.5 py-0.5 rounded-full font-medium ml-1">
-                            ✓ Хуулсан
-                          </span>
-                        )}
-                      </button>
-                      {c.customer_name && (
-                        <span style={{ color: T.ink, fontFamily: FS }} className="text-xs">
-                          · {c.customer_name}
+            {(() => {
+              // Дуудлагуудыг утсаар нь groupping хийх
+              const grouped = {};
+              recentCalls.forEach((c) => {
+                if (!grouped[c.phone]) grouped[c.phone] = [];
+                grouped[c.phone].push(c);
+              });
+              const phoneOrder = Object.keys(grouped).sort((a, b) =>
+                new Date(grouped[b][0].created_at) - new Date(grouped[a][0].created_at)
+              );
+
+              return phoneOrder.slice(0, 30).map((phone) => {
+                const calls = grouped[phone];
+                const latestCall = calls[0];
+                const customer = customers.find((cu) => cu.phone === phone);
+                const customerIndex = customers.findIndex((cu) => cu.phone === phone) + 1;
+
+                // Сонирхсон бараа нэгтгэх
+                const productMap = new Map();
+                calls.forEach((c) => {
+                  if (c.interested_products && Array.isArray(c.interested_products)) {
+                    c.interested_products.forEach((p) => {
+                      const existing = productMap.get(p.id);
+                      if (existing) existing.totalQty += (p.qty || 1);
+                      else productMap.set(p.id, { ...p, totalQty: p.qty || 1 });
+                    });
+                  }
+                });
+                const allProducts = Array.from(productMap.values());
+
+                // Time ago
+                const timeAgo = (date) => {
+                  const diff = (Date.now() - new Date(date).getTime()) / 1000;
+                  if (diff < 60) return "одоо";
+                  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+                  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+                  if (diff < 30 * 86400) return `${Math.floor(diff / 86400)}d`;
+                  if (diff < 365 * 86400) return new Date(date).toLocaleDateString("mn-MN", { month: "short", day: "numeric" });
+                  return new Date(date).toLocaleDateString("mn-MN", { month: "short", day: "numeric" });
+                };
+
+                const isActive = customer?.last_order_at && (Date.now() - new Date(customer.last_order_at).getTime()) < 30 * 86400 * 1000;
+                const isNew = customer && (Date.now() - new Date(customer.created_at).getTime()) < 7 * 86400 * 1000;
+
+                return (
+                  <div key={phone} className="glass rounded-2xl p-4">
+                    {/* Header pills */}
+                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                      <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                        className="px-2 py-0.5 rounded text-xs">
+                        #{customer ? customerIndex : "—"}
+                      </span>
+                      {customer?.name && (
+                        <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                          {customer.name}
                         </span>
                       )}
+                      <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, latestCall.interested_products, latestCall.id)}
+                        className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
+                        style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+                        <X size={11} style={{ color: T.muted }} />
+                        <span className="text-xs">Calling. {phone}</span>
+                      </button>
+                      {copiedPhone === phone && (
+                        <span style={{ background: T.ok, color: "white" }}
+                          className="text-[8px] px-1.5 py-0.5 rounded-full font-medium">
+                          ✓ Хуулсан
+                        </span>
+                      )}
+                      {isNew && (
+                        <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FS, fontWeight: 700 }}
+                          className="text-[10px] px-2 py-1 rounded-md tracking-wider">
+                          NEW
+                        </span>
+                      )}
+                      {customer?.name && (
+                        <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+                          className="text-[10px] px-2 py-1 rounded-md uppercase tracking-wider">
+                          {customer.name}
+                        </span>
+                      )}
+                      <span style={{
+                        background: isActive ? "rgba(168,85,247,0.15)" : "rgba(148,163,184,0.2)",
+                        color: isActive ? "#9333ea" : T.muted,
+                        fontFamily: FS, fontWeight: 600,
+                      }} className="text-[10px] px-2 py-1 rounded-md">
+                        {isActive ? "Идэвхтэй" : "Идэвхгүй"}
+                      </span>
+                      <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
+                        <Clock size={11} />
+                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(customer?.created_at || latestCall.created_at)}</span>
+                      </div>
+                      <div className="flex-1" />
+                      {customer && (
+                        <span style={{ background: "rgba(16,185,129,0.1)", color: T.ok, border: `1px solid rgba(16,185,129,0.2)`, fontFamily: FS }}
+                          className="text-xs px-3 py-1 rounded-md flex items-center gap-1">
+                          <UserIcon size={10} /> {customer.name || "Нэргүй"}
+                        </span>
+                      )}
+                      <button onClick={() => {
+                        if (!confirm(`${phone} - бүх дуудлагыг устгах уу? (${calls.length})`)) return;
+                        Promise.all(calls.map((c) => supabase.from("biz_calls").delete().eq("id", c.id))).then(() => loadAll());
+                      }}
+                        style={{ background: T.err, color: "white" }}
+                        className="press-btn px-3 py-1 rounded-md text-xs flex items-center gap-1">
+                        <Trash2 size={11} /> Устгах
+                      </button>
                     </div>
-                    {/* Notes (clean — хуучин формат-аас бараа жагсаалтыг хасах) */}
-                    {c.notes && (() => {
-                      const cleanNotes = c.notes.replace(/\n*📦 СОНИРХСОН БАРАА:[\s\S]*$/, "").trim();
-                      return cleanNotes ? (
-                        <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1 italic">
-                          "{cleanNotes}"
-                        </div>
-                      ) : null;
-                    })()}
 
-                    {/* Хуучин notes-аас бараа нэрийг таних */}
-                    {(!c.interested_products || !Array.isArray(c.interested_products) || c.interested_products.length === 0) &&
-                      c.notes && c.notes.includes("СОНИРХСОН БАРАА") && (() => {
-                        const match = c.notes.match(/📦 СОНИРХСОН БАРАА:\n([\s\S]*?)(?:\n\n|$)/);
-                        if (!match) return null;
-                        const lines = match[1].split("\n").map((l) => l.trim()).filter((l) => l.startsWith("•"));
-                        const oldProducts = lines.map((l) => {
-                          const text = l.replace(/^•\s*/, "");
-                          const qtyMatch = text.match(/\((\d+)\s*ш\)\s*$/);
-                          const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-                          const name = text.replace(/\s*\(\d+\s*ш\)\s*$/, "").trim();
-                          return { name, qty };
-                        });
-                        if (oldProducts.length === 0) return null;
-                        return (
-                          <div className="mt-2">
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                              <ShoppingBag size={10} /> Сонирхсон бараа ({oldProducts.length})
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {oldProducts.map((p, idx) => (
-                                <div key={idx} className="flex items-center gap-1.5 rounded-lg p-1.5 pr-2"
-                                  style={{ background: T.highlightSoft, border: `1px solid ${T.border}` }}>
-                                  <div style={{
-                                    width: 28, height: 28, borderRadius: 4, background: T.surface,
-                                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
-                                  }}>📦</div>
-                                  <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-[10px]">
-                                    {p.name}
-                                  </span>
-                                  {p.qty > 1 && (
-                                    <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
-                                      className="text-[10px] px-1.5 py-0.5 rounded-full">
-                                      ×{p.qty}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                    {/* Сонирхсон бараа — зурагтай grid (шинэ формат) */}
-                    {c.interested_products && Array.isArray(c.interested_products) && c.interested_products.length > 0 && (
-                      <div className="mt-2">
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                          <ShoppingBag size={10} /> Сонирхсон бараа ({c.interested_products.length})
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {c.interested_products.map((p, idx) => (
-                            <div key={idx} className="flex items-center gap-1.5 rounded-lg p-1.5 pr-2"
-                              style={{ background: T.highlightSoft, border: `1px solid ${T.border}` }}>
-                              {p.image_url ? (
-                                <img src={p.image_url} alt={p.name}
-                                  style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
-                              ) : (
-                                <div style={{
-                                  width: 28, height: 28, borderRadius: 4, background: T.surface,
-                                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
-                                }}>📦</div>
-                              )}
-                              <span style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-[10px]">
-                                {p.name}
-                              </span>
-                              {p.qty > 1 && (
-                                <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
-                                  className="text-[10px] px-1.5 py-0.5 rounded-full">
-                                  ×{p.qty}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                    {/* Customer name (sub) */}
+                    {customer?.name && (
+                      <div style={{ color: T.ink, fontFamily: FS }} className="text-sm mb-3">
+                        {customer.name}
                       </div>
                     )}
 
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2">
-                      🕐 {new Date(c.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {/* 2 column: Дуудлагын түүх + Сонирхсон бараа */}
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+                      {/* ЗҮҮН: Дуудлагын түүх */}
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                          📋 ДУУДЛАГЫН ТҮҮХ ({calls.length})
+                        </div>
+                        <div className="space-y-2">
+                          {calls.slice(0, 6).map((c) => {
+                            const operator = profiles.find((p) => p.id === c.created_by);
+                            const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
+                            const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
+
+                            // Status detection from notes
+                            let status = null;
+                            if (isCancelled) status = { label: "Цуцалсан", color: T.err, bg: T.errSoft };
+                            else if (cleanNotes?.toLowerCase().includes("дуудаад") || cleanNotes?.toLowerCase().includes("авахгүй") || cleanNotes?.toLowerCase().includes("авлаагүй")) {
+                              status = { label: "Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
+                            } else if (cleanNotes?.toLowerCase().includes("холбог") || cleanNotes?.toLowerCase().includes("дараа")) {
+                              status = { label: "Холбогдох боломжгүй", color: T.warn, bg: T.warnSoft };
+                            }
+
+                            return (
+                              <div key={c.id} className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
+                                  <Clock size={10} />
+                                  <span className="text-[11px]">{timeAgo(c.created_at)}</span>
+                                </div>
+                                <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                                  {operator?.name || "—"}
+                                </span>
+                                {status && (
+                                  <span style={{ background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600 }}
+                                    className="text-[10px] px-2 py-0.5 rounded">
+                                    {status.label}
+                                  </span>
+                                )}
+                                {!status && cleanNotes && (
+                                  <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] italic">
+                                    "{cleanNotes.slice(0, 40)}{cleanNotes.length > 40 ? '...' : ''}"
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {calls.length > 6 && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
+                              + {calls.length - 6} илүү
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* БАРУУН: Сонирхсон бараа */}
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                          🛒 СОНИРХСОН БАРАА ({allProducts.length})
+                        </div>
+                        {allProducts.length === 0 ? (
+                          <div style={{ color: T.mutedSoft, fontFamily: FS }} className="text-xs text-center py-4">
+                            Хоосон
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {allProducts.slice(0, 2).map((p) => (
+                              <div key={p.id} className="rounded-lg overflow-hidden"
+                                style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                                <div className="flex items-center gap-1 p-1.5"
+                                  style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                                  {p.sku && (
+                                    <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                                      className="text-[9px] px-1.5 py-0.5 rounded">
+                                      {p.sku}
+                                    </span>
+                                  )}
+                                  <span style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
+                                    className="text-[9px] px-1.5 py-0.5 rounded">
+                                    Тайлбар
+                                  </span>
+                                </div>
+                                <div style={{ width: "100%", aspectRatio: "16/9", background: T.surfaceAlt }}>
+                                  {p.image_url ? (
+                                    <img src={p.image_url} alt={p.name}
+                                      style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                                  ) : (
+                                    <div style={{
+                                      width: "100%", height: "100%",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                      fontSize: 32,
+                                    }}>📦</div>
+                                  )}
+                                </div>
+                                <div className="p-2">
+                                  <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                                    className="text-[11px] line-clamp-2 mb-1">
+                                    {p.name}
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xs tabular-nums">
+                                      {p.price ? Number(p.price).toLocaleString() + "₮" : ""}
+                                    </span>
+                                    {p.totalQty > 0 && (
+                                      <span style={{ background: T.ok, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                        className="text-[10px] px-1.5 py-0.5 rounded-full">
+                                        {p.totalQty}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            {allProducts.length > 2 && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic text-center">
+                                + {allProducts.length - 2} илүү бараа
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <button onClick={() => handleDeleteCall(c.id)}
-                    style={{ color: T.err }}
-                    className="press-btn p-1.5 rounded-lg hover:bg-red-50 flex-shrink-0"
-                    title="Устгах">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+                );
+              });
+            })()}
           </div>
         )}
       </div>
 
-      {showCallModal && (
+            {showCallModal && (
         <SimpleCallModal
           products={products}
           profile={profile}
