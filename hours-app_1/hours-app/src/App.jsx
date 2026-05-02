@@ -5711,13 +5711,12 @@ function CallCenterView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
   // Дугаарыг хуулах + захиалга нээх
-  const handlePhoneClick = async (phone, customerName) => {
+  const handlePhoneClick = async (phone, customerName, callNotes, callProducts) => {
     try {
       // Clipboard-руу хуулах
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(phone);
       } else {
-        // Fallback хуучин browser-д
         const textarea = document.createElement("textarea");
         textarea.value = phone;
         textarea.style.position = "fixed";
@@ -5730,12 +5729,16 @@ function CallCenterView({ profile }) {
       setCopiedPhone(phone);
       setTimeout(() => setCopiedPhone(""), 1500);
 
-      // Захиалгын modal нээх
-      setOrderForCall({ phone, name: customerName });
+      // Захиалгын modal нээх (сэтгэгдэл + сонирхсон бараа дамжуулах)
+      setOrderForCall({
+        phone,
+        name: customerName,
+        notes: callNotes,
+        products: callProducts,
+      });
     } catch (e) {
       console.error("Copy error:", e);
-      // Хэрэв алдаа гарвал зөвхөн модал нээх
-      setOrderForCall({ phone, name: customerName });
+      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts });
     }
   };
 
@@ -5802,7 +5805,7 @@ function CallCenterView({ profile }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => handlePhoneClick(c.phone, c.customer_name)}
+                      <button onClick={() => handlePhoneClick(c.phone, c.customer_name, c.notes, c.interested_products)}
                         style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }}
                         className="text-sm press-btn hover:opacity-80 flex items-center gap-1">
                         📱 {c.phone}
@@ -5971,6 +5974,8 @@ function CallCenterView({ profile }) {
           profile={profile}
           initialPhone={orderForCall.phone}
           initialName={orderForCall.name}
+          initialNotes={orderForCall.notes}
+          initialProducts={orderForCall.products}
           onSave={async (data) => {
             try {
               // 1. Customer find or create
@@ -6569,13 +6574,27 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, onSave, onClose }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, onSave, onClose }) {
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState("");
   const [name, setName] = useState(initialName || "");
   const [address, setAddress] = useState("");
-  const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([]); // { productId, quantity, itemNotes }
+  const [notes, setNotes] = useState(initialNotes || "");
+  // initialProducts-ийг items-руу хөрвүүлэх
+  const [items, setItems] = useState(() => {
+    if (!initialProducts || !Array.isArray(initialProducts) || initialProducts.length === 0) return [];
+    return initialProducts.map((ip) => {
+      const product = products.find((p) => p.id === ip.id);
+      if (!product) return null;
+      return {
+        productId: product.id,
+        product,
+        quantity: ip.qty || 1,
+        unitPrice: Number(product.sale_price || 0),
+        itemNotes: product.description || "",
+      };
+    }).filter(Boolean);
+  });
   const [deliveryFee, setDeliveryFee] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
   const [callType, setCallType] = useState("called"); // called | walk_in
@@ -6583,6 +6602,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  const [activeProductDetail, setActiveProductDetail] = useState(null); // popup-ийн бараа
 
   // Customer auto-search
   useEffect(() => {
@@ -6710,17 +6730,6 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
                   placeholder="99112233"
                   style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
               </div>
-            </div>
-
-            {/* Name */}
-            <div>
-              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
-                <UserIcon size={11} style={{ color: T.muted }} />
-                Үйлчлүүлэгчийн нэр
-              </label>
-              <input value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="Овог нэр"
-                style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm" />
             </div>
 
             {/* Address */}
@@ -6911,53 +6920,172 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, onSave
               </div>
             )}
 
-            {/* Хайлтын үр дүн */}
-            <div className="flex-1 overflow-y-auto space-y-1.5">
+            {/* Хайлтын үр дүн — grid дизайн */}
+            <div className="flex-1 overflow-y-auto">
               {filtered.length === 0 ? (
                 <div style={{ color: T.muted, fontFamily: FS }} className="text-center py-8 text-sm">
                   {products.length === 0 ? "Бараа байхгүй" : "Олдсонгүй"}
                 </div>
               ) : (
-                filtered.slice(0, 30).map((p) => {
-                  const inCart = items.find((it) => it.productId === p.id);
-                  return (
-                    <button key={p.id} onClick={() => addItem(p)}
-                      className="press-btn w-full rounded-lg p-2 flex items-center gap-2 text-left hover:opacity-80"
-                      style={{
-                        background: inCart ? T.highlightSoft : "transparent",
-                        border: `1px solid ${inCart ? T.highlight : T.border}`,
-                      }}>
-                      {p.image_url ? (
-                        <img src={p.image_url} alt={p.name}
-                          style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
-                      ) : (
-                        <div style={{
-                          width: 36, height: 36, borderRadius: 6,
-                          background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 18, flexShrink: 0,
-                        }}>📦</div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate">
-                          {p.name}
+                <div className="grid grid-cols-2 gap-2">
+                  {filtered.slice(0, 30).map((p) => {
+                    const inCart = items.find((it) => it.productId === p.id);
+                    return (
+                      <div key={p.id}
+                        className="rounded-lg overflow-hidden relative"
+                        style={{
+                          background: T.surface,
+                          border: `1px solid ${T.border}`,
+                        }}>
+                        {/* Top pills: SKU + Тайлбар */}
+                        <div className="flex items-center gap-1 p-1.5"
+                          style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                          {p.sku && (
+                            <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[9px] px-1.5 py-0.5 rounded">
+                              {p.sku}
+                            </span>
+                          )}
+                          <button onClick={() => setActiveProductDetail(p)}
+                            style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
+                            className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
+                            Тайлбар
+                          </button>
                         </div>
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                          {Number(p.sale_price || 0).toLocaleString()}₮ · {p.stock} {p.unit}
+
+                        {/* Image — Click to add */}
+                        <button onClick={() => addItem(p)}
+                          className="press-btn w-full block">
+                          <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
+                            {p.image_url ? (
+                              <img src={p.image_url} alt={p.name}
+                                style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                            ) : (
+                              <div style={{
+                                width: "100%", height: "100%",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 32,
+                              }}>📦</div>
+                            )}
+                            {inCart && (
+                              <div style={{
+                                position: "absolute", inset: 0,
+                                background: "rgba(236,72,153,0.1)",
+                                border: `2px solid ${T.highlight}`,
+                              }} />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Name */}
+                        <div className="px-1.5 pt-1 pb-0.5">
+                          <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                            className="text-[10px] line-clamp-2 leading-tight">
+                            {p.name}
+                          </div>
+                        </div>
+
+                        {/* Price + Qty */}
+                        <div className="flex items-center justify-between px-1.5 pb-1.5">
+                          <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                            className="text-[11px] tabular-nums">
+                            {Number(p.sale_price || 0).toLocaleString()}₮
+                          </span>
+                          {inCart ? (
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => updateQty(p.id, inCart.quantity - 1)}
+                                style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}
+                                className="w-5 h-5 rounded text-[10px] press-btn">−</button>
+                              <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]">
+                                {inCart.quantity}
+                              </span>
+                              <button onClick={() => updateQty(p.id, inCart.quantity + 1)}
+                                style={{ background: T.highlight, color: "white" }}
+                                className="w-5 h-5 rounded text-[10px] press-btn">+</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => addItem(p)}
+                              style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}` }}
+                              className="press-btn w-5 h-5 rounded-full flex items-center justify-center text-[11px]">
+                              +
+                            </button>
+                          )}
                         </div>
                       </div>
-                      {inCart && (
-                        <span style={{ background: T.highlight, color: "white" }}
-                          className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">
-                          {inCart.quantity}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* Барааны тайлбар popup */}
+        {activeProductDetail && (
+          <div onClick={() => setActiveProductDetail(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
+            className="flex items-center justify-center p-4">
+            <div onClick={(e) => e.stopPropagation()}
+              className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
+              <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
+                {activeProductDetail.image_url ? (
+                  <img src={activeProductDetail.image_url} alt={activeProductDetail.name}
+                    style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                ) : (
+                  <div style={{
+                    width: "100%", height: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 80,
+                  }}>📦</div>
+                )}
+                <button onClick={() => setActiveProductDetail(null)}
+                  style={{
+                    position: "absolute", top: 12, right: 12,
+                    background: "rgba(0,0,0,0.6)", color: "white",
+                    width: 32, height: 32, borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div>
+                  <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                    {activeProductDetail.name}
+                  </h4>
+                  {activeProductDetail.sku && (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      SKU: {activeProductDetail.sku}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                    {Number(activeProductDetail.sale_price || 0).toLocaleString()}₮
+                  </span>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                    Нөөц: {activeProductDetail.stock} {activeProductDetail.unit}
+                  </span>
+                </div>
+                {activeProductDetail.description && (
+                  <div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
+                      📄 Тайлбар
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap p-3 rounded-lg"
+                      style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
+                      {activeProductDetail.description}
+                    </div>
+                  </div>
+                )}
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-center text-xs italic">
+                  💡 Зураг дээр дарж сонгоно уу
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action buttons */}
         <div className="flex gap-2 mt-4">
