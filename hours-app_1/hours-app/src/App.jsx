@@ -663,7 +663,7 @@ function AdminDashboard({ profile }) {
 
   const loadAll = async () => {
     const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
-      supabase.from("profiles").select("*").in("role", ["employee", "manager"]).order("created_at", { ascending: false }),
+      supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver"]).order("created_at", { ascending: false }),
       supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
       supabase.from("active_sessions").select("*"),
       supabase.from("approvals").select("*").order("created_at", { ascending: false }),
@@ -678,7 +678,8 @@ function AdminDashboard({ profile }) {
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
     if (emps.data) {
-      setEmployees(emps.data.filter((p) => p.role === "employee"));
+      // Бүх ажилтан (employee, operator, driver) — Багууд хэсэгт харагдана
+      setEmployees(emps.data.filter((p) => ["employee", "operator", "driver"].includes(p.role)));
       setManagers(emps.data.filter((p) => p.role === "manager"));
     }
     if (sess.data) setSessions(sess.data);
@@ -1417,6 +1418,7 @@ function AdminDashboard({ profile }) {
           <TeamView
             employees={employees} sessions={sessions} activeSessions={activeSessions}
             sites={sites} employeeSites={employeeSites} leaves={leaves}
+            departments={departments}
             geoBusyId={geoBusyId} feedback={feedback}
             onEdit={(emp) => { setFormEmp(emp); setFormMode("edit"); }}
             onDelete={(id) => setConfirmDel(id)}
@@ -2547,7 +2549,10 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd, onViewPhoto }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], departments = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd, onViewPhoto }) {
+  const [groupBy, setGroupBy] = useState("department"); // department | role | none
+  const [filterRole, setFilterRole] = useState("all"); // all | employee | operator | driver
+
   if (employees.length === 0) {
     return (
       <div style={{ borderColor: T.border, background: T.surface }}
@@ -2562,9 +2567,115 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
     );
   }
 
+  // Filter by role
+  const filtered = filterRole === "all" ? employees : employees.filter((e) => e.role === filterRole);
+
+  // Хэлтсээр групплэх
+  const grouped = useMemo(() => {
+    if (groupBy === "none") {
+      return [{ key: "all", label: "Бүх ажилтан", icon: "👥", items: filtered }];
+    }
+
+    if (groupBy === "role") {
+      const groups = {
+        employee: { key: "employee", label: "Ажилтан", icon: "👤", items: [] },
+        operator: { key: "operator", label: "Оператор", icon: "🎧", items: [] },
+        driver: { key: "driver", label: "Хүргэгч", icon: "🚚", items: [] },
+      };
+      filtered.forEach((e) => {
+        if (groups[e.role]) groups[e.role].items.push(e);
+      });
+      return Object.values(groups).filter((g) => g.items.length > 0);
+    }
+
+    // groupBy === "department"
+    const deptMap = {};
+    departments.forEach((d) => {
+      deptMap[d.id] = { key: d.id, label: d.name, icon: "🏢", items: [] };
+    });
+    deptMap["__none__"] = { key: "__none__", label: "Хэлтсэнд хамаараагүй", icon: "📦", items: [] };
+
+    filtered.forEach((e) => {
+      const key = e.department_id || "__none__";
+      if (!deptMap[key]) deptMap[key] = { key, label: "Тодорхойгүй", icon: "📦", items: [] };
+      deptMap[key].items.push(e);
+    });
+
+    return Object.values(deptMap).filter((g) => g.items.length > 0);
+  }, [filtered, groupBy, departments]);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {employees.map((emp) => {
+    <div className="space-y-3">
+      {/* Filter & Group toolbar */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        {/* Role filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Эрх:</span>
+          {[
+            { id: "all", label: "Бүгд", icon: "👥", count: employees.length },
+            { id: "employee", label: "Ажилтан", icon: "👤", count: employees.filter((e) => e.role === "employee").length },
+            { id: "operator", label: "Оператор", icon: "🎧", count: employees.filter((e) => e.role === "operator").length },
+            { id: "driver", label: "Хүргэгч", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
+          ].map((f) => (
+            <button key={f.id} onClick={() => setFilterRole(f.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+              style={{
+                background: filterRole === f.id ? T.highlight : T.surfaceAlt,
+                color: filterRole === f.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              <span>{f.icon}</span>
+              <span>{f.label}</span>
+              <span style={{
+                background: filterRole === f.id ? "rgba(255,255,255,0.2)" : T.surface,
+                color: filterRole === f.id ? "white" : T.muted,
+              }} className="text-[9px] px-1.5 rounded-full">{f.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Group by */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Бүлэглэх:</span>
+          {[
+            { id: "department", label: "🏢 Хэлтсээр" },
+            { id: "role", label: "👥 Эрхээр" },
+            { id: "none", label: "📋 Бүгдийг" },
+          ].map((g) => (
+            <button key={g.id} onClick={() => setGroupBy(g.id)}
+              className="press-btn px-2.5 py-1 rounded-full text-[10px]"
+              style={{
+                background: groupBy === g.id ? T.ink : T.surfaceAlt,
+                color: groupBy === g.id ? T.surface : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Groups */}
+      {grouped.length === 0 ? (
+        <div style={{ borderColor: T.border }} className="border-2 border-dashed rounded-2xl py-12 text-center">
+          <div className="text-4xl mb-2">🔍</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Олдсонгүй</div>
+        </div>
+      ) : (
+        grouped.map((group) => (
+          <div key={group.key} className="space-y-2">
+            <div className="flex items-center gap-2 px-1">
+              <span className="text-base">{group.icon}</span>
+              <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                {group.label}
+              </h3>
+              <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FD, fontWeight: 700 }}
+                className="text-[10px] px-2 py-0.5 rounded-full">
+                {group.items.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {group.items.map((emp) => {
         const active = activeSessions[emp.id];
         const isActive = !!active;
         const liveMs = isActive ? capSessionEnd(emp, Date.now()) - new Date(active.start_time).getTime() : 0;
@@ -2597,7 +2708,21 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                     {isActive ? "Ажиллаж байна" : "Цагтай биш"}
                   </span>
                 </div>
-                <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-xl truncate">{emp.name}</h3>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-xl truncate">{emp.name}</h3>
+                  {emp.role === "operator" && (
+                    <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      🎧 Оператор
+                    </span>
+                  )}
+                  {emp.role === "driver" && (
+                    <span style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      🚚 Хүргэгч
+                    </span>
+                  )}
+                </div>
                 <p style={{ color: T.muted }} className="text-xs mt-0.5 truncate">{emp.job_title}</p>
               </div>
               <div className="flex gap-1 -mr-1.5 -mt-1.5">
@@ -2667,6 +2792,10 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
           </article>
         );
       })}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
