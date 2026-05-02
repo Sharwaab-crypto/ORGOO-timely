@@ -2553,20 +2553,6 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
   const [groupBy, setGroupBy] = useState("department"); // department | role | none
   const [filterRole, setFilterRole] = useState("all"); // all | employee | operator | driver
 
-  if (employees.length === 0) {
-    return (
-      <div style={{ borderColor: T.border, background: T.surface }}
-           className="border-2 border-dashed rounded-2xl py-16 px-6 text-center">
-        <Users size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
-        <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Багт ажилтан байхгүй байна</h3>
-        <p style={{ color: T.muted }} className="text-sm mb-5">Анхны ажилтнаа нэмж тэмдэглэлийг эхлүүлээрэй.</p>
-        <button onClick={onAdd} className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
-          <Plus size={13} strokeWidth={2.5} /> Эхний ажилтан нэмэх
-        </button>
-      </div>
-    );
-  }
-
   // Filter by role
   const filtered = filterRole === "all" ? employees : employees.filter((e) => e.role === filterRole);
 
@@ -2603,6 +2589,20 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
 
     return Object.values(deptMap).filter((g) => g.items.length > 0);
   }, [filtered, groupBy, departments]);
+
+  if (employees.length === 0) {
+    return (
+      <div style={{ borderColor: T.border, background: T.surface }}
+           className="border-2 border-dashed rounded-2xl py-16 px-6 text-center">
+        <Users size={32} style={{ color: T.muted }} strokeWidth={1.5} className="mx-auto mb-4" />
+        <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl mb-2">Багт ажилтан байхгүй байна</h3>
+        <p style={{ color: T.muted }} className="text-sm mb-5">Анхны ажилтнаа нэмж тэмдэглэлийг эхлүүлээрэй.</p>
+        <button onClick={onAdd} className="glow-primary press-btn px-5 py-2.5 rounded-full text-[11px] uppercase tracking-[0.25em] inline-flex items-center gap-2">
+          <Plus size={13} strokeWidth={2.5} /> Эхний ажилтан нэмэх
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
