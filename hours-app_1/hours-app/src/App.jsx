@@ -19708,16 +19708,27 @@ function DriverDashboard({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const { data: ordData } = await supabase
-        .from("biz_orders")
-        .select("*")
-        .eq("driver_id", profile.id)
-        .order("created_at", { ascending: false });
+      // Өөрт оноогдсон + бүх шинэ оноогдоогүй захиалга
+      const [{ data: ownOrders }, { data: newOrders }] = await Promise.all([
+        supabase.from("biz_orders").select("*")
+          .eq("driver_id", profile.id)
+          .order("created_at", { ascending: false }),
+        supabase.from("biz_orders").select("*")
+          .is("driver_id", null).eq("status", "new")
+          .order("created_at", { ascending: false }),
+      ]);
 
-      setOrders(ordData || []);
+      // Хослуулах + давхардлаас сэргийлэх
+      const all = [...(ownOrders || [])];
+      const ownIds = new Set(all.map((o) => o.id));
+      (newOrders || []).forEach((o) => {
+        if (!ownIds.has(o.id)) all.push(o);
+      });
 
-      if (ordData && ordData.length > 0) {
-        const orderIds = ordData.map((o) => o.id);
+      setOrders(all);
+
+      if (all.length > 0) {
+        const orderIds = all.map((o) => o.id);
         const { data: itemData } = await supabase
           .from("biz_order_items")
           .select("*")
@@ -19843,26 +19854,56 @@ function DriverDashboard({ profile }) {
 
   // Filter
   const filtered = orders.filter((o) => {
-    if (filter === "active") return o.status === "new" || o.status === "pending";
+    if (filter === "available") return o.status === "new" && !o.driver_id;
+    if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending");
     // Хүргэсэн ба Цуцалсан tab-аас тооцоо хаагдсан (settlement_id-тэй) захиалгуудыг хасах
-    if (filter === "delivered") return o.status === "delivered" && !o.settlement_id;
-    if (filter === "cancelled") return o.status === "cancelled" && !o.settlement_id;
+    if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
+    if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
     return true;
   });
 
   const counts = {
-    active: orders.filter((o) => o.status === "new" || o.status === "pending").length,
-    delivered: orders.filter((o) => o.status === "delivered" && !o.settlement_id).length,
-    cancelled: orders.filter((o) => o.status === "cancelled" && !o.settlement_id).length,
+    available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
+    active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending")).length,
+    delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
+    cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
   };
 
-  // Тушаах дүн: settle хийгдээгүй delivered захиалгуудаас
+  // Тушаах дүн: зөвхөн өөрийн settle хийгдээгүй delivered захиалгуудаас
   const myOwed = orders
-    .filter((o) => o.status === "delivered" && !o.settlement_id)
+    .filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id)
     .reduce((sum, o) => sum + (Number(o.total_amount || 0) - Number(o.paid_amount || 0)), 0);
   const myDeliveredTotal = orders
-    .filter((o) => o.status === "delivered" && !o.settlement_id)
+    .filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id)
     .reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+
+  // Захиалга авах (claim)
+  const claimOrder = async (orderId) => {
+    if (!confirm("Энэ захиалгыг өөртөө авах уу?")) return;
+    try {
+      const { data, error } = await supabase
+        .from("biz_orders")
+        .update({
+          driver_id: profile.id,
+          status: "pending",
+          assigned_at: new Date().toISOString(),
+          assigned_by: profile.id,
+        })
+        .eq("id", orderId)
+        .is("driver_id", null) // race condition сэргийлэх
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        alert("⚠ Энэ захиалгыг өөр хүн аль хэдийнэ авсан байна.");
+        await loadAll();
+        return;
+      }
+      alert("✅ Захиалга таны нэр дээр шилжлээ!");
+      await loadAll();
+    } catch (e) {
+      alert("Алдаа: " + (e.message || JSON.stringify(e)));
+    }
+  };
 
   return (
     <div className="min-h-screen" style={{ background: T.bg }}>
@@ -19988,13 +20029,35 @@ function DriverDashboard({ profile }) {
         </div>
 
         {/* Filter tabs */}
-        <div className="glass rounded-2xl p-2 flex gap-1">
+        <div className="glass rounded-2xl p-2 flex gap-1 flex-wrap">
+          <button onClick={() => setFilter("available")}
+            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
+            style={{
+              background: filter === "available" ? "#9333ea" : T.surfaceAlt,
+              color: filter === "available" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
+            }}>
+            🆕 Шинэ ({counts.available})
+            {counts.available > 0 && filter !== "available" && (
+              <span style={{
+                position: "absolute", top: -4, right: -4,
+                background: T.err, color: "white",
+                width: 16, height: 16, borderRadius: "50%",
+                fontSize: 9, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {counts.available}
+              </span>
+            )}
+          </button>
           <button onClick={() => setFilter("active")}
             className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "active" ? "#0ea5e9" : T.surfaceAlt,
               color: filter === "active" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
             }}>
             🚚 Хүргэх ({counts.active})
           </button>
@@ -20004,6 +20067,7 @@ function DriverDashboard({ profile }) {
               background: filter === "delivered" ? T.ok : T.surfaceAlt,
               color: filter === "delivered" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
             }}>
             ✓ Хүргэсэн ({counts.delivered})
           </button>
@@ -20126,7 +20190,19 @@ function DriverDashboard({ profile }) {
                 )}
 
                 {/* Action buttons */}
-                {(o.status === "new" || o.status === "pending") && (
+                {!o.driver_id && o.status === "new" ? (
+                  // Эзэнгүй захиалга — Авах товч
+                  <div className="mt-2">
+                    <button onClick={(e) => { e.stopPropagation(); claimOrder(o.id); }}
+                      className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      style={{
+                        background: "linear-gradient(135deg, #9333ea, #c026d3)",
+                        color: "white", fontFamily: FS,
+                      }}>
+                      🆕 Энэ захиалгыг авах
+                    </button>
+                  </div>
+                ) : (o.status === "new" || o.status === "pending") && (
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <button onClick={() => updateStatus(o.id, "delivered")}
                       className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
