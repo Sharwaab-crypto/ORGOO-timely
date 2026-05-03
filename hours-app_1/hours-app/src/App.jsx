@@ -20062,6 +20062,7 @@ function DriverDashboard({ profile }) {
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
+  const [insufficientStockMsg, setInsufficientStockMsg] = useState(null); // Үлдэгдэл хүрэлцэхгүй popup
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
   });
@@ -20214,7 +20215,7 @@ function DriverDashboard({ profile }) {
             if (mvErr) {
               const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
               if (isShortStock) {
-                alert(`⚠ Барааны үлдэгдэл хүрэлцэхгүй\n\n${mvErr.message}\n\n💡 Шийдэл:\n• Эхлээд "Бараа авах хүсэлт" илгээж нөөц нэмнэ үү\n• Эсвэл админ-тай холбогдож үлдэгдэл шалгуулна уу\n\nЗахиалга "Хүргэгдсэн" гэж тэмдэглэгдэхгүй.`);
+                setInsufficientStockMsg(mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй");
                 return;
               }
               debugInfo.push(`   Алдаа: ${mvErr.message}`);
@@ -20682,6 +20683,39 @@ function DriverDashboard({ profile }) {
       )}
 
       {/* Driver picker — Хүргэлт хуваарилах modal */}
+      {/* Үлдэгдэл хүрэлцэхгүй popup */}
+      {insufficientStockMsg && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setInsufficientStockMsg(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 400,
+            boxShadow: "0 24px 48px rgba(239, 68, 68, 0.3)",
+            border: `2px solid ${T.err}`,
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 text-center">
+              <div className="text-5xl mb-3">📭</div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.err }} className="text-base mb-2">
+                Барааны үлдэгдэл хүрэлцэхгүй байна
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                Захиалга "Хүргэгдсэн" гэж тэмдэглэгдсэнгүй
+              </div>
+              <button onClick={() => setInsufficientStockMsg(null)}
+                className="press-btn mt-4 w-full py-3 rounded-xl text-sm font-semibold"
+                style={{ background: T.err, color: "white", fontFamily: FS }}>
+                Ойлголоо
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {assignDriverOrder && createPortal(
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
