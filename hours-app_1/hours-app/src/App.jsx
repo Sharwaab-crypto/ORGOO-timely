@@ -1277,6 +1277,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
               <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
+              <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Ажилтнууд">
@@ -1349,6 +1350,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "warehouses" && "Агуулах"}
                 {view === "transfers" && "Бараа хүсэлт"}
+                {view === "movements" && "Барааны хөдөлгөөн"}
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
@@ -1380,6 +1382,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
                 {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
+                {view === "movements" && "Барааны бүх орлого/зарлагын түүх"}
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
@@ -1584,6 +1587,10 @@ function AdminDashboard({ profile }) {
 
         {view === "stockcount" && (
           <StockCountView profile={profile} />
+        )}
+
+        {view === "movements" && (
+          <MovementsView profile={profile} />
         )}
 
         {view === "callcenter" && (
@@ -4784,6 +4791,409 @@ function WarehousesView({ profile }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MOVEMENTS VIEW — Барааны хөдөлгөөнийг хянах хэсэг (Admin)
+// ═══════════════════════════════════════════════════════════════════════════
+function MovementsView({ profile }) {
+  const [movements, setMovements] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [filterType, setFilterType] = useState("all"); // all | in | out | transfer | adjust
+  const [filterWarehouse, setFilterWarehouse] = useState("all");
+  const [filterProduct, setFilterProduct] = useState("all");
+  const [filterUser, setFilterUser] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [search, setSearch] = useState("");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: mv }, { data: prd }, { data: wh }, { data: prf }, { data: stk }] = await Promise.all([
+        supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
+        supabase.from("inv_warehouses").select("id, name, driver_id"),
+        supabase.from("profiles").select("id, name, role"),
+        supabase.from("inv_stock").select("*"),
+      ]);
+      setMovements(mv || []);
+      setProducts(prd || []);
+      setWarehouses(wh || []);
+      setProfiles(prf || []);
+      setStock(stk || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Map утилит
+  const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+  const whMap = Object.fromEntries(warehouses.map((w) => [w.id, w]));
+  const profileMap = Object.fromEntries(profiles.map((p) => [p.id, p]));
+
+  // Filtering
+  const filtered = movements.filter((m) => {
+    if (filterType !== "all" && m.movement_type !== filterType) return false;
+    if (filterWarehouse !== "all" && m.warehouse_id !== filterWarehouse) return false;
+    if (filterProduct !== "all" && m.product_id !== filterProduct) return false;
+    if (filterUser !== "all" && m.created_by !== filterUser) return false;
+    if (filterDateFrom) {
+      const d = new Date(m.created_at);
+      const f = new Date(filterDateFrom);
+      if (d < f) return false;
+    }
+    if (filterDateTo) {
+      const d = new Date(m.created_at);
+      const t = new Date(filterDateTo);
+      t.setHours(23, 59, 59);
+      if (d > t) return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const p = productMap[m.product_id];
+      const w = whMap[m.warehouse_id];
+      const u = profileMap[m.created_by];
+      const matches =
+        p?.name?.toLowerCase().includes(q) ||
+        p?.sku?.toLowerCase().includes(q) ||
+        w?.name?.toLowerCase().includes(q) ||
+        u?.name?.toLowerCase().includes(q) ||
+        m.notes?.toLowerCase().includes(q) ||
+        m.reason?.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    return true;
+  });
+
+  // Тооцоолол
+  const totalIn = filtered.filter((m) => m.movement_type === "in").reduce((s, m) => s + Number(m.quantity || 0), 0);
+  const totalOut = filtered.filter((m) => m.movement_type === "out").reduce((s, m) => s + Number(m.quantity || 0), 0);
+  const totalTransfer = filtered.filter((m) => m.movement_type === "transfer").reduce((s, m) => s + Number(m.quantity || 0), 0);
+  const totalAdjust = filtered.filter((m) => m.movement_type === "adjust").length;
+
+  // Үлдэгдэл
+  const totalStock = stock.reduce((s, x) => s + Number(x.quantity || 0), 0);
+
+  const typeColor = (t) => ({
+    in: T.ok,
+    out: T.err,
+    transfer: "#8b5cf6",
+    adjust: T.warn,
+  }[t] || T.muted);
+
+  const typeIcon = (t) => ({
+    in: "📥",
+    out: "📤",
+    transfer: "🔄",
+    adjust: "⚖",
+  }[t] || "•");
+
+  const typeLabel = (t) => ({
+    in: "Орлого",
+    out: "Зарлага",
+    transfer: "Шилжүүлэг",
+    adjust: "Тооллого",
+  }[t] || t);
+
+  const formatDate = (s) => {
+    if (!s) return "—";
+    const d = new Date(s);
+    return d.toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" });
+  };
+
+  // Excel-руу экспортлох (CSV)
+  const exportCsv = () => {
+    const rows = [
+      ["Огноо", "Төрөл", "Бараа", "SKU", "Агуулах", "Тоо", "Шалтгаан", "Тэмдэглэл", "Бичсэн ажилтан"],
+      ...filtered.map((m) => {
+        const p = productMap[m.product_id];
+        const w = whMap[m.warehouse_id];
+        const u = profileMap[m.created_by];
+        return [
+          formatDate(m.created_at),
+          typeLabel(m.movement_type),
+          p?.name || "—",
+          p?.sku || "",
+          w?.name || "—",
+          m.quantity,
+          m.reason || "",
+          (m.notes || "").replace(/[\n,]/g, " "),
+          u?.name || "—",
+        ];
+      }),
+    ];
+    const csv = rows.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `movements_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetFilters = () => {
+    setFilterType("all");
+    setFilterWarehouse("all");
+    setFilterProduct("all");
+    setFilterUser("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    setSearch("");
+  };
+
+  if (loading) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center">
+        <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Stats — 5 card */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📥 Орлого</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
+            +{totalIn.toLocaleString()}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Зарлага</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl tabular-nums">
+            −{totalOut.toLocaleString()}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #8b5cf6` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">🔄 Шилжүүлэг</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#8b5cf6" }} className="text-xl tabular-nums">
+            {totalTransfer.toLocaleString()}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">⚖ Тооллого</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+            {totalAdjust}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📦 Нийт үлдэгдэл</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+            {totalStock.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+            🔍 Шүүлтүүр
+            {(filterType !== "all" || filterWarehouse !== "all" || filterProduct !== "all" || filterUser !== "all" || filterDateFrom || filterDateTo || search) && (
+              <span style={{ background: T.highlight, color: "white" }} className="text-[10px] px-2 py-0.5 rounded-full">
+                идэвхтэй
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={resetFilters}
+              className="press-btn text-[11px] px-3 py-1.5 rounded-lg"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+              ✕ Цэвэрлэх
+            </button>
+            <button onClick={exportCsv}
+              className="press-btn text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1"
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
+              📥 CSV экспорт
+            </button>
+          </div>
+        </div>
+
+        {/* Хайлт */}
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔎 Бараа, SKU, агуулах, ажилтан, тэмдэглэл..."
+          className="w-full px-3 py-2 rounded-lg text-sm"
+          style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+          {/* Төрөл */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Төрөл</label>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүгд</option>
+              <option value="in">📥 Орлого</option>
+              <option value="out">📤 Зарлага</option>
+              <option value="transfer">🔄 Шилжүүлэг</option>
+              <option value="adjust">⚖ Тооллого</option>
+            </select>
+          </div>
+
+          {/* Агуулах */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Агуулах</label>
+            <select value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүгд</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Бараа */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Бараа</label>
+            <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүгд</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ""}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ажилтан */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Ажилтан</label>
+            <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүгд</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Огноо — Эхлэх */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Эхлэх огноо</label>
+            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+
+          {/* Огноо — Дуусах */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Дуусах огноо</label>
+            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Жагсаалт */}
+      <div>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+          Хөдөлгөөний түүх ({filtered.length}/{movements.length})
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">📦</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              Хөдөлгөөн алга
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {filtered.slice(0, 500).map((m) => {
+              const p = productMap[m.product_id];
+              const w = whMap[m.warehouse_id];
+              const wTo = whMap[m.to_warehouse_id];
+              const u = profileMap[m.created_by];
+              return (
+                <div key={m.id} className="glass rounded-xl p-3"
+                  style={{ borderLeft: `3px solid ${typeColor(m.movement_type)}` }}>
+                  <div className="flex items-start gap-3">
+                    {p?.image_url ? (
+                      <img src={p.image_url} alt=""
+                        style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                    ) : (
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 8,
+                        background: T.surfaceAlt, display: "flex",
+                        alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      }}>
+                        <Package size={18} style={{ color: T.muted }} />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                          {p?.name || "—"}
+                        </span>
+                        {p?.sku && (
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                            ({p.sku})
+                          </span>
+                        )}
+                        <span style={{ background: typeColor(m.movement_type), color: "white", fontFamily: FS, fontWeight: 700 }}
+                          className="text-[10px] px-2 py-0.5 rounded-full">
+                          {typeIcon(m.movement_type)} {typeLabel(m.movement_type)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
+                        <span>📦 {w?.name || "—"}</span>
+                        {wTo && (
+                          <>
+                            <span>→</span>
+                            <span>{wTo.name}</span>
+                          </>
+                        )}
+                        {u && <span>· 👤 {u.name}</span>}
+                        <span>· {formatDate(m.created_at)}</span>
+                      </div>
+                      {m.reason && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                          🏷 {m.reason}
+                        </div>
+                      )}
+                      {m.notes && (
+                        <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-0.5">
+                          "{m.notes}"
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div style={{
+                        fontFamily: FD, fontWeight: 700,
+                        color: m.movement_type === "out" ? T.err : m.movement_type === "in" ? T.ok : T.ink,
+                      }} className="text-base tabular-nums">
+                        {m.movement_type === "out" ? "−" : m.movement_type === "in" ? "+" : ""}{Number(m.quantity).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {filtered.length > 500 && (
+              <div className="glass rounded-xl p-3 text-center">
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                  Эхний 500 мөр харуулсан. Илүү тодорхой шүүлтүүр хэрэглэнэ үү.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
