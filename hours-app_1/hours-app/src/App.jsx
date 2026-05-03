@@ -20237,33 +20237,6 @@ function DriverDashboard({ profile }) {
     await supabase.auth.signOut();
   };
 
-  // Stock хасахгүйгээр захиалга delivered болгох (нөөц асуудалтай тохиолдолд)
-  const forceDeliveryWithoutStock = async (orderId) => {
-    try {
-      const updates = {
-        status: "delivered",
-        delivered_at: new Date().toISOString(),
-        delivered_by: profile.id,
-        notes: "[НӨӨЦ ШАЛГАХГҮЙ ХҮРГЭГДСЭН — админ шалгах]",
-      };
-      const { error, data } = await supabase
-        .from("biz_orders")
-        .update(updates)
-        .eq("id", orderId)
-        .select();
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        alert("⚠ Захиалга шинэчлэх боломжгүй байна");
-        return;
-      }
-      setInsufficientStockOrder(null);
-      alert("✅ Захиалга delivered болов\n\nАдмин барааны үлдэгдлийг шалгана");
-      await loadAll();
-    } catch (e) {
-      alert("Алдаа: " + (e.message || JSON.stringify(e)));
-    }
-  };
-
   const updateStatus = async (orderId, newStatus) => {
     const updates = { status: newStatus };
     if (newStatus === "delivered") {
@@ -20805,7 +20778,7 @@ function DriverDashboard({ profile }) {
         }}
           onClick={() => setInsufficientStockOrder(null)}>
           <div style={{
-            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 420,
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 400,
             boxShadow: "0 24px 48px rgba(239, 68, 68, 0.3)",
             border: `2px solid ${T.err}`,
           }}
@@ -20815,21 +20788,14 @@ function DriverDashboard({ profile }) {
               <div style={{ fontFamily: FS, fontWeight: 700, color: T.err }} className="text-base mb-2">
                 Барааны үлдэгдэл хүрэлцэхгүй байна
               </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mb-4">
-                Танай агуулахад нөөц 0 байна. Гэхдээ та бараа гарт байгаа бол доорх товчоор хүргэгдсэн гэж тэмдэглэх боломжтой. Админ дараа нь нөөцийг шалгана.
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                Захиалга "Хүргэгдсэн" гэж тэмдэглэгдсэнгүй
               </div>
-              <div className="space-y-2">
-                <button onClick={() => forceDeliveryWithoutStock(insufficientStockOrder.orderId)}
-                  className="press-btn w-full py-3 rounded-xl text-sm font-semibold"
-                  style={{ background: T.warn, color: "white", fontFamily: FS }}>
-                  ⚠ Хүргэгдсэн гэж тэмдэглэх
-                </button>
-                <button onClick={() => setInsufficientStockOrder(null)}
-                  className="press-btn w-full py-2.5 rounded-xl text-xs"
-                  style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, border: `1px solid ${T.border}` }}>
-                  Цуцлах
-                </button>
-              </div>
+              <button onClick={() => setInsufficientStockOrder(null)}
+                className="press-btn mt-4 w-full py-3 rounded-xl text-sm font-semibold"
+                style={{ background: T.err, color: "white", fontFamily: FS }}>
+                Ойлголоо
+              </button>
             </div>
           </div>
         </div>,
