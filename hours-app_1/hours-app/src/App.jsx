@@ -11991,14 +11991,27 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
-  
+  const initialFitDoneRef = useRef(false);
+  const onOrderClickRef = useRef(onOrderClick);
+
+  // onOrderClick callback-ийг ref-д хадгалж effect дахин ажиллахаас сэргийлэх
+  useEffect(() => { onOrderClickRef.current = onOrderClick; }, [onOrderClick]);
+
   // Зөвхөн lat/lng-тай захиалгуудыг авах
-  const ordersWithCoords = orders.filter((o) => 
+  const ordersWithCoords = orders.filter((o) =>
     o.delivery_lat && o.delivery_lng &&
     !isNaN(Number(o.delivery_lat)) && !isNaN(Number(o.delivery_lng))
   );
   const noCoordsCount = orders.length - ordersWithCoords.length;
 
+  // Хэш үүсгэх — өгөгдөл бодитоор өөрчлөгдсөн эсэхийг илрүүлэх
+  const ordersHash = ordersWithCoords
+    .map((o) => `${o.id}:${o.status}:${o.delivery_lat}:${o.delivery_lng}:${o.driver_id || ""}:${o.customer_name || ""}:${o.total_amount || 0}`)
+    .sort()
+    .join("|");
+  const driversHash = drivers.map((d) => `${d.id}:${d.name}`).sort().join("|");
+
+  // Map-ыг ганцхан удаа init
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -12012,17 +12025,34 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         document.head.appendChild(link);
       }
 
-      if (cancelled || !containerRef.current) return;
+      if (cancelled || !containerRef.current || mapRef.current) return;
 
-      // Map үүсгэх (хэрэв байхгүй бол)
-      if (!mapRef.current) {
-        const map = L.map(containerRef.current).setView([47.918873, 106.917701], 12);
-        mapRef.current = map;
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OSM",
-          maxZoom: 19,
-        }).addTo(map);
+      const map = L.map(containerRef.current).setView([47.918873, 106.917701], 12);
+      mapRef.current = map;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OSM",
+        maxZoom: 19,
+      }).addTo(map);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markersRef.current = [];
+        initialFitDoneRef.current = false;
       }
+    };
+  }, []); // ⭐ Зөвхөн mount үед
+
+  // Marker-ыг өгөгдөл өөрчлөгдөхөд дахин үүсгэх
+  useEffect(() => {
+    if (!mapRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !mapRef.current) return;
 
       const map = mapRef.current;
 
@@ -12037,12 +12067,12 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         const lng = Number(o.delivery_lng);
 
         // Status-аас өнгө
-        const color = 
+        const color =
           o.status === "delivered" ? "#10b981" :
           o.status === "cancelled" ? "#ef4444" :
           o.status === "pending" ? "#f59e0b" : "#3b82f6";
-        
-        const statusEmoji = 
+
+        const statusEmoji =
           o.status === "delivered" ? "✓" :
           o.status === "cancelled" ? "✕" :
           o.status === "pending" ? "⏳" : "🆕";
@@ -12079,7 +12109,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
           setTimeout(() => {
             const btn = document.querySelector(`.map-detail-btn[data-order-id="${o.id}"]`);
             if (btn) {
-              btn.onclick = () => onOrderClick(o);
+              btn.onclick = () => onOrderClickRef.current(o);
             }
           }, 50);
         });
@@ -12088,27 +12118,17 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         bounds.push([lat, lng]);
       });
 
-      // Бүх pin-ийг харагдахаар zoom хийх
-      if (bounds.length > 0) {
+      // ⭐ ЭХНИЙ удаа л zoom хийх (давтан хийхгүй)
+      if (!initialFitDoneRef.current && bounds.length > 0) {
         try {
           map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+          initialFitDoneRef.current = true;
         } catch (e) { /* ignore */ }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [orders, drivers]);
-
-  // Map cleanup при unmount
-  useEffect(() => {
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markersRef.current = [];
-      }
-    };
-  }, []);
+  }, [ordersHash, driversHash]); // ⭐ Хэш ашиглаж жинхэнэ өөрчлөлтөнд reaгать болно
 
   return (
     <div className="space-y-2">
