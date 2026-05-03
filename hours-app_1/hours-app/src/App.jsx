@@ -246,6 +246,129 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
 
+  // ─── Mobile UX системт сайжруулалт CSS ──────────────────────────
+  useEffect(() => {
+    const styleId = "orgoo-mobile-improvements";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      /* Бүх touch товч багадаа 44px (iOS Apple HIG) */
+      @media (max-width: 768px) {
+        button, a[href], [role="button"], input[type="checkbox"], input[type="radio"] {
+          min-height: 44px;
+          touch-action: manipulation;
+        }
+        button.press-btn[class*="p-1 "],
+        button.press-btn[class*="p-1.5"],
+        button[class*="w-7"], button[class*="h-7"],
+        button[class*="w-8"], button[class*="h-8"] {
+          min-height: 36px;
+          min-width: 36px;
+        }
+        /* Жижиг icon товч (X хаах гэх мэт) — 36px-аас бага байж болохгүй */
+        button[aria-label], button[title] {
+          padding: 6px;
+        }
+
+        /* Жижиг текст уншигдахуйц болгох */
+        .text-\\[8px\\] { font-size: 10px !important; }
+        .text-\\[9px\\] { font-size: 10px !important; }
+        .text-\\[10px\\] { font-size: 11px !important; }
+        .text-\\[11px\\] { font-size: 12px !important; }
+        
+        /* Input талбар жижиг харагдахаас сэргийлэх */
+        input, select, textarea {
+          font-size: 16px !important; /* iOS auto-zoom-аас сэргийлэх */
+          min-height: 44px;
+        }
+        textarea {
+          min-height: 80px;
+        }
+
+        /* Modal-ууд бүтэн дэлгэц дээр */
+        .modal-content, [class*="max-w-md"], [class*="max-w-sm"] {
+          margin: 8px !important;
+        }
+
+        /* Glass card padding нэмэх — touchable */
+        .glass {
+          padding: 12px !important;
+        }
+        .glass.rounded-xl,
+        .glass.rounded-2xl {
+          padding: 12px !important;
+        }
+        /* Жижиг карт хадгалах */
+        .glass.p-2,
+        .glass[class*="p-1"] {
+          padding: 10px !important;
+        }
+
+        /* Grid-уудыг 1-2 column болгох */
+        .grid.grid-cols-3:not([class*="md:grid"]):not([class*="sm:grid"]) {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+        .grid.grid-cols-4:not([class*="md:grid"]):not([class*="sm:grid"]) {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+        .grid.grid-cols-5:not([class*="md:grid"]):not([class*="sm:grid"]) {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+        .grid.grid-cols-6:not([class*="md:grid"]):not([class*="sm:grid"]) {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        /* Spacing нэмэх (touch-friendly) */
+        .gap-1 { gap: 0.375rem !important; }
+        .gap-1\\.5 { gap: 0.5rem !important; }
+
+        /* Sidebar өргөн */
+        aside, nav[class*="sidebar"] {
+          width: min(85vw, 320px) !important;
+        }
+      }
+
+      /* Бүх дэлгэцэнд: scrollbar арилгах эсвэл нарийхан */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(0,0,0,0.15);
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(0,0,0,0.3);
+      }
+
+      /* Тач товч pressed feedback */
+      .press-btn:active {
+        transform: scale(0.97);
+        transition: transform 0.1s;
+      }
+
+      /* Хэвтээ overflow асуудлыг сэргийлэх */
+      body, #root {
+        overflow-x: hidden;
+      }
+
+      /* Mobile sticky header */
+      @media (max-width: 768px) {
+        header.sticky, [class*="sticky top-0"] {
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          background: rgba(255, 255, 255, 0.92);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      const existing = document.getElementById(styleId);
+      if (existing) existing.remove();
+    };
+  }, []);
+
   // PWA install prompt detection
   useEffect(() => {
     const handler = (e) => {
@@ -12837,12 +12960,17 @@ function OrdersView({ profile }) {
   const [mapOrder, setMapOrder] = useState(null);
   const [assignDriverOrder, setAssignDriverOrder] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // list | map
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
+
+  // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
+  useEffect(() => { setPage(1); }, [filter, driverFilter, search]);
 
   const loadAll = async () => {
     setLoading(true);
     try {
       const [{ data: ordData }, { data: prodData }, { data: drvData }] = await Promise.all([
-        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(200),
+        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(2000),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
@@ -13201,10 +13329,18 @@ function OrdersView({ profile }) {
             Захиалга байхгүй байна
           </div>
         </div>
-      ) : (
+      ) : (() => {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        const safePage = Math.min(page, totalPages);
+        const pagedOrders = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+        return (
+        <>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+          {filtered.length} захиалга · {safePage}/{totalPages} хуудас
+        </div>
         <div className="space-y-2">
-          {filtered.map((o, idx) => (
-            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+          {pagedOrders.map((o, idx) => (
+            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={(safePage - 1) * PAGE_SIZE + idx}
               drivers={drivers}
               onClick={() => setActiveOrder(o)}
               onMap={() => setMapOrder(o)}
@@ -13223,7 +13359,71 @@ function OrdersView({ profile }) {
             />
           ))}
         </div>
-      )}
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="glass rounded-2xl p-3 flex items-center justify-center gap-1 flex-wrap mt-3">
+            <button onClick={() => setPage(Math.max(1, safePage - 1))}
+              disabled={safePage === 1}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs"
+              style={{
+                background: safePage === 1 ? T.surfaceAlt : T.surface,
+                color: safePage === 1 ? T.muted : T.ink,
+                border: `1px solid ${T.border}`,
+                fontFamily: FS, fontWeight: 600,
+                opacity: safePage === 1 ? 0.5 : 1,
+              }}>
+              ← Өмнөх
+            </button>
+            {(() => {
+              const pages = [];
+              const showAround = 1;
+              const from = Math.max(1, safePage - showAround);
+              const to = Math.min(totalPages, safePage + showAround);
+              if (from > 1) {
+                pages.push(1);
+                if (from > 2) pages.push("...");
+              }
+              for (let i = from; i <= to; i++) pages.push(i);
+              if (to < totalPages) {
+                if (to < totalPages - 1) pages.push("...");
+                pages.push(totalPages);
+              }
+              return pages.map((pgN, i) =>
+                pgN === "..." ? (
+                  <span key={"d-" + i} style={{ color: T.muted, fontFamily: FM }} className="px-2 text-xs">⋯</span>
+                ) : (
+                  <button key={pgN} onClick={() => setPage(pgN)}
+                    className="press-btn rounded-lg text-xs"
+                    style={{
+                      background: safePage === pgN ? T.highlight : T.surface,
+                      color: safePage === pgN ? "white" : T.ink,
+                      border: `1px solid ${safePage === pgN ? T.highlight : T.border}`,
+                      fontFamily: FS, fontWeight: 700,
+                      minWidth: 32, height: 32,
+                    }}>
+                    {pgN}
+                  </button>
+                )
+              );
+            })()}
+            <button onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+              disabled={safePage === totalPages}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs"
+              style={{
+                background: safePage === totalPages ? T.surfaceAlt : T.surface,
+                color: safePage === totalPages ? T.muted : T.ink,
+                border: `1px solid ${T.border}`,
+                fontFamily: FS, fontWeight: 600,
+                opacity: safePage === totalPages ? 0.5 : 1,
+              }}>
+              Дараах →
+            </button>
+          </div>
+        )}
+        </>
+        );
+      })()}
 
       {/* Edit modal — CallReceiveModal-тай ижил */}
       {editOrder && (
