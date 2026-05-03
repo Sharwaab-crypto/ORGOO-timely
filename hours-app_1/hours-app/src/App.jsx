@@ -7058,7 +7058,7 @@ function CallCenterView({ profile }) {
       const stocks = (stk || []).map((s) => ({
         warehouse: whMap[s.warehouse_id],
         qty: Number(s.quantity || 0),
-      })).filter((x) => x.warehouse);
+      })).filter((x) => x.warehouse && x.qty > 0);
       stocks.sort((a, b) => b.qty - a.qty);
       setStockPopup({ product: productInfo?.product || product, stocks });
     } catch (e) { alert("Алдаа: " + e.message); }
@@ -8415,7 +8415,7 @@ function CallCenterView({ profile }) {
                 <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
                   <div className="text-3xl mb-2">📭</div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-                    Бараа аль ч агуулахад алга
+                    Үлдэгдэлтэй агуулах алга
                   </div>
                 </div>
               ) : (
@@ -8431,7 +8431,7 @@ function CallCenterView({ profile }) {
                     </div>
                   </div>
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                    Агуулах тус бүрд ({stockPopup.stocks.length})
+                    Үлдэгдэлтэй агуулахууд ({stockPopup.stocks.length})
                   </div>
                   <div className="space-y-1.5">
                     {stockPopup.stocks.map((s, idx) => {
@@ -13172,7 +13172,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       const stocks = (stk || []).map((s) => ({
         warehouse: whMap[s.warehouse_id],
         qty: Number(s.quantity || 0),
-      })).filter((x) => x.warehouse);
+      })).filter((x) => x.warehouse && x.qty > 0);
       // Sort: ихээс бага руу
       stocks.sort((a, b) => b.qty - a.qty);
       setStockPopup({ product: productInfo?.product || { name: item.product_name }, stocks });
@@ -13670,7 +13670,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
                 <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
                   <div className="text-3xl mb-2">📭</div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-                    Бараа аль ч агуулахад алга
+                    Үлдэгдэлтэй агуулах алга
                   </div>
                 </div>
               ) : (
@@ -13689,7 +13689,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
 
                   {/* Per warehouse */}
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                    Агуулах тус бүрд ({stockPopup.stocks.length})
+                    Үлдэгдэлтэй агуулахууд ({stockPopup.stocks.length})
                   </div>
                   <div className="space-y-1.5">
                     {stockPopup.stocks.map((s, idx) => {
