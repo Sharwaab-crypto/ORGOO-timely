@@ -304,11 +304,6 @@ export default function App() {
         background: rgba(0,0,0,0.3);
       }
 
-      /* Хэвтээ overflow асуудлыг сэргийлэх */
-      body, #root {
-        overflow-x: hidden;
-      }
-
       /* Leaflet map fix — давхар padding оруулахаас сэргийлэх */
       .leaflet-container {
         height: 100% !important;
@@ -9994,9 +9989,12 @@ function DriverSettlementView({ profile }) {
 
   // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
+    const now = new Date();
+    const farPast = new Date(2020, 0, 1);   // 2020-01-01
+    const farFuture = new Date(2099, 11, 31); // 2099-12-31 (PostgreSQL хүлээн авах хязгаар)
     return { 
-      start: new Date(0), 
-      end: new Date(8640000000000000), 
+      start: farPast, 
+      end: farFuture, 
       label: "Бүгд" 
     };
   }, []);
