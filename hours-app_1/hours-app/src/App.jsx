@@ -8204,7 +8204,7 @@ function CallCenterView({ profile }) {
                     )}
 
                     {/* 2 column: Дуудлагын түүх + Сонирхсон бараа */}
-                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-3">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,400px)] gap-3">
                       {/* ЗҮҮН: Дуудлагын түүх */}
                       <div>
                         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
@@ -8285,22 +8285,22 @@ function CallCenterView({ profile }) {
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-1.5">
-                            {allProducts.slice(0, 2).map((p) => (
-                              <div key={p.id} className="rounded-lg overflow-hidden"
-                                style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                                <div className="flex items-center gap-1 p-1.5"
+                          <div className="flex gap-1.5 overflow-x-auto pb-1"
+                            style={{ scrollbarWidth: "thin" }}>
+                            {allProducts.map((p) => (
+                              <div key={p.id} className="rounded-lg overflow-hidden flex-shrink-0"
+                                style={{ background: T.surface, border: `1px solid ${T.border}`, width: 130 }}>
+                                <div className="flex items-center gap-1 p-1"
                                   style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
                                   {p.sku && (
                                     <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}
-                                      className="text-[9px] px-1.5 py-0.5 rounded">
+                                      className="text-[8px] px-1 py-0.5 rounded">
                                       {p.sku}
                                     </span>
                                   )}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      // Энэ барааны тэмдэглэлүүдийг бүх дуудлагаас цуглуулах
                                       const productCalls = calls
                                         .filter((c) => c.interested_products && Array.isArray(c.interested_products)
                                           && c.interested_products.some((ip) => ip.id === p.id))
@@ -8314,13 +8314,13 @@ function CallCenterView({ profile }) {
                                         }));
                                       setProductNotePopup({ product: p, calls: productCalls, customer });
                                     }}
-                                    className="press-btn flex items-center gap-1"
-                                    style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600, padding: "2px 6px", borderRadius: 4 }}
-                                    title="Тайлбар харах">
-                                    <span className="text-[9px]">💬 Тайлбар</span>
+                                    className="press-btn flex items-center"
+                                    style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600, padding: "1px 4px", borderRadius: 3 }}
+                                    title="Тайлбар">
+                                    <span className="text-[8px]">💬</span>
                                   </button>
                                 </div>
-                                <div style={{ width: "100%", aspectRatio: "4/3", background: T.surfaceAlt }}>
+                                <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
                                   {p.image_url ? (
                                     <img src={p.image_url} alt={p.name}
                                       style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -8328,22 +8328,23 @@ function CallCenterView({ profile }) {
                                     <div style={{
                                       width: "100%", height: "100%",
                                       display: "flex", alignItems: "center", justifyContent: "center",
-                                      fontSize: 32,
+                                      fontSize: 24,
                                     }}>📦</div>
                                   )}
                                 </div>
-                                <div className="p-2">
+                                <div className="p-1.5">
                                   <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                                    className="text-[11px] line-clamp-2 mb-1">
+                                    className="text-[10px] line-clamp-2 mb-0.5"
+                                    style={{ minHeight: 24 }}>
                                     {p.name}
                                   </div>
-                                  <div className="flex items-center justify-between">
-                                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xs tabular-nums">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-[10px] tabular-nums truncate">
                                       {p.price ? Number(p.price).toLocaleString() + "₮" : ""}
                                     </span>
                                     {p.totalQty > 0 && (
                                       <span style={{ background: T.ok, color: "white", fontFamily: FD, fontWeight: 700 }}
-                                        className="text-[10px] px-1.5 py-0.5 rounded-full">
+                                        className="text-[9px] px-1 py-0.5 rounded-full flex-shrink-0">
                                         {p.totalQty}
                                       </span>
                                     )}
@@ -8351,11 +8352,6 @@ function CallCenterView({ profile }) {
                                 </div>
                               </div>
                             ))}
-                            {allProducts.length > 2 && (
-                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic text-center">
-                                + {allProducts.length - 2} илүү бараа
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
