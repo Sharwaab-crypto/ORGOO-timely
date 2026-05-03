@@ -13871,8 +13871,13 @@ function OrderDetailMap({ order }) {
         setSavedMessage("");
       });
 
-      // Forced re-size for hidden parents
-      setTimeout(() => map.invalidateSize(), 100);
+      // Forced re-size — modal-ын дотор олон удаа дуудах
+      const sizes = [50, 200, 500];
+      sizes.forEach((delay) => {
+        setTimeout(() => {
+          if (mapRef.current) mapRef.current.invalidateSize();
+        }, delay);
+      });
     })();
 
     return () => {
@@ -13916,9 +13921,11 @@ function OrderDetailMap({ order }) {
         style={{
           width: "100%",
           height: 300,
+          minHeight: 280,
           borderRadius: 12,
           overflow: "hidden",
           border: `1px solid ${T.border}`,
+          background: T.surfaceAlt,
         }} />
 
       <div className="mt-2 flex items-center gap-2">
