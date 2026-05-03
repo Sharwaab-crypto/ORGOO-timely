@@ -12955,6 +12955,19 @@ function OrdersView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+
+  // Realtime subscription — захиалга өөрчлөгдсөнийг шууд харах
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_orders" },
+        () => { loadAll(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
   // Filter
   let filtered = orders;
   if (filter !== "all") {
@@ -20067,6 +20080,29 @@ function DriverDashboard({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // Realtime subscription — шинэ захиалга, status өөрчлөлтийг шууд харах
+  useEffect(() => {
+    const channel = supabase
+      .channel("driver-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_orders" },
+        (payload) => {
+          const o = payload.new || payload.old;
+          if (!o) return;
+          const isMyOrder = o.driver_id === profile.id;
+          const isUnassignedNew = !o.driver_id && o.status === "new";
+          const wasMyOrder = payload.old?.driver_id === profile.id;
+          if (isMyOrder || isUnassignedNew || wasMyOrder) {
+            loadAll();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [profile.id]);
 
   const handleLogout = async () => {
     if (!confirm("Гарах уу?")) return;
