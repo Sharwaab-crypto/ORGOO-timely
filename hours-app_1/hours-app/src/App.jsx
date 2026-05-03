@@ -8202,7 +8202,16 @@ function CallCenterView({ profile }) {
                         <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
                           📋 ДУУДЛАГЫН ТҮҮХ ({calls.length})
                         </div>
-                        <div className="space-y-2">
+                        {calls.length === 0 ? (
+                          <div className="rounded-lg p-4 text-center" 
+                            style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
+                            <div className="text-2xl mb-1 opacity-50">📞</div>
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                              Хараахан дуудлагдаагүй
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
                           {calls.slice(0, 6).map((c) => {
                             const operator = profiles.find((p) => p.id === c.created_by);
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
@@ -8251,6 +8260,7 @@ function CallCenterView({ profile }) {
                             </div>
                           )}
                         </div>
+                        )}
                       </div>
 
                       {/* БАРУУН: Сонирхсон бараа */}
@@ -8259,8 +8269,12 @@ function CallCenterView({ profile }) {
                           🛒 СОНИРХСОН БАРАА ({allProducts.length})
                         </div>
                         {allProducts.length === 0 ? (
-                          <div style={{ color: T.mutedSoft, fontFamily: FS }} className="text-xs text-center py-4">
-                            Хоосон
+                          <div className="rounded-lg p-4 text-center" 
+                            style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
+                            <div className="text-2xl mb-1 opacity-50">🛍</div>
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                              Бараа сонирхоогүй
+                            </div>
                           </div>
                         ) : (
                           <div className="space-y-2">
