@@ -4844,6 +4844,14 @@ function WarehousesView({ profile }) {
   const [drivers, setDrivers] = useState([]);
   const [activeWarehouse, setActiveWarehouse] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showActionModal, setShowActionModal] = useState(null); // 'receive' | 'transfer' | null
+  const [actionWarehouse, setActionWarehouse] = useState(null); // сонгосон агуулах
+  const [actionToWarehouse, setActionToWarehouse] = useState(null); // transfer-руу: дамжих агуулах
+  const [actionProduct, setActionProduct] = useState(null);
+  const [actionQty, setActionQty] = useState("1");
+  const [actionNote, setActionNote] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
 
   const loadAll = async () => {
     setLoading(true);
@@ -4993,8 +5001,126 @@ function WarehousesView({ profile }) {
     );
   }
 
+  // Бараа авах / өгөх логик
+  const handleAction = async () => {
+    if (!actionWarehouse || !actionProduct) {
+      alert("⚠ Агуулах ба бараа сонгоно уу");
+      return;
+    }
+    const qty = Number(actionQty) || 0;
+    if (qty <= 0) {
+      alert("⚠ Тоо хэмжээ сөрөг буюу 0 байж болохгүй");
+      return;
+    }
+    if (showActionModal === "transfer" && !actionToWarehouse) {
+      alert("⚠ Хүлээн авах агуулахыг сонгоно уу");
+      return;
+    }
+    if (showActionModal === "transfer" && actionWarehouse === actionToWarehouse) {
+      alert("⚠ Эх + хүлээн авах агуулах ижил байж болохгүй");
+      return;
+    }
+    
+    setActionBusy(true);
+    try {
+      if (showActionModal === "receive") {
+        const { error } = await supabase.from("inv_movements").insert({
+          product_id: actionProduct.id,
+          warehouse_id: actionWarehouse,
+          movement_type: "in",
+          quantity: qty,
+          reason: "manual_receive",
+          notes: actionNote.trim() || null,
+          created_by: profile.id,
+        });
+        if (error) throw error;
+        alert(`✅ Орлого амжилттай!\n\n${actionProduct.name}: +${qty}ш`);
+      } else if (showActionModal === "transfer") {
+        const { error } = await supabase.from("inv_movements").insert({
+          product_id: actionProduct.id,
+          warehouse_id: actionWarehouse,
+          to_warehouse_id: actionToWarehouse,
+          movement_type: "transfer",
+          quantity: qty,
+          reason: "manual_transfer",
+          notes: actionNote.trim() || null,
+          created_by: profile.id,
+        });
+        if (error) throw error;
+        alert(`✅ Шилжүүлэг амжилттай!\n\n${actionProduct.name}: ${qty}ш`);
+      }
+      
+      setShowActionModal(null);
+      setActionWarehouse(null);
+      setActionToWarehouse(null);
+      setActionProduct(null);
+      setActionQty("1");
+      setActionNote("");
+      setProductSearch("");
+      await loadAll();
+    } catch (e) {
+      if (e.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
+        alert("⚠ Барааны үлдэгдэл хүрэлцэхгүй байна");
+      } else {
+        alert("Алдаа: " + e.message);
+      }
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
+      {/* Action товчнууд */}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => {
+          setShowActionModal("receive");
+          setActionWarehouse(null);
+          setActionProduct(null);
+          setActionQty("1");
+          setActionNote("");
+        }}
+          className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
+          style={{ borderLeft: `3px solid ${T.ok}` }}>
+          <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-lg">
+            📥
+          </div>
+          <div className="text-left">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+              Бараа авах
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              Агуулахад нөөц нэмэх
+            </div>
+          </div>
+        </button>
+        <button onClick={() => {
+          setShowActionModal("transfer");
+          setActionWarehouse(null);
+          setActionToWarehouse(null);
+          setActionProduct(null);
+          setActionQty("1");
+          setActionNote("");
+        }}
+          className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
+          style={{ borderLeft: `3px solid #9333ea` }}>
+          <div style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea" }}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-lg">
+            🔄
+          </div>
+          <div className="text-left">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+              Бараа өгөх
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              Агуулахаас агуулахад
+            </div>
+          </div>
+        </button>
+      </div>
+      
+      {/* Original list ↓ */}
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center">
           <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
@@ -5055,6 +5181,209 @@ function WarehousesView({ profile }) {
             );
           })}
         </div>
+      )}
+
+      {/* Бараа авах / өгөх Modal */}
+      {showActionModal && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+          display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          overflowY: "auto",
+        }}
+          onClick={() => !actionBusy && setShowActionModal(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+            marginTop: 12, marginBottom: 12,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            maxHeight: "90vh", overflowY: "auto",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                  <span>{showActionModal === "receive" ? "📥" : "🔄"}</span>
+                  <span>{showActionModal === "receive" ? "Бараа авах" : "Бараа өгөх"}</span>
+                </div>
+                <button onClick={() => setShowActionModal(null)} style={{ color: T.muted }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  {showActionModal === "receive" ? "📥 Орлого авах агуулах" : "📤 Хаанаас өгөх (эх агуулах)"}
+                </label>
+                <select value={actionWarehouse || ""}
+                  onChange={(e) => setActionWarehouse(e.target.value)}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2.5 rounded-lg text-sm">
+                  <option value="">— Сонгох —</option>
+                  {warehouses.map((w) => {
+                    const dr = drivers.find((d) => d.id === w.driver_id);
+                    return (
+                      <option key={w.id} value={w.id}>
+                        {w.type === "main" ? "🏬" : "🚚"} {w.name}
+                        {dr ? ` (${dr.name})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {showActionModal === "transfer" && (
+                <div className="mb-3">
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    📥 Хаашаа өгөх (хүлээн авах агуулах)
+                  </label>
+                  <select value={actionToWarehouse || ""}
+                    onChange={(e) => setActionToWarehouse(e.target.value)}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="w-full px-3 py-2.5 rounded-lg text-sm">
+                    <option value="">— Сонгох —</option>
+                    {warehouses
+                      .filter((w) => w.id !== actionWarehouse)
+                      .map((w) => {
+                        const dr = drivers.find((d) => d.id === w.driver_id);
+                        return (
+                          <option key={w.id} value={w.id}>
+                            {w.type === "main" ? "🏬" : "🚚"} {w.name}
+                            {dr ? ` (${dr.name})` : ""}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
+
+              <div className="mb-3">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  📦 Бараа
+                </label>
+                {actionProduct ? (
+                  <div className="rounded-lg p-2 flex items-center gap-2"
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                    {actionProduct.image_url && (
+                      <img src={actionProduct.image_url} alt=""
+                        className="w-10 h-10 rounded object-cover flex-shrink-0"
+                        onError={(e) => { e.target.style.display = "none"; }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                        {actionProduct.name}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                        {actionProduct.sku}
+                      </div>
+                    </div>
+                    <button onClick={() => setActionProduct(null)}
+                      className="press-btn p-1.5 rounded text-xs"
+                      style={{ background: T.errSoft, color: T.err }}>
+                      ✕ Сольх
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input type="text" value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="🔍 Бараа хайх..."
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
+                    <div className="space-y-1 max-h-60 overflow-y-auto">
+                      {products
+                        .filter((p) => !productSearch.trim() ||
+                          p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                          p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+                        )
+                        .slice(0, 30)
+                        .map((p) => {
+                          const stk = actionWarehouse 
+                            ? stock.find((s) => s.product_id === p.id && s.warehouse_id === actionWarehouse)
+                            : null;
+                          return (
+                            <button key={p.id}
+                              onClick={() => { setActionProduct(p); setProductSearch(""); }}
+                              className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
+                              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                              {p.image_url && (
+                                <img src={p.image_url} alt=""
+                                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                                  onError={(e) => { e.target.style.display = "none"; }} />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                                  {p.name}
+                                </div>
+                                <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                                  {p.sku}
+                                </div>
+                              </div>
+                              {stk && (
+                                <span style={{ 
+                                  background: Number(stk.quantity) > 0 ? "rgba(16,185,129,0.1)" : T.errSoft, 
+                                  color: Number(stk.quantity) > 0 ? T.ok : T.err,
+                                  fontFamily: FD, fontWeight: 600 
+                                }}
+                                  className="text-[10px] px-1.5 py-0.5 rounded">
+                                  {Number(stk.quantity)}ш
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  🔢 Тоо хэмжээ
+                </label>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setActionQty(String(Math.max(1, Number(actionQty) - 1)))}
+                    className="press-btn w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
+                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}>−</button>
+                  <input type="number" value={actionQty}
+                    onChange={(e) => setActionQty(e.target.value)}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                    className="flex-1 px-3 py-2.5 rounded-lg text-base text-center tabular-nums" />
+                  <button onClick={() => setActionQty(String(Number(actionQty) + 1))}
+                    className="press-btn w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
+                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}>+</button>
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  📝 Тэмдэглэл (заавал биш)
+                </label>
+                <input type="text" value={actionNote}
+                  onChange={(e) => setActionNote(e.target.value)}
+                  placeholder="Жнь: ханган нийлүүлэгчээс..."
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-3" style={{ borderTop: `1px solid ${T.border}` }}>
+                <button onClick={() => setShowActionModal(null)} disabled={actionBusy}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                  Цуцлах
+                </button>
+                <button onClick={handleAction} disabled={actionBusy}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ 
+                    background: showActionModal === "receive" ? T.ok : "#9333ea", 
+                    color: "white", fontFamily: FS, fontWeight: 700,
+                  }}>
+                  {actionBusy ? "Хадгалж байна..." : `💾 ${showActionModal === "receive" ? "Авах" : "Шилжүүлэх"}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
