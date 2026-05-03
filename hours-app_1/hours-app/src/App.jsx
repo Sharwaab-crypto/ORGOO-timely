@@ -5309,7 +5309,14 @@ function TransferRequestsView({ profile }) {
       alert("✅ Зөвшөөрөгдлөө!");
       setActiveReq(null);
       await loadAll();
-    } catch (e) { alert("Алдаа: " + e.message); }
+    } catch (e) {
+      const isShortStock = e.message?.includes("үлдэгдэл хүрэлцэхгүй");
+      if (isShortStock) {
+        alert(`⚠ Барааны үлдэгдэл хүрэлцэхгүй\n\n${e.message}\n\n💡 Шийдэл:\n• Хүсэлтийн тоог багасгана уу\n• Эсвэл агуулахад нөөц нэмж оруулна уу`);
+      } else {
+        alert("Алдаа: " + e.message);
+      }
+    }
   };
 
   const rejectRequest = async (req) => {
@@ -6009,7 +6016,12 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       alert(`✅ Тооллого амжилттай дууслаа.\n\nБараа бүрийн нөөц шинэчлэгдсэн.`);
       onClose();
     } catch (e) {
-      alert("Алдаа: " + e.message);
+      const isShortStock = e.message?.includes("үлдэгдэл хүрэлцэхгүй");
+      if (isShortStock) {
+        alert(`⚠ Барааны үлдэгдэл хүрэлцэхгүй\n\n${e.message}`);
+      } else {
+        alert("Алдаа: " + e.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -19702,6 +19714,11 @@ function DriverDashboard({ profile }) {
 
             debugInfo.push(`4️⃣ Хөдөлгөөн бичсэн: ${mvData?.length || 0}ш`);
             if (mvErr) {
+              const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
+              if (isShortStock) {
+                alert(`⚠ Барааны үлдэгдэл хүрэлцэхгүй\n\n${mvErr.message}\n\n💡 Шийдэл:\n• Эхлээд "Бараа авах хүсэлт" илгээж нөөц нэмнэ үү\n• Эсвэл админ-тай холбогдож үлдэгдэл шалгуулна уу\n\nЗахиалга "Хүргэгдсэн" гэж тэмдэглэгдэхгүй.`);
+                return;
+              }
               debugInfo.push(`   Алдаа: ${mvErr.message}`);
               alert(`⚠ Барааны хөдөлгөөн бичигдсэнгүй\n\n${debugInfo.join("\n")}\n\n💡 Шийдэл: SQL editor-д "driver-stock-rls-fix.sql" ажиллуул.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
               if (!confirm("Үргэлжлүүлэх үү?")) return;
