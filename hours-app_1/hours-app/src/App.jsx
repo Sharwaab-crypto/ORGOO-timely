@@ -18365,8 +18365,18 @@ function DriverDashboard({ profile }) {
                   background: !hasPin ? "rgba(239,68,68,0.04)" : undefined,
                 }}>
                 {!hasPin && (
-                  <div style={{ color: T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px] mb-1.5 flex items-center gap-1">
-                    📍 Pin байрлуулаагүй
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div style={{ color: T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px] flex items-center gap-1">
+                      📍 Pin байрлуулаагүй
+                    </div>
+                    <button onClick={() => setActiveOrder(o)}
+                      className="press-btn px-2.5 py-1 rounded-full flex items-center gap-1 text-[10px] flex-shrink-0"
+                      style={{
+                        background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                        color: "white", fontFamily: FS, fontWeight: 700,
+                      }}>
+                      <MapPin size={11} /> Pin зоох
+                    </button>
                   </div>
                 )}
                 <div className="flex items-start gap-2">
@@ -18408,16 +18418,15 @@ function DriverDashboard({ profile }) {
                     </div>
                   </div>
                   {o.delivery_lat && o.delivery_lng && (
-                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${o.delivery_lat},${o.delivery_lng}`}
-                      target="_blank" rel="noopener noreferrer"
+                    <button onClick={() => setActiveOrder(o)}
                       className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
                       style={{
                         background: "linear-gradient(135deg, #6366f1, #4f46e5)",
                         color: "white",
                       }}
-                      title="Маршрут">
+                      title="Дэлгэрэнгүй харах">
                       <MapPin size={14} />
-                    </a>
+                    </button>
                   )}
                 </div>
 
@@ -18601,6 +18610,20 @@ function DriverDashboard({ profile }) {
                   {Number(activeOrder.total_amount || 0).toLocaleString()}₮
                 </span>
               </div>
+
+              {/* Route товч — Google Maps руу шилжих */}
+              {activeOrder.delivery_lat && activeOrder.delivery_lng && (
+                <a 
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.delivery_lat},${activeOrder.delivery_lng}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                  style={{
+                    background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                    color: "white", fontFamily: FS,
+                  }}>
+                  🗺 Маршрут (Google Maps)
+                </a>
+              )}
 
               {/* Pin байгаа эсэх */}
               {(!activeOrder.delivery_lat || !activeOrder.delivery_lng) && (
