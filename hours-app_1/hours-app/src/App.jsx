@@ -13948,8 +13948,9 @@ function OrderDetailMap({ order }) {
   );
 }
 
-function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote }) {
+function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim }) {
   const status = order.status;
+  const isUnassigned = isDriver && !order.driver_id && order.status === "new";
   const [activityProfiles, setActivityProfiles] = useState({});
   const [itemNotePopup, setItemNotePopup] = useState(null); // { item } — Барааны тэмдэглэл popup
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product
@@ -14028,18 +14029,25 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
     return `${d.toLocaleDateString("mn-MN")} ${d.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit" })}`;
   };
 
-  const statusActions = isDriver ? {
-    new: [
-      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-      { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
-    ],
-    pending: [
-      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-      { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
-    ],
-    delivered: [],
-    cancelled: [],
-  } : {
+  const statusActions = isDriver ? (
+    isUnassigned ? {
+      new: [
+        { label: "Өөртөө авах", action: "claim", color: "#9333ea", icon: "🆕" },
+        { label: "Өөр хүнд хуваарилах", action: "assign", color: "#0ea5e9", icon: "🚚" },
+      ],
+    } : {
+      new: [
+        { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
+      ],
+      pending: [
+        { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
+      ],
+      delivered: [],
+      cancelled: [],
+    }
+  ) : {
     new: [
       { label: "Хүргэлт хуваарилах", action: "assign", color: "#0ea5e9", icon: "🚚" },
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
@@ -14328,6 +14336,10 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               if (a.action === "cancelled" && !confirm("Захиалга цуцлах уу?")) return;
               if (a.action === "assign") {
                 if (onAssignDriver) onAssignDriver();
+                return;
+              }
+              if (a.action === "claim") {
+                if (onClaim) onClaim();
                 return;
               }
               if (a.action === "cancel-note") {
@@ -20560,9 +20572,18 @@ function DriverDashboard({ profile }) {
               order={activeOrder}
               items={items[activeOrder.id] || []}
               isDriver={true}
+              currentDriverId={profile.id}
               onClose={() => { setActiveOrder(null); loadAll(); }}
               onUpdateStatus={async (s) => {
                 await updateStatus(activeOrder.id, s);
+                setActiveOrder(null);
+              }}
+              onClaim={async () => {
+                await claimOrder(activeOrder.id);
+                setActiveOrder(null);
+              }}
+              onAssignDriver={() => {
+                setAssignDriverOrder(activeOrder);
                 setActiveOrder(null);
               }}
               onCancelWithNote={() => {
