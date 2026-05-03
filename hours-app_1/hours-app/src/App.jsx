@@ -13001,6 +13001,51 @@ function OrderDetailMap({ order }) {
 function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote }) {
   const status = order.status;
   const [activityProfiles, setActivityProfiles] = useState({});
+  const [itemNotePopup, setItemNotePopup] = useState(null); // { item } — Барааны тэмдэглэл popup
+  const [productCallNotes, setProductCallNotes] = useState([]); // Дуудлагын түүхээс олсон тэмдэглэлүүд
+
+  // Popup нээгдэх үед энэ үйлчлүүлэгчийн тус барааг агуулсан дуудлагуудыг татах
+  useEffect(() => {
+    if (!itemNotePopup || !order.customer_phone) {
+      setProductCallNotes([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("call_logs")
+          .select("id, notes, interested_products, created_at, operator_id")
+          .eq("phone", order.customer_phone)
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (cancelled) return;
+        const productId = itemNotePopup.item.product_id;
+        const matches = (data || []).filter((c) =>
+          c.interested_products && Array.isArray(c.interested_products) &&
+          c.interested_products.some((p) => p.id === productId)
+        );
+        // Operator профайл татах
+        const operatorIds = [...new Set(matches.map((m) => m.operator_id).filter(Boolean))];
+        if (operatorIds.length > 0) {
+          const { data: ops } = await supabase
+            .from("profiles").select("id, name").in("id", operatorIds);
+          const opMap = Object.fromEntries((ops || []).map((o) => [o.id, o]));
+          setProductCallNotes(matches.map((m) => ({
+            ...m,
+            operator: opMap[m.operator_id],
+            qty: m.interested_products.find((p) => p.id === productId)?.qty || 1,
+          })));
+        } else {
+          setProductCallNotes(matches.map((m) => ({
+            ...m,
+            qty: m.interested_products.find((p) => p.id === productId)?.qty || 1,
+          })));
+        }
+      } catch (e) { console.error(e); }
+    })();
+    return () => { cancelled = true; };
+  }, [itemNotePopup, order.customer_phone]);
 
   // Бүх холбоотой ажилтнуудын мэдээлэл татах
   useEffect(() => {
@@ -13243,10 +13288,16 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
                     {it.product_sku}
                   </span>
                 )}
-                <span style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
-                  className="text-[9px] px-1.5 py-0.5 rounded">
-                  Тайлбар
-                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setItemNotePopup({ item: it });
+                  }}
+                  className="press-btn"
+                  style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600, padding: "2px 6px", borderRadius: 4 }}
+                  title="Тэмдэглэл харах">
+                  <span className="text-[9px]">💬 Тайлбар</span>
+                </button>
               </div>
 
               {/* Image */}
@@ -13336,6 +13387,138 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
             </button>
           ))}
         </div>
+      )}
+
+      {/* ─── Барааны тэмдэглэл popup ─── */}
+      {itemNotePopup && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setItemNotePopup(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 520,
+            maxHeight: "85vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {itemNotePopup.item.product_image ? (
+                    <img src={itemNotePopup.item.product_image} alt=""
+                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                  ) : (
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 8,
+                      background: T.surfaceAlt, display: "flex",
+                      alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>📦</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base truncate">
+                      {itemNotePopup.item.product_name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {itemNotePopup.item.product_sku && `SKU: ${itemNotePopup.item.product_sku} · `}
+                      {Number(itemNotePopup.item.unit_price || 0).toLocaleString()}₮ × {itemNotePopup.item.quantity}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setItemNotePopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3">
+              {/* Энэ захиалгын тэмдэглэл */}
+              {order.notes && (
+                <div className="rounded-lg p-3" style={{ background: T.warnSoft, borderLeft: `3px solid ${T.warn}` }}>
+                  <div style={{ color: T.warn, fontFamily: FM, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-1">
+                    📝 Захиалгын тэмдэглэл
+                  </div>
+                  <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-sm">
+                    "{order.notes}"
+                  </div>
+                </div>
+              )}
+
+              {/* Дуудлагын тэмдэглэлүүд */}
+              <div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                  💬 Дуудлагын тэмдэглэл ({productCallNotes.length})
+                </div>
+                {productCallNotes.length === 0 ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                      Энэ бараагаар хийсэн дуудлагын тэмдэглэл алга
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {productCallNotes.map((c, idx) => {
+                      const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
+                      const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
+                      return (
+                        <div key={c.id} className="rounded-lg p-3"
+                          style={{
+                            background: T.surface,
+                            border: `1px solid ${isCancelled ? T.errSoft : T.border}`,
+                            borderLeft: `3px solid ${isCancelled ? T.err : T.highlight}`,
+                          }}>
+                          <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}
+                                className="text-[10px] px-2 py-0.5 rounded-full">
+                                #{productCallNotes.length - idx}
+                              </span>
+                              {isCancelled && (
+                                <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                                  className="text-[10px] px-2 py-0.5 rounded-full">
+                                  ✕ Цуцалсан
+                                </span>
+                              )}
+                              <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}
+                                className="text-[10px] px-2 py-0.5 rounded-full">
+                                ×{c.qty}
+                              </span>
+                            </div>
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                              {new Date(c.created_at).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                            </span>
+                          </div>
+                          {c.operator && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1.5">
+                              🎧 {c.operator.name}
+                            </div>
+                          )}
+                          {cleanNotes ? (
+                            <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">
+                              {cleanNotes}
+                            </div>
+                          ) : (
+                            <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                              Тэмдэглэл хоосон
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
