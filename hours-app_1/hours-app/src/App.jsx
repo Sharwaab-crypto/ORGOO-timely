@@ -10057,6 +10057,10 @@ function DriverSettlementView({ profile }) {
   const [openSettlements, setOpenSettlements] = useState([]); // Нээлттэй settlement-ууд
   const [openingSettlement, setOpeningSettlement] = useState(false); // Тооцоо нээх loading
   const [editOrder, setEditOrder] = useState(null); // {order, paidAmount, status} — захиалга засах modal
+  const [editOrderItems, setEditOrderItems] = useState([]); // editOrder-ийн биз_order_items
+  const [allProducts, setAllProducts] = useState([]); // нэмэх боломжтой бараанууд
+  const [showAddProduct, setShowAddProduct] = useState(false); // бараа нэмэх picker
+  const [productSearch, setProductSearch] = useState("");
 
   // Тооцоо хаах form
   const [cashAmount, setCashAmount] = useState("");
@@ -10073,6 +10077,28 @@ function DriverSettlementView({ profile }) {
     setBankAmount(""); setBankNotes("");
     setExpenseAmount(""); setExpenseNotes("");
   }, [activeDriver]);
+
+  // editOrder нээгдэх үед barааны жагсаалт + захиалгын items татах
+  useEffect(() => {
+    if (!editOrder) {
+      setEditOrderItems([]);
+      setShowAddProduct(false);
+      setProductSearch("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [{ data: itemsData }, { data: prodData }] = await Promise.all([
+        supabase.from("biz_order_items").select("*").eq("order_id", editOrder.order.id),
+        supabase.from("inv_products").select("id, name, sku, sale_price, image_url").eq("is_active", true).order("name"),
+      ]);
+      if (cancelled) return;
+      // Items-руу temp ID + tracker нэмэх
+      setEditOrderItems((itemsData || []).map((it) => ({ ...it, _tempId: it.id, _modified: false })));
+      setAllProducts(prodData || []);
+    })();
+    return () => { cancelled = true; };
+  }, [editOrder?.order?.id]);
 
   // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
@@ -10617,6 +10643,97 @@ function DriverSettlementView({ profile }) {
                   </div>
                 </div>
 
+                {/* ⭐ ЗАХИАЛГЫН БАРААНУУД */}
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                      📦 Захиалгын бараа ({editOrderItems.length}ш)
+                    </label>
+                    <button onClick={() => setShowAddProduct(true)}
+                      className="press-btn px-2.5 py-1 rounded-lg text-[10px] font-semibold"
+                      style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, border: `1px solid #0ea5e9` }}>
+                      + Бараа нэмэх
+                    </button>
+                  </div>
+                  {editOrderItems.length === 0 ? (
+                    <div className="rounded-lg p-3 text-center" style={{ background: T.surfaceAlt }}>
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                        Бараа алга
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {editOrderItems.map((it) => (
+                        <div key={it._tempId} className="rounded-lg p-2 flex items-center gap-2"
+                          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                          {it.product_image && (
+                            <img src={it.product_image} alt="" 
+                              className="w-9 h-9 rounded object-cover flex-shrink-0"
+                              onError={(e) => { e.target.style.display = "none"; }} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                              {it.product_name}
+                            </div>
+                            <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px] tabular-nums">
+                              {Number(it.unit_price || 0).toLocaleString()}₮ × {it.quantity} = {(Number(it.unit_price || 0) * Number(it.quantity || 0)).toLocaleString()}₮
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => {
+                              const q = Math.max(0, Number(it.quantity || 0) - 1);
+                              setEditOrderItems(editOrderItems.map((x) => 
+                                x._tempId === it._tempId ? { ...x, quantity: q, _modified: true } : x
+                              ));
+                            }}
+                              className="press-btn w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                              style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}` }}>
+                              −
+                            </button>
+                            <input type="number" value={it.quantity}
+                              onChange={(e) => {
+                                const q = Number(e.target.value) || 0;
+                                setEditOrderItems(editOrderItems.map((x) => 
+                                  x._tempId === it._tempId ? { ...x, quantity: q, _modified: true } : x
+                                ));
+                              }}
+                              style={{ background: T.bg, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                              className="w-12 text-center px-1 py-1 rounded text-xs tabular-nums" />
+                            <button onClick={() => {
+                              setEditOrderItems(editOrderItems.map((x) => 
+                                x._tempId === it._tempId ? { ...x, quantity: Number(x.quantity || 0) + 1, _modified: true } : x
+                              ));
+                            }}
+                              className="press-btn w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                              style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}` }}>
+                              +
+                            </button>
+                          </div>
+                          <button onClick={() => {
+                            if (!confirm("Энэ барааг устгах уу?")) return;
+                            setEditOrderItems(editOrderItems.filter((x) => x._tempId !== it._tempId));
+                          }}
+                            className="press-btn p-1.5 rounded-lg flex-shrink-0"
+                            style={{ background: T.errSoft, color: T.err }}
+                            title="Устгах">
+                            🗑
+                          </button>
+                        </div>
+                      ))}
+                      {/* Нийт дүн */}
+                      <div className="rounded-lg p-2 flex justify-between items-center"
+                        style={{ background: "rgba(245,158,11,0.1)", border: `1px solid ${T.warn}` }}>
+                        <span style={{ fontFamily: FS, fontWeight: 600, color: T.warn }} className="text-xs">
+                          Шинэ нийт дүн
+                        </span>
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
+                          {editOrderItems.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0).toLocaleString()}₮
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Status өөрчлөх */}
                 <div className="mb-3">
                   <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
@@ -10684,7 +10801,57 @@ function DriverSettlementView({ profile }) {
                   </button>
                   <button onClick={async () => {
                     try {
-                      const updates = { status: editOrder.status };
+                      // 1. Барааны items хадгалах (delete removed, update modified, insert new)
+                      const orderId = editOrder.order.id;
+                      
+                      // Anhdsан items байсан үлдсэн ID-ууд
+                      const remainingIds = editOrderItems.filter((it) => it.id).map((it) => it.id);
+                      // Устгасан items (database-д бий боловч одоо алга)
+                      const { data: existingItems } = await supabase
+                        .from("biz_order_items")
+                        .select("id")
+                        .eq("order_id", orderId);
+                      const removedIds = (existingItems || [])
+                        .map((x) => x.id)
+                        .filter((id) => !remainingIds.includes(id));
+                      if (removedIds.length > 0) {
+                        await supabase.from("biz_order_items").delete().in("id", removedIds);
+                      }
+                      
+                      // Modified items update
+                      for (const it of editOrderItems.filter((x) => x.id && x._modified)) {
+                        await supabase.from("biz_order_items").update({
+                          quantity: Number(it.quantity || 0),
+                        }).eq("id", it.id);
+                      }
+                      
+                      // Шинэ items insert (id байхгүй)
+                      const newItems = editOrderItems.filter((x) => !x.id);
+                      if (newItems.length > 0) {
+                        await supabase.from("biz_order_items").insert(
+                          newItems.map((it) => ({
+                            order_id: orderId,
+                            product_id: it.product_id,
+                            product_name: it.product_name,
+                            product_sku: it.product_sku,
+                            product_image: it.product_image,
+                            unit_price: Number(it.unit_price || 0),
+                            quantity: Number(it.quantity || 0),
+                          }))
+                        );
+                      }
+                      
+                      // 2. Шинэ total_amount тооцоолох
+                      const newTotal = editOrderItems.reduce(
+                        (s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 
+                        0
+                      );
+                      
+                      // 3. biz_orders update
+                      const updates = { 
+                        status: editOrder.status,
+                        total_amount: newTotal,
+                      };
                       if (editOrder.status === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
                       } else {
@@ -10693,8 +10860,9 @@ function DriverSettlementView({ profile }) {
                       const { error } = await supabase
                         .from("biz_orders")
                         .update(updates)
-                        .eq("id", editOrder.order.id);
+                        .eq("id", orderId);
                       if (error) throw error;
+                      
                       setEditOrder(null);
                       await loadAll();
                       alert("✅ Захиалга засагдлаа");
@@ -10707,6 +10875,98 @@ function DriverSettlementView({ profile }) {
                     💾 Хадгалах
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Бараа нэмэх picker */}
+        {showAddProduct && createPortal(
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10002,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+          }}
+            onClick={() => setShowAddProduct(false)}>
+            <div style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+              maxHeight: "80vh", display: "flex", flexDirection: "column",
+            }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="p-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                    📦 Бараа нэмэх
+                  </div>
+                  <button onClick={() => setShowAddProduct(false)} style={{ color: T.muted }}>
+                    <X size={18} />
+                  </button>
+                </div>
+                <input type="text" value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="🔍 Хайх..."
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm" />
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                {allProducts
+                  .filter((p) => !productSearch.trim() || 
+                    p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                    p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+                  )
+                  .map((p) => {
+                    const alreadyAdded = editOrderItems.some((it) => it.product_id === p.id);
+                    return (
+                      <button key={p.id}
+                        onClick={() => {
+                          if (alreadyAdded) {
+                            // Хэрэв аль хэдийн нэмэгдсэн бол тоог 1-р нэмэх
+                            setEditOrderItems(editOrderItems.map((it) =>
+                              it.product_id === p.id 
+                                ? { ...it, quantity: Number(it.quantity || 0) + 1, _modified: true }
+                                : it
+                            ));
+                          } else {
+                            setEditOrderItems([...editOrderItems, {
+                              _tempId: `new-${Date.now()}-${Math.random()}`,
+                              product_id: p.id,
+                              product_name: p.name,
+                              product_sku: p.sku,
+                              product_image: p.image_url,
+                              unit_price: Number(p.sale_price || 0),
+                              quantity: 1,
+                              _modified: true,
+                            }]);
+                          }
+                          setShowAddProduct(false);
+                          setProductSearch("");
+                        }}
+                        className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
+                        style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                        {p.image_url && (
+                          <img src={p.image_url} alt="" 
+                            className="w-10 h-10 rounded object-cover flex-shrink-0"
+                            onError={(e) => { e.target.style.display = "none"; }} />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                            {p.name}
+                          </div>
+                          <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                            {p.sku} · {Number(p.sale_price || 0).toLocaleString()}₮
+                          </div>
+                        </div>
+                        {alreadyAdded && (
+                          <span style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
+                            className="text-[9px] px-2 py-0.5 rounded-full">
+                            +1
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
           </div>,
