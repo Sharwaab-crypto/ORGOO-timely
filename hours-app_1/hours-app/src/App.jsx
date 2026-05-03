@@ -8924,6 +8924,7 @@ function SalesDashboardView({ profile }) {
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
+  const [productsPopup, setProductsPopup] = useState(null); // { page, status, products }
 
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-sales-period") || "month"; } catch { return "month"; }
@@ -9476,9 +9477,46 @@ function SalesDashboardView({ profile }) {
                     📘 {ordersPopup.page.name}
                   </div>
                 </div>
-                <button onClick={() => setOrdersPopup(null)} style={{ color: T.muted }}>
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => {
+                      // Захиалгуудаас барааг нэгтгэх
+                      const productMap = new Map();
+                      ordersPopup.orders.forEach((o) => {
+                        const orderItems = items.filter((it) => it.order_id === o.id);
+                        orderItems.forEach((it) => {
+                          const key = it.product_id || it.product_name;
+                          if (!key) return;
+                          const existing = productMap.get(key);
+                          const prod = products.find((p) => p.id === it.product_id);
+                          if (existing) {
+                            existing.totalQty += Number(it.quantity || 0);
+                            existing.totalRevenue += Number(it.unit_price || 0) * Number(it.quantity || 0);
+                            existing.orderCount += 1;
+                          } else {
+                            productMap.set(key, {
+                              id: it.product_id,
+                              name: it.product_name || prod?.name || "—",
+                              image: it.product_image || prod?.image_url || null,
+                              sku: it.product_sku || prod?.sku || "",
+                              totalQty: Number(it.quantity || 0),
+                              totalRevenue: Number(it.unit_price || 0) * Number(it.quantity || 0),
+                              orderCount: 1,
+                            });
+                          }
+                        });
+                      });
+                      const arr = Array.from(productMap.values()).sort((a, b) => b.totalQty - a.totalQty);
+                      setProductsPopup({ page: ordersPopup.page, status: ordersPopup.status, products: arr });
+                    }}
+                    className="press-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg"
+                    style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
+                    <span>🛍</span>
+                    <span className="text-[11px]">Зөвхөн бараагаар</span>
+                  </button>
+                  <button onClick={() => setOrdersPopup(null)} style={{ color: T.muted }}>
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -9578,6 +9616,131 @@ function SalesDashboardView({ profile }) {
                       );
                     })}
                 </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── Зөвхөн бараагаар popup ─── */}
+      {productsPopup && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setProductsPopup(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 800,
+            maxHeight: "90vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2 flex-wrap">
+                    🛍 Зөвхөн бараагаар
+                    <span style={{ color: T.muted, fontFamily: FM, fontWeight: 500 }} className="text-xs">
+                      ({productsPopup.products.length})
+                    </span>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                    📘 {productsPopup.page.name} · {
+                      productsPopup.status === "delivered" ? "✓ Хүргэгдсэн" :
+                      productsPopup.status === "pending" ? "⏳ Хүлээгдэж" :
+                      "✕ Цуцалсан"
+                    }
+                  </div>
+                </div>
+                <button onClick={() => setProductsPopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              {productsPopup.products.length === 0 ? (
+                <div className="text-center py-8 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div className="text-4xl mb-2">📭</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Бараа алга
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg p-3 mb-3" style={{ background: T.highlightSoft }}>
+                    <div className="flex items-center justify-around">
+                      <div className="text-center">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Бараа</div>
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+                          {productsPopup.products.length}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Нийт ширхэг</div>
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+                          {productsPopup.products.reduce((s, p) => s + p.totalQty, 0)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Нийт дүн</div>
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                          {Math.round(productsPopup.products.reduce((s, p) => s + p.totalRevenue, 0)).toLocaleString()}₮
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                    {productsPopup.products.map((p) => (
+                      <div key={p.id || p.name} className="rounded-xl overflow-hidden flex flex-col"
+                        style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                        <div className="text-center py-2" style={{ background: T.surfaceAlt }}>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+                            Гарсан тоо
+                          </div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-2xl tabular-nums">
+                            {p.totalQty}<span className="text-base ml-0.5">×</span>
+                          </div>
+                        </div>
+                        <div style={{ width: "100%", aspectRatio: "16/10", background: T.surfaceAlt }}>
+                          {p.image ? (
+                            <img src={p.image} alt={p.name}
+                              style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          ) : (
+                            <div style={{
+                              width: "100%", height: "100%",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 36,
+                            }}>📦</div>
+                          )}
+                        </div>
+                        <div className="p-2.5 flex-1 flex flex-col justify-between">
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }}
+                            className="text-xs leading-tight mb-1.5 line-clamp-2">
+                            {p.name}
+                          </div>
+                          {p.sku && (
+                            <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}
+                              className="text-[10px]">
+                              #{p.sku}
+                            </div>
+                          )}
+                          {p.totalRevenue > 0 && (
+                            <div style={{ color: T.muted, fontFamily: FD, fontWeight: 700 }}
+                              className="text-[10px] tabular-nums mt-1">
+                              {Math.round(p.totalRevenue).toLocaleString()}₮
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
