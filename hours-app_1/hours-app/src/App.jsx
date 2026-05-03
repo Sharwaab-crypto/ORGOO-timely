@@ -10056,6 +10056,7 @@ function DriverSettlementView({ profile }) {
   const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
   const [openSettlements, setOpenSettlements] = useState([]); // Нээлттэй settlement-ууд
   const [openingSettlement, setOpeningSettlement] = useState(false); // Тооцоо нээх loading
+  const [editOrder, setEditOrder] = useState(null); // {order, paidAmount, status} — захиалга засах modal
 
   // Тооцоо хаах form
   const [cashAmount, setCashAmount] = useState("");
@@ -10558,12 +10559,159 @@ function DriverSettlementView({ profile }) {
                         </div>
                       )}
                     </div>
+                    {/* Edit button — Засах */}
+                    <button onClick={() => setEditOrder({
+                      order: o,
+                      paidAmount: String(paid),
+                      status: o.status,
+                    })}
+                      className="press-btn p-1.5 rounded-lg flex-shrink-0"
+                      style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}` }}
+                      title="Засах">
+                      ✏
+                    </button>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* Захиалгыг засах modal */}
+        {editOrder && createPortal(
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          }}
+            onClick={() => setEditOrder(null)}>
+            <div style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 440,
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+              border: `1px solid ${T.border}`,
+              maxHeight: "90vh", overflowY: "auto",
+            }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                    ✏ Захиалга засах
+                  </div>
+                  <button onClick={() => setEditOrder(null)} style={{ color: T.muted }}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Захиалгын мэдээлэл */}
+                <div className="rounded-lg p-3 mb-3" style={{ background: T.surfaceAlt }}>
+                  <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm">
+                    {editOrder.order.customer_phone}
+                  </div>
+                  {editOrder.order.customer_name && (
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                      {editOrder.order.customer_name}
+                    </div>
+                  )}
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums mt-1">
+                    {Number(editOrder.order.total_amount || 0).toLocaleString()}₮
+                  </div>
+                </div>
+
+                {/* Status өөрчлөх */}
+                <div className="mb-3">
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    Статус
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => setEditOrder({ ...editOrder, status: "delivered" })}
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold"
+                      style={{
+                        background: editOrder.status === "delivered" ? T.ok : T.surfaceAlt,
+                        color: editOrder.status === "delivered" ? "white" : T.muted,
+                        border: `1px solid ${editOrder.status === "delivered" ? T.ok : T.border}`,
+                        fontFamily: FS,
+                      }}>
+                      ✓ Хүргэгдсэн
+                    </button>
+                    <button onClick={() => setEditOrder({ ...editOrder, status: "cancelled" })}
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold"
+                      style={{
+                        background: editOrder.status === "cancelled" ? T.err : T.surfaceAlt,
+                        color: editOrder.status === "cancelled" ? "white" : T.muted,
+                        border: `1px solid ${editOrder.status === "cancelled" ? T.err : T.border}`,
+                        fontFamily: FS,
+                      }}>
+                      ✕ Цуцалсан
+                    </button>
+                  </div>
+                </div>
+
+                {/* Тушаасан дүн (зөвхөн delivered үед) */}
+                {editOrder.status === "delivered" && (
+                  <div className="mb-3">
+                    <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                      Тушаасан дүн (paid_amount)
+                    </label>
+                    <input type="number" value={editOrder.paidAmount}
+                      onChange={(e) => setEditOrder({ ...editOrder, paidAmount: e.target.value })}
+                      placeholder="0"
+                      style={{
+                        background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink,
+                        fontFamily: FD, fontWeight: 600,
+                      }}
+                      className="w-full px-3 py-2.5 rounded-lg text-base tabular-nums" />
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      <button onClick={() => setEditOrder({ ...editOrder, paidAmount: String(editOrder.order.total_amount || 0) })}
+                        className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                        Бүрэн төлсөн ({Number(editOrder.order.total_amount || 0).toLocaleString()}₮)
+                      </button>
+                      <button onClick={() => setEditOrder({ ...editOrder, paidAmount: "0" })}
+                        className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: T.errSoft, color: T.err, border: `1px solid ${T.err}`, fontFamily: FS }}>
+                        Огт төлөөгүй
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Үйлдлийн товчнууд */}
+                <div className="grid grid-cols-2 gap-2 pt-3" style={{ borderTop: `1px solid ${T.border}` }}>
+                  <button onClick={() => setEditOrder(null)}
+                    className="press-btn py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                    Цуцлах
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const updates = { status: editOrder.status };
+                      if (editOrder.status === "delivered") {
+                        updates.paid_amount = Number(editOrder.paidAmount) || 0;
+                      } else {
+                        updates.paid_amount = 0;
+                      }
+                      const { error } = await supabase
+                        .from("biz_orders")
+                        .update(updates)
+                        .eq("id", editOrder.order.id);
+                      if (error) throw error;
+                      setEditOrder(null);
+                      await loadAll();
+                      alert("✅ Захиалга засагдлаа");
+                    } catch (e) {
+                      alert("Алдаа: " + e.message);
+                    }
+                  }}
+                    className="press-btn py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                    💾 Хадгалах
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     );
   }
