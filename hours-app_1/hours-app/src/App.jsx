@@ -7310,6 +7310,8 @@ function CallCenterView({ profile }) {
   const [productNotePopup, setProductNotePopup] = useState(null); // { product, calls } — Барааны тэмдэглэл popup
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product info
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
+  const [page, setPage] = useState(1); // Дугаарын pagination
+  const PAGE_SIZE = 30;
 
   // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
@@ -7515,6 +7517,7 @@ function CallCenterView({ profile }) {
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
+    setPage(1); // Tab сольсон үед хуудсыг 1-руу буулгах
   }, [activeTab]);
 
   // Lock-уудыг ачаалах
@@ -8017,7 +8020,29 @@ function CallCenterView({ profile }) {
                 );
               }
 
-              return sortedCycles.slice(0, 30).map((cycle) => {
+              // Pagination
+              const totalPages = Math.ceil(sortedCycles.length / PAGE_SIZE);
+              const safePage = Math.min(Math.max(1, page), Math.max(1, totalPages));
+              const startIdx = (safePage - 1) * PAGE_SIZE;
+              const endIdx = startIdx + PAGE_SIZE;
+              const pageCycles = sortedCycles.slice(startIdx, endIdx);
+
+              return (
+                <>
+                  {/* Counter — нийт тоо */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 px-1 mb-1">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}>
+                        {sortedCycles.length}
+                      </span>
+                      {" "}дугаар
+                      {totalPages > 1 && (
+                        <span> · {safePage}/{totalPages} хуудас</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {pageCycles.map((cycle) => {
                 const phone = cycle.phone;
                 const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
                 const latestCall = calls[0];
@@ -8315,7 +8340,58 @@ function CallCenterView({ profile }) {
                     </div>
                   </div>
                 );
-              });
+              })}
+              
+              {/* Pagination товчнууд */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-1 flex-wrap pt-2">
+                  <button onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                    style={{
+                      background: safePage === 1 ? T.surfaceAlt : T.bg,
+                      color: safePage === 1 ? T.muted : T.ink,
+                      border: `1px solid ${T.border}`,
+                      fontFamily: FS,
+                      opacity: safePage === 1 ? 0.5 : 1,
+                    }}>
+                    ← Өмнөх
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                    .map((p, idx, arr) => (
+                      <React.Fragment key={p}>
+                        {idx > 0 && arr[idx - 1] !== p - 1 && (
+                          <span style={{ color: T.muted, fontFamily: FM }} className="px-1 text-xs">⋯</span>
+                        )}
+                        <button onClick={() => setPage(p)}
+                          className="press-btn min-w-[36px] py-1.5 rounded-lg text-xs"
+                          style={{
+                            background: safePage === p ? T.highlight : T.bg,
+                            color: safePage === p ? "white" : T.ink,
+                            border: `1px solid ${safePage === p ? T.highlight : T.border}`,
+                            fontFamily: FD, fontWeight: safePage === p ? 700 : 500,
+                          }}>
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                    className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                    style={{
+                      background: safePage === totalPages ? T.surfaceAlt : T.bg,
+                      color: safePage === totalPages ? T.muted : T.ink,
+                      border: `1px solid ${T.border}`,
+                      fontFamily: FS,
+                      opacity: safePage === totalPages ? 0.5 : 1,
+                    }}>
+                    Дараах →
+                  </button>
+                </div>
+              )}
+                </>
+              );
             })()}
           </div>
         )}
