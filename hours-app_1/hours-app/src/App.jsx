@@ -10113,15 +10113,18 @@ function DriverSettlementView({ profile }) {
     // Тус driver-ийн нээлттэй settlement (хэрэв байвал)
     const openSettle = openSettlements.find((s) => s.driver_id === d.id);
     
-    // Settled (closed): энэ driver-ийн settle хаагдсан захиалга
-    // Open settlement: энэ driver-руу одоо нээлттэй settlement-д ороод буй захиалга
-    // Эдгээр бүгдийг "current calculation"-аас хасна
+    // Logic:
+    // - Хэрэв нээлттэй settlement бий бол → ЗӨВХӨН settle-руу холбогдсон захиалгууд харна
+    //   (шинэ delivery-нь settle нэмэгдэхгүй, дараагийн settle-руу очно)
+    // - Хэрэв нээлттэй settlement байхгүй бол → settle хийгдээгүй захиалгуудыг харна
     const dOrders = filteredOrders.filter((o) => 
       o.driver_id === d.id && 
-      (!o.settlement_id || (openSettle && o.settlement_id === openSettle.id))
+      (openSettle 
+        ? o.settlement_id === openSettle.id   // зөвхөн open settle-руу холбогдсон
+        : !o.settlement_id                     // ямар ч settle-руу холбогдоогүй
+      )
     );
     
-    // Open settle байвал → orders-ыг тэр settle-ийн дотор зөвхөн харах (шинэ нэмэгдэхгүй)
     const isOpenSettlement = !!openSettle;
     
     const delivered = dOrders.filter((o) => o.status === "delivered");
