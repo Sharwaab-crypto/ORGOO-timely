@@ -18832,6 +18832,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const [categories, setCategories] = useState([]);
   const [activeCat, setActiveCat] = useState("all");
   const [showSidebar, setShowSidebar] = useState(false); // mobile
+  const [showAllProducts, setShowAllProducts] = useState(false); // false = зөвхөн хэрэгтэй, true = бүх бараа
 
   const sourceWh = isReturn ? myWarehouse : mainWarehouse;
   const targetWh = isReturn ? mainWarehouse : myWarehouse;
@@ -18945,6 +18946,25 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
       const q = search.toLowerCase();
       result = result.filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
     }
+    
+    // showAllProducts === false бол зөвхөн хэрэгтэй бараа харуулна (хайлт нь хэрэглэгчийн илт хүсэл бол bypass)
+    if (!showAllProducts && !search.trim()) {
+      const neededIds = new Set();
+      if (isReturn) {
+        // Буцаах: миний агуулахад байгаа бүх бараа хэрэгтэй
+        stock.filter((s) => s.warehouse_id === myWarehouse?.id && Number(s.quantity) > 0)
+          .forEach((s) => neededIds.add(s.product_id));
+      } else {
+        // Авах: orderSummary дотор байгаа барааны IDs (миний дутуу бараа)
+        (orderSummary?.breakdown || []).forEach((b) => {
+          if (b.missing > 0) neededIds.add(b.product_id);
+        });
+      }
+      // Аль хэдийн сонгосон барааг үргэлж харуулна
+      selectedItems.forEach((it) => neededIds.add(it.product_id));
+      result = result.filter((p) => neededIds.has(p.id));
+    }
+    
     // Sort: in-stock first
     return result.sort((a, b) => {
       const sA = Number(stock.find((x) => x.warehouse_id === sourceWh?.id && x.product_id === a.id)?.quantity || 0);
@@ -18953,7 +18973,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
       if (sA <= 0 && sB > 0) return 1;
       return (a.name || "").localeCompare(b.name || "");
     });
-  }, [products, activeCat, search, stock, sourceWh]);
+  }, [products, activeCat, search, stock, sourceWh, showAllProducts, isReturn, orderSummary, selectedItems, myWarehouse]);
 
   const updateQty = (productId, delta) => {
     setSelectedItems((prev) => {
@@ -19058,12 +19078,25 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
         <div className="flex-1 flex overflow-hidden">
           {/* LEFT — Products */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Search + auto note */}
+            {/* Search + toggle + auto note */}
             <div style={{ padding: 8, borderBottom: `1px solid ${T.borderSoft}` }} className="space-y-2">
-              <input value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="🔍 Бараа хайх..."
-                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                className="w-full px-3 py-2 rounded-lg text-sm" />
+              <div className="flex gap-2">
+                <input value={search} onChange={(e) => setSearch(e.target.value)}
+                  placeholder={showAllProducts ? "🔍 Бараа хайх..." : "🔍 Бараа нэмэхийн тулд хайна уу..."}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm" />
+                <button onClick={() => setShowAllProducts(!showAllProducts)}
+                  className="press-btn px-3 py-2 rounded-lg text-[10px] flex-shrink-0"
+                  style={{
+                    background: showAllProducts ? T.highlight : T.surfaceAlt,
+                    color: showAllProducts ? "white" : T.ink,
+                    fontFamily: FS, fontWeight: 600,
+                    border: `1px solid ${showAllProducts ? T.highlight : T.border}`,
+                  }}
+                  title={showAllProducts ? "Зөвхөн хэрэгтэй бараа харах" : "Бүх бараа харах"}>
+                  {showAllProducts ? "✓ Бүх бараа" : "📋 Бүх бараа"}
+                </button>
+              </div>
 
               {calculating ? (
                 <div className="flex items-center gap-2 px-2">
@@ -19080,6 +19113,14 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
                     className="text-[10px] flex-1">{autoNote}</span>
                 </div>
               ) : null}
+
+              {/* Mode hint */}
+              {!showAllProducts && !search.trim() && (
+                <div className="px-2 py-1 rounded text-[10px]"
+                  style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FM }}>
+                  💡 Зөвхөн хэрэгтэй бараа харагдаж байна. Илүү бараа хэрэгтэй бол <strong style={{ color: T.ink }}>хайлт</strong> хийнэ үү эсвэл <strong style={{ color: T.ink }}>"Бүх бараа"</strong> товч даргана уу.
+                </div>
+              )}
             </div>
 
             {/* Categories */}
@@ -19122,8 +19163,16 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
                 <div className="text-center py-8">
                   <div className="text-4xl mb-2">📦</div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-                    {products.length === 0 ? "Бараа бүртгэгдээгүй" : "Олдсонгүй"}
+                    {products.length === 0 ? "Бараа бүртгэгдээгүй" : 
+                     !showAllProducts && !search.trim() ? "Хэрэгтэй бараа байхгүй" : "Олдсонгүй"}
                   </div>
+                  {!showAllProducts && !search.trim() && products.length > 0 && (
+                    <button onClick={() => setShowAllProducts(true)}
+                      className="press-btn mt-3 px-4 py-2 rounded-lg text-xs"
+                      style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      📋 Бүх бараа харах
+                    </button>
+                  )}
                 </div>
               ) : (
                 filteredProducts.map((p) => {
