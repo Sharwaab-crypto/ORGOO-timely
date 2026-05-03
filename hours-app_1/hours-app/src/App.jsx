@@ -7939,7 +7939,7 @@ function CallCenterView({ profile }) {
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {(() => {
               // "Залгах дугаар" tab-д бүх дугаарыг харуулах (period үл хамааран)
               // Бусад tab-уудад period-ээр шүүх
@@ -8077,9 +8077,17 @@ function CallCenterView({ profile }) {
                 const isNew = customer && (Date.now() - new Date(customer.created_at).getTime()) < 7 * 86400 * 1000;
 
                 return (
-                  <div key={phone} className="glass rounded-2xl p-4">
+                  <div key={phone} className="glass rounded-xl p-2.5"
+                    style={{
+                      borderLeft: `3px solid ${
+                        cycle.status === "ordered" ? T.ok :
+                        cycle.status === "cancelled" ? T.err :
+                        cycle.status === "calling" ? "#0ea5e9" :
+                        T.border
+                      }`,
+                    }}>
                     {/* Header pills */}
-                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-2">
                       <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FD, fontWeight: 700 }}
                         className="px-2 py-0.5 rounded text-xs">
                         #{customer ? customerIndex : "—"}
@@ -8196,22 +8204,22 @@ function CallCenterView({ profile }) {
                     )}
 
                     {/* 2 column: Дуудлагын түүх + Сонирхсон бараа */}
-                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-3">
                       {/* ЗҮҮН: Дуудлагын түүх */}
                       <div>
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
                           📋 ДУУДЛАГЫН ТҮҮХ ({calls.length})
                         </div>
                         {calls.length === 0 ? (
-                          <div className="rounded-lg p-4 text-center" 
+                          <div className="rounded-lg p-2.5 text-center" 
                             style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
-                            <div className="text-2xl mb-1 opacity-50">📞</div>
-                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                            <div className="text-lg mb-0.5 opacity-50">📞</div>
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
                               Хараахан дуудлагдаагүй
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                           {calls.slice(0, 6).map((c) => {
                             const operator = profiles.find((p) => p.id === c.created_by);
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
@@ -8265,19 +8273,19 @@ function CallCenterView({ profile }) {
 
                       {/* БАРУУН: Сонирхсон бараа */}
                       <div>
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
                           🛒 СОНИРХСОН БАРАА ({allProducts.length})
                         </div>
                         {allProducts.length === 0 ? (
-                          <div className="rounded-lg p-4 text-center" 
+                          <div className="rounded-lg p-2.5 text-center" 
                             style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
-                            <div className="text-2xl mb-1 opacity-50">🛍</div>
-                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                            <div className="text-lg mb-0.5 opacity-50">🛍</div>
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
                               Бараа сонирхоогүй
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             {allProducts.slice(0, 2).map((p) => (
                               <div key={p.id} className="rounded-lg overflow-hidden"
                                 style={{ background: T.surface, border: `1px solid ${T.border}` }}>
@@ -8312,7 +8320,7 @@ function CallCenterView({ profile }) {
                                     <span className="text-[9px]">💬 Тайлбар</span>
                                   </button>
                                 </div>
-                                <div style={{ width: "100%", aspectRatio: "16/9", background: T.surfaceAlt }}>
+                                <div style={{ width: "100%", aspectRatio: "4/3", background: T.surfaceAlt }}>
                                   {p.image_url ? (
                                     <img src={p.image_url} alt={p.name}
                                       style={{ width: "100%", height: "100%", objectFit: "contain" }} />
