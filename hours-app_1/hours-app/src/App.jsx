@@ -7013,6 +7013,7 @@ function CallCenterView({ profile }) {
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [orderTotal, setOrderTotal] = useState(0);
   const [copiedPhone, setCopiedPhone] = useState("");
+  const [productNotePopup, setProductNotePopup] = useState(null); // { product, calls } — Барааны тэмдэглэл popup
 
   // Огнооны шүүлтүүр
   const [period, setPeriod] = useState(() => {
@@ -7906,10 +7907,28 @@ function CallCenterView({ profile }) {
                                       {p.sku}
                                     </span>
                                   )}
-                                  <span style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
-                                    className="text-[9px] px-1.5 py-0.5 rounded">
-                                    Тайлбар
-                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      // Энэ барааны тэмдэглэлүүдийг бүх дуудлагаас цуглуулах
+                                      const productCalls = calls
+                                        .filter((c) => c.interested_products && Array.isArray(c.interested_products)
+                                          && c.interested_products.some((ip) => ip.id === p.id))
+                                        .map((c) => ({
+                                          id: c.id,
+                                          notes: c.notes,
+                                          interested_products: c.interested_products,
+                                          created_at: c.created_at,
+                                          operator_id: c.operator_id,
+                                          item_qty: c.interested_products.find((ip) => ip.id === p.id)?.qty || 1,
+                                        }));
+                                      setProductNotePopup({ product: p, calls: productCalls, customer });
+                                    }}
+                                    className="press-btn flex items-center gap-1"
+                                    style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", fontFamily: FS, fontWeight: 600, padding: "2px 6px", borderRadius: 4 }}
+                                    title="Тайлбар харах">
+                                    <span className="text-[9px]">💬 Тайлбар</span>
+                                  </button>
                                 </div>
                                 <div style={{ width: "100%", aspectRatio: "16/9", background: T.surfaceAlt }}>
                                   {p.image_url ? (
@@ -8200,6 +8219,137 @@ function CallCenterView({ profile }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── Барааны тэмдэглэл popup ─── */}
+      {productNotePopup && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setProductNotePopup(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 520,
+            maxHeight: "85vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {productNotePopup.product.image_url ? (
+                    <img src={productNotePopup.product.image_url} alt=""
+                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                  ) : (
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 8,
+                      background: T.surfaceAlt, display: "flex",
+                      alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>📦</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base truncate">
+                      {productNotePopup.product.name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {productNotePopup.product.sku && `SKU: ${productNotePopup.product.sku} · `}
+                      {productNotePopup.calls.length} дуудлагад дурдагдсан
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setProductNotePopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3">
+              {productNotePopup.customer && (
+                <div className="rounded-lg p-3" style={{ background: T.highlightSoft }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                    Үйлчлүүлэгч
+                  </div>
+                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                    {productNotePopup.customer.name || "—"}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FD }} className="text-[11px] tabular-nums">
+                    📞 {productNotePopup.customer.phone}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                💬 Дуудлагын тэмдэглэл
+              </div>
+
+              {productNotePopup.calls.length === 0 ? (
+                <div className="text-center py-6" style={{ color: T.muted, fontFamily: FS }}>
+                  Тэмдэглэл алга
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {productNotePopup.calls.map((c, idx) => {
+                    const operator = profiles.find((pr) => pr.id === c.operator_id);
+                    const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
+                    const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
+                    return (
+                      <div key={c.id} className="rounded-lg p-3"
+                        style={{
+                          background: T.surface,
+                          border: `1px solid ${isCancelled ? T.errSoft : T.border}`,
+                          borderLeft: `3px solid ${isCancelled ? T.err : T.highlight}`,
+                        }}>
+                        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}
+                              className="text-[10px] px-2 py-0.5 rounded-full">
+                              #{productNotePopup.calls.length - idx}
+                            </span>
+                            {isCancelled && (
+                              <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                                className="text-[10px] px-2 py-0.5 rounded-full">
+                                ✕ Цуцалсан
+                              </span>
+                            )}
+                            <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[10px] px-2 py-0.5 rounded-full">
+                              ×{c.item_qty}
+                            </span>
+                          </div>
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                            {new Date(c.created_at).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                          </span>
+                        </div>
+                        {operator && (
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1.5">
+                            🎧 {operator.name}
+                          </div>
+                        )}
+                        {cleanNotes ? (
+                          <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">
+                            {cleanNotes}
+                          </div>
+                        ) : (
+                          <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                            Тэмдэглэл хоосон
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
