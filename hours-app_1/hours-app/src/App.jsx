@@ -11491,6 +11491,7 @@ function OrdersView({ profile }) {
   const [editOrder, setEditOrder] = useState(null);
   const [mapOrder, setMapOrder] = useState(null);
   const [assignDriverOrder, setAssignDriverOrder] = useState(null);
+  const [viewMode, setViewMode] = useState("list"); // list | map
 
   const loadAll = async () => {
     setLoading(true);
@@ -11585,6 +11586,28 @@ function OrdersView({ profile }) {
 
   return (
     <div className="space-y-3">
+      {/* List/Map toggle */}
+      <div className="glass rounded-2xl p-2 flex gap-1">
+        <button onClick={() => setViewMode("list")}
+          className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+          style={{
+            background: viewMode === "list" ? T.highlight : T.surfaceAlt,
+            color: viewMode === "list" ? "white" : T.ink,
+            fontFamily: FS, fontWeight: 600,
+          }}>
+          📋 Жагсаалт
+        </button>
+        <button onClick={() => setViewMode("map")}
+          className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+          style={{
+            background: viewMode === "map" ? T.highlight : T.surfaceAlt,
+            color: viewMode === "map" ? "white" : T.ink,
+            fontFamily: FS, fontWeight: 600,
+          }}>
+          🗺 Газрын зураг
+        </button>
+      </div>
+
       {/* Хайлт + active filter pill */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -11711,6 +11734,12 @@ function OrdersView({ profile }) {
         <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
           <Loader2 className="spin mx-auto mb-2" size={20} />
         </div>
+      ) : viewMode === "map" ? (
+        <OrdersMapView 
+          orders={filtered} 
+          drivers={drivers}
+          onOrderClick={(o) => setActiveOrder(o)}
+        />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-2xl p-8 text-center">
           <div className="text-4xl mb-2">📋</div>
@@ -11951,6 +11980,176 @@ function OrdersView({ profile }) {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Захиалгын газрын зураг — бүх pin-тай захиалгыг харах ──────────
+function OrdersMapView({ orders, drivers, onOrderClick }) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef([]);
+  
+  // Зөвхөн lat/lng-тай захиалгуудыг авах
+  const ordersWithCoords = orders.filter((o) => 
+    o.delivery_lat && o.delivery_lng &&
+    !isNaN(Number(o.delivery_lat)) && !isNaN(Number(o.delivery_lng))
+  );
+  const noCoordsCount = orders.length - ordersWithCoords.length;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const L = (await import("leaflet")).default;
+
+      // CSS
+      if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+
+      if (cancelled || !containerRef.current) return;
+
+      // Map үүсгэх (хэрэв байхгүй бол)
+      if (!mapRef.current) {
+        const map = L.map(containerRef.current).setView([47.918873, 106.917701], 12);
+        mapRef.current = map;
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OSM",
+          maxZoom: 19,
+        }).addTo(map);
+      }
+
+      const map = mapRef.current;
+
+      // Хуучин marker-уудыг арилгах
+      markersRef.current.forEach((m) => map.removeLayer(m));
+      markersRef.current = [];
+
+      // Шинэ marker-ууд нэмэх
+      const bounds = [];
+      ordersWithCoords.forEach((o) => {
+        const lat = Number(o.delivery_lat);
+        const lng = Number(o.delivery_lng);
+
+        // Status-аас өнгө
+        const color = 
+          o.status === "delivered" ? "#10b981" :
+          o.status === "cancelled" ? "#ef4444" :
+          o.status === "pending" ? "#f59e0b" : "#3b82f6";
+        
+        const statusEmoji = 
+          o.status === "delivered" ? "✓" :
+          o.status === "cancelled" ? "✕" :
+          o.status === "pending" ? "⏳" : "🆕";
+
+        const customIcon = L.divIcon({
+          html: `<div style="background:${color};width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:11px;font-weight:bold;">${statusEmoji}</span></div>`,
+          className: "",
+          iconSize: [28, 28],
+          iconAnchor: [14, 28],
+        });
+
+        const driver = drivers.find((d) => d.id === o.driver_id);
+        const popupHtml = `
+          <div style="font-family:system-ui;min-width:180px;">
+            <div style="font-weight:700;font-size:13px;color:#0f172a;margin-bottom:4px;">
+              ${o.customer_name || "—"}
+            </div>
+            <div style="color:#64748b;font-size:11px;margin-bottom:6px;">
+              📞 ${o.customer_phone || "—"}
+            </div>
+            <div style="color:#0f172a;font-size:12px;font-weight:600;margin-bottom:4px;">
+              💰 ${Number(o.total_amount || 0).toLocaleString()}₮
+            </div>
+            ${driver ? `<div style="color:#64748b;font-size:11px;">🚚 ${driver.name}</div>` : '<div style="color:#ef4444;font-size:11px;">⚠ Хуваарилаагүй</div>'}
+            <button class="map-detail-btn" data-order-id="${o.id}" style="margin-top:8px;width:100%;padding:6px;background:${color};color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">
+              Дэлгэрэнгүй харах →
+            </button>
+          </div>
+        `;
+
+        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+        marker.bindPopup(popupHtml);
+        marker.on("popupopen", () => {
+          setTimeout(() => {
+            const btn = document.querySelector(`.map-detail-btn[data-order-id="${o.id}"]`);
+            if (btn) {
+              btn.onclick = () => onOrderClick(o);
+            }
+          }, 50);
+        });
+
+        markersRef.current.push(marker);
+        bounds.push([lat, lng]);
+      });
+
+      // Бүх pin-ийг харагдахаар zoom хийх
+      if (bounds.length > 0) {
+        try {
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        } catch (e) { /* ignore */ }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [orders, drivers]);
+
+  // Map cleanup при unmount
+  useEffect(() => {
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markersRef.current = [];
+      }
+    };
+  }, []);
+
+  return (
+    <div className="space-y-2">
+      {/* Status легенд */}
+      <div className="glass rounded-xl p-2 flex items-center gap-3 flex-wrap text-[10px]" style={{ fontFamily: FS }}>
+        <div className="flex items-center gap-1">
+          <div style={{ background: "#3b82f6", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
+          <span style={{ color: T.ink }}>🆕 Шинэ</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div style={{ background: "#f59e0b", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
+          <span style={{ color: T.ink }}>⏳ Хүлээгдэж</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div style={{ background: "#10b981", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
+          <span style={{ color: T.ink }}>✓ Хүргэсэн</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div style={{ background: "#ef4444", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
+          <span style={{ color: T.ink }}>✕ Цуцалсан</span>
+        </div>
+        <span style={{ color: T.muted, marginLeft: "auto" }}>
+          📍 {ordersWithCoords.length} pin
+          {noCoordsCount > 0 && ` · ${noCoordsCount} pin байрлуулаагүй`}
+        </span>
+      </div>
+
+      {/* Map */}
+      {ordersWithCoords.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📍</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Pin байрлуулсан захиалга алга
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
+            Захиалга дотор очиж pin байрлуулна уу
+          </div>
+        </div>
+      ) : (
+        <div className="glass rounded-2xl overflow-hidden" style={{ padding: 0 }}>
+          <div ref={containerRef} style={{ width: "100%", height: 500, borderRadius: 16 }}></div>
         </div>
       )}
     </div>
