@@ -4454,7 +4454,7 @@ function InventoryView({ profile, isAdmin = false }) {
                           color: m.movement_type === "in" ? T.ok : m.movement_type === "out" ? T.err : T.muted,
                           fontFamily: FS, fontWeight: 600,
                         }} className="px-2 py-0.5 rounded text-[10px]">
-                          {m.movement_type === "in" ? "📥 Орлого" : m.movement_type === "out" ? "📤 Зарлага" : "⚙ Засвар"}
+                          {m.movement_type === "in" ? "📥 Орлого" : m.movement_type === "out" ? "📤 Борлуулалт" : "⚙ Засвар"}
                         </span>
                       </td>
                       <td style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }} className="text-xs py-2 text-right tabular-nums">
@@ -4894,7 +4894,7 @@ function MovementsView({ profile }) {
 
   const typeLabel = (t) => ({
     in: "Орлого",
-    out: "Зарлага",
+    out: "Борлуулалт",
     transfer: "Шилжүүлэг",
     adjust: "Тооллого",
   }[t] || t);
@@ -4965,7 +4965,7 @@ function MovementsView({ profile }) {
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Зарлага</div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Борлуулалт</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl tabular-nums">
             −{totalOut.toLocaleString()}
           </div>
@@ -5030,7 +5030,7 @@ function MovementsView({ profile }) {
               style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
               <option value="all">Бүгд</option>
               <option value="in">📥 Орлого</option>
-              <option value="out">📤 Зарлага</option>
+              <option value="out">📤 Борлуулалт</option>
               <option value="transfer">🔄 Шилжүүлэг</option>
               <option value="adjust">⚖ Тооллого</option>
             </select>
@@ -5107,73 +5107,127 @@ function MovementsView({ profile }) {
             </div>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {filtered.slice(0, 500).map((m) => {
               const p = productMap[m.product_id];
               const w = whMap[m.warehouse_id];
               const wTo = whMap[m.to_warehouse_id];
               const u = profileMap[m.created_by];
+              const color = typeColor(m.movement_type);
+              const isIn = m.movement_type === "in";
+              const isOut = m.movement_type === "out";
+              const isTransfer = m.movement_type === "transfer";
+              const isAdjust = m.movement_type === "adjust";
               return (
-                <div key={m.id} className="glass rounded-xl p-3"
-                  style={{ borderLeft: `3px solid ${typeColor(m.movement_type)}` }}>
-                  <div className="flex items-start gap-3">
+                <div key={m.id} className="glass rounded-xl overflow-hidden"
+                  style={{ borderLeft: `4px solid ${color}` }}>
+                  
+                  {/* TOP — Type badge + Date + Quantity */}
+                  <div className="flex items-center justify-between px-3 py-2"
+                    style={{ background: `${color}15`, borderBottom: `1px solid ${T.border}` }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ background: color, color: "white", fontFamily: FS, fontWeight: 700 }}
+                        className="text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1">
+                        <span>{typeIcon(m.movement_type)}</span>
+                        <span>{typeLabel(m.movement_type)}</span>
+                      </span>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        🕒 {formatDate(m.created_at)}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontFamily: FD, fontWeight: 700,
+                      color: isOut ? T.err : isIn ? T.ok : T.ink,
+                    }} className="text-lg tabular-nums">
+                      {isOut ? "−" : isIn ? "+" : ""}{Number(m.quantity).toLocaleString()}
+                      <span className="text-[10px] ml-0.5" style={{ color: T.muted }}>ш</span>
+                    </div>
+                  </div>
+
+                  {/* MIDDLE — Product info */}
+                  <div className="flex items-start gap-3 p-3">
                     {p?.image_url ? (
                       <img src={p.image_url} alt=""
-                        style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                        style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                     ) : (
                       <div style={{
-                        width: 40, height: 40, borderRadius: 8,
+                        width: 48, height: 48, borderRadius: 8,
                         background: T.surfaceAlt, display: "flex",
                         alignItems: "center", justifyContent: "center", flexShrink: 0,
                       }}>
-                        <Package size={18} style={{ color: T.muted }} />
+                        <Package size={20} style={{ color: T.muted }} />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                          {p?.name || "—"}
-                        </span>
-                        {p?.sku && (
-                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                            ({p.sku})
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-0.5">
+                        {p?.name || "—"}
+                      </div>
+                      {p?.sku && (
+                        <div style={{ color: "#9333ea", fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
+                          #{p.sku}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* BOTTOM — Warehouse flow */}
+                  <div className="px-3 pb-2 pt-2 space-y-1.5"
+                    style={{ background: T.surfaceAlt, borderTop: `1px solid ${T.borderSoft}` }}>
+                    
+                    {/* Агуулахын дамжуулалт */}
+                    <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                      {isTransfer && wTo ? (
+                        <>
+                          <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                            className="px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span>📤</span>
+                            <span>{w?.name || "—"}</span>
                           </span>
-                        )}
-                        <span style={{ background: typeColor(m.movement_type), color: "white", fontFamily: FS, fontWeight: 700 }}
-                          className="text-[10px] px-2 py-0.5 rounded-full">
-                          {typeIcon(m.movement_type)} {typeLabel(m.movement_type)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
-                        <span>📦 {w?.name || "—"}</span>
-                        {wTo && (
-                          <>
-                            <span>→</span>
+                          <span style={{ color: T.muted }} className="text-[10px]">→</span>
+                          <span style={{ background: "rgba(16,185,129,0.15)", color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                            className="px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span>📥</span>
                             <span>{wTo.name}</span>
-                          </>
-                        )}
-                        {u && <span>· 👤 {u.name}</span>}
-                        <span>· {formatDate(m.created_at)}</span>
-                      </div>
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{
+                          background: isIn ? "rgba(16,185,129,0.15)" : isOut ? T.errSoft : T.warnSoft,
+                          color: isIn ? T.ok : isOut ? T.err : T.warn,
+                          fontFamily: FS, fontWeight: 600,
+                        }} className="px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <span>{isIn ? "📥" : isOut ? "📤" : "🏬"}</span>
+                          <span>{w?.name || "—"}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Хариуцсан хүн + reason */}
+                    <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
+                      {u && (
+                        <span className="flex items-center gap-1">
+                          <span>👤</span>
+                          <span style={{ color: T.ink, fontWeight: 600 }}>{u.name}</span>
+                        </span>
+                      )}
                       {m.reason && (
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
-                          🏷 {m.reason}
-                        </div>
-                      )}
-                      {m.notes && (
-                        <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-0.5">
-                          "{m.notes}"
-                        </div>
+                        <span className="flex items-center gap-1">
+                          <span>·</span>
+                          <span>🏷</span>
+                          <span>{m.reason}</span>
+                        </span>
                       )}
                     </div>
-                    <div className="text-right flex-shrink-0">
+
+                    {/* Тэмдэглэл */}
+                    {m.notes && (
                       <div style={{
-                        fontFamily: FD, fontWeight: 700,
-                        color: m.movement_type === "out" ? T.err : m.movement_type === "in" ? T.ok : T.ink,
-                      }} className="text-base tabular-nums">
-                        {m.movement_type === "out" ? "−" : m.movement_type === "in" ? "+" : ""}{Number(m.quantity).toLocaleString()}
+                        color: T.ink, fontFamily: FS, fontStyle: "italic",
+                        background: T.surface, borderLeft: `2px solid ${color}`,
+                      }} className="text-[11px] px-2 py-1 rounded">
+                        💬 "{m.notes}"
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               );
@@ -6555,7 +6609,7 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
                   placeholder="0"
                   style={inputStyle} className={inputClass} disabled={true} />
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
-                  💡 Нөөц өөрчлөхийн тулд "📥 Орлого" эсвэл "📤 Зарлага" товчийг ашигла
+                  💡 Нөөц өөрчлөхийн тулд "📥 Орлого" эсвэл "📤 Борлуулалт" товчийг ашигла
                 </div>
               </div>
             )}
@@ -6642,7 +6696,7 @@ function MovementFormModal({ product, type, profile, onSave, onClose }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
-              {type === "in" ? "📥 Орлого" : "📤 Зарлага"}
+              {type === "in" ? "📥 Орлого" : "📤 Борлуулалт"}
             </h3>
             <p style={{ color: T.muted, fontFamily: FS }} className="text-xs">
               {product.name}
@@ -6741,7 +6795,7 @@ function MovementFormModal({ product, type, profile, onSave, onClose }) {
               setBusy(false);
             }}
             className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold">
-            {busy ? "Хадгалаж..." : type === "in" ? "📥 Орлого хийх" : "📤 Зарлага хийх"}
+            {busy ? "Хадгалаж..." : type === "in" ? "📥 Орлого хийх" : "📤 Борлуулалт хийх"}
           </button>
         </div>
       </div>
@@ -10070,7 +10124,7 @@ function DriverSettlementView({ profile }) {
                 {/* Зарлага */}
                 <div>
                   <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                    📤 Зарлага
+                    📤 Борлуулалт
                   </label>
                   <input type="number" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="0"
                     style={{ ...inputStyle, fontFamily: FD, fontWeight: 600 }} className={numInputClass} />
@@ -10556,7 +10610,7 @@ function SettlementReportsView({ profile }) {
             <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
               <div className="flex-1">
                 <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                  📤 Зарлага
+                  📤 Борлуулалт
                 </div>
                 {r.expense_notes && (
                   <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-1">
@@ -19561,7 +19615,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
             </div>
             <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
               <div className="flex-1">
-                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">📤 Зарлага</div>
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">📤 Борлуулалт</div>
                 {r.expense_notes && (
                   <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px] mt-1">"{r.expense_notes}"</div>
                 )}
