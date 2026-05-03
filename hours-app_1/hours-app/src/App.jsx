@@ -20326,6 +20326,11 @@ function DriverDashboard({ profile }) {
       }
       await loadAll();
     } catch (e) {
+      const isShortStock = e.message?.includes("үлдэгдэл хүрэлцэхгүй");
+      if (isShortStock) {
+        setInsufficientStockOrder({ orderId, msg: e.message });
+        return;
+      }
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
     }
   };
