@@ -18495,7 +18495,7 @@ function DriverDashboard({ profile }) {
           background: "rgba(244, 114, 182, 0.15)",
           backdropFilter: "blur(8px)",
         }}
-          onClick={() => setActiveOrder(null)}>
+          onClick={() => { setActiveOrder(null); loadAll(); }}>
           <div style={{
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(24px) saturate(180%)",
@@ -18520,7 +18520,7 @@ function DriverDashboard({ profile }) {
                     {new Date(activeOrder.created_at).toLocaleString("mn-MN")}
                   </div>
                 </div>
-                <button onClick={() => setActiveOrder(null)} style={{ color: T.muted }}>
+                <button onClick={() => { setActiveOrder(null); loadAll(); }} style={{ color: T.muted }}>
                   <X size={18} />
                 </button>
               </div>
@@ -18610,6 +18610,9 @@ function DriverDashboard({ profile }) {
                   {Number(activeOrder.total_amount || 0).toLocaleString()}₮
                 </span>
               </div>
+
+              {/* Газрын зураг — Driver өөрөө pin зоох */}
+              <OrderDetailMap order={activeOrder} />
 
               {/* Route товч — Google Maps руу шилжих */}
               {activeOrder.delivery_lat && activeOrder.delivery_lng && (
