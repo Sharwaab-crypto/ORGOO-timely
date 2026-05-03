@@ -13002,50 +13002,59 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
   const status = order.status;
   const [activityProfiles, setActivityProfiles] = useState({});
   const [itemNotePopup, setItemNotePopup] = useState(null); // { item } — Барааны тэмдэглэл popup
-  const [productCallNotes, setProductCallNotes] = useState([]); // Дуудлагын түүхээс олсон тэмдэглэлүүд
+  const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product
+  const [stockPopup, setStockPopup] = useState(null); // { product, stocks: [{warehouse, qty}] }
+  const [warehouseList, setWarehouseList] = useState([]);
 
-  // Popup нээгдэх үед энэ үйлчлүүлэгчийн тус барааг агуулсан дуудлагуудыг татах
+  // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
-    if (!itemNotePopup || !order.customer_phone) {
-      setProductCallNotes([]);
+    if (!itemNotePopup) {
+      setProductInfo(null);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase
-          .from("call_logs")
-          .select("id, notes, interested_products, created_at, operator_id")
-          .eq("phone", order.customer_phone)
-          .order("created_at", { ascending: false })
-          .limit(50);
-        if (cancelled) return;
         const productId = itemNotePopup.item.product_id;
-        const matches = (data || []).filter((c) =>
-          c.interested_products && Array.isArray(c.interested_products) &&
-          c.interested_products.some((p) => p.id === productId)
-        );
-        // Operator профайл татах
-        const operatorIds = [...new Set(matches.map((m) => m.operator_id).filter(Boolean))];
-        if (operatorIds.length > 0) {
-          const { data: ops } = await supabase
-            .from("profiles").select("id, name").in("id", operatorIds);
-          const opMap = Object.fromEntries((ops || []).map((o) => [o.id, o]));
-          setProductCallNotes(matches.map((m) => ({
-            ...m,
-            operator: opMap[m.operator_id],
-            qty: m.interested_products.find((p) => p.id === productId)?.qty || 1,
-          })));
-        } else {
-          setProductCallNotes(matches.map((m) => ({
-            ...m,
-            qty: m.interested_products.find((p) => p.id === productId)?.qty || 1,
-          })));
+        if (!productId) {
+          setProductInfo({ product: null, totalStock: 0 });
+          return;
         }
+        const [{ data: p }, { data: stk }] = await Promise.all([
+          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_stock").select("quantity").eq("product_id", productId),
+        ]);
+        if (cancelled) return;
+        const totalStock = (stk || []).reduce((s, x) => s + Number(x.quantity || 0), 0);
+        setProductInfo({ product: p, totalStock });
       } catch (e) { console.error(e); }
     })();
     return () => { cancelled = true; };
-  }, [itemNotePopup, order.customer_phone]);
+  }, [itemNotePopup]);
+
+  // "Үлдэгдэл харах" товч даргахад агуулах тус бүрд хуваан үзүүлэх
+  const openStockPopup = async (item) => {
+    try {
+      const productId = item.product_id;
+      if (!productId) {
+        alert("⚠ Энэ бараа агуулахад бүртгэлгүй (product_id алга)");
+        return;
+      }
+      const [{ data: stk }, { data: whs }] = await Promise.all([
+        supabase.from("inv_stock").select("warehouse_id, quantity").eq("product_id", productId),
+        supabase.from("inv_warehouses").select("id, name, driver_id"),
+      ]);
+      setWarehouseList(whs || []);
+      const whMap = Object.fromEntries((whs || []).map((w) => [w.id, w]));
+      const stocks = (stk || []).map((s) => ({
+        warehouse: whMap[s.warehouse_id],
+        qty: Number(s.quantity || 0),
+      })).filter((x) => x.warehouse);
+      // Sort: ихээс бага руу
+      stocks.sort((a, b) => b.qty - a.qty);
+      setStockPopup({ product: productInfo?.product || { name: item.product_name }, stocks });
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
 
   // Бүх холбоотой ажилтнуудын мэдээлэл татах
   useEffect(() => {
@@ -13437,84 +13446,164 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               </div>
             </div>
 
-            {/* Body */}
+            {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
-              {/* Энэ захиалгын тэмдэглэл */}
-              {order.notes && (
-                <div className="rounded-lg p-3" style={{ background: T.warnSoft, borderLeft: `3px solid ${T.warn}` }}>
-                  <div style={{ color: T.warn, fontFamily: FM, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-1">
-                    📝 Захиалгын тэмдэглэл
-                  </div>
-                  <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-sm">
-                    "{order.notes}"
-                  </div>
-                </div>
-              )}
-
-              {/* Дуудлагын тэмдэглэлүүд */}
+              {/* 1. Барааны тэмдэглэл (description) */}
               <div>
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                  💬 Дуудлагын тэмдэглэл ({productCallNotes.length})
+                  📝 Барааны тэмдэглэл
                 </div>
-                {productCallNotes.length === 0 ? (
+                {!productInfo ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+                  </div>
+                ) : !productInfo.product ? (
                   <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                      Энэ бараагаар хийсэн дуудлагын тэмдэглэл алга
+                      Бараа нөөц бүртгэлд олдсонгүй
+                    </div>
+                  </div>
+                ) : productInfo.product.description ? (
+                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
+                      {productInfo.product.description}
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {productCallNotes.map((c, idx) => {
-                      const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
-                      const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                      Тэмдэглэл оруулаагүй байна
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Үлдэгдэл card */}
+              {productInfo?.product && (
+                <button
+                  onClick={() => openStockPopup(itemNotePopup.item)}
+                  className="press-btn w-full rounded-lg p-3 flex items-center justify-between"
+                  style={{
+                    background: productInfo.totalStock > 0 ? "rgba(16,185,129,0.08)" : T.errSoft,
+                    border: `1px solid ${productInfo.totalStock > 0 ? T.ok : T.err}`,
+                  }}>
+                  <div className="text-left">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                      📦 Нийт үлдэгдэл (бүх агуулах)
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: productInfo.totalStock > 0 ? T.ok : T.err }} className="text-2xl tabular-nums">
+                      {productInfo.totalStock.toLocaleString()}ш
+                    </div>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Дэлгэрэнгүй →
+                  </div>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── Агуулахын үлдэгдэл popup ─── */}
+      {stockPopup && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setStockPopup(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+            maxHeight: "85vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                    📦 Агуулахын үлдэгдэл
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    {stockPopup.product?.name || "—"}
+                  </div>
+                </div>
+                <button onClick={() => setStockPopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4">
+              {stockPopup.stocks.length === 0 ? (
+                <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div className="text-3xl mb-2">📭</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Бараа аль ч агуулахад алга
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Total */}
+                  <div className="rounded-lg p-3 mb-3" style={{ background: T.highlightSoft }}>
+                    <div className="flex items-center justify-between">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        Нийт үлдэгдэл
+                      </div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                        {stockPopup.stocks.reduce((s, x) => s + x.qty, 0).toLocaleString()}ш
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Per warehouse */}
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                    Агуулах тус бүрд ({stockPopup.stocks.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {stockPopup.stocks.map((s, idx) => {
+                      const isDriver = !!s.warehouse?.driver_id;
                       return (
-                        <div key={c.id} className="rounded-lg p-3"
+                        <div key={s.warehouse?.id || idx}
+                          className="flex items-center justify-between rounded-lg p-3"
                           style={{
                             background: T.surface,
-                            border: `1px solid ${isCancelled ? T.errSoft : T.border}`,
-                            borderLeft: `3px solid ${isCancelled ? T.err : T.highlight}`,
+                            borderLeft: `3px solid ${s.qty > 0 ? T.ok : T.err}`,
+                            border: `1px solid ${T.border}`,
                           }}>
-                          <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}
-                                className="text-[10px] px-2 py-0.5 rounded-full">
-                                #{productCallNotes.length - idx}
-                              </span>
-                              {isCancelled && (
-                                <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
-                                  className="text-[10px] px-2 py-0.5 rounded-full">
-                                  ✕ Цуцалсан
-                                </span>
-                              )}
-                              <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}
-                                className="text-[10px] px-2 py-0.5 rounded-full">
-                                ×{c.qty}
-                              </span>
-                            </div>
-                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                              {new Date(c.created_at).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span style={{ fontSize: 18 }}>
+                              {isDriver ? "🚚" : "🏬"}
                             </span>
+                            <div className="min-w-0">
+                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                                {s.warehouse?.name || "—"}
+                              </div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                                {isDriver ? "Хүргэгчийн агуулах" : "Үндсэн агуулах"}
+                              </div>
+                            </div>
                           </div>
-                          {c.operator && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1.5">
-                              🎧 {c.operator.name}
-                            </div>
-                          )}
-                          {cleanNotes ? (
-                            <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">
-                              {cleanNotes}
-                            </div>
-                          ) : (
-                            <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
-                              Тэмдэглэл хоосон
-                            </div>
-                          )}
+                          <div style={{
+                            fontFamily: FD, fontWeight: 700,
+                            color: s.qty > 0 ? T.ok : T.err,
+                          }} className="text-xl tabular-nums">
+                            {s.qty.toLocaleString()}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
           </div>
         </div>,
