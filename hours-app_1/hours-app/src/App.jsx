@@ -17625,15 +17625,16 @@ function DriverDashboard({ profile }) {
   // Filter
   const filtered = orders.filter((o) => {
     if (filter === "active") return o.status === "new" || o.status === "pending";
-    if (filter === "delivered") return o.status === "delivered";
-    if (filter === "cancelled") return o.status === "cancelled";
+    // Хүргэсэн ба Цуцалсан tab-аас тооцоо хаагдсан (settlement_id-тэй) захиалгуудыг хасах
+    if (filter === "delivered") return o.status === "delivered" && !o.settlement_id;
+    if (filter === "cancelled") return o.status === "cancelled" && !o.settlement_id;
     return true;
   });
 
   const counts = {
     active: orders.filter((o) => o.status === "new" || o.status === "pending").length,
-    delivered: orders.filter((o) => o.status === "delivered").length,
-    cancelled: orders.filter((o) => o.status === "cancelled").length,
+    delivered: orders.filter((o) => o.status === "delivered" && !o.settlement_id).length,
+    cancelled: orders.filter((o) => o.status === "cancelled" && !o.settlement_id).length,
   };
 
   return (
