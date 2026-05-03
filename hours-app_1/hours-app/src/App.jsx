@@ -10397,6 +10397,13 @@ function SettlementReportsView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
 
+  // Шүүлтүүр
+  const [filterYear, setFilterYear] = useState("all");
+  const [filterMonth, setFilterMonth] = useState("all");
+  const [filterDriver, setFilterDriver] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -10418,6 +10425,42 @@ function SettlementReportsView({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // Шүүсэн жагсаалт
+  const filteredReports = reports.filter((r) => {
+    const d = new Date(r.settled_at);
+    if (filterYear !== "all" && d.getFullYear() !== Number(filterYear)) return false;
+    if (filterMonth !== "all" && d.getMonth() + 1 !== Number(filterMonth)) return false;
+    if (filterDriver !== "all" && r.driver_id !== filterDriver) return false;
+    return true;
+  });
+
+  // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
+  useEffect(() => { setPage(1); }, [filterYear, filterMonth, filterDriver]);
+
+  // Тооцоолол (filter-ийн хүрээнд)
+  const totalSubmitted = filteredReports.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
+  const totalExpense = filteredReports.reduce((s, r) => s + Number(r.expense_amount || 0), 0);
+  const totalCash = filteredReports.reduce((s, r) => s + Number(r.cash_amount || 0), 0);
+  const totalBank = filteredReports.reduce((s, r) => s + Number(r.bank_amount || 0), 0);
+  const totalDelivered = filteredReports.reduce((s, r) => s + Number(r.order_count || 0), 0);
+  const totalSettlements = filteredReports.length;
+
+  // Хэрэглэгчдэд харагдах боломжит он/сар
+  const yearsAvail = [...new Set(reports.map((r) => new Date(r.settled_at).getFullYear()))].sort((a, b) => b - a);
+  const monthsAvail = [
+    { v: "1", n: "1-р сар" }, { v: "2", n: "2-р сар" }, { v: "3", n: "3-р сар" },
+    { v: "4", n: "4-р сар" }, { v: "5", n: "5-р сар" }, { v: "6", n: "6-р сар" },
+    { v: "7", n: "7-р сар" }, { v: "8", n: "8-р сар" }, { v: "9", n: "9-р сар" },
+    { v: "10", n: "10-р сар" }, { v: "11", n: "11-р сар" }, { v: "12", n: "12-р сар" },
+  ];
+  const driversAvail = [...new Set(reports.map((r) => r.driver_id))]
+    .map((id) => drivers[id])
+    .filter(Boolean);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredReports.length / PAGE_SIZE));
+  const pagedReports = filteredReports.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Detail харах
   if (activeReport) {
@@ -10561,72 +10604,232 @@ function SettlementReportsView({ profile }) {
   // Жагсаалт
   return (
     <div className="space-y-3">
+      {/* Stats — 4 card */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Нийт тушаасан</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
+            {totalSubmitted.toLocaleString()}₮
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
+            💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Нийт зарлага</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+            {totalExpense.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">✓ Амжилттай хүргэлт</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+            {totalDelivered}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #6366f1` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📊 Нийт тооцоо</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xl tabular-nums">
+            {totalSettlements}
+          </div>
+        </div>
+      </div>
+
+      {/* Шүүлтүүр */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+            🔍 Шүүлтүүр
+            {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
+              <span style={{ background: T.highlight, color: "white" }} className="text-[10px] px-2 py-0.5 rounded-full">
+                идэвхтэй
+              </span>
+            )}
+          </div>
+          {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
+            <button onClick={() => { setFilterYear("all"); setFilterMonth("all"); setFilterDriver("all"); }}
+              className="press-btn text-[11px] px-3 py-1 rounded-lg"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+              ✕ Цэвэрлэх
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {/* Жил */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Жил</label>
+            <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүх жил</option>
+              {yearsAvail.map((y) => (
+                <option key={y} value={y}>{y} он</option>
+              ))}
+            </select>
+          </div>
+          {/* Сар */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Сар</label>
+            <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүх сар</option>
+              {monthsAvail.map((m) => (
+                <option key={m.v} value={m.v}>{m.n}</option>
+              ))}
+            </select>
+          </div>
+          {/* Хүргэгч */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Хүргэгч</label>
+            <select value={filterDriver} onChange={(e) => setFilterDriver(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              <option value="all">Бүх хүргэгч</option>
+              {driversAvail.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center">
           <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
         </div>
-      ) : reports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <div className="glass rounded-2xl p-8 text-center">
           <div className="text-4xl mb-2">📊</div>
           <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-            Тайлан байхгүй
+            {reports.length === 0 ? "Тайлан байхгүй" : "Шүүлтэд тохирох тайлан алга"}
           </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
-            "Тооцоо тулгах" хэсгээс тооцоо хаахад энд хадгалагдана
-          </div>
+          {reports.length === 0 && (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
+              "Тооцоо тулгах" хэсгээс тооцоо хаахад энд хадгалагдана
+            </div>
+          )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {reports.map((r) => {
-            const drv = drivers[r.driver_id];
-            return (
-              <button key={r.id} onClick={() => setActiveReport(r)}
-                className="press-btn glass lift rounded-2xl p-3 w-full text-left"
-                style={{ borderLeft: `4px solid ${T.ok}` }}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div style={{ background: T.ok, color: "white" }}
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
-                    ✓
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                      🚚 {drv?.name || "Хүргэгч"}
+        <>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            {filteredReports.length} тайлан · {page}/{totalPages} хуудас
+          </div>
+          <div className="space-y-2">
+            {pagedReports.map((r) => {
+              const drv = drivers[r.driver_id];
+              return (
+                <button key={r.id} onClick={() => setActiveReport(r)}
+                  className="press-btn glass lift rounded-2xl p-3 w-full text-left"
+                  style={{ borderLeft: `4px solid ${T.ok}` }}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div style={{ background: T.ok, color: "white" }}
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
+                      ✓
                     </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                      {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                        🚚 {drv?.name || "Хүргэгч"}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                        {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Тушаасан</div>
-                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
-                      {Number(r.total_submitted).toLocaleString()}₮
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-1.5 text-center">
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">💵 Бэлэн</div>
-                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
-                      {Number(r.cash_amount).toLocaleString()}₮
+                    <div className="text-right">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Тушаасан</div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
+                        {Number(r.total_submitted).toLocaleString()}₮
+                      </div>
                     </div>
                   </div>
-                  <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-1.5 text-center">
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">🏦 Данс</div>
-                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
-                      {Number(r.bank_amount).toLocaleString()}₮
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-1.5 text-center">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">💵 Бэлэн</div>
+                      <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                        {Number(r.cash_amount).toLocaleString()}₮
+                      </div>
+                    </div>
+                    <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-1.5 text-center">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">🏦 Данс</div>
+                      <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                        {Number(r.bank_amount).toLocaleString()}₮
+                      </div>
+                    </div>
+                    <div style={{ background: T.warnSoft }} className="rounded-lg p-1.5 text-center">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">📤 Зарл.</div>
+                      <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                        {Number(r.expense_amount).toLocaleString()}₮
+                      </div>
                     </div>
                   </div>
-                  <div style={{ background: T.warnSoft }} className="rounded-lg p-1.5 text-center">
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">📤 Зарл.</div>
-                    <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
-                      {Number(r.expense_amount).toLocaleString()}₮
-                    </div>
-                  </div>
-                </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="glass rounded-2xl p-3 flex items-center justify-center gap-1 flex-wrap">
+              <button onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{
+                  background: page === 1 ? T.surfaceAlt : T.surface,
+                  color: page === 1 ? T.muted : T.ink,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600,
+                  opacity: page === 1 ? 0.5 : 1,
+                }}>
+                ← Өмнөх
               </button>
-            );
-          })}
-        </div>
+              {(() => {
+                // Show page numbers: 1, ..., n-1, n, n+1, ..., last
+                const pages = [];
+                const showAround = 1; // 1-1, 1, 1+1
+                const from = Math.max(1, page - showAround);
+                const to = Math.min(totalPages, page + showAround);
+                if (from > 1) {
+                  pages.push(1);
+                  if (from > 2) pages.push("...");
+                }
+                for (let i = from; i <= to; i++) pages.push(i);
+                if (to < totalPages) {
+                  if (to < totalPages - 1) pages.push("...");
+                  pages.push(totalPages);
+                }
+                return pages.map((p, i) => 
+                  p === "..." ? (
+                    <span key={"dots-" + i} style={{ color: T.muted, fontFamily: FM }} className="px-2 text-xs">⋯</span>
+                  ) : (
+                    <button key={p} onClick={() => setPage(p)}
+                      className="press-btn rounded-lg text-xs"
+                      style={{
+                        background: page === p ? T.highlight : T.surface,
+                        color: page === p ? "white" : T.ink,
+                        border: `1px solid ${page === p ? T.highlight : T.border}`,
+                        fontFamily: FS, fontWeight: 700,
+                        minWidth: 32, height: 32,
+                      }}>
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+              <button onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{
+                  background: page === totalPages ? T.surfaceAlt : T.surface,
+                  color: page === totalPages ? T.muted : T.ink,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600,
+                  opacity: page === totalPages ? 0.5 : 1,
+                }}>
+                Дараах →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
