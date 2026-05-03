@@ -255,20 +255,11 @@ export default function App() {
     style.innerHTML = `
       /* Бүх touch товч багадаа 44px (iOS Apple HIG) */
       @media (max-width: 768px) {
-        button, a[href], [role="button"], input[type="checkbox"], input[type="radio"] {
-          min-height: 44px;
+        button:not(.leaflet-control-zoom-in):not(.leaflet-control-zoom-out):not([class*="leaflet-"]),
+        a[href]:not([class*="leaflet-"]),
+        [role="button"]:not([class*="leaflet-"]) {
+          min-height: 40px;
           touch-action: manipulation;
-        }
-        button.press-btn[class*="p-1 "],
-        button.press-btn[class*="p-1.5"],
-        button[class*="w-7"], button[class*="h-7"],
-        button[class*="w-8"], button[class*="h-8"] {
-          min-height: 36px;
-          min-width: 36px;
-        }
-        /* Жижиг icon товч (X хаах гэх мэт) — 36px-аас бага байж болохгүй */
-        button[aria-label], button[title] {
-          padding: 6px;
         }
 
         /* Жижиг текст уншигдахуйц болгох */
@@ -278,58 +269,29 @@ export default function App() {
         .text-\\[11px\\] { font-size: 12px !important; }
         
         /* Input талбар жижиг харагдахаас сэргийлэх */
-        input, select, textarea {
+        input:not([type="checkbox"]):not([type="radio"]),
+        select,
+        textarea {
           font-size: 16px !important; /* iOS auto-zoom-аас сэргийлэх */
-          min-height: 44px;
+          min-height: 40px;
         }
         textarea {
           min-height: 80px;
         }
 
-        /* Modal-ууд бүтэн дэлгэц дээр */
-        .modal-content, [class*="max-w-md"], [class*="max-w-sm"] {
-          margin: 8px !important;
-        }
-
-        /* Glass card padding нэмэх — touchable */
-        .glass {
-          padding: 12px !important;
-        }
-        .glass.rounded-xl,
-        .glass.rounded-2xl {
-          padding: 12px !important;
-        }
-        /* Жижиг карт хадгалах */
-        .glass.p-2,
-        .glass[class*="p-1"] {
-          padding: 10px !important;
-        }
-
-        /* Grid-уудыг 1-2 column болгох */
-        .grid.grid-cols-3:not([class*="md:grid"]):not([class*="sm:grid"]) {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-        .grid.grid-cols-4:not([class*="md:grid"]):not([class*="sm:grid"]) {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-        .grid.grid-cols-5:not([class*="md:grid"]):not([class*="sm:grid"]) {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-        .grid.grid-cols-6:not([class*="md:grid"]):not([class*="sm:grid"]) {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-
-        /* Spacing нэмэх (touch-friendly) */
-        .gap-1 { gap: 0.375rem !important; }
-        .gap-1\\.5 { gap: 0.5rem !important; }
-
         /* Sidebar өргөн */
         aside, nav[class*="sidebar"] {
           width: min(85vw, 320px) !important;
         }
+
+        /* Тач feedback */
+        .press-btn:active {
+          transform: scale(0.97);
+          transition: transform 0.1s;
+        }
       }
 
-      /* Бүх дэлгэцэнд: scrollbar арилгах эсвэл нарийхан */
+      /* Бүх дэлгэцэнд: scrollbar нарийхан */
       ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
@@ -342,24 +304,15 @@ export default function App() {
         background: rgba(0,0,0,0.3);
       }
 
-      /* Тач товч pressed feedback */
-      .press-btn:active {
-        transform: scale(0.97);
-        transition: transform 0.1s;
-      }
-
       /* Хэвтээ overflow асуудлыг сэргийлэх */
       body, #root {
         overflow-x: hidden;
       }
 
-      /* Mobile sticky header */
-      @media (max-width: 768px) {
-        header.sticky, [class*="sticky top-0"] {
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          background: rgba(255, 255, 255, 0.92);
-        }
+      /* Leaflet map fix — давхар padding оруулахаас сэргийлэх */
+      .leaflet-container {
+        height: 100% !important;
+        width: 100% !important;
       }
     `;
     document.head.appendChild(style);
@@ -13687,6 +13640,11 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         attribution: "© OSM",
         maxZoom: 19,
       }).addTo(map);
+
+      // Mobile дээр container хэмжээ зөв тооцох
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 100);
     })();
 
     return () => {
@@ -13823,7 +13781,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         </div>
       ) : (
         <div className="glass rounded-2xl overflow-hidden" style={{ padding: 0 }}>
-          <div ref={containerRef} style={{ width: "100%", height: 500, borderRadius: 16 }}></div>
+          <div ref={containerRef} style={{ width: "100%", height: "min(500px, 70vh)", minHeight: 360, borderRadius: 16 }}></div>
         </div>
       )}
     </div>
