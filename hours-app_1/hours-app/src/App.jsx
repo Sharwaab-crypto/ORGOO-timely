@@ -13600,6 +13600,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
   const markersRef = useRef([]);
   const initialFitDoneRef = useRef(false);
   const onOrderClickRef = useRef(onOrderClick);
+  const [mapReady, setMapReady] = useState(false); // ⭐ Map бэлэн эсэх
 
   // onOrderClick callback-ийг ref-д хадгалж effect дахин ажиллахаас сэргийлэх
   useEffect(() => { onOrderClickRef.current = onOrderClick; }, [onOrderClick]);
@@ -13648,10 +13649,13 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
       setTimeout(() => {
         if (mapRef.current) mapRef.current.invalidateSize();
       }, 100);
+
+      setMapReady(true); // ⭐ markers effect-руу мэдэгдэх
     })();
 
     return () => {
       cancelled = true;
+      setMapReady(false);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -13663,7 +13667,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
 
   // Marker-ыг өгөгдөл өөрчлөгдөхөд дахин үүсгэх
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapReady || !mapRef.current) return;
     let cancelled = false;
     (async () => {
       const L = (await import("leaflet")).default;
@@ -13743,7 +13747,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
     })();
 
     return () => { cancelled = true; };
-  }, [ordersHash, driversHash]); // ⭐ Хэш ашиглаж жинхэнэ өөрчлөлтөнд reaгать болно
+  }, [mapReady, ordersHash, driversHash]); // ⭐ Хэш ашиглаж жинхэнэ өөрчлөлтөнд reaгать болно
 
   return (
     <div className="space-y-2">
