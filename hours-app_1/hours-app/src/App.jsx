@@ -20776,34 +20776,78 @@ function DriverDashboard({ profile }) {
       {/* Driver picker — Хүргэлт хуваарилах modal */}
       {/* Үлдэгдэл хүрэлцэхгүй popup */}
       {insufficientStockOrder && createPortal(
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
-        }}
-          onClick={() => setInsufficientStockOrder(null)}>
-          <div style={{
-            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 400,
-            boxShadow: "0 24px 48px rgba(239, 68, 68, 0.3)",
-            border: `2px solid ${T.err}`,
-          }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="p-5 text-center">
-              <div className="text-5xl mb-3">📭</div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.err }} className="text-base mb-2">
-                Барааны үлдэгдэл хүрэлцэхгүй байна
+        (() => {
+          // Алдааны мессежээс барааны нэр + тоо ялгах
+          const msg = insufficientStockOrder.msg || "";
+          const productMatch = msg.match(/"([^"]+)"|: ([^(\-]+?)(?: \(|-|$)/);
+          const productName = productMatch ? (productMatch[1] || productMatch[2] || "").trim() : null;
+          const qtyMatch = msg.match(/(\d+)\s*ширхэг байгаа.*?(\d+)\s*ширхэг хасах/);
+          const haveQty = qtyMatch ? qtyMatch[1] : "0";
+          const needQty = qtyMatch ? qtyMatch[2] : "?";
+          
+          return (
+            <div style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+              background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+            }}
+              onClick={() => setInsufficientStockOrder(null)}>
+              <div style={{
+                background: T.bg, borderRadius: 16, width: "100%", maxWidth: 420,
+                boxShadow: "0 24px 48px rgba(239, 68, 68, 0.3)",
+                border: `2px solid ${T.err}`,
+              }}
+                onClick={(e) => e.stopPropagation()}>
+                <div className="p-5">
+                  <div className="text-center mb-3">
+                    <div className="text-5xl mb-2">📭</div>
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.err }} className="text-base">
+                      Барааны үлдэгдэл хүрэлцэхгүй
+                    </div>
+                  </div>
+
+                  {/* Product info */}
+                  {productName && (
+                    <div className="rounded-lg p-3 mb-3" style={{ background: T.errSoft, border: `1px solid ${T.err}` }}>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        Дутагдаж буй бараа
+                      </div>
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mt-0.5">
+                        📦 {productName}
+                      </div>
+                      <div className="flex justify-around mt-2 pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
+                        <div className="text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Танд байгаа</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl tabular-nums">
+                            {haveQty}
+                          </div>
+                        </div>
+                        <div style={{ alignSelf: "center", color: T.muted, fontFamily: FD }}>→</div>
+                        <div className="text-center">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Хэрэгтэй</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+                            {needQty}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hint */}
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-xs text-center mb-3">
+                    💡 "Хүсэлт" хэсгээс энэ барааг авах хүсэлт илгээнэ үү
+                  </div>
+
+                  <button onClick={() => setInsufficientStockOrder(null)}
+                    className="press-btn w-full py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: T.err, color: "white", fontFamily: FS }}>
+                    Ойлголоо
+                  </button>
+                </div>
               </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                Захиалга "Хүргэгдсэн" гэж тэмдэглэгдсэнгүй
-              </div>
-              <button onClick={() => setInsufficientStockOrder(null)}
-                className="press-btn mt-4 w-full py-3 rounded-xl text-sm font-semibold"
-                style={{ background: T.err, color: "white", fontFamily: FS }}>
-                Ойлголоо
-              </button>
             </div>
-          </div>
-        </div>,
+          );
+        })(),
         document.body
       )}
 
