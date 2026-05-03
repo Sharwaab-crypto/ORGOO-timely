@@ -11573,12 +11573,121 @@ function OrdersView({ profile }) {
 
   if (activeOrder) {
     return (
-      <OrderDetail
-        order={activeOrder}
-        items={items[activeOrder.id] || []}
-        onClose={() => setActiveOrder(null)}
-        onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
-      />
+      <>
+        <OrderDetail
+          order={activeOrder}
+          items={items[activeOrder.id] || []}
+          onClose={() => setActiveOrder(null)}
+          onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
+          onAssignDriver={() => setAssignDriverOrder(activeOrder)}
+        />
+        {/* Driver picker modal — OrderDetail дотроос дуудагдвал энд харагдана */}
+        {assignDriverOrder && (
+          <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2"
+            onClick={() => setAssignDriverOrder(null)}>
+            <div className="modal-content rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
+              style={{ maxHeight: "85vh" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${T.border}` }}>
+                <div>
+                  <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+                    🚚 Delivery хуваарилах
+                  </h3>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                    {assignDriverOrder.customer_name || assignDriverOrder.customer_phone}
+                  </div>
+                </div>
+                <button onClick={() => setAssignDriverOrder(null)} style={{ color: T.muted }}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="p-3 overflow-y-auto" style={{ flex: 1 }}>
+                {drivers.length === 0 ? (
+                  <div className="text-center py-6">
+                    <div className="text-4xl mb-2">🚚</div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                      Delivery ажилтан бүртгэгдээгүй
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {assignDriverOrder.driver_id && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await supabase.from("biz_orders").update({ driver_id: null }).eq("id", assignDriverOrder.id);
+                            setAssignDriverOrder(null);
+                            await loadAll();
+                            // OrderDetail-ийн өгөгдлийг шинэчлэх
+                            const updated = (await supabase.from("biz_orders").select("*").eq("id", assignDriverOrder.id).single()).data;
+                            if (updated) setActiveOrder(updated);
+                          } catch (e) { alert("Алдаа: " + e.message); }
+                        }}
+                        className="press-btn w-full p-3 rounded-xl flex items-center gap-2"
+                        style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                        <X size={14} /> Хуваарилалтыг цуцлах
+                      </button>
+                    )}
+                    {drivers.map((d) => {
+                      const isSelected = assignDriverOrder.driver_id === d.id;
+                      const dOrders = orders.filter((o) => o.driver_id === d.id);
+                      const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                      return (
+                        <button key={d.id}
+                          onClick={async () => {
+                            try {
+                              await supabase.from("biz_orders").update({
+                                driver_id: d.id,
+                                status: "pending",
+                                assigned_at: new Date().toISOString(),
+                                assigned_by: profile.id,
+                              }).eq("id", assignDriverOrder.id);
+                              setAssignDriverOrder(null);
+                              await loadAll();
+                              // OrderDetail-ийн өгөгдлийг шинэчлэх
+                              const updated = (await supabase.from("biz_orders").select("*").eq("id", assignDriverOrder.id).single()).data;
+                              if (updated) setActiveOrder(updated);
+                            } catch (e) { alert("Алдаа: " + e.message); }
+                          }}
+                          className="press-btn w-full p-3 rounded-xl flex items-center gap-3"
+                          style={{
+                            background: isSelected ? "rgba(14,165,233,0.15)" : T.surfaceAlt,
+                            border: isSelected ? `2px solid #0ea5e9` : `2px solid transparent`,
+                          }}>
+                          <div style={{ background: "#0ea5e9", color: "white" }}
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                            {d.name?.charAt(0) || "🚚"}
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                              {d.name}
+                            </div>
+                            {d.job_title && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                                {d.job_title}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Идэвхтэй</div>
+                            <div style={{ fontFamily: FD, fontWeight: 700, color: activeCount > 0 ? T.warn : T.muted }} className="text-base tabular-nums">
+                              {activeCount}
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <span style={{ color: "#0ea5e9" }}>✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -12329,7 +12438,7 @@ function OrderDetailMap({ order }) {
   );
 }
 
-function OrderDetail({ order, items, onClose, onUpdateStatus }) {
+function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver }) {
   const status = order.status;
   const [activityProfiles, setActivityProfiles] = useState({});
 
@@ -12357,11 +12466,12 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
 
   const statusActions = {
     new: [
-      { label: "Хүлээгдэж байна", action: "pending", color: T.warn, icon: "⏳" },
+      { label: "Хүргэлт хуваарилах", action: "assign", color: "#0ea5e9", icon: "🚚" },
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
     pending: [
+      { label: "Хүргэлт өөрчлөх", action: "assign", color: "#0ea5e9", icon: "🚚" },
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
@@ -12635,11 +12745,15 @@ function OrderDetail({ order, items, onClose, onUpdateStatus }) {
           {actions.map((a) => (
             <button key={a.action} onClick={() => {
               if (a.action === "cancelled" && !confirm("Захиалга цуцлах уу?")) return;
+              if (a.action === "assign") {
+                if (onAssignDriver) onAssignDriver();
+                return;
+              }
               onUpdateStatus(a.action);
             }}
               className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
               style={{
-                background: a.action === "cancelled" ? T.errSoft : a.action === "delivered" ? "rgba(16,185,129,0.1)" : T.warnSoft,
+                background: a.action === "cancelled" ? T.errSoft : a.action === "delivered" ? "rgba(16,185,129,0.1)" : a.action === "assign" ? "rgba(14,165,233,0.1)" : T.warnSoft,
                 color: a.color, fontFamily: FS,
               }}>
               <span>{a.icon}</span>
