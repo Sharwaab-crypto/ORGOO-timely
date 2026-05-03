@@ -19697,6 +19697,8 @@ function DriverDashboard({ profile }) {
   const [cancelNote, setCancelNote] = useState("");
   const [view, setView] = useState("orders"); // orders | warehouse | requests | settlements
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
+  const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
+  const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
   });
@@ -19708,15 +19710,18 @@ function DriverDashboard({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // Өөрт оноогдсон + бүх шинэ оноогдоогүй захиалга
-      const [{ data: ownOrders }, { data: newOrders }] = await Promise.all([
+      // Өөрт оноогдсон + бүх шинэ оноогдоогүй захиалга + driver-уудын жагсаалт
+      const [{ data: ownOrders }, { data: newOrders }, { data: driversData }] = await Promise.all([
         supabase.from("biz_orders").select("*")
           .eq("driver_id", profile.id)
           .order("created_at", { ascending: false }),
         supabase.from("biz_orders").select("*")
           .is("driver_id", null).eq("status", "new")
           .order("created_at", { ascending: false }),
+        supabase.from("profiles").select("id, name, job_title").eq("role", "driver"),
       ]);
+
+      setDrivers(driversData || []);
 
       // Хослуулах + давхардлаас сэргийлэх
       const all = [...(ownOrders || [])];
@@ -20191,15 +20196,23 @@ function DriverDashboard({ profile }) {
 
                 {/* Action buttons */}
                 {!o.driver_id && o.status === "new" ? (
-                  // Эзэнгүй захиалга — Авах товч
-                  <div className="mt-2">
+                  // Эзэнгүй захиалга — Авах эсвэл Хуваарилах
+                  <div className="grid grid-cols-2 gap-2 mt-2">
                     <button onClick={(e) => { e.stopPropagation(); claimOrder(o.id); }}
-                      className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                       style={{
                         background: "linear-gradient(135deg, #9333ea, #c026d3)",
                         color: "white", fontFamily: FS,
                       }}>
-                      🆕 Энэ захиалгыг авах
+                      🆕 Өөртөө авах
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setAssignDriverOrder(o); }}
+                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      style={{
+                        background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS,
+                        border: `1px solid #0ea5e9`,
+                      }}>
+                      🚚 Хүргэлт хуваарилах
                     </button>
                   </div>
                 ) : (o.status === "new" || o.status === "pending") && (
@@ -20268,6 +20281,127 @@ function DriverDashboard({ profile }) {
                 setActiveOrder(null);
               }}
             />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Driver picker — Хүргэлт хуваарилах modal */}
+      {assignDriverOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setAssignDriverOrder(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+            maxHeight: "85vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`, background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                    🚚 Хүргэлт хуваарилах
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                    {assignDriverOrder.customer_name || assignDriverOrder.customer_phone}
+                  </div>
+                </div>
+                <button onClick={() => setAssignDriverOrder(null)} style={{ color: T.muted }}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-3">
+              {drivers.length === 0 ? (
+                <div className="text-center py-6">
+                  <div className="text-4xl mb-2">🚚</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Delivery ажилтан бүртгэгдээгүй
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {drivers.map((d) => {
+                    const dOrders = orders.filter((o) => o.driver_id === d.id);
+                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                    const isMe = d.id === profile.id;
+                    return (
+                      <button key={d.id}
+                        onClick={async () => {
+                          try {
+                            const { data, error } = await supabase
+                              .from("biz_orders")
+                              .update({
+                                driver_id: d.id,
+                                status: "pending",
+                                assigned_at: new Date().toISOString(),
+                                assigned_by: profile.id,
+                              })
+                              .eq("id", assignDriverOrder.id)
+                              .is("driver_id", null)
+                              .select();
+                            if (error) throw error;
+                            if (!data || data.length === 0) {
+                              alert("⚠ Энэ захиалгыг өөр хүн аль хэдийнэ авсан байна.");
+                              setAssignDriverOrder(null);
+                              await loadAll();
+                              return;
+                            }
+                            alert(`✅ ${d.name}-руу хуваарилагдлаа!`);
+                            setAssignDriverOrder(null);
+                            await loadAll();
+                          } catch (e) {
+                            alert("Алдаа: " + (e.message || JSON.stringify(e)));
+                          }
+                        }}
+                        className="press-btn w-full p-3 rounded-xl flex items-center gap-3"
+                        style={{
+                          background: isMe ? "rgba(147,51,234,0.1)" : T.surfaceAlt,
+                          border: isMe ? `2px solid #9333ea` : `2px solid transparent`,
+                        }}>
+                        <div style={{
+                          background: isMe ? "linear-gradient(135deg, #9333ea, #c026d3)" : "#0ea5e9",
+                          color: "white",
+                        }}
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                          {d.name?.charAt(0) || "🚚"}
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm flex items-center gap-1">
+                            {d.name}
+                            {isMe && (
+                              <span style={{ background: "#9333ea", color: "white", fontFamily: FS, fontWeight: 600 }}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full">
+                                Та
+                              </span>
+                            )}
+                          </div>
+                          {d.job_title && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                              {d.job_title}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Идэвхтэй</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: activeCount > 0 ? T.warn : T.muted }} className="text-base tabular-nums">
+                            {activeCount}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>,
         document.body
