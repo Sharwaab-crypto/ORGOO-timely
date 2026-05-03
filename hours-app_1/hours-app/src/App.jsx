@@ -18651,7 +18651,7 @@ function DriverRequestsView({ profile }) {
       const [{ data: reqData, error: reqErr }, { data: whData, error: whErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         supabase.from("inv_transfer_requests").select("*").eq("requester_id", profile.id).order("created_at", { ascending: false }),
         supabase.from("inv_warehouses").select("*"),
-        supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
+        supabase.from("inv_products").select("id, name, sku, image_url, sale_price, category_id").eq("is_active", true),
         supabase.from("inv_stock").select("*"),
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
@@ -18868,7 +18868,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
               product_name: product?.name || "",
               product_sku: product?.sku || "",
               product_image: product?.image_url || null,
-              product_price: Number(product?.price || 0),
+              product_price: Number(product?.sale_price || 0),
               quantity: Number(s.quantity),
               maxQty: Number(s.quantity),
             };
@@ -18928,7 +18928,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
             if (!product) return;
             items.push({
               product_id: b.product_id, product_name: product.name, product_sku: product.sku,
-              product_image: product.image_url, product_price: Number(product.price || 0),
+              product_image: product.image_url, product_price: Number(product.sale_price || 0),
               quantity: Math.min(b.missing, avail), maxQty: avail,
             });
           });
@@ -18998,7 +18998,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
         if (maxQty <= 0) return prev;
         return [...prev, {
           product_id: productId, product_name: product.name, product_sku: product.sku,
-          product_image: product.image_url, product_price: Number(product.price || 0),
+          product_image: product.image_url, product_price: Number(product.sale_price || 0),
           quantity: 1, maxQty: maxQty,
         }];
       }
@@ -19272,9 +19272,9 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
                             Үлд {inStock}
                           </span>
                         </div>
-                        {Number(p.price) > 0 && (
+                        {Number(p.sale_price) > 0 && (
                           <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xs mt-0.5 tabular-nums">
-                            {Number(p.price).toLocaleString()}₮
+                            {Number(p.sale_price).toLocaleString()}₮
                           </div>
                         )}
                       </div>
