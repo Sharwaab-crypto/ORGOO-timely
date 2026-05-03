@@ -245,6 +245,32 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [globalAlert, setGlobalAlert] = useState(null); // ⭐ Глобал alert popup
+
+  // ─── window.alert-ыг тохирох UI popup-аар солих ─────────────────
+  useEffect(() => {
+    const originalAlert = window.alert.bind(window);
+    window.alert = (msg) => {
+      setGlobalAlert(String(msg ?? ""));
+    };
+    return () => { window.alert = originalAlert; };
+  }, []);
+
+  // Alert-ийн төрлийг автомат илрүүлэх (icon, color)
+  const detectAlertType = (msg) => {
+    if (!msg) return { kind: "info", icon: "ℹ", color: "#0ea5e9" };
+    const m = msg.toLowerCase();
+    if (msg.includes("✅") || m.includes("амжилттай") || m.includes("хадгалагдлаа") || m.includes("дууслаа")) {
+      return { kind: "success", icon: "✅", color: "#10b981" };
+    }
+    if (msg.includes("⚠") || m.includes("анхаар") || m.includes("хүрэлцэхгүй")) {
+      return { kind: "warning", icon: "⚠", color: "#f59e0b" };
+    }
+    if (msg.includes("✕") || msg.includes("❌") || m.startsWith("алдаа") || m.includes("error") || m.includes("буруу")) {
+      return { kind: "error", icon: "❌", color: "#ef4444" };
+    }
+    return { kind: "info", icon: "ℹ", color: "#0ea5e9" };
+  };
 
   // ─── Mobile UX системт сайжруулалт CSS ──────────────────────────
   useEffect(() => {
@@ -407,6 +433,66 @@ export default function App() {
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
+
+      {/* ─── Global Alert Popup (window.alert override) ───────── */}
+      {globalAlert !== null && createPortal(
+        (() => {
+          const at = detectAlertType(globalAlert);
+          const cleanMsg = globalAlert.replace(/^[✅✕⚠❌ℹ📭🎉]\s*/g, "").trim();
+          const lines = cleanMsg.split("\n").filter((l) => l.trim());
+          const title = lines[0] || "";
+          const body = lines.slice(1).join("\n").trim();
+          
+          return (
+            <div style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+              background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
+            }}
+              onClick={() => setGlobalAlert(null)}>
+              <div style={{
+                background: "white", borderRadius: 18, width: "100%", maxWidth: 380,
+                boxShadow: `0 24px 60px ${at.color}40`,
+                border: `2px solid ${at.color}`,
+                overflow: "hidden",
+              }}
+                onClick={(e) => e.stopPropagation()}>
+                <div style={{
+                  background: `linear-gradient(135deg, ${at.color}15, ${at.color}25)`,
+                  padding: "20px 20px 12px", textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 8 }}>{at.icon}</div>
+                  <div style={{
+                    fontFamily: "'SF Pro Display', -apple-system, system-ui",
+                    fontWeight: 700, fontSize: 16, color: at.color,
+                  }}>{title}</div>
+                </div>
+                {body && (
+                  <div style={{
+                    padding: "12px 20px", color: "#475569",
+                    fontFamily: "'SF Pro Text', system-ui",
+                    fontSize: 13, lineHeight: 1.6,
+                    whiteSpace: "pre-wrap", textAlign: "center",
+                    maxHeight: "40vh", overflowY: "auto",
+                  }}>{body}</div>
+                )}
+                <div style={{ padding: "12px 20px 20px" }}>
+                  <button onClick={() => setGlobalAlert(null)}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 12,
+                      background: at.color, color: "white",
+                      fontFamily: "'SF Pro Display', system-ui",
+                      fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+                    }}>
+                    Ойлголоо
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })(),
+        document.body
+      )}
     </>
   );
 }
