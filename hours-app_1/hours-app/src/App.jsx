@@ -18167,6 +18167,52 @@ function DriverDashboard({ profile }) {
       updates.delivered_by = profile.id;
     }
     try {
+      // Хүргэгдсэн үед эхлээд агуулахаас бараа хасах
+      if (newStatus === "delivered") {
+        // Driver-ийн өөрийн агуулахыг олох
+        const { data: driverWh } = await supabase
+          .from("inv_warehouses")
+          .select("id, name")
+          .eq("driver_id", profile.id)
+          .single();
+
+        if (driverWh) {
+          // Захиалгын барааг авах
+          const { data: orderItems } = await supabase
+            .from("biz_order_items")
+            .select("product_id, quantity, product_name")
+            .eq("order_id", orderId);
+
+          if (orderItems && orderItems.length > 0) {
+            // Бараа бүрд агуулахаас inv_movements (out) бичих → trigger inv_stock-ийг автомат хасна
+            const movements = orderItems
+              .filter((it) => it.product_id) // зөвхөн product_id-тэй
+              .map((it) => ({
+                product_id: it.product_id,
+                warehouse_id: driverWh.id,
+                movement_type: "out",
+                quantity: Number(it.quantity || 0),
+                reason: "delivery",
+                reference_id: orderId,
+                created_by: profile.id,
+                notes: `Захиалга хүргэгдсэн: ${it.product_name || ""}`,
+              }));
+
+            if (movements.length > 0) {
+              const { error: mvErr } = await supabase
+                .from("inv_movements")
+                .insert(movements);
+              if (mvErr) {
+                console.error("Stock movement error:", mvErr);
+                if (!confirm(`⚠ Барааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү? (Бараа агуулахаас хасагдахгүй)`)) {
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+
       const { error, data } = await supabase
         .from("biz_orders")
         .update(updates)
