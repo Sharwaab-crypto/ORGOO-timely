@@ -10093,8 +10093,13 @@ function DriverSettlementView({ profile }) {
         supabase.from("inv_products").select("id, name, sku, sale_price, image_url").eq("is_active", true).order("name"),
       ]);
       if (cancelled) return;
-      // Items-руу temp ID + tracker нэмэх
-      setEditOrderItems((itemsData || []).map((it) => ({ ...it, _tempId: it.id, _modified: false })));
+      // Items-руу temp ID + tracker нэмэх (өмнөх тоог tracking хийх)
+      setEditOrderItems((itemsData || []).map((it) => ({ 
+        ...it, 
+        _tempId: it.id, 
+        _originalQty: Number(it.quantity || 0),  // ⭐ Stock adjustment-руу хэрэгтэй
+        _modified: false 
+      })));
       setAllProducts(prodData || []);
     })();
     return () => { cancelled = true; };
@@ -10801,31 +10806,124 @@ function DriverSettlementView({ profile }) {
                   </button>
                   <button onClick={async () => {
                     try {
-                      // 1. Барааны items хадгалах (delete removed, update modified, insert new)
                       const orderId = editOrder.order.id;
+                      const driverId = editOrder.order.driver_id;
+                      const originalStatus = editOrder.order.status;
+                      const newStatus = editOrder.status;
                       
-                      // Anhdsан items байсан үлдсэн ID-ууд
-                      const remainingIds = editOrderItems.filter((it) => it.id).map((it) => it.id);
-                      // Устгасан items (database-д бий боловч одоо алга)
+                      // ─── 1. Driver-ийн агуулахыг олох (stock adjustment-руу) ───
+                      let driverWh = null;
+                      if (driverId) {
+                        const { data: whData } = await supabase
+                          .from("inv_warehouses")
+                          .select("id, name")
+                          .eq("driver_id", driverId)
+                          .maybeSingle();
+                        driverWh = whData;
+                      }
+                      
+                      // ─── 2. Database-аас одоогийн items татах (delete-уудыг тооцоход) ───
                       const { data: existingItems } = await supabase
                         .from("biz_order_items")
-                        .select("id")
+                        .select("*")
                         .eq("order_id", orderId);
-                      const removedIds = (existingItems || [])
-                        .map((x) => x.id)
-                        .filter((id) => !remainingIds.includes(id));
+                      const remainingIds = editOrderItems.filter((it) => it.id).map((it) => it.id);
+                      const removedItems = (existingItems || []).filter((x) => !remainingIds.includes(x.id));
+                      
+                      // ─── 3. Stock adjustment movements тооцоолох ───
+                      const movements = [];
+                      if (driverWh) {
+                        // Хувилбар A: was delivered → now delivered (per-item delta)
+                        if (originalStatus === "delivered" && newStatus === "delivered") {
+                          // Modified existing items (тоо өөрчилсөн)
+                          for (const it of editOrderItems.filter((x) => x.id && x._modified && x.product_id)) {
+                            const delta = Number(it.quantity || 0) - Number(it._originalQty || 0);
+                            if (delta > 0) {
+                              // Тоо ИХЭссэн → driver-ээс илүү хасна
+                              movements.push({
+                                product_id: it.product_id, warehouse_id: driverWh.id,
+                                movement_type: "out", quantity: delta,
+                                reason: "order_edit", created_by: profile.id,
+                                notes: `Захиалга #${orderId.slice(0,8)} тоо нэмэгдсэн (+${delta})`,
+                              });
+                            } else if (delta < 0) {
+                              // Тоо БУУрсан → driver-руу буцаах
+                              movements.push({
+                                product_id: it.product_id, warehouse_id: driverWh.id,
+                                movement_type: "in", quantity: -delta,
+                                reason: "order_edit_return", created_by: profile.id,
+                                notes: `Захиалга #${orderId.slice(0,8)} тоо буурсан (${delta})`,
+                              });
+                            }
+                          }
+                          // New items (нэмсэн) → driver-ээс хасна
+                          for (const it of editOrderItems.filter((x) => !x.id && x.product_id)) {
+                            movements.push({
+                              product_id: it.product_id, warehouse_id: driverWh.id,
+                              movement_type: "out", quantity: Number(it.quantity || 0),
+                              reason: "order_edit", created_by: profile.id,
+                              notes: `Захиалга #${orderId.slice(0,8)} шинэ бараа: ${it.product_name}`,
+                            });
+                          }
+                          // Removed items → driver-руу буцаах
+                          for (const it of removedItems.filter((x) => x.product_id)) {
+                            movements.push({
+                              product_id: it.product_id, warehouse_id: driverWh.id,
+                              movement_type: "in", quantity: Number(it.quantity || 0),
+                              reason: "order_edit_return", created_by: profile.id,
+                              notes: `Захиалга #${orderId.slice(0,8)} устгагдсан: ${it.product_name}`,
+                            });
+                          }
+                        }
+                        // Хувилбар B: was delivered → now cancelled — БҮХ items driver-руу буцаах
+                        else if (originalStatus === "delivered" && newStatus === "cancelled") {
+                          for (const it of (existingItems || []).filter((x) => x.product_id)) {
+                            movements.push({
+                              product_id: it.product_id, warehouse_id: driverWh.id,
+                              movement_type: "in", quantity: Number(it.quantity || 0),
+                              reason: "order_cancelled", created_by: profile.id,
+                              notes: `Захиалга #${orderId.slice(0,8)} цуцлагдсан: ${it.product_name}`,
+                            });
+                          }
+                        }
+                        // Хувилбар C: was cancelled/new → now delivered — items driver-ээс хасах
+                        else if (originalStatus !== "delivered" && newStatus === "delivered") {
+                          for (const it of editOrderItems.filter((x) => x.product_id)) {
+                            movements.push({
+                              product_id: it.product_id, warehouse_id: driverWh.id,
+                              movement_type: "out", quantity: Number(it.quantity || 0),
+                              reason: "order_re_delivered", created_by: profile.id,
+                              notes: `Захиалга #${orderId.slice(0,8)} delivered болов: ${it.product_name}`,
+                            });
+                          }
+                        }
+                      }
+                      
+                      // ─── 4. Stock movements оруулах (хэрэв байвал) ───
+                      if (movements.length > 0) {
+                        const { error: mvErr } = await supabase.from("inv_movements").insert(movements);
+                        if (mvErr) {
+                          if (mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
+                            alert("⚠ Барааны үлдэгдэл хүрэлцэхгүй байна\n\nDriver-ийн агуулахад хангалттай нөөц байхгүй учир тоо нэмэх боломжгүй.");
+                            return;
+                          }
+                          throw mvErr;
+                        }
+                      }
+                      
+                      // ─── 5. biz_order_items хадгалах ───
+                      // Устгасан
+                      const removedIds = removedItems.map((x) => x.id);
                       if (removedIds.length > 0) {
                         await supabase.from("biz_order_items").delete().in("id", removedIds);
                       }
-                      
-                      // Modified items update
+                      // Modified
                       for (const it of editOrderItems.filter((x) => x.id && x._modified)) {
                         await supabase.from("biz_order_items").update({
                           quantity: Number(it.quantity || 0),
                         }).eq("id", it.id);
                       }
-                      
-                      // Шинэ items insert (id байхгүй)
+                      // Шинэ insert
                       const newItems = editOrderItems.filter((x) => !x.id);
                       if (newItems.length > 0) {
                         await supabase.from("biz_order_items").insert(
@@ -10841,18 +10939,16 @@ function DriverSettlementView({ profile }) {
                         );
                       }
                       
-                      // 2. Шинэ total_amount тооцоолох
+                      // ─── 6. biz_orders update ───
                       const newTotal = editOrderItems.reduce(
                         (s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 
                         0
                       );
-                      
-                      // 3. biz_orders update
                       const updates = { 
-                        status: editOrder.status,
+                        status: newStatus,
                         total_amount: newTotal,
                       };
-                      if (editOrder.status === "delivered") {
+                      if (newStatus === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
                       } else {
                         updates.paid_amount = 0;
@@ -10865,7 +10961,10 @@ function DriverSettlementView({ profile }) {
                       
                       setEditOrder(null);
                       await loadAll();
-                      alert("✅ Захиалга засагдлаа");
+                      const stockMsg = movements.length > 0 
+                        ? `\n📦 ${movements.length} stock хөдөлгөөн хийгдсэн (driver-ийн агуулах)`
+                        : "";
+                      alert(`✅ Захиалга засагдлаа${stockMsg}`);
                     } catch (e) {
                       alert("Алдаа: " + e.message);
                     }
