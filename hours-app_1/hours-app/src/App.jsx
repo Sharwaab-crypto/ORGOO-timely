@@ -18356,8 +18356,19 @@ function DriverDashboard({ profile }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {filtered.map((o, idx) => (
-              <div key={o.id} className="glass rounded-xl p-3">
+            {filtered.map((o, idx) => {
+              const hasPin = o.delivery_lat && o.delivery_lng;
+              return (
+              <div key={o.id} className="glass rounded-xl p-3"
+                style={{
+                  borderLeft: !hasPin ? `4px solid ${T.err}` : "none",
+                  background: !hasPin ? "rgba(239,68,68,0.04)" : undefined,
+                }}>
+                {!hasPin && (
+                  <div style={{ color: T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px] mb-1.5 flex items-center gap-1">
+                    📍 Pin байрлуулаагүй
+                  </div>
+                )}
                 <div className="flex items-start gap-2">
                   <div style={{
                     background: "rgba(14,165,233,0.1)", color: "#0ea5e9",
@@ -18448,7 +18459,8 @@ function DriverDashboard({ profile }) {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         </>)}
@@ -18465,6 +18477,167 @@ function DriverDashboard({ profile }) {
           <DriverSettlementsView profile={profile} myOwed={myOwed} myDeliveredTotal={myDeliveredTotal} />
         )}
       </div>
+
+      {/* Order detail modal — Pin click эсвэл card click-аар нээгдэнэ */}
+      {activeOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+          background: "rgba(244, 114, 182, 0.15)",
+          backdropFilter: "blur(8px)",
+        }}
+          onClick={() => setActiveOrder(null)}>
+          <div style={{
+              background: "rgba(255, 255, 255, 0.98)",
+              backdropFilter: "blur(24px) saturate(180%)",
+              border: "1px solid rgba(255, 255, 255, 0.8)",
+              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              borderRadius: 16, width: "100%", maxWidth: 480,
+              maxHeight: "90vh", overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0 z-10" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: "rgba(255, 255, 255, 0.95)",
+              backdropFilter: "blur(20px)",
+            }}>
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                    🚚 Захиалгын дэлгэрэнгүй
+                  </h3>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                    {new Date(activeOrder.created_at).toLocaleString("mn-MN")}
+                  </div>
+                </div>
+                <button onClick={() => setActiveOrder(null)} style={{ color: T.muted }}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {/* Customer info */}
+              <div className="space-y-2">
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+                  Үйлчлүүлэгч
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>📞</span>
+                  <a href={`tel:${activeOrder.customer_phone}`}
+                    style={{ color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
+                    className="text-base tabular-nums">
+                    {activeOrder.customer_phone}
+                  </a>
+                </div>
+                {activeOrder.customer_name && (
+                  <div className="flex items-center gap-2">
+                    <span>👤</span>
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                      {activeOrder.customer_name}
+                    </span>
+                  </div>
+                )}
+                {activeOrder.delivery_address && (
+                  <div className="flex items-start gap-2">
+                    <MapPin size={14} style={{ color: T.highlight, flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ color: T.ink, fontFamily: FS }} className="text-sm">
+                      {activeOrder.delivery_address}
+                    </span>
+                  </div>
+                )}
+                {activeOrder.notes && (
+                  <div style={{ background: T.warnSoft, padding: 8, borderRadius: 6 }}>
+                    <div style={{ color: T.warn, fontFamily: FM, fontWeight: 600 }} className="text-[10px] uppercase mb-1">
+                      Тэмдэглэл
+                    </div>
+                    <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">
+                      {activeOrder.notes}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Items */}
+              {(items[activeOrder.id] || []).length > 0 && (
+                <div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+                    Бараа ({(items[activeOrder.id] || []).length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {(items[activeOrder.id] || []).map((it) => (
+                      <div key={it.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                        {it.product_image && (
+                          <img src={it.product_image} alt=""
+                            style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }} />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                            {it.product_name}
+                          </div>
+                          {it.unit_price > 0 && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                              {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ background: "#0ea5e9", color: "white", fontFamily: FD, fontWeight: 700 }}
+                          className="text-xs px-2 py-0.5 rounded-full">
+                          ×{it.quantity}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Total */}
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: T.highlightSoft }}>
+                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                  💰 Нийт дүн
+                </span>
+                <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-xl tabular-nums">
+                  {Number(activeOrder.total_amount || 0).toLocaleString()}₮
+                </span>
+              </div>
+
+              {/* Pin байгаа эсэх */}
+              {(!activeOrder.delivery_lat || !activeOrder.delivery_lng) && (
+                <div className="text-center p-3 rounded-lg" style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                  ⚠ Pin байрлуулаагүй захиалга
+                </div>
+              )}
+
+              {/* Action buttons */}
+              {(activeOrder.status === "new" || activeOrder.status === "pending") && (
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button
+                    onClick={async () => {
+                      await updateStatus(activeOrder.id, "delivered");
+                      setActiveOrder(null);
+                    }}
+                    className="press-btn py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                    ✓ Хүргэсэн
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCancelOrder(activeOrder);
+                      setCancelNote("");
+                      setActiveOrder(null);
+                    }}
+                    className="press-btn py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                    ✕ Хүргэх боломжгүй
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Cancel modal — Сэтгэгдэл бичих */}
       {cancelOrder && createPortal(
