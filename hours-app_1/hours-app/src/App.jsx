@@ -8923,6 +8923,7 @@ function SalesDashboardView({ profile }) {
   const [products, setProducts] = useState([]);
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
 
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-sales-period") || "month"; } catch { return "month"; }
@@ -9015,6 +9016,9 @@ function SalesDashboardView({ profile }) {
         pending: 0,
         revenue: 0,
         deliveredOrderIds: new Set(),
+        deliveredOrders: [],
+        pendingOrders: [],
+        cancelledOrders: [],
       };
     });
 
@@ -9032,6 +9036,9 @@ function SalesDashboardView({ profile }) {
       pending: 0,
       revenue: 0,
       deliveredOrderIds: new Set(),
+      deliveredOrders: [],
+      pendingOrders: [],
+      cancelledOrders: [],
     };
 
     // Дуудлагууд
@@ -9058,10 +9065,13 @@ function SalesDashboardView({ profile }) {
         map[key].delivered++;
         map[key].revenue += Number(o.total_amount || 0);
         map[key].deliveredOrderIds.add(o.id);
+        map[key].deliveredOrders.push(o);
       } else if (o.status === "cancelled") {
         map[key].cancelled++;
+        map[key].cancelledOrders.push(o);
       } else {
         map[key].pending++;
+        map[key].pendingOrders.push(o);
       }
     });
 
@@ -9337,24 +9347,30 @@ function SalesDashboardView({ profile }) {
                             {p.totalOrders}
                           </div>
                         </div>
-                        <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                        <button onClick={() => setOrdersPopup({ page: p, status: "delivered", orders: p.deliveredOrders })}
+                          style={{ background: "rgba(16,185,129,0.1)" }}
+                          className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✓</div>
                           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
                             {p.delivered}
                           </div>
-                        </div>
-                        <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                        </button>
+                        <button onClick={() => setOrdersPopup({ page: p, status: "pending", orders: p.pendingOrders })}
+                          style={{ background: T.warnSoft }}
+                          className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">⏳</div>
                           <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
                             {p.pending}
                           </div>
-                        </div>
-                        <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                        </button>
+                        <button onClick={() => setOrdersPopup({ page: p, status: "cancelled", orders: p.cancelledOrders })}
+                          style={{ background: T.errSoft }}
+                          className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✕</div>
                           <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
                             {p.cancelled}
                           </div>
-                        </div>
+                        </button>
                       </div>
 
                       <div className="mt-2 flex items-center gap-2">
@@ -9424,6 +9440,149 @@ function SalesDashboardView({ profile }) {
             </div>
           )}
         </>
+      )}
+
+      {/* ─── FB Page-ийн захиалгууд popup ─── */}
+      {ordersPopup && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+        }}
+          onClick={() => setOrdersPopup(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 600,
+            maxHeight: "85vh", overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2 flex-wrap">
+                    {ordersPopup.status === "delivered" && <><span>✓</span><span style={{ color: T.ok }}>Хүргэгдсэн</span></>}
+                    {ordersPopup.status === "pending" && <><span>⏳</span><span style={{ color: T.warn }}>Хүлээгдэж буй</span></>}
+                    {ordersPopup.status === "cancelled" && <><span>✕</span><span style={{ color: T.err }}>Цуцалсан</span></>}
+                    <span style={{ color: T.muted, fontFamily: FM, fontWeight: 500 }} className="text-xs">
+                      ({ordersPopup.orders.length})
+                    </span>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                    📘 {ordersPopup.page.name}
+                  </div>
+                </div>
+                <button onClick={() => setOrdersPopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4">
+              {ordersPopup.orders.length === 0 ? (
+                <div className="text-center py-8 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div className="text-4xl mb-2">📭</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Захиалга алга
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {ordersPopup.orders
+                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                    .map((o) => {
+                      const orderItems = items.filter((it) => it.order_id === o.id);
+                      const statusColor = ordersPopup.status === "delivered" ? T.ok 
+                        : ordersPopup.status === "cancelled" ? T.err : T.warn;
+                      return (
+                        <div key={o.id} className="rounded-lg p-3"
+                          style={{
+                            background: T.surface,
+                            border: `1px solid ${T.border}`,
+                            borderLeft: `3px solid ${statusColor}`,
+                          }}>
+                          {/* Order header */}
+                          <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <a href={`tel:${o.customer_phone}`}
+                                  style={{ color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
+                                  className="text-sm tabular-nums hover:underline">
+                                  📞 {o.customer_phone}
+                                </a>
+                                {o.customer_name && (
+                                  <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                                    {o.customer_name}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                                {new Date(o.created_at).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                              </div>
+                            </div>
+                            <div style={{
+                              fontFamily: FD, fontWeight: 700, color: statusColor,
+                            }} className="text-base tabular-nums">
+                              {Number(o.total_amount || 0).toLocaleString()}₮
+                            </div>
+                          </div>
+
+                          {/* Items */}
+                          {orderItems.length > 0 && (
+                            <div className="space-y-1 pt-2" style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                                Бараа ({orderItems.length})
+                              </div>
+                              {orderItems.map((it) => (
+                                <div key={it.id} className="flex items-center gap-2 p-1.5 rounded" style={{ background: T.surfaceAlt }}>
+                                  {it.product_image && (
+                                    <img src={it.product_image} alt=""
+                                      style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
+                                      {it.product_name}
+                                    </div>
+                                    {it.unit_price > 0 && (
+                                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                                        {Number(it.unit_price).toLocaleString()}₮
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span style={{ background: statusColor, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                    className="text-[10px] px-2 py-0.5 rounded-full tabular-nums">
+                                    ×{it.quantity}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          {o.notes && (
+                            <div className="mt-2 p-2 rounded" style={{ background: T.warnSoft }}>
+                              <div style={{ color: T.warn, fontFamily: FM, fontWeight: 600 }} className="text-[9px] uppercase mb-0.5">
+                                📝 Тэмдэглэл
+                              </div>
+                              <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">
+                                "{o.notes}"
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
