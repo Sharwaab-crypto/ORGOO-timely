@@ -335,6 +335,21 @@ export default function App() {
         height: 100% !important;
         width: 100% !important;
       }
+      
+      /* Sidebar collapsed: button text + section labels-ийг нуух */
+      .sidebar-collapsed-nav button > span:not(:empty),
+      .sidebar-collapsed-nav button > span.text-\\[10px\\] {
+        display: none !important;
+      }
+      .sidebar-collapsed-nav > div > button > span {
+        display: none !important;
+      }
+      .sidebar-collapsed-nav button {
+        justify-content: center !important;
+      }
+      .sidebar-collapsed-nav button > svg {
+        flex-shrink: 0;
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -1373,6 +1388,13 @@ function AdminDashboard({ profile }) {
 
   const activeCount = Object.keys(activeSessions).length;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem("orgoo-sidebar-collapsed") === "1"; } catch { return false; }
+  });
+  
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-sidebar-collapsed", sidebarCollapsed ? "1" : "0"); } catch {}
+  }, [sidebarCollapsed]);
 
   return (
     <div style={{ color: T.ink, fontFamily: FS, background: T.bg }} className="min-h-screen">
@@ -1383,31 +1405,42 @@ function AdminDashboard({ profile }) {
           backdropFilter: "blur(20px) saturate(180%)",
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
           borderRight: `1px solid ${T.border}`,
-          width: 240,
+          width: sidebarCollapsed ? 64 : 240,
+          transition: "width 0.2s ease",
         }} className={`fixed lg:sticky top-0 left-0 h-screen z-40 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
 
           {/* Logo header */}
-          <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
-            <div className="flex items-center gap-2.5">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
-                <ShieldCheck size={14} />
-              </div>
-              <div className="flex-1">
-                <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                  ORGOO<span style={{ color: T.highlight }}>.</span>
+          <div className="px-3 py-3 border-b" style={{ borderColor: T.border }}>
+            <div className="flex items-center gap-2">
+              <img src="/orgoo-logo.png" alt="ORGOO" 
+                className="w-10 h-10 rounded-md object-contain flex-shrink-0"
+                style={{ background: "white" }}
+                onError={(e) => { e.target.style.display = "none"; }} />
+              {!sidebarCollapsed && (
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, letterSpacing: "-0.02em" }} className="text-base leading-none">
+                    ORGOO<span style={{ color: T.highlight }}>.</span>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
+                    Admin
+                  </div>
                 </div>
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
-                  Admin
-                </div>
-              </div>
+              )}
               <button onClick={() => setSidebarOpen(false)} className="lg:hidden" style={{ color: T.muted }}>
                 <X size={16} />
+              </button>
+              {/* Collapse товч (зөвхөн desktop) */}
+              <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="hidden lg:flex press-btn p-1 rounded hover:bg-gray-100"
+                style={{ color: T.muted }}
+                title={sidebarCollapsed ? "Дэлгэх" : "Хураах"}>
+                {sidebarCollapsed ? "›" : "‹"}
               </button>
             </div>
           </div>
 
           {/* Nav */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3">
+          <nav className={`flex-1 overflow-y-auto px-2 py-3 ${sidebarCollapsed ? "sidebar-collapsed-nav" : ""}`}>
             <SidebarSection label="Хяналт">
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
@@ -1452,19 +1485,23 @@ function AdminDashboard({ profile }) {
 
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
-            <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+            <div className={`flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors ${sidebarCollapsed ? "flex-col" : ""}`}>
+              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0">
                 {profile.name?.[0]}
               </div>
-              <div className="flex-1 min-w-0">
-                <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
-                  {profile.name}
-                </div>
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
-                  Админ
-                </div>
-              </div>
-              <DarkModeToggle />
+              {!sidebarCollapsed && (
+                <>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-xs truncate">
+                      {profile.name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
+                      Админ
+                    </div>
+                  </div>
+                  <DarkModeToggle />
+                </>
+              )}
               <button onClick={() => supabase.auth.signOut()} style={{ color: T.muted }}
                 className="press-btn p-1.5 rounded hover:bg-gray-100" title="Гарах">
                 <LogOut size={14} />
