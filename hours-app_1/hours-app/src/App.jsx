@@ -4119,6 +4119,11 @@ function InventoryView({ profile, isAdmin = false }) {
   const [filterCat, setFilterCat] = useState("all");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("products"); // products | history | low
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
+  useEffect(() => { setPage(1); }, [search, filterCat, tab]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -4287,9 +4292,17 @@ function InventoryView({ profile, isAdmin = false }) {
               </button>
             )}
           </div>
-        ) : (
+        ) : (() => {
+          const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+          const safePage = Math.min(page, totalPages);
+          const pagedProducts = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+          return (
+          <>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+            {filtered.length} бараа · {safePage}/{totalPages} хуудас
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {filtered.map((p) => {
+            {pagedProducts.map((p) => {
               const cat = catById(p.category_id);
               const isLow = p.min_stock > 0 && p.stock <= p.min_stock;
               const isOut = p.stock <= 0;
@@ -4383,7 +4396,71 @@ function InventoryView({ profile, isAdmin = false }) {
               );
             })}
           </div>
-        )
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="glass rounded-2xl p-3 flex items-center justify-center gap-1 flex-wrap mt-3">
+              <button onClick={() => setPage(Math.max(1, safePage - 1))}
+                disabled={safePage === 1}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{
+                  background: safePage === 1 ? T.surfaceAlt : T.surface,
+                  color: safePage === 1 ? T.muted : T.ink,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600,
+                  opacity: safePage === 1 ? 0.5 : 1,
+                }}>
+                ← Өмнөх
+              </button>
+              {(() => {
+                const pages = [];
+                const showAround = 1;
+                const from = Math.max(1, safePage - showAround);
+                const to = Math.min(totalPages, safePage + showAround);
+                if (from > 1) {
+                  pages.push(1);
+                  if (from > 2) pages.push("...");
+                }
+                for (let i = from; i <= to; i++) pages.push(i);
+                if (to < totalPages) {
+                  if (to < totalPages - 1) pages.push("...");
+                  pages.push(totalPages);
+                }
+                return pages.map((pgN, i) =>
+                  pgN === "..." ? (
+                    <span key={"d-" + i} style={{ color: T.muted, fontFamily: FM }} className="px-2 text-xs">⋯</span>
+                  ) : (
+                    <button key={pgN} onClick={() => setPage(pgN)}
+                      className="press-btn rounded-lg text-xs"
+                      style={{
+                        background: safePage === pgN ? T.highlight : T.surface,
+                        color: safePage === pgN ? "white" : T.ink,
+                        border: `1px solid ${safePage === pgN ? T.highlight : T.border}`,
+                        fontFamily: FS, fontWeight: 700,
+                        minWidth: 32, height: 32,
+                      }}>
+                      {pgN}
+                    </button>
+                  )
+                );
+              })()}
+              <button onClick={() => setPage(Math.min(totalPages, safePage + 1))}
+                disabled={safePage === totalPages}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{
+                  background: safePage === totalPages ? T.surfaceAlt : T.surface,
+                  color: safePage === totalPages ? T.muted : T.ink,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600,
+                  opacity: safePage === totalPages ? 0.5 : 1,
+                }}>
+                Дараах →
+              </button>
+            </div>
+          )}
+          </>
+          );
+        })()
       ) : tab === "low" ? (
         lowStock.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
