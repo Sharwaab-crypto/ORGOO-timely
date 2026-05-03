@@ -4373,16 +4373,10 @@ function InventoryView({ profile, isAdmin = false }) {
                       📥 Орлого
                     </button>
                     {isAdmin && (
-                      <>
-                        <button onClick={() => setEditing(p)} style={{ color: T.muted }}
-                          className="press-btn p-1 rounded">
-                          <Edit3 size={11} />
-                        </button>
-                        <button onClick={() => handleDelete(p.id)} style={{ color: T.err }}
-                          className="press-btn p-1 rounded">
-                          <Trash2 size={11} />
-                        </button>
-                      </>
+                      <button onClick={() => setEditing(p)} style={{ color: T.muted }}
+                        className="press-btn p-1 rounded">
+                        <Edit3 size={11} />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -6551,20 +6545,20 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                {product ? "Одоогийн нөөц" : "Эхлэх нөөц"}
-              </label>
-              <input type="number" value={stock} onChange={(e) => setStock(e.target.value)}
-                placeholder="0"
-                style={inputStyle} className={inputClass} disabled={!!product} />
-              {product && (
+          <div className={product ? "grid grid-cols-2 gap-2" : ""}>
+            {product && (
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  Одоогийн нөөц
+                </label>
+                <input type="number" value={stock} onChange={(e) => setStock(e.target.value)}
+                  placeholder="0"
+                  style={inputStyle} className={inputClass} disabled={true} />
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
                   💡 Нөөц өөрчлөхийн тулд "📥 Орлого" эсвэл "📤 Зарлага" товчийг ашигла
                 </div>
-              )}
-            </div>
+              </div>
+            )}
             <div>
               <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
                 Хамгийн бага нөөц (alert)
@@ -6597,7 +6591,7 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
                   unit,
                   cost_price: Number(costPrice) || 0,
                   sale_price: Number(salePrice) || 0,
-                  stock: product ? Number(product.stock) : (Number(stock) || 0),
+                  stock: product ? Number(product.stock) : 0,
                   min_stock: Number(minStock) || 0,
                   description: description.trim() || null,
                   image_url: finalImageUrl || null,
