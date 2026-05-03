@@ -9992,45 +9992,14 @@ function DriverSettlementView({ profile }) {
     setExpenseAmount(""); setExpenseNotes("");
   }, [activeDriver]);
 
-  const [period, setPeriod] = useState(() => {
-    try { return localStorage.getItem("orgoo-settlement-period") || "today"; } catch { return "today"; }
-  });
-  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
-  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
-
-  useEffect(() => {
-    try { localStorage.setItem("orgoo-settlement-period", period); } catch {}
-  }, [period]);
-
+  // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-
-    if (period === "today") return { start: today, end: tomorrow, label: "Өнөөдөр" };
-    if (period === "yesterday") {
-      const y = new Date(today); y.setDate(today.getDate() - 1);
-      return { start: y, end: today, label: "Өчигдөр" };
-    }
-    if (period === "week") {
-      const start = new Date(today); start.setDate(today.getDate() - 6);
-      return { start, end: tomorrow, label: "7 хоног" };
-    }
-    if (period === "month") {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1);
-      return { start, end: tomorrow, label: "Энэ сар" };
-    }
-    if (period === "custom") {
-      const [sy, sm, sd] = customStart.split("-").map(Number);
-      const [ey, em, ed] = customEnd.split("-").map(Number);
-      return {
-        start: new Date(sy, sm - 1, sd, 0, 0, 0),
-        end: new Date(ey, em - 1, ed + 1, 0, 0, 0),
-        label: `${customStart} – ${customEnd}`,
-      };
-    }
-    return { start: new Date(0), end: new Date(8640000000000000), label: "Бүгд" };
-  }, [period, customStart, customEnd]);
+    return { 
+      start: new Date(0), 
+      end: new Date(8640000000000000), 
+      label: "Бүгд" 
+    };
+  }, []);
 
   const loadAll = async () => {
     setLoading(true);
@@ -10128,9 +10097,6 @@ function DriverSettlementView({ profile }) {
               {driver.job_title || "Хүргэгч"}
             </div>
           </div>
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-            {periodRange.label}
-          </span>
         </div>
 
         {/* Stats */}
@@ -10518,42 +10484,6 @@ function DriverSettlementView({ profile }) {
   // Хүргэгчийн жагсаалт
   return (
     <div className="space-y-3">
-      {/* Period selector */}
-      <div className="glass rounded-2xl p-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
-          {[
-            { id: "today", label: "Өнөөдөр" },
-            { id: "yesterday", label: "Өчигдөр" },
-            { id: "week", label: "7 хоног" },
-            { id: "month", label: "Энэ сар" },
-            { id: "all", label: "Бүгд" },
-            { id: "custom", label: "📅 Гараар" },
-          ].map((p) => (
-            <button key={p.id} onClick={() => setPeriod(p.id)}
-              className="press-btn px-3 py-1.5 rounded-full text-xs"
-              style={{
-                background: period === p.id ? T.highlight : T.surfaceAlt,
-                color: period === p.id ? "white" : T.ink,
-                fontFamily: FS, fontWeight: 600,
-              }}>
-              {p.label}
-            </button>
-          ))}
-          {period === "custom" && (
-            <div className="flex items-center gap-1">
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
-                className="px-2 py-1 rounded text-xs" />
-              <span style={{ color: T.muted }}>→</span>
-              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }}
-                className="px-2 py-1 rounded text-xs" />
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Нийт стат */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <div className="glass rounded-2xl p-3">
