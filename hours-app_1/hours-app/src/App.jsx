@@ -13618,8 +13618,11 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
     .join("|");
   const driversHash = drivers.map((d) => `${d.id}:${d.name}`).sort().join("|");
 
-  // Map-ыг ганцхан удаа init
+  // Map-ыг init — pin байгаа эсэхэд хамаарч remount хийнэ
+  const hasPins = ordersWithCoords.length > 0;
+  
   useEffect(() => {
+    if (!hasPins) return; // Pin байхгүй бол скип
     let cancelled = false;
     (async () => {
       const L = (await import("leaflet")).default;
@@ -13656,7 +13659,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         initialFitDoneRef.current = false;
       }
     };
-  }, []); // ⭐ Зөвхөн mount үед
+  }, [hasPins]); // ⭐ hasPins солигдоход remount/cleanup хийнэ
 
   // Marker-ыг өгөгдөл өөрчлөгдөхөд дахин үүсгэх
   useEffect(() => {
