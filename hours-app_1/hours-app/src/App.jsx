@@ -18169,45 +18169,65 @@ function DriverDashboard({ profile }) {
     try {
       // Хүргэгдсэн үед эхлээд агуулахаас бараа хасах
       if (newStatus === "delivered") {
-        // Driver-ийн өөрийн агуулахыг олох
-        const { data: driverWh } = await supabase
+        const debugInfo = [];
+
+        // 1. Driver-ийн өөрийн агуулахыг олох
+        const { data: driverWh, error: whErr } = await supabase
           .from("inv_warehouses")
           .select("id, name")
           .eq("driver_id", profile.id)
-          .single();
+          .maybeSingle();
+
+        debugInfo.push(`1️⃣ Агуулах: ${driverWh ? `✓ ${driverWh.name}` : "✗ ОЛДСОНГҮЙ"}`);
+        if (whErr) debugInfo.push(`   Алдаа: ${whErr.message}`);
+
+        if (!driverWh) {
+          alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nАгуулахад driver_id = ${profile.id} тохируулсан агуулах байх ёстой.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
+          if (!confirm("Үргэлжлүүлэх үү?")) return;
+        }
 
         if (driverWh) {
-          // Захиалгын барааг авах
-          const { data: orderItems } = await supabase
+          // 2. Захиалгын барааг авах
+          const { data: orderItems, error: itemsErr } = await supabase
             .from("biz_order_items")
             .select("product_id, quantity, product_name")
             .eq("order_id", orderId);
 
-          if (orderItems && orderItems.length > 0) {
-            // Бараа бүрд агуулахаас inv_movements (out) бичих → trigger inv_stock-ийг автомат хасна
-            const movements = orderItems
-              .filter((it) => it.product_id) // зөвхөн product_id-тэй
-              .map((it) => ({
-                product_id: it.product_id,
-                warehouse_id: driverWh.id,
-                movement_type: "out",
-                quantity: Number(it.quantity || 0),
-                reason: "delivery",
-                reference_id: orderId,
-                created_by: profile.id,
-                notes: `Захиалга хүргэгдсэн: ${it.product_name || ""}`,
-              }));
+          debugInfo.push(`2️⃣ Захиалгын бараа: ${orderItems?.length || 0}ш`);
+          if (itemsErr) debugInfo.push(`   Алдаа: ${itemsErr.message}`);
 
-            if (movements.length > 0) {
-              const { error: mvErr } = await supabase
-                .from("inv_movements")
-                .insert(movements);
-              if (mvErr) {
-                console.error("Stock movement error:", mvErr);
-                if (!confirm(`⚠ Барааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү? (Бараа агуулахаас хасагдахгүй)`)) {
-                  return;
-                }
-              }
+          const validItems = (orderItems || []).filter((it) => it.product_id);
+          debugInfo.push(`3️⃣ product_id-тай бараа: ${validItems.length}ш`);
+
+          if (validItems.length === 0 && (orderItems?.length || 0) > 0) {
+            alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nЗахиалгын бараанд product_id холбогдоогүй байна (free text). Бараа агуулахаас хасагдахгүй.\n\nҮргэлжлүүлэх үү?`);
+            if (!confirm("Тэгэхээр захиалгыг хүргэгдсэн гэж тэмдэглэх үү?")) return;
+          }
+
+          if (validItems.length > 0) {
+            const movements = validItems.map((it) => ({
+              product_id: it.product_id,
+              warehouse_id: driverWh.id,
+              movement_type: "out",
+              quantity: Number(it.quantity || 0),
+              reason: "delivery",
+              reference_id: orderId,
+              created_by: profile.id,
+              notes: `Захиалга хүргэгдсэн: ${it.product_name || ""}`,
+            }));
+
+            const { data: mvData, error: mvErr } = await supabase
+              .from("inv_movements")
+              .insert(movements)
+              .select();
+
+            debugInfo.push(`4️⃣ Хөдөлгөөн бичсэн: ${mvData?.length || 0}ш`);
+            if (mvErr) {
+              debugInfo.push(`   Алдаа: ${mvErr.message}`);
+              alert(`⚠ Барааны хөдөлгөөн бичигдсэнгүй\n\n${debugInfo.join("\n")}\n\n💡 Шийдэл: SQL editor-д "driver-stock-rls-fix.sql" ажиллуул.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
+              if (!confirm("Үргэлжлүүлэх үү?")) return;
+            } else {
+              console.log("✓ Stock хасагдсан:", debugInfo.join(" | "));
             }
           }
         }
