@@ -9973,6 +9973,8 @@ function DriverSettlementView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [activeDriver, setActiveDriver] = useState(null);
   const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
+  const [openSettlements, setOpenSettlements] = useState([]); // Нээлттэй settlement-ууд
+  const [openingSettlement, setOpeningSettlement] = useState(false); // Тооцоо нээх loading
 
   // Тооцоо хаах form
   const [cashAmount, setCashAmount] = useState("");
@@ -10033,12 +10035,14 @@ function DriverSettlementView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: drvData }, { data: ordData }] = await Promise.all([
+      const [{ data: drvData }, { data: ordData }, { data: openSettleData }] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
         supabase.from("biz_orders").select("*").not("driver_id", "is", null),
+        supabase.from("biz_settlements").select("*").eq("status", "open"),
       ]);
       setDrivers(drvData || []);
       setOrders(ordData || []);
+      setOpenSettlements(openSettleData || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -10053,8 +10057,20 @@ function DriverSettlementView({ profile }) {
 
   // Тус хүргэгчийн стат
   const driverStats = useMemo(() => drivers.map((d) => {
-    // settlement_id-тэй захиалгуудыг хасах (тооцоо хаагдсан болохоор)
-    const dOrders = filteredOrders.filter((o) => o.driver_id === d.id && !o.settlement_id);
+    // Тус driver-ийн нээлттэй settlement (хэрэв байвал)
+    const openSettle = openSettlements.find((s) => s.driver_id === d.id);
+    
+    // Settled (closed): энэ driver-ийн settle хаагдсан захиалга
+    // Open settlement: энэ driver-руу одоо нээлттэй settlement-д ороод буй захиалга
+    // Эдгээр бүгдийг "current calculation"-аас хасна
+    const dOrders = filteredOrders.filter((o) => 
+      o.driver_id === d.id && 
+      (!o.settlement_id || (openSettle && o.settlement_id === openSettle.id))
+    );
+    
+    // Open settle байвал → orders-ыг тэр settle-ийн дотор зөвхөн харах (шинэ нэмэгдэхгүй)
+    const isOpenSettlement = !!openSettle;
+    
     const delivered = dOrders.filter((o) => o.status === "delivered");
     const cancelled = dOrders.filter((o) => o.status === "cancelled");
     const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending");
@@ -10073,8 +10089,10 @@ function DriverSettlementView({ profile }) {
       owed,
       deliveredOrders: delivered,
       cancelledOrders: cancelled,
+      isOpenSettlement,
+      openSettle,
     };
-  }), [drivers, filteredOrders]);
+  }), [drivers, filteredOrders, openSettlements]);
 
   // Detail харах хэсэг
   if (activeDriver) {
@@ -10196,6 +10214,53 @@ function DriverSettlementView({ profile }) {
           const numInputClass = "w-full px-3 py-2 rounded-lg text-sm tabular-nums";
           const noteInputClass = "w-full px-3 py-1.5 rounded-lg text-xs mt-1";
 
+          const handleOpenSettlement = async () => {
+            if (driver.delivered === 0) {
+              alert("⚠ Тооцоо нээх захиалга алга");
+              return;
+            }
+            if (!confirm(`Тооцоо нээх үү?\n\nХүргэгч: ${driver.name}\nЗахиалга: ${driver.delivered}ш\nТушаах ёстой: ${driver.owed.toLocaleString()}₮\n\nЗахиалгууд "Тооцоонд орсон" болно. Дараа нь "Тооцоо хаах" даргаж дуусгана.`)) return;
+
+            setOpeningSettlement(true);
+            try {
+              // 1. Open settlement үүсгэх
+              const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
+                driver_id: driver.id,
+                cash_amount: 0, bank_amount: 0, expense_amount: 0,
+                total_submitted: 0,
+                settlement_amount: driver.owed,
+                delivered_total: driver.deliveredTotal,
+                paid_already: driver.paidAlready,
+                period_start: periodRange.start.toISOString(),
+                period_end: periodRange.end.toISOString(),
+                period_label: periodRange.label,
+                order_count: driver.delivered,
+                settled_by: profile.id,
+                status: "open", // ⭐ Нээлттэй settlement
+              }).select().single();
+              if (stErr) throw stErr;
+
+              // 2. Захиалгуудыг settlement-руу холбох (paid_amount-ыг хараахан өөрчлөхгүй)
+              for (const o of driver.deliveredOrders) {
+                await supabase.from("biz_orders").update({
+                  settlement_id: stData.id,
+                }).eq("id", o.id);
+              }
+              for (const o of driver.cancelledOrders) {
+                await supabase.from("biz_orders").update({
+                  settlement_id: stData.id,
+                }).eq("id", o.id);
+              }
+
+              alert(`✅ Тооцоо нээгдлээ!\n\nЗахиалгууд "Тооцоонд орсон" болов.\nДараа нь дүнгээ оруулж "Тооцоо хаах" даргана уу.`);
+              await loadAll();
+            } catch (e) {
+              alert("Алдаа: " + e.message);
+            } finally {
+              setOpeningSettlement(false);
+            }
+          };
+
           const handleCloseSettlement = async () => {
             if (!balanced) {
               alert("⚠ Нийлбэр тушаах дүнтэй тохирохгүй байна!");
@@ -10205,37 +10270,55 @@ function DriverSettlementView({ profile }) {
 
             setClosingSettlement(true);
             try {
-              // 1. Settlement тайлан үүсгэх
-              const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
-                driver_id: driver.id,
-                cash_amount: cash, cash_notes: cashNotes.trim() || null,
-                bank_amount: bank, bank_notes: bankNotes.trim() || null,
-                expense_amount: expense, expense_notes: expenseNotes.trim() || null,
-                total_submitted: totalSubmitted,
-                settlement_amount: driver.owed,
-                delivered_total: driver.deliveredTotal,
-                paid_already: driver.paidAlready,
-                period_start: periodRange.start.toISOString(),
-                period_end: periodRange.end.toISOString(),
-                period_label: periodRange.label,
-                order_count: driver.delivered,
-                settled_by: profile.id,
-              }).select().single();
-              if (stErr) throw stErr;
+              if (driver.isOpenSettlement && driver.openSettle) {
+                // Аль хэдийн open settlement байгаа — UPDATE хийнэ
+                const { error: updErr } = await supabase.from("biz_settlements").update({
+                  cash_amount: cash, cash_notes: cashNotes.trim() || null,
+                  bank_amount: bank, bank_notes: bankNotes.trim() || null,
+                  expense_amount: expense, expense_notes: expenseNotes.trim() || null,
+                  total_submitted: totalSubmitted,
+                  settled_at: new Date().toISOString(),
+                  status: "closed", // ⭐ Хаах
+                }).eq("id", driver.openSettle.id);
+                if (updErr) throw updErr;
 
-              // 2. Хамаарагдсан захиалгуудад settlement_id оноох
-              //    Delivered: paid_amount = total_amount (бүрэн төлсөн)
-              //    Cancelled: settlement_id л оноох (paid_amount өөрчлөхгүй)
-              for (const o of driver.deliveredOrders) {
-                await supabase.from("biz_orders").update({
-                  settlement_id: stData.id,
-                  paid_amount: Number(o.total_amount || 0),
-                }).eq("id", o.id);
-              }
-              for (const o of driver.cancelledOrders) {
-                await supabase.from("biz_orders").update({
-                  settlement_id: stData.id,
-                }).eq("id", o.id);
+                // Захиалгуудын paid_amount шинэчлэх (delivered)
+                for (const o of driver.deliveredOrders) {
+                  await supabase.from("biz_orders").update({
+                    paid_amount: Number(o.total_amount || 0),
+                  }).eq("id", o.id);
+                }
+              } else {
+                // Шууд хаах (open алхамгүйгээр) — хуучин flow
+                const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
+                  driver_id: driver.id,
+                  cash_amount: cash, cash_notes: cashNotes.trim() || null,
+                  bank_amount: bank, bank_notes: bankNotes.trim() || null,
+                  expense_amount: expense, expense_notes: expenseNotes.trim() || null,
+                  total_submitted: totalSubmitted,
+                  settlement_amount: driver.owed,
+                  delivered_total: driver.deliveredTotal,
+                  paid_already: driver.paidAlready,
+                  period_start: periodRange.start.toISOString(),
+                  period_end: periodRange.end.toISOString(),
+                  period_label: periodRange.label,
+                  order_count: driver.delivered,
+                  settled_by: profile.id,
+                  status: "closed",
+                }).select().single();
+                if (stErr) throw stErr;
+
+                for (const o of driver.deliveredOrders) {
+                  await supabase.from("biz_orders").update({
+                    settlement_id: stData.id,
+                    paid_amount: Number(o.total_amount || 0),
+                  }).eq("id", o.id);
+                }
+                for (const o of driver.cancelledOrders) {
+                  await supabase.from("biz_orders").update({
+                    settlement_id: stData.id,
+                  }).eq("id", o.id);
+                }
               }
 
               alert(`✅ Тооцоо амжилттай хаагдлаа!\n\nТушаагдсан дүн: ${totalSubmitted.toLocaleString()}₮\nТайлан "Тооцооний тайлан" хэсэгт хадгалагдлаа.`);
@@ -10250,6 +10333,36 @@ function DriverSettlementView({ profile }) {
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3 flex items-center gap-2">
                 💵 Тооцоо хаах
               </div>
+
+              {/* Open settlement state badge */}
+              {driver.isOpenSettlement && (
+                <div className="rounded-lg p-3 mb-3" style={{
+                  background: "rgba(245,158,11,0.1)",
+                  border: `2px solid ${T.warn}`,
+                }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-base">⏳</span>
+                    <span style={{ fontFamily: FS, fontWeight: 700, color: T.warn }} className="text-sm">
+                      Тооцоо хийгдэж байна
+                    </span>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    Захиалгууд тулгалтад орсон. Доорх дүнгүүдийг бөглөж "Тооцоо хаах" даргана уу.
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                    🕒 Нээсэн: {new Date(driver.openSettle.settled_at || driver.openSettle.created_at || Date.now()).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                  </div>
+                </div>
+              )}
+
+              {/* "Тооцоо нээх" товч — settle нээгдээгүй бол */}
+              {!driver.isOpenSettlement && driver.delivered > 0 && (
+                <button onClick={handleOpenSettlement} disabled={openingSettlement}
+                  className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 mb-3"
+                  style={{ background: "#0ea5e9", color: "white", fontFamily: FS, fontWeight: 700 }}>
+                  {openingSettlement ? "Нээж байна..." : "🔓 Тооцоо нээх"}
+                </button>
+              )}
 
               <div className="space-y-3">
                 {/* Бэлнээр */}
