@@ -18211,9 +18211,8 @@ function DriverDashboard({ profile }) {
               movement_type: "out",
               quantity: Number(it.quantity || 0),
               reason: "delivery",
-              reference_id: orderId,
               created_by: profile.id,
-              notes: `Захиалга хүргэгдсэн: ${it.product_name || ""}`,
+              notes: `Захиалга #${orderId.slice(0, 8)} хүргэгдсэн: ${it.product_name || ""}`,
             }));
 
             const { data: mvData, error: mvErr } = await supabase
