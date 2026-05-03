@@ -18833,9 +18833,17 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const [activeCat, setActiveCat] = useState("all");
   const [showSidebar, setShowSidebar] = useState(false); // mobile
   const [showAllProducts, setShowAllProducts] = useState(false); // false = зөвхөн хэрэгтэй, true = бүх бараа
+  
+  // Хүргэгчийн агуулахаас бусад агуулахуудыг сонгох боломжтой жагсаалт
+  const otherWarehouses = warehouses.filter((w) => w.id !== myWarehouse?.id);
+  
+  // Default-аар үндсэн агуулах эсвэл эхний боломжит
+  const [selectedOtherWhId, setSelectedOtherWhId] = useState(
+    mainWarehouse?.id || otherWarehouses[0]?.id || null
+  );
 
-  const sourceWh = isReturn ? myWarehouse : mainWarehouse;
-  const targetWh = isReturn ? mainWarehouse : myWarehouse;
+  const sourceWh = isReturn ? myWarehouse : warehouses.find((w) => w.id === selectedOtherWhId);
+  const targetWh = isReturn ? warehouses.find((w) => w.id === selectedOtherWhId) : myWarehouse;
 
   // Categories load
   useEffect(() => {
@@ -18913,8 +18921,8 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
           let satisfied = 0;
           breakdown.forEach((b) => {
             if (b.missing <= 0) { satisfied++; return; }
-            const mainStock = stock.find((s) => s.warehouse_id === mainWarehouse?.id && s.product_id === b.product_id);
-            const avail = Number(mainStock?.quantity || 0);
+            const sourceStock = stock.find((s) => s.warehouse_id === sourceWh?.id && s.product_id === b.product_id);
+            const avail = Number(sourceStock?.quantity || 0);
             if (avail <= 0) return;
             const product = products.find((p) => p.id === b.product_id);
             if (!product) return;
@@ -18936,7 +18944,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
       } catch (e) { console.error(e); }
       finally { setCalculating(false); }
     })();
-  }, [isReturn]);
+  }, [isReturn, selectedOtherWhId]);
 
   // Filter products by category + search
   const filteredProducts = useMemo(() => {
@@ -19006,6 +19014,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   const totalPrice = selectedItems.reduce((s, x) => s + (x.quantity * x.product_price), 0);
 
   const handleSubmit = async () => {
+    if (!sourceWh || !targetWh) { alert("Агуулах сонгоно уу"); return; }
     if (selectedItems.length === 0) { alert("Бараа сонгоно уу"); return; }
     setBusy(true);
     try {
@@ -19078,6 +19087,44 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
         <div className="flex-1 flex overflow-hidden">
           {/* LEFT — Products */}
           <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Warehouse selector */}
+            <div style={{ padding: 8, borderBottom: `1px solid ${T.borderSoft}`, background: T.surfaceAlt }}>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">
+                {isReturn ? "📤 Хаашаа буцаах вэ?" : "📥 Хаанаас авах вэ?"}
+              </label>
+              <select value={selectedOtherWhId || ""} 
+                onChange={(e) => {
+                  setSelectedOtherWhId(e.target.value);
+                  setSelectedItems([]); // агуулах солих үед сонгосон бараагаа цэвэрлэх
+                }}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                className="w-full px-3 py-2 rounded-lg text-sm">
+                {otherWarehouses.length === 0 ? (
+                  <option value="">Бусад агуулах байхгүй</option>
+                ) : (
+                  otherWarehouses.map((w) => {
+                    const isMain = w.type === "main";
+                    const isDriver = !!w.driver_id;
+                    const icon = isMain ? "🏬" : isDriver ? "🚚" : "📦";
+                    return (
+                      <option key={w.id} value={w.id}>
+                        {icon} {w.name}{isMain ? " (Үндсэн)" : ""}
+                      </option>
+                    );
+                  })
+                )}
+              </select>
+              {selectedOtherWhId && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 flex items-center gap-1">
+                  {isReturn ? (
+                    <>🚚 <strong style={{ color: T.ink }}>{myWarehouse?.name}</strong> → 📤 <strong style={{ color: T.ink }}>{warehouses.find((w) => w.id === selectedOtherWhId)?.name}</strong></>
+                  ) : (
+                    <>📥 <strong style={{ color: T.ink }}>{warehouses.find((w) => w.id === selectedOtherWhId)?.name}</strong> → 🚚 <strong style={{ color: T.ink }}>{myWarehouse?.name}</strong></>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Search + toggle + auto note */}
             <div style={{ padding: 8, borderBottom: `1px solid ${T.borderSoft}` }} className="space-y-2">
               <div className="flex gap-2">
