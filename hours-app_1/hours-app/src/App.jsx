@@ -5000,11 +5000,14 @@ function WarehousesView({ profile }) {
     );
   }
 
-  // Бараа авах = шууд stock орох
-  // Бараа өгөх = хүсэлт илгээх (driver зөвшөөрөх ёстой)
+  // 📥 Бараа авах = Driver-аас → үндсэн агуулах (хүсэлт)
+  // 🔄 Бараа өгөх = Үндсэн → Driver агуулах (хүсэлт)
   const handleAction = async () => {
     if (!actionWarehouse) {
-      alert("⚠ Агуулах сонгоно уу");
+      alert(showActionModal === "receive" 
+        ? "⚠ Хаанаас татах driver-ийн агуулахыг сонгоно уу"
+        : "⚠ Хаашаа өгөх driver-ийн агуулахыг сонгоно уу"
+      );
       return;
     }
     if (actionItems.length === 0) {
@@ -5016,59 +5019,55 @@ function WarehousesView({ profile }) {
       alert("⚠ Тоо хэмжээ 0-ээс их байх ёстой");
       return;
     }
-    if (showActionModal === "transfer" && !actionToWarehouse) {
-      alert("⚠ Хүлээн авах агуулахыг сонгоно уу");
-      return;
-    }
-    if (showActionModal === "transfer" && actionWarehouse === actionToWarehouse) {
-      alert("⚠ Эх + хүлээн авах агуулах ижил байж болохгүй");
+    
+    // Үндсэн агуулахыг олох
+    const mainWh = warehouses.find((w) => w.type === "main");
+    if (!mainWh) {
+      alert("⚠ Үндсэн агуулах олдсонгүй");
       return;
     }
     
     setActionBusy(true);
     try {
+      let fromWh, toWh, isReturn;
       if (showActionModal === "receive") {
-        // ─── 📥 БАРАА АВАХ — Шууд stock орох ───
-        const movements = validItems.map((it) => ({
-          product_id: it.product_id,
-          warehouse_id: actionWarehouse,
-          movement_type: "in",
-          quantity: Number(it.quantity),
-          reason: "manual_receive",
-          notes: actionNote.trim() || null,
-          created_by: profile.id,
-        }));
-        const { error } = await supabase.from("inv_movements").insert(movements);
-        if (error) throw error;
-        
-        const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
-        alert(`✅ Орлого амжилттай!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг`);
+        // 📥 БАРАА АВАХ: Driver-ийн агуулахаас → Үндсэн агуулах
+        fromWh = actionWarehouse;  // driver-ийн warehouse
+        toWh = mainWh.id;          // үндсэн warehouse
+        isReturn = true;            // буцаах төрөл
       } else {
-        // ─── 🔄 БАРАА ӨГӨХ — Хүсэлт илгээх ───
-        // Driver хүлээн авч зөвшөөрөх ёстой
-        const { data: req, error: reqErr } = await supabase.from("inv_transfer_requests").insert({
-          requester_id: profile.id,
-          from_warehouse_id: actionWarehouse,
-          to_warehouse_id: actionToWarehouse,
-          status: "pending",
-          is_return: false,
-          notes: actionNote.trim() || null,
-        }).select().single();
-        if (reqErr) throw reqErr;
-        
-        const itemsToInsert = validItems.map((it) => ({
-          request_id: req.id,
-          product_id: it.product_id,
-          product_name: it.product_name,
-          product_sku: it.product_sku || null,
-          quantity: Number(it.quantity),
-        }));
-        const { error: itemsErr } = await supabase.from("inv_transfer_items").insert(itemsToInsert);
-        if (itemsErr) throw itemsErr;
-        
-        const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
-        alert(`✅ Бараа өгөх хүсэлт илгээгдлээ!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг\n\n💡 Хүлээн авагч хүсэлтийг батласны дараа stock шилжинэ.`);
+        // 🔄 БАРАА ӨГӨХ: Үндсэн агуулахаас → Driver-ийн агуулах
+        fromWh = mainWh.id;        // үндсэн warehouse
+        toWh = actionWarehouse;    // driver-ийн warehouse
+        isReturn = false;
       }
+      
+      // Хүсэлт үүсгэх
+      const { data: req, error: reqErr } = await supabase.from("inv_transfer_requests").insert({
+        requester_id: profile.id,
+        from_warehouse_id: fromWh,
+        to_warehouse_id: toWh,
+        status: "pending",
+        is_return: isReturn,
+        notes: actionNote.trim() || null,
+      }).select().single();
+      if (reqErr) throw reqErr;
+      
+      const itemsToInsert = validItems.map((it) => ({
+        request_id: req.id,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        product_sku: it.product_sku || null,
+        quantity: Number(it.quantity),
+      }));
+      const { error: itemsErr } = await supabase.from("inv_transfer_items").insert(itemsToInsert);
+      if (itemsErr) throw itemsErr;
+      
+      const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
+      const targetDriver = drivers.find((d) => d.id === warehouses.find((w) => w.id === actionWarehouse)?.driver_id);
+      const actionLabel = showActionModal === "receive" ? "📥 Бараа авах" : "🔄 Бараа өгөх";
+      const driverName = targetDriver?.name || "Driver";
+      alert(`✅ ${actionLabel} хүсэлт илгээгдлээ!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг\n\n💡 ${driverName}-ийн "Бараа хүсэлт" хэсэгт мэдэгдэл очлоо.`);
       
       setShowActionModal(null);
       setActionWarehouse(null);
@@ -5078,11 +5077,7 @@ function WarehousesView({ profile }) {
       setProductSearch("");
       await loadAll();
     } catch (e) {
-      if (e.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
-        alert("⚠ Барааны үлдэгдэл хүрэлцэхгүй байна");
-      } else {
-        alert("Алдаа: " + e.message);
-      }
+      alert("Алдаа: " + e.message);
     } finally {
       setActionBusy(false);
     }
@@ -5110,7 +5105,7 @@ function WarehousesView({ profile }) {
               Бараа авах
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              Агуулахад нөөц нэмэх
+              Driver-аас үндсэн агуулах руу татах
             </div>
           </div>
         </button>
@@ -5133,7 +5128,7 @@ function WarehousesView({ profile }) {
               Бараа өгөх
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              Хүсэлт илгээх (driver зөвшөөрнө)
+              Үндсэн агуулахаас driver-руу өгөх
             </div>
           </div>
         </button>
@@ -5222,7 +5217,7 @@ function WarehousesView({ profile }) {
               <div className="flex items-center justify-between mb-3">
                 <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
                   <span>{showActionModal === "receive" ? "📥" : "🔄"}</span>
-                  <span>{showActionModal === "receive" ? "Бараа авах" : "Бараа өгөх хүсэлт"}</span>
+                  <span>{showActionModal === "receive" ? "Бараа авах хүсэлт" : "Бараа өгөх хүсэлт"}</span>
                 </div>
                 <button onClick={() => setShowActionModal(null)} style={{ color: T.muted }}>
                   <X size={18} />
@@ -5231,49 +5226,31 @@ function WarehousesView({ profile }) {
 
               <div className="mb-3">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                  {showActionModal === "receive" ? "📥 Орлого авах агуулах" : "📤 Хаанаас өгөх (эх агуулах)"}
+                  {showActionModal === "receive" ? "🚚 Хэн хүргэгчээс татах вэ?" : "🚚 Хэн хүргэгчид өгөх вэ?"}
                 </label>
                 <select value={actionWarehouse || ""}
                   onChange={(e) => setActionWarehouse(e.target.value)}
                   style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
                   className="w-full px-3 py-2.5 rounded-lg text-sm">
-                  <option value="">— Сонгох —</option>
-                  {warehouses.map((w) => {
-                    const dr = drivers.find((d) => d.id === w.driver_id);
-                    return (
-                      <option key={w.id} value={w.id}>
-                        {w.type === "main" ? "🏬" : "🚚"} {w.name}
-                        {dr ? ` (${dr.name})` : ""}
-                      </option>
-                    );
-                  })}
+                  <option value="">— Хүргэгчийг сонгоно уу —</option>
+                  {warehouses
+                    .filter((w) => w.type !== "main" && w.driver_id) // зөвхөн driver-ийн агуулах
+                    .map((w) => {
+                      const dr = drivers.find((d) => d.id === w.driver_id);
+                      return (
+                        <option key={w.id} value={w.id}>
+                          🚚 {dr?.name || "Driver"} — {w.name}
+                        </option>
+                      );
+                    })}
                 </select>
-              </div>
-
-              {showActionModal === "transfer" && (
-                <div className="mb-3">
-                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                    📥 Хаашаа өгөх (хүлээн авах агуулах)
-                  </label>
-                  <select value={actionToWarehouse || ""}
-                    onChange={(e) => setActionToWarehouse(e.target.value)}
-                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                    className="w-full px-3 py-2.5 rounded-lg text-sm">
-                    <option value="">— Сонгох —</option>
-                    {warehouses
-                      .filter((w) => w.id !== actionWarehouse)
-                      .map((w) => {
-                        const dr = drivers.find((d) => d.id === w.driver_id);
-                        return (
-                          <option key={w.id} value={w.id}>
-                            {w.type === "main" ? "🏬" : "🚚"} {w.name}
-                            {dr ? ` (${dr.name})` : ""}
-                          </option>
-                        );
-                      })}
-                  </select>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 italic">
+                  {showActionModal === "receive" 
+                    ? "💡 Сонгосон хүргэгч барааг үндсэн агуулах руу буцаах хүсэлт хүлээн авна"
+                    : "💡 Сонгосон хүргэгч барааг үндсэн агуулахаас авах хүсэлт хүлээн авна"
+                  }
                 </div>
-              )}
+              </div>
 
               {/* Сонгосон бараанууд */}
               {actionItems.length > 0 && (
@@ -5469,7 +5446,7 @@ function WarehousesView({ profile }) {
                     background: showActionModal === "receive" ? T.ok : "#9333ea", 
                     color: "white", fontFamily: FS, fontWeight: 700,
                   }}>
-                  {actionBusy ? "Хадгалж байна..." : (showActionModal === "receive" ? "💾 Авах" : "📨 Хүсэлт илгээх")}
+                  {actionBusy ? "Илгээж байна..." : "📨 Хүсэлт илгээх"}
                 </button>
               </div>
             </div>
