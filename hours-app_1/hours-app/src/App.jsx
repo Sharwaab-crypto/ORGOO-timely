@@ -20134,17 +20134,33 @@ function DriverRequestsView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: reqData, error: reqErr }, { data: whData, error: whErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
-        supabase.from("inv_transfer_requests").select("*").eq("requester_id", profile.id).order("created_at", { ascending: false }),
-        supabase.from("inv_warehouses").select("*"),
+      // Эхлээд driver-ийн warehouse-ыг олох
+      const { data: whData, error: whErr } = await supabase.from("inv_warehouses").select("*");
+      if (whErr) console.error("Warehouse fetch error:", whErr);
+      const myWh = (whData || []).find((w) => w.driver_id === profile.id);
+      
+      // Хүсэлтүүдийг татах:
+      // 1. Driver өөрөө үүсгэсэн (requester_id = profile.id)
+      // 2. Driver-ийн агуулахтай холбогдсон (admin-аас үүссэн)
+      let reqQuery = supabase.from("inv_transfer_requests").select("*");
+      if (myWh) {
+        reqQuery = reqQuery.or(
+          `requester_id.eq.${profile.id},from_warehouse_id.eq.${myWh.id},to_warehouse_id.eq.${myWh.id}`
+        );
+      } else {
+        reqQuery = reqQuery.eq("requester_id", profile.id);
+      }
+      
+      const [{ data: reqData, error: reqErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
+        reqQuery.order("created_at", { ascending: false }),
         supabase.from("inv_products").select("id, name, sku, image_url, sale_price, category_id").eq("is_active", true),
         supabase.from("inv_stock").select("*"),
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
-      if (whErr) console.error("Warehouse fetch error:", whErr);
       if (prdErr) console.error("Product fetch error:", prdErr);
       if (stkErr) console.error("Stock fetch error:", stkErr);
       console.log("Loaded:", {
+        requests: reqData?.length,
         warehouses: whData?.length,
         products: prdData?.length,
         stock: stkData?.length,
@@ -20153,7 +20169,7 @@ function DriverRequestsView({ profile }) {
       setWarehouses(whData || []);
       setProducts(prdData || []);
       setStock(stkData || []);
-      setMyWarehouse((whData || []).find((w) => w.driver_id === profile.id));
+      setMyWarehouse(myWh);
 
       if (reqData && reqData.length > 0) {
         const ids = reqData.map((r) => r.id);
@@ -20170,6 +20186,20 @@ function DriverRequestsView({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // Realtime — admin хүсэлт үүсгэхэд driver шууд харах
+  useEffect(() => {
+    const channel = supabase
+      .channel("driver-transfer-requests-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inv_transfer_requests" },
+        () => { loadAll(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
 
   return (
     <div className="space-y-3">
@@ -20237,8 +20267,20 @@ function DriverRequestsView({ profile }) {
                     {req.is_return ? "🔄" : "📨"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                      {req.is_return ? "Бараа буцаах" : "Бараа авах"}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                        {req.is_return ? "Бараа буцаах" : "Бараа авах"}
+                      </div>
+                      {req.requester_id !== profile.id && (
+                        <span style={{ 
+                          background: "rgba(147,51,234,0.15)", 
+                          color: "#9333ea", 
+                          fontFamily: FS, fontWeight: 700 
+                        }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full">
+                          👤 АДМИНААС
+                        </span>
+                      )}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
                       {new Date(req.created_at).toLocaleString("mn-MN")}
