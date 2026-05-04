@@ -20130,6 +20130,7 @@ function DriverRequestsView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
   const [isReturn, setIsReturn] = useState(false);
+  const [activeRequest, setActiveRequest] = useState(null); // detail modal-руу нээх хүсэлт
 
   const loadAll = async () => {
     setLoading(true);
@@ -20251,80 +20252,315 @@ function DriverRequestsView({ profile }) {
         <div className="space-y-2">
           {requests.map((req) => {
             const reqItems = items[req.id] || [];
+            const isFromAdmin = req.requester_id !== profile.id;
+            const isPending = req.status === "pending";
+            // Энэ хүсэлт driver-руу зориулагдсан уу? (admin-аас орж ирсэн)
+            const isForMe = isFromAdmin && (
+              (req.is_return && req.from_warehouse_id === myWarehouse?.id) ||  // admin: bara авах (driver агуулахаас)
+              (!req.is_return && req.to_warehouse_id === myWarehouse?.id)      // admin: bara өгөх (driver агуулах руу)
+            );
             return (
-              <div key={req.id} className="glass rounded-2xl p-3"
+              <div key={req.id} className="glass rounded-2xl overflow-hidden"
                 style={{
                   borderLeft: `4px solid ${
                     req.status === "pending" ? T.warn :
                     req.status === "completed" ? T.ok : T.err
                   }`,
                 }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div style={{
-                    background: req.is_return ? T.warnSoft : "rgba(14,165,233,0.1)",
-                    color: req.is_return ? T.warn : "#0ea5e9",
-                  }} className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
-                    {req.is_return ? "🔄" : "📨"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                        {req.is_return ? "Бараа буцаах" : "Бараа авах"}
+                {/* Header — clickable */}
+                <button onClick={() => setActiveRequest(req)}
+                  className="press-btn w-full p-3 text-left">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div style={{
+                      background: req.is_return ? T.warnSoft : "rgba(14,165,233,0.1)",
+                      color: req.is_return ? T.warn : "#0ea5e9",
+                    }} className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                      {req.is_return ? "🔄" : "📨"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                          {req.is_return ? "Бараа буцаах" : "Бараа авах"}
+                        </div>
+                        {isFromAdmin && (
+                          <span style={{ 
+                            background: "rgba(147,51,234,0.15)", 
+                            color: "#9333ea", 
+                            fontFamily: FS, fontWeight: 700 
+                          }}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full">
+                            👤 АДМИНААС
+                          </span>
+                        )}
                       </div>
-                      {req.requester_id !== profile.id && (
-                        <span style={{ 
-                          background: "rgba(147,51,234,0.15)", 
-                          color: "#9333ea", 
-                          fontFamily: FS, fontWeight: 700 
-                        }}
-                          className="text-[9px] px-1.5 py-0.5 rounded-full">
-                          👤 АДМИНААС
-                        </span>
-                      )}
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        {new Date(req.created_at).toLocaleString("mn-MN")}
+                      </div>
                     </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                      {new Date(req.created_at).toLocaleString("mn-MN")}
+                    <span style={{
+                      background: req.status === "pending" ? T.warnSoft : req.status === "completed" ? "rgba(16,185,129,0.1)" : T.errSoft,
+                      color: req.status === "pending" ? T.warn : req.status === "completed" ? T.ok : T.err,
+                      fontFamily: FS, fontWeight: 600,
+                    }} className="text-[10px] px-2 py-0.5 rounded-full">
+                      {req.status === "pending" ? "⏳ Хүлээгдэж" : req.status === "completed" ? "✓ Зөвшөөрсөн" : "✕ Татгалзсан"}
+                    </span>
+                  </div>
+
+                  {/* Бараанууд жижиг card-уудаар */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1"
+                    style={{ scrollbarWidth: "thin" }}>
+                    {reqItems.map((it) => {
+                      const product = products.find((p) => p.id === it.product_id);
+                      const imgUrl = product?.image_url;
+                      return (
+                        <div key={it.id} className="rounded-lg overflow-hidden flex-shrink-0"
+                          style={{ background: T.surface, border: `1px solid ${T.border}`, width: 90 }}>
+                          <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
+                            {imgUrl ? (
+                              <img src={imgUrl} alt={it.product_name}
+                                style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                            ) : (
+                              <div style={{
+                                width: "100%", height: "100%",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 22,
+                              }}>📦</div>
+                            )}
+                          </div>
+                          <div className="p-1">
+                            <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                              className="text-[9px] line-clamp-2"
+                              style={{ minHeight: 22 }}>
+                              {it.product_name}
+                            </div>
+                            <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }}
+                              className="text-[10px] tabular-nums mt-0.5">
+                              ×{Number(it.quantity)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {req.notes && (
+                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }}
+                      className="text-[11px] mt-2">
+                      "{req.notes}"
                     </div>
-                  </div>
-                  <span style={{
-                    background: req.status === "pending" ? T.warnSoft : req.status === "completed" ? "rgba(16,185,129,0.1)" : T.errSoft,
-                    color: req.status === "pending" ? T.warn : req.status === "completed" ? T.ok : T.err,
-                    fontFamily: FS, fontWeight: 600,
-                  }} className="text-[10px] px-2 py-0.5 rounded-full">
-                    {req.status === "pending" ? "⏳ Хүлээгдэж" : req.status === "completed" ? "✓ Зөвшөөрсөн" : "✕ Татгалзсан"}
-                  </span>
-                </div>
+                  )}
+                </button>
 
-                <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2">
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-1">
-                    {reqItems.length} төрлийн бараа
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {reqItems.slice(0, 3).map((it) => (
-                      <span key={it.id} style={{ background: T.surface, fontFamily: FS }}
-                        className="text-[10px] px-2 py-0.5 rounded-full">
-                        {it.product_name} ×{Number(it.quantity)}
-                      </span>
-                    ))}
-                    {reqItems.length > 3 && (
-                      <span style={{ color: T.muted, fontFamily: FM }}
-                        className="text-[10px] px-2 py-0.5">
-                        +{reqItems.length - 3} илүү
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {req.notes && (
-                  <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }}
-                    className="text-[11px] mt-2">
-                    "{req.notes}"
+                {/* Action товчнууд (зөвхөн admin-аас irсен pending хүсэлтэд) */}
+                {isForMe && isPending && (
+                  <div className="grid grid-cols-2 gap-2 p-3 pt-0">
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm(`${req.is_return ? "Барааг буцаах" : "Барааг хүлээн авах"} уу?`)) return;
+                      try {
+                        // Stock movements үүсгэх
+                        const movements = reqItems.map((it) => ({
+                          product_id: it.product_id,
+                          warehouse_id: req.from_warehouse_id,
+                          to_warehouse_id: req.to_warehouse_id,
+                          movement_type: "transfer",
+                          quantity: Number(it.quantity),
+                          reason: "approve_request",
+                          notes: `Хүсэлт #${req.id.slice(0,8)} зөвшөөрсөн`,
+                          created_by: profile.id,
+                        }));
+                        const { error: mvErr } = await supabase.from("inv_movements").insert(movements);
+                        if (mvErr) throw mvErr;
+                        
+                        // Status шинэчлэх
+                        const { error: updErr } = await supabase
+                          .from("inv_transfer_requests")
+                          .update({ status: "completed", approved_at: new Date().toISOString(), approved_by: profile.id })
+                          .eq("id", req.id);
+                        if (updErr) throw updErr;
+                        
+                        alert("✅ Хүсэлт зөвшөөрөгдлөө");
+                        await loadAll();
+                      } catch (e) {
+                        if (e.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
+                          alert("⚠ Барааны үлдэгдэл хүрэлцэхгүй байна");
+                        } else {
+                          alert("Алдаа: " + e.message);
+                        }
+                      }
+                    }}
+                      className="press-btn py-2 rounded-lg text-xs font-semibold"
+                      style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                      ✓ Зөвшөөрөх
+                    </button>
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm("Хүсэлтийг татгалзах уу?")) return;
+                      try {
+                        const { error } = await supabase
+                          .from("inv_transfer_requests")
+                          .update({ status: "rejected", approved_at: new Date().toISOString(), approved_by: profile.id })
+                          .eq("id", req.id);
+                        if (error) throw error;
+                        alert("✕ Хүсэлт татгалзав");
+                        await loadAll();
+                      } catch (e) {
+                        alert("Алдаа: " + e.message);
+                      }
+                    }}
+                      className="press-btn py-2 rounded-lg text-xs font-semibold"
+                      style={{ background: T.errSoft, color: T.err, border: `1px solid ${T.err}`, fontFamily: FS, fontWeight: 700 }}>
+                      ✕ Татгалзах
+                    </button>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+      )}
+      
+      {/* Detail Modal */}
+      {activeRequest && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+          display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          overflowY: "auto",
+        }}
+          onClick={() => setActiveRequest(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+            marginTop: 12, marginBottom: 12,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            maxHeight: "90vh", overflowY: "auto",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                  <span>{activeRequest.is_return ? "🔄" : "📨"}</span>
+                  <span>{activeRequest.is_return ? "Бараа буцаах хүсэлт" : "Бараа авах хүсэлт"}</span>
+                </div>
+                <button onClick={() => setActiveRequest(null)} style={{ color: T.muted }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Status row */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="rounded-lg p-2" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-0.5">Статус</div>
+                  <div style={{ 
+                    color: activeRequest.status === "pending" ? T.warn : activeRequest.status === "completed" ? T.ok : T.err,
+                    fontFamily: FS, fontWeight: 700,
+                  }} className="text-xs">
+                    {activeRequest.status === "pending" ? "⏳ Хүлээгдэж буй" : activeRequest.status === "completed" ? "✓ Зөвшөөрсөн" : "✕ Татгалзсан"}
+                  </div>
+                </div>
+                <div className="rounded-lg p-2" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-0.5">Үүсгэсэн</div>
+                  <div style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }} className="text-xs">
+                    {new Date(activeRequest.created_at).toLocaleDateString("mn-MN")} {new Date(activeRequest.created_at).toLocaleTimeString("mn-MN", { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Хаанаас → Хаашаа */}
+              <div className="rounded-lg p-3 mb-3" style={{ background: T.surfaceAlt }}>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase mb-2">📍 Шилжлэг</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mb-0.5">Хаанаас</div>
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+                      {warehouses.find((w) => w.id === activeRequest.from_warehouse_id)?.name || "—"}
+                    </div>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FD }} className="text-2xl">→</div>
+                  <div className="flex-1 text-center">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mb-0.5">Хаашаа</div>
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+                      {warehouses.find((w) => w.id === activeRequest.to_warehouse_id)?.name || "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items list */}
+              <div className="mb-3">
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                  📦 Бараанууд ({(items[activeRequest.id] || []).length})
+                </div>
+                <div className="space-y-1.5">
+                  {(items[activeRequest.id] || []).map((it) => {
+                    const product = products.find((p) => p.id === it.product_id);
+                    const imgUrl = product?.image_url;
+                    const price = product?.sale_price || 0;
+                    return (
+                      <div key={it.id} className="rounded-lg p-2 flex items-center gap-2"
+                        style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                        <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0"
+                          style={{ background: T.bg }}>
+                          {imgUrl ? (
+                            <img src={imgUrl} alt={it.product_name}
+                              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                              onError={(e) => { e.target.style.display = "none"; }} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-2xl">📦</div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                            {it.product_name}
+                          </div>
+                          {it.product_sku && (
+                            <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                              {it.product_sku}
+                              {price > 0 && ` · ${Number(price).toLocaleString()}₮`}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                            ×{Number(it.quantity)}
+                          </div>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">ширхэг</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Нийт */}
+                <div className="rounded-lg p-2 mt-2 flex justify-between items-center"
+                  style={{ background: T.highlightSoft, border: `1px solid ${T.highlight}` }}>
+                  <span style={{ fontFamily: FS, fontWeight: 600, color: T.highlight }} className="text-xs">
+                    Нийт ширхэг
+                  </span>
+                  <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
+                    {(items[activeRequest.id] || []).reduce((s, it) => s + Number(it.quantity || 0), 0)} ширхэг
+                  </span>
+                </div>
+              </div>
+
+              {activeRequest.notes && (
+                <div className="rounded-lg p-2 mb-3" style={{ background: T.warnSoft, border: `1px solid ${T.warn}` }}>
+                  <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase mb-0.5">📝 Тэмдэглэл</div>
+                  <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                    "{activeRequest.notes}"
+                  </div>
+                </div>
+              )}
+
+              {/* Close button */}
+              <button onClick={() => setActiveRequest(null)}
+                className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                Хаах
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* New request modal */}
