@@ -5000,8 +5000,10 @@ function WarehousesView({ profile }) {
     );
   }
 
-  // 📥 Бараа авах = Driver-аас → үндсэн агуулах (хүсэлт)
-  // 🔄 Бараа өгөх = Үндсэн → Driver агуулах (хүсэлт)
+  // 📥 Бараа авах = Driver-ийн агуулахаас → үндсэн агуулах руу татах хүсэлт
+  //   Хүсэлт автоматаар үүсэн, admin өөрөө зөвшөөрнө (хоёр алхамтай)
+  // 🔄 Бараа өгөх = Үндсэн агуулахаас → driver-ийн агуулах руу татах хүсэлт
+  //   Хүсэлт үүсэн, admin өөрөө зөвшөөрнө
   const handleAction = async () => {
     if (!actionWarehouse) {
       alert(showActionModal === "receive" 
@@ -5020,7 +5022,6 @@ function WarehousesView({ profile }) {
       return;
     }
     
-    // Үндсэн агуулахыг олох
     const mainWh = warehouses.find((w) => w.type === "main");
     if (!mainWh) {
       alert("⚠ Үндсэн агуулах олдсонгүй");
@@ -5031,18 +5032,18 @@ function WarehousesView({ profile }) {
     try {
       let fromWh, toWh, isReturn;
       if (showActionModal === "receive") {
-        // 📥 БАРАА АВАХ: Driver-ийн агуулахаас → Үндсэн агуулах
-        fromWh = actionWarehouse;  // driver-ийн warehouse
-        toWh = mainWh.id;          // үндсэн warehouse
-        isReturn = true;            // буцаах төрөл
+        // 📥 Driver → үндсэн = буцаах төрөл
+        fromWh = actionWarehouse;
+        toWh = mainWh.id;
+        isReturn = true;
       } else {
-        // 🔄 БАРАА ӨГӨХ: Үндсэн агуулахаас → Driver-ийн агуулах
-        fromWh = mainWh.id;        // үндсэн warehouse
-        toWh = actionWarehouse;    // driver-ийн warehouse
+        // 🔄 Үндсэн → Driver = авах төрөл
+        fromWh = mainWh.id;
+        toWh = actionWarehouse;
         isReturn = false;
       }
       
-      // Хүсэлт үүсгэх
+      // Хүсэлт үүсгэх (status='pending')
       const { data: req, error: reqErr } = await supabase.from("inv_transfer_requests").insert({
         requester_id: profile.id,
         from_warehouse_id: fromWh,
@@ -5065,9 +5066,9 @@ function WarehousesView({ profile }) {
       
       const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
       const targetDriver = drivers.find((d) => d.id === warehouses.find((w) => w.id === actionWarehouse)?.driver_id);
-      const actionLabel = showActionModal === "receive" ? "📥 Бараа авах" : "🔄 Бараа өгөх";
       const driverName = targetDriver?.name || "Driver";
-      alert(`✅ ${actionLabel} хүсэлт илгээгдлээ!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг\n\n💡 ${driverName}-ийн "Бараа хүсэлт" хэсэгт мэдэгдэл очлоо.`);
+      const actionLabel = showActionModal === "receive" ? "📥 Бараа авах" : "🔄 Бараа өгөх";
+      alert(`✅ ${actionLabel} хүсэлт үүсгэгдлээ!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг\n👤 ${driverName}\n\n💡 "Бараа хүсэлт" хэсгээс хүсэлтийг батална уу.`);
       
       setShowActionModal(null);
       setActionWarehouse(null);
@@ -5105,7 +5106,7 @@ function WarehousesView({ profile }) {
               Бараа авах
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              Driver-аас үндсэн агуулах руу татах
+              Driver-аас үндсэн агуулах руу буцаах
             </div>
           </div>
         </button>
@@ -5245,10 +5246,7 @@ function WarehousesView({ profile }) {
                     })}
                 </select>
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 italic">
-                  {showActionModal === "receive" 
-                    ? "💡 Сонгосон хүргэгч барааг үндсэн агуулах руу буцаах хүсэлт хүлээн авна"
-                    : "💡 Сонгосон хүргэгч барааг үндсэн агуулахаас авах хүсэлт хүлээн авна"
-                  }
+                  💡 Хүсэлт үүсгэгдсний дараа "Бараа хүсэлт" хэсгээс өөрөө батална уу
                 </div>
               </div>
 
@@ -5446,7 +5444,7 @@ function WarehousesView({ profile }) {
                     background: showActionModal === "receive" ? T.ok : "#9333ea", 
                     color: "white", fontFamily: FS, fontWeight: 700,
                   }}>
-                  {actionBusy ? "Илгээж байна..." : "📨 Хүсэлт илгээх"}
+                  {actionBusy ? "Үүсгэж байна..." : "📨 Хүсэлт үүсгэх"}
                 </button>
               </div>
             </div>
