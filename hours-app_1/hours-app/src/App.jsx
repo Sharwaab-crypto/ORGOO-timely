@@ -5000,7 +5000,8 @@ function WarehousesView({ profile }) {
     );
   }
 
-  // Бараа авах / өгөх логик (multi-item)
+  // Бараа авах = шууд stock орох
+  // Бараа өгөх = хүсэлт илгээх (driver зөвшөөрөх ёстой)
   const handleAction = async () => {
     if (!actionWarehouse) {
       alert("⚠ Агуулах сонгоно уу");
@@ -5026,31 +5027,48 @@ function WarehousesView({ profile }) {
     
     setActionBusy(true);
     try {
-      // Олон бараа нэг дор оруулах
-      const movements = validItems.map((it) => {
-        const m = {
+      if (showActionModal === "receive") {
+        // ─── 📥 БАРАА АВАХ — Шууд stock орох ───
+        const movements = validItems.map((it) => ({
           product_id: it.product_id,
           warehouse_id: actionWarehouse,
+          movement_type: "in",
           quantity: Number(it.quantity),
+          reason: "manual_receive",
           notes: actionNote.trim() || null,
           created_by: profile.id,
-        };
-        if (showActionModal === "receive") {
-          m.movement_type = "in";
-          m.reason = "manual_receive";
-        } else {
-          m.movement_type = "transfer";
-          m.to_warehouse_id = actionToWarehouse;
-          m.reason = "manual_transfer";
-        }
-        return m;
-      });
-      
-      const { error } = await supabase.from("inv_movements").insert(movements);
-      if (error) throw error;
-      
-      const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
-      alert(`✅ ${showActionModal === "receive" ? "Орлого" : "Шилжүүлэг"} амжилттай!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг`);
+        }));
+        const { error } = await supabase.from("inv_movements").insert(movements);
+        if (error) throw error;
+        
+        const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
+        alert(`✅ Орлого амжилттай!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг`);
+      } else {
+        // ─── 🔄 БАРАА ӨГӨХ — Хүсэлт илгээх ───
+        // Driver хүлээн авч зөвшөөрөх ёстой
+        const { data: req, error: reqErr } = await supabase.from("inv_transfer_requests").insert({
+          requester_id: profile.id,
+          from_warehouse_id: actionWarehouse,
+          to_warehouse_id: actionToWarehouse,
+          status: "pending",
+          is_return: false,
+          notes: actionNote.trim() || null,
+        }).select().single();
+        if (reqErr) throw reqErr;
+        
+        const itemsToInsert = validItems.map((it) => ({
+          request_id: req.id,
+          product_id: it.product_id,
+          product_name: it.product_name,
+          product_sku: it.product_sku || null,
+          quantity: Number(it.quantity),
+        }));
+        const { error: itemsErr } = await supabase.from("inv_transfer_items").insert(itemsToInsert);
+        if (itemsErr) throw itemsErr;
+        
+        const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
+        alert(`✅ Бараа өгөх хүсэлт илгээгдлээ!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг\n\n💡 Хүлээн авагч хүсэлтийг батласны дараа stock шилжинэ.`);
+      }
       
       setShowActionModal(null);
       setActionWarehouse(null);
@@ -5115,7 +5133,7 @@ function WarehousesView({ profile }) {
               Бараа өгөх
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              Агуулахаас агуулахад
+              Хүсэлт илгээх (driver зөвшөөрнө)
             </div>
           </div>
         </button>
@@ -5204,7 +5222,7 @@ function WarehousesView({ profile }) {
               <div className="flex items-center justify-between mb-3">
                 <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
                   <span>{showActionModal === "receive" ? "📥" : "🔄"}</span>
-                  <span>{showActionModal === "receive" ? "Бараа авах" : "Бараа өгөх"}</span>
+                  <span>{showActionModal === "receive" ? "Бараа авах" : "Бараа өгөх хүсэлт"}</span>
                 </div>
                 <button onClick={() => setShowActionModal(null)} style={{ color: T.muted }}>
                   <X size={18} />
@@ -5451,7 +5469,7 @@ function WarehousesView({ profile }) {
                     background: showActionModal === "receive" ? T.ok : "#9333ea", 
                     color: "white", fontFamily: FS, fontWeight: 700,
                   }}>
-                  {actionBusy ? "Хадгалж байна..." : `💾 ${showActionModal === "receive" ? "Авах" : "Шилжүүлэх"}`}
+                  {actionBusy ? "Хадгалж байна..." : (showActionModal === "receive" ? "💾 Авах" : "📨 Хүсэлт илгээх")}
                 </button>
               </div>
             </div>
