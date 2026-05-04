@@ -20268,8 +20268,8 @@ function DriverRequestsView({ profile }) {
                   }`,
                 }}>
                 {/* Header — clickable */}
-                <button onClick={() => setActiveRequest(req)}
-                  className="press-btn w-full p-3 text-left">
+                <div onClick={() => setActiveRequest(req)}
+                  className="press-btn cursor-pointer p-3 pb-0">
                   <div className="flex items-center gap-2 mb-2">
                     <div style={{
                       background: req.is_return ? T.warnSoft : "rgba(14,165,233,0.1)",
@@ -20305,51 +20305,54 @@ function DriverRequestsView({ profile }) {
                       {req.status === "pending" ? "⏳ Хүлээгдэж" : req.status === "completed" ? "✓ Зөвшөөрсөн" : "✕ Татгалзсан"}
                     </span>
                   </div>
+                </div>
 
-                  {/* Бараанууд жижиг card-уудаар */}
-                  <div className="flex gap-1.5 overflow-x-auto pb-1"
-                    style={{ scrollbarWidth: "thin" }}>
-                    {reqItems.map((it) => {
-                      const product = products.find((p) => p.id === it.product_id);
-                      const imgUrl = product?.image_url;
-                      return (
-                        <div key={it.id} className="rounded-lg overflow-hidden flex-shrink-0"
-                          style={{ background: T.surface, border: `1px solid ${T.border}`, width: 90 }}>
-                          <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
-                            {imgUrl ? (
-                              <img src={imgUrl} alt={it.product_name}
-                                style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                            ) : (
-                              <div style={{
-                                width: "100%", height: "100%",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: 22,
-                              }}>📦</div>
-                            )}
+                {/* Бараанууд — тусдаа scroll-той (button-аас гадуур) */}
+                <div className="flex gap-1.5 overflow-x-auto px-3 pb-1"
+                  style={{ scrollbarWidth: "thin", WebkitOverflowScrolling: "touch" }}>
+                  {reqItems.map((it) => {
+                    const product = products.find((p) => p.id === it.product_id);
+                    const imgUrl = product?.image_url;
+                    return (
+                      <div key={it.id} className="rounded-lg overflow-hidden flex-shrink-0"
+                        style={{ background: T.surface, border: `1px solid ${T.border}`, width: 90 }}>
+                        <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
+                          {imgUrl ? (
+                            <img src={imgUrl} alt={it.product_name}
+                              style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          ) : (
+                            <div style={{
+                              width: "100%", height: "100%",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 22,
+                            }}>📦</div>
+                          )}
+                        </div>
+                        <div className="p-1">
+                          <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink, minHeight: 22 }}
+                            className="text-[9px] line-clamp-2">
+                            {it.product_name}
                           </div>
-                          <div className="p-1">
-                            <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                              className="text-[9px] line-clamp-2"
-                              style={{ minHeight: 22 }}>
-                              {it.product_name}
-                            </div>
-                            <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }}
-                              className="text-[10px] tabular-nums mt-0.5">
-                              ×{Number(it.quantity)}
-                            </div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }}
+                            className="text-[10px] tabular-nums mt-0.5">
+                            ×{Number(it.quantity)}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                  {req.notes && (
-                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }}
-                      className="text-[11px] mt-2">
-                      "{req.notes}"
-                    </div>
-                  )}
-                </button>
+                {req.notes && (
+                  <div onClick={() => setActiveRequest(req)}
+                    className="cursor-pointer px-3"
+                    style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }}>
+                    <div className="text-[11px] mt-2">"{req.notes}"</div>
+                  </div>
+                )}
+
+                {/* Padding bottom (action товчнуудтай тохирох зориулалттай) */}
+                <div className="h-2"></div>
 
                 {/* Action товчнууд (зөвхөн admin-аас irсен pending хүсэлтэд) */}
                 {isForMe && isPending && (
