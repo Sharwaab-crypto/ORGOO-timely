@@ -4847,8 +4847,7 @@ function WarehousesView({ profile }) {
   const [showActionModal, setShowActionModal] = useState(null); // 'receive' | 'transfer' | null
   const [actionWarehouse, setActionWarehouse] = useState(null); // сонгосон агуулах
   const [actionToWarehouse, setActionToWarehouse] = useState(null); // transfer-руу: дамжих агуулах
-  const [actionProduct, setActionProduct] = useState(null);
-  const [actionQty, setActionQty] = useState("1");
+  const [actionItems, setActionItems] = useState([]); // multi-product: [{product_id, product_name, product_sku, product_image, quantity, maxQty}]
   const [actionNote, setActionNote] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [productSearch, setProductSearch] = useState("");
@@ -5001,15 +5000,19 @@ function WarehousesView({ profile }) {
     );
   }
 
-  // Бараа авах / өгөх логик
+  // Бараа авах / өгөх логик (multi-item)
   const handleAction = async () => {
-    if (!actionWarehouse || !actionProduct) {
-      alert("⚠ Агуулах ба бараа сонгоно уу");
+    if (!actionWarehouse) {
+      alert("⚠ Агуулах сонгоно уу");
       return;
     }
-    const qty = Number(actionQty) || 0;
-    if (qty <= 0) {
-      alert("⚠ Тоо хэмжээ сөрөг буюу 0 байж болохгүй");
+    if (actionItems.length === 0) {
+      alert("⚠ Бараа сонгоно уу");
+      return;
+    }
+    const validItems = actionItems.filter((it) => Number(it.quantity || 0) > 0);
+    if (validItems.length === 0) {
+      alert("⚠ Тоо хэмжээ 0-ээс их байх ёстой");
       return;
     }
     if (showActionModal === "transfer" && !actionToWarehouse) {
@@ -5023,38 +5026,36 @@ function WarehousesView({ profile }) {
     
     setActionBusy(true);
     try {
-      if (showActionModal === "receive") {
-        const { error } = await supabase.from("inv_movements").insert({
-          product_id: actionProduct.id,
+      // Олон бараа нэг дор оруулах
+      const movements = validItems.map((it) => {
+        const m = {
+          product_id: it.product_id,
           warehouse_id: actionWarehouse,
-          movement_type: "in",
-          quantity: qty,
-          reason: "manual_receive",
+          quantity: Number(it.quantity),
           notes: actionNote.trim() || null,
           created_by: profile.id,
-        });
-        if (error) throw error;
-        alert(`✅ Орлого амжилттай!\n\n${actionProduct.name}: +${qty}ш`);
-      } else if (showActionModal === "transfer") {
-        const { error } = await supabase.from("inv_movements").insert({
-          product_id: actionProduct.id,
-          warehouse_id: actionWarehouse,
-          to_warehouse_id: actionToWarehouse,
-          movement_type: "transfer",
-          quantity: qty,
-          reason: "manual_transfer",
-          notes: actionNote.trim() || null,
-          created_by: profile.id,
-        });
-        if (error) throw error;
-        alert(`✅ Шилжүүлэг амжилттай!\n\n${actionProduct.name}: ${qty}ш`);
-      }
+        };
+        if (showActionModal === "receive") {
+          m.movement_type = "in";
+          m.reason = "manual_receive";
+        } else {
+          m.movement_type = "transfer";
+          m.to_warehouse_id = actionToWarehouse;
+          m.reason = "manual_transfer";
+        }
+        return m;
+      });
+      
+      const { error } = await supabase.from("inv_movements").insert(movements);
+      if (error) throw error;
+      
+      const totalQty = validItems.reduce((s, x) => s + Number(x.quantity || 0), 0);
+      alert(`✅ ${showActionModal === "receive" ? "Орлого" : "Шилжүүлэг"} амжилттай!\n\n${validItems.length} төрлийн бараа · ${totalQty} ширхэг`);
       
       setShowActionModal(null);
       setActionWarehouse(null);
       setActionToWarehouse(null);
-      setActionProduct(null);
-      setActionQty("1");
+      setActionItems([]);
       setActionNote("");
       setProductSearch("");
       await loadAll();
@@ -5076,9 +5077,9 @@ function WarehousesView({ profile }) {
         <button onClick={() => {
           setShowActionModal("receive");
           setActionWarehouse(null);
-          setActionProduct(null);
-          setActionQty("1");
+          setActionItems([]);
           setActionNote("");
+          setProductSearch("");
         }}
           className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
           style={{ borderLeft: `3px solid ${T.ok}` }}>
@@ -5099,9 +5100,9 @@ function WarehousesView({ profile }) {
           setShowActionModal("transfer");
           setActionWarehouse(null);
           setActionToWarehouse(null);
-          setActionProduct(null);
-          setActionQty("1");
+          setActionItems([]);
           setActionNote("");
+          setProductSearch("");
         }}
           className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
           style={{ borderLeft: `3px solid #9333ea` }}>
@@ -5256,101 +5257,174 @@ function WarehousesView({ profile }) {
                 </div>
               )}
 
-              <div className="mb-3">
-                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                  📦 Бараа
-                </label>
-                {actionProduct ? (
-                  <div className="rounded-lg p-2 flex items-center gap-2"
-                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-                    {actionProduct.image_url && (
-                      <img src={actionProduct.image_url} alt=""
-                        className="w-10 h-10 rounded object-cover flex-shrink-0"
-                        onError={(e) => { e.target.style.display = "none"; }} />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
-                        {actionProduct.name}
-                      </div>
-                      <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
-                        {actionProduct.sku}
-                      </div>
-                    </div>
-                    <button onClick={() => setActionProduct(null)}
-                      className="press-btn p-1.5 rounded text-xs"
-                      style={{ background: T.errSoft, color: T.err }}>
-                      ✕ Сольх
+              {/* Сонгосон бараанууд */}
+              {actionItems.length > 0 && (
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                      📦 Сонгосон бараа ({actionItems.length})
+                    </label>
+                    <button onClick={() => setActionItems([])}
+                      className="press-btn px-2 py-0.5 rounded text-[10px]"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                      Бүгдийг арилгах
                     </button>
                   </div>
-                ) : (
-                  <>
-                    <input type="text" value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      placeholder="🔍 Бараа хайх..."
-                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                      className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
-                    <div className="space-y-1 max-h-60 overflow-y-auto">
-                      {products
-                        .filter((p) => !productSearch.trim() ||
-                          p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
-                          p.sku?.toLowerCase().includes(productSearch.toLowerCase())
-                        )
-                        .slice(0, 30)
-                        .map((p) => {
-                          const stk = actionWarehouse 
-                            ? stock.find((s) => s.product_id === p.id && s.warehouse_id === actionWarehouse)
-                            : null;
-                          return (
-                            <button key={p.id}
-                              onClick={() => { setActionProduct(p); setProductSearch(""); }}
-                              className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
-                              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-                              {p.image_url && (
-                                <img src={p.image_url} alt=""
-                                  className="w-8 h-8 rounded object-cover flex-shrink-0"
-                                  onError={(e) => { e.target.style.display = "none"; }} />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
-                                  {p.name}
-                                </div>
-                                <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
-                                  {p.sku}
-                                </div>
-                              </div>
-                              {stk && (
-                                <span style={{ 
-                                  background: Number(stk.quantity) > 0 ? "rgba(16,185,129,0.1)" : T.errSoft, 
-                                  color: Number(stk.quantity) > 0 ? T.ok : T.err,
-                                  fontFamily: FD, fontWeight: 600 
-                                }}
-                                  className="text-[10px] px-1.5 py-0.5 rounded">
-                                  {Number(stk.quantity)}ш
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {actionItems.map((it) => (
+                      <div key={it.product_id} className="rounded-lg p-2 flex items-center gap-2"
+                        style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                        {it.product_image && (
+                          <img src={it.product_image} alt=""
+                            className="w-9 h-9 rounded object-cover flex-shrink-0"
+                            onError={(e) => { e.target.style.display = "none"; }} />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                            {it.product_name}
+                          </div>
+                          {it.product_sku && (
+                            <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                              {it.product_sku}
+                            </div>
+                          )}
+                        </div>
+                        {/* Тоо input — − qty + */}
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => {
+                            setActionItems(actionItems.map((x) => 
+                              x.product_id === it.product_id 
+                                ? { ...x, quantity: Math.max(1, Number(x.quantity) - 1) }
+                                : x
+                            ));
+                          }}
+                            className="press-btn w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                            style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}` }}>
+                            −
+                          </button>
+                          <input type="number" value={it.quantity}
+                            onChange={(e) => {
+                              const q = Number(e.target.value) || 0;
+                              setActionItems(actionItems.map((x) => 
+                                x.product_id === it.product_id ? { ...x, quantity: q } : x
+                              ));
+                            }}
+                            style={{ background: T.bg, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                            className="w-12 text-center px-1 py-1 rounded text-xs tabular-nums" />
+                          <button onClick={() => {
+                            setActionItems(actionItems.map((x) => 
+                              x.product_id === it.product_id 
+                                ? { ...x, quantity: Number(x.quantity) + 1 }
+                                : x
+                            ));
+                          }}
+                            className="press-btn w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                            style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}` }}>
+                            +
+                          </button>
+                        </div>
+                        <button onClick={() => {
+                          setActionItems(actionItems.filter((x) => x.product_id !== it.product_id));
+                        }}
+                          className="press-btn p-1.5 rounded-lg flex-shrink-0"
+                          style={{ background: T.errSoft, color: T.err }}>
+                          🗑
+                        </button>
+                      </div>
+                    ))}
+                    {/* Нийт дүн */}
+                    <div className="rounded-lg p-2 flex justify-between items-center"
+                      style={{ background: showActionModal === "receive" ? "rgba(16,185,129,0.1)" : "rgba(147,51,234,0.1)", border: `1px solid ${showActionModal === "receive" ? T.ok : "#9333ea"}` }}>
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: showActionModal === "receive" ? T.ok : "#9333ea" }} className="text-xs">
+                        Нийт ширхэг
+                      </span>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: showActionModal === "receive" ? T.ok : "#9333ea" }} className="text-base tabular-nums">
+                        {actionItems.reduce((s, it) => s + Number(it.quantity || 0), 0)} ширхэг
+                      </span>
                     </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
 
+              {/* Бараа сонгох / нэмэх */}
               <div className="mb-3">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                  🔢 Тоо хэмжээ
+                  ➕ Бараа нэмэх
                 </label>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setActionQty(String(Math.max(1, Number(actionQty) - 1)))}
-                    className="press-btn w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
-                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}>−</button>
-                  <input type="number" value={actionQty}
-                    onChange={(e) => setActionQty(e.target.value)}
-                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
-                    className="flex-1 px-3 py-2.5 rounded-lg text-base text-center tabular-nums" />
-                  <button onClick={() => setActionQty(String(Number(actionQty) + 1))}
-                    className="press-btn w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
-                    style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}` }}>+</button>
+                <input type="text" value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="🔍 Бараа хайх..."
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
+                <div className="space-y-1 max-h-60 overflow-y-auto">
+                  {products
+                    .filter((p) => !productSearch.trim() ||
+                      p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                      p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+                    )
+                    .slice(0, 30)
+                    .map((p) => {
+                      const stk = actionWarehouse 
+                        ? stock.find((s) => s.product_id === p.id && s.warehouse_id === actionWarehouse)
+                        : null;
+                      const alreadyAdded = actionItems.some((it) => it.product_id === p.id);
+                      return (
+                        <button key={p.id}
+                          onClick={() => {
+                            if (alreadyAdded) {
+                              // Аль хэдийн нэмэгдсэн → +1
+                              setActionItems(actionItems.map((x) =>
+                                x.product_id === p.id 
+                                  ? { ...x, quantity: Number(x.quantity) + 1 }
+                                  : x
+                              ));
+                            } else {
+                              setActionItems([...actionItems, {
+                                product_id: p.id,
+                                product_name: p.name,
+                                product_sku: p.sku,
+                                product_image: p.image_url,
+                                quantity: 1,
+                              }]);
+                            }
+                          }}
+                          className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
+                          style={{ 
+                            background: alreadyAdded ? "rgba(16,185,129,0.05)" : T.surfaceAlt, 
+                            border: `1px solid ${alreadyAdded ? T.ok : T.border}`,
+                          }}>
+                          {p.image_url && (
+                            <img src={p.image_url} alt=""
+                              className="w-9 h-9 rounded object-cover flex-shrink-0"
+                              onError={(e) => { e.target.style.display = "none"; }} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                              {p.name}
+                            </div>
+                            <div style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">
+                              {p.sku}
+                            </div>
+                          </div>
+                          {stk && (
+                            <span style={{ 
+                              background: Number(stk.quantity) > 0 ? "rgba(16,185,129,0.1)" : T.errSoft, 
+                              color: Number(stk.quantity) > 0 ? T.ok : T.err,
+                              fontFamily: FD, fontWeight: 600 
+                            }}
+                              className="text-[10px] px-1.5 py-0.5 rounded">
+                              {Number(stk.quantity)}ш
+                            </span>
+                          )}
+                          {alreadyAdded && (
+                            <span style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}
+                              className="text-[9px] px-2 py-0.5 rounded-full">
+                              ✓ +1
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
 
