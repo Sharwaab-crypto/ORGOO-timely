@@ -24924,6 +24924,11 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     } else if (op === "subtract") {
                       total = numSum - denSum;
                     }
+                  } else if (kpi.kpi_type === "copy" && kpi.formula?.source_id) {
+                    // 📋 Copy KPI — source-ийн утгыг хуулна
+                    const srcEntries = filteredEntries.filter(e => e.kpi_id === kpi.formula.source_id);
+                    total = srcEntries.reduce((s, e) => s + Number(e.value), 0);
+                    entries = srcEntries; // түүх ч мөн хуулагдана
                   } else {
                     entries = filteredEntries.filter(e => e.kpi_id === kpi.id);
                     total = entries.reduce((sum, e) => sum + Number(e.value), 0);
@@ -25147,7 +25152,9 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
   const [target, setTarget] = useState(kpi?.target ? String(kpi.target) : "");
   const [targetPeriod, setTargetPeriod] = useState(kpi?.target_period || "daily");
   const [kpiType, setKpiType] = useState(kpi?.kpi_type || "input");
-  const [numeratorId, setNumeratorId] = useState(kpi?.formula?.numerator_id || "");
+  const [numeratorId, setNumeratorId] = useState(
+    kpi?.formula?.numerator_id || kpi?.formula?.source_id || ""
+  );
   const [denominatorId, setDenominatorId] = useState(kpi?.formula?.denominator_id || "");
   const [operator, setOperator] = useState(kpi?.formula?.operator || "divide");
   const [decimals, setDecimals] = useState(kpi?.decimals ?? 2);
@@ -25190,6 +25197,8 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
         numerator_id: numeratorId,
         denominator_id: denominatorId,
         operator,
+      } : kpiType === "copy" ? {
+        source_id: numeratorId,
       } : null,
       decimals: parseInt(decimals) || 0,
     });
@@ -25217,7 +25226,7 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
 
         {/* KPI төрөл сонгох */}
         <Field label="KPI төрөл">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button type="button" onClick={() => setKpiType("input")}
               className={`press-btn px-3 py-2.5 rounded-lg text-xs ${kpiType === "input" ? "tab-active" : "tab-inactive glass-soft"}`}
               style={{ fontFamily: FM, border: "1px solid", borderColor: kpiType === "input" ? "transparent" : T.borderSoft }}>
@@ -25228,8 +25237,37 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
               style={{ fontFamily: FM, border: "1px solid", borderColor: kpiType === "calculated" ? "transparent" : T.borderSoft }}>
               🧮 Тооцоолох
             </button>
+            <button type="button" onClick={() => setKpiType("copy")}
+              className={`press-btn px-3 py-2.5 rounded-lg text-xs ${kpiType === "copy" ? "tab-active" : "tab-inactive glass-soft"}`}
+              style={{ fontFamily: FM, border: "1px solid", borderColor: kpiType === "copy" ? "transparent" : T.borderSoft }}>
+              📋 Хуулах
+            </button>
           </div>
         </Field>
+
+        {/* Хуулах KPI бол өөр KPI сонгох */}
+        {kpiType === "copy" && (
+          <div className="glass-soft rounded-lg p-3 space-y-2">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
+              📋 Хуулах KPI сонгох
+            </div>
+            <select value={numeratorId} onChange={(e) => setNumeratorId(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="w-full px-2 py-2.5 rounded-lg border text-xs outline-none">
+              <option value="">— Сонгох —</option>
+              {Object.entries(kpisByDept).map(([deptName, kpis]) => (
+                <optgroup key={deptName} label={`📂 ${deptName}`}>
+                  {kpis.map((k) => (
+                    <option key={k.id} value={k.id}>{k.name}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
+              💡 Сонгосон KPI-ийн утга энэ KPI-руу автомат хуулагдана. Тус бүр өөрчлөгдөхөд автомат шинэчлэгдэнэ.
+            </div>
+          </div>
+        )}
 
         {/* Тооцооллын KPI бол формула UI */}
         {kpiType === "calculated" && (
