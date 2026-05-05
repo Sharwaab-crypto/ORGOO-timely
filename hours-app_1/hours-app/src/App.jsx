@@ -515,6 +515,131 @@ export default function App() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  NOTIFICATION MANAGER — Push subscription + in-app realtime toast
 // ═══════════════════════════════════════════════════════════════════════════
+// ─── Цаг бүртгэх жижиг компонент (Operator + Driver-руу) ─────────────
+function TimeTracker({ profile }) {
+  const [active, setActive] = useState(null);
+  const [todayHrs, setTodayHrs] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => { 
+    const id = setInterval(() => setTick((t) => t + 1), 1000); 
+    return () => clearInterval(id); 
+  }, []);
+
+  const loadMy = async () => {
+    try {
+      const { data: act } = await supabase
+        .from("active_sessions")
+        .select("*")
+        .eq("employee_id", profile.id)
+        .maybeSingle();
+      setActive(act);
+      
+      // Өнөөдрийн цагийн нийлбэр
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const { data: sess } = await supabase
+        .from("sessions")
+        .select("duration_ms")
+        .eq("employee_id", profile.id)
+        .gte("start_time", startOfDay.toISOString());
+      const totalMs = (sess || []).reduce((s, x) => s + (x.duration_ms || 0), 0);
+      setTodayHrs(totalMs / 3600000);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    loadMy();
+    const ch = supabase.channel(`time-tracker-${profile.id}`)
+      .on("postgres_changes", { 
+        event: "*", schema: "public", table: "active_sessions",
+        filter: `employee_id=eq.${profile.id}` 
+      }, () => loadMy())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [profile.id]);
+
+  const onStart = async () => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("active_sessions").upsert({
+        employee_id: profile.id,
+        start_time: new Date().toISOString(),
+      });
+      if (error) throw error;
+      await loadMy();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  const onStop = async () => {
+    if (!active) return;
+    if (!confirm("Цаг бүртгэлийг зогсоох уу?")) return;
+    setBusy(true);
+    try {
+      const startTime = new Date(active.start_time);
+      const endTime = new Date();
+      const durMs = endTime - startTime;
+      
+      // Session мөр оруулна
+      await supabase.from("sessions").insert({
+        employee_id: profile.id,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        duration_ms: durMs,
+      });
+      // Active session-ыг устгах
+      await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
+      await loadMy();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  // Live timer
+  let liveHrs = 0;
+  if (active) {
+    const elapsed = Date.now() - new Date(active.start_time).getTime();
+    liveHrs = elapsed / 3600000;
+  }
+  const totalLive = todayHrs + liveHrs;
+  const hh = Math.floor(totalLive);
+  const mm = Math.floor((totalLive - hh) * 60);
+  const ss = Math.floor(((totalLive - hh) * 60 - mm) * 60);
+
+  return (
+    <div className="glass rounded-xl p-2 flex items-center gap-2">
+      <div style={{
+        background: active ? "rgba(16,185,129,0.15)" : T.surfaceAlt,
+        color: active ? T.ok : T.muted,
+      }} className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+        {active ? "▶" : "⏸"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+          {active ? "🟢 Ажиллаж байна" : "Цаг бүртгэгдээгүй"}
+        </div>
+        <div style={{ fontFamily: FD, fontWeight: 700, color: active ? T.ok : T.ink }} className="text-sm tabular-nums">
+          {String(hh).padStart(2, "0")}:{String(mm).padStart(2, "0")}{active && `:${String(ss).padStart(2, "0")}`}
+        </div>
+      </div>
+      {active ? (
+        <button onClick={onStop} disabled={busy}
+          className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: T.err, color: "white", fontFamily: FS }}>
+          {busy ? "..." : "⏹ Зогсох"}
+        </button>
+      ) : (
+        <button onClick={onStart} disabled={busy}
+          className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: T.ok, color: "white", fontFamily: FS }}>
+          {busy ? "..." : "▶ Эхлэх"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function NotificationManager({ profile }) {
   const [toast, setToast] = useState(null); // { title, body, link }
   const [permState, setPermState] = useState(typeof Notification !== "undefined" ? Notification.permission : "default");
@@ -19649,7 +19774,10 @@ function OperatorDashboard({ profile }) {
           </div>
         </header>
 
-        <div className="p-4 max-w-6xl mx-auto">
+        <div className="p-4 max-w-6xl mx-auto space-y-3">
+          {/* ⏱ Цаг бүртгэх */}
+          <TimeTracker profile={profile} />
+          
           {view === "dashboard" && <OperatorKPIView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
@@ -21851,6 +21979,11 @@ function DriverDashboard({ profile }) {
           <LogOut size={16} />
         </button>
       </header>
+
+      {/* ⏱ Цаг бүртгэх */}
+      <div className="px-3 pt-3 max-w-2xl mx-auto">
+        <TimeTracker profile={profile} />
+      </div>
 
       {/* Bottom navigation tabs */}
       <div className="px-3 pt-3 max-w-2xl mx-auto">
