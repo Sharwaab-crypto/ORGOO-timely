@@ -19711,11 +19711,10 @@ function OperatorKPIView({ profile }) {
     (async () => {
       setLoading(true);
       try {
-        // Зөвхөн өөрийн бичсэн дуудлага + захиалга
-        const [{ data: callData }, { data: ordData }] = await Promise.all([
-          supabase.from("biz_calls").select("*").eq("created_by", profile.id),
-          supabase.from("biz_orders").select("*").eq("taken_by", profile.id),
-        ]);
+        // Дуудлагууд
+        const { data: callData } = await supabase.from("biz_calls").select("*").eq("created_by", profile.id);
+        // Захиалгууд — taken_by ЭСВЭЛ operator_id (driver-аас оноосон)
+        const { data: ordData } = await supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`);
         setCalls(callData || []);
         setOrders(ordData || []);
       } catch (e) { console.error(e); }
@@ -19747,6 +19746,17 @@ function OperatorKPIView({ profile }) {
     .filter((o) => o.status === "delivered")
     .reduce((s, o) => s + Number(o.total_amount || 0), 0);
   const conversion = uniquePhones > 0 ? Math.round((totalOrders / uniquePhones) * 100) : 0;
+  
+  // ⭐ Үнэлгээний stats — driver-аас үнэлсэн захиалгууд
+  const ratedOrders = filteredOrders.filter((o) => o.operator_rating != null);
+  const totalRatings = ratedOrders.length;
+  const avgRating = totalRatings > 0 
+    ? (ratedOrders.reduce((s, o) => s + Number(o.operator_rating || 0), 0) / totalRatings).toFixed(1)
+    : "—";
+  const ratingDistribution = [1, 2, 3, 4, 5].reduce((acc, star) => {
+    acc[star] = ratedOrders.filter((o) => o.operator_rating === star).length;
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-3">
@@ -19946,6 +19956,115 @@ function OperatorKPIView({ profile }) {
                 {pendingOrders}
               </div>
             </div>
+          </div>
+
+          {/* ⭐ Үнэлгээ хэсэг */}
+          <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${avgRating !== "—" && Number(avgRating) >= 4 ? T.ok : avgRating !== "—" && Number(avgRating) >= 3 ? T.warn : T.err}` }}>
+            <div className="flex items-center justify-between mb-3">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-base flex items-center gap-2">
+                ⭐ Хүргэгчийн үнэлгээ
+              </div>
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                {totalRatings} үнэлгээ
+              </span>
+            </div>
+            
+            {totalRatings === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-3xl mb-1 opacity-40">☆</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                  Хараахан үнэлгээ ороогүй
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Дундаж үнэлгээ */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex-shrink-0">
+                    <div style={{ 
+                      fontFamily: FD, fontWeight: 700,
+                      color: Number(avgRating) >= 4 ? T.ok : Number(avgRating) >= 3 ? T.warn : T.err,
+                    }} className="text-4xl tabular-nums leading-none">
+                      {avgRating}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                      / 5.0
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex gap-0.5 mb-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span key={star} style={{ 
+                          fontSize: 18,
+                          opacity: Number(avgRating) >= star ? 1 : 0.25,
+                        }}>
+                          ⭐
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      Дундаж үнэлгээ
+                    </div>
+                  </div>
+                </div>
+
+                {/* Тарагуул — star тус бүрд барик */}
+                <div className="space-y-1">
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const count = ratingDistribution[star] || 0;
+                    const pct = totalRatings > 0 ? Math.round((count / totalRatings) * 100) : 0;
+                    return (
+                      <div key={star} className="flex items-center gap-2">
+                        <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink, width: 20 }} className="text-xs tabular-nums">
+                          {star}⭐
+                        </span>
+                        <div style={{ flex: 1, background: T.surfaceAlt, height: 8, borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            background: star >= 4 ? T.ok : star >= 3 ? T.warn : T.err,
+                            transition: "width 0.3s",
+                          }} />
+                        </div>
+                        <span style={{ fontFamily: FD, color: T.muted, width: 32, textAlign: "right" }} className="text-[10px] tabular-nums">
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Сүүлийн комментууд */}
+                {ratedOrders.filter((o) => o.operator_rating_note).length > 0 && (
+                  <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                      💬 Сүүлийн тэмдэглэлүүд
+                    </div>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {ratedOrders
+                        .filter((o) => o.operator_rating_note)
+                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                        .slice(0, 5)
+                        .map((o) => (
+                          <div key={o.id} className="rounded-lg p-2" style={{ background: T.surfaceAlt }}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span style={{ fontSize: 12 }}>
+                                {Array(o.operator_rating).fill("⭐").join("")}
+                              </span>
+                              <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                                {new Date(o.created_at).toLocaleDateString("mn-MN")}
+                              </span>
+                            </div>
+                            <div style={{ color: T.ink, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">
+                              "{o.operator_rating_note}"
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </>
       )}
@@ -21467,6 +21586,10 @@ function DriverDashboard({ profile }) {
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
   const [insufficientStockOrder, setInsufficientStockOrder] = useState(null); // { orderId, msg }
+  const [ratingOrder, setRatingOrder] = useState(null); // { order, action: 'delivered'|'cancelled' }
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingNote, setRatingNote] = useState("");
+  const [ratingBusy, setRatingBusy] = useState(false);
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
   });
@@ -22069,6 +22192,14 @@ function DriverDashboard({ profile }) {
               currentDriverId={profile.id}
               onClose={() => { setActiveOrder(null); loadAll(); }}
               onUpdateStatus={async (s) => {
+                if (s === "delivered") {
+                  // Хүргэсэн → үнэлгээ popup нээх
+                  setRatingOrder({ order: activeOrder, action: "delivered" });
+                  setRatingValue(0);
+                  setRatingNote("");
+                  setActiveOrder(null);
+                  return;
+                }
                 await updateStatus(activeOrder.id, s);
                 setActiveOrder(null);
               }}
@@ -22081,8 +22212,10 @@ function DriverDashboard({ profile }) {
                 setActiveOrder(null);
               }}
               onCancelWithNote={() => {
-                setCancelOrder(activeOrder);
-                setCancelNote("");
+                // Хүргэх боломжгүй → үнэлгээ popup нээх (cancel-note-ийн оронд)
+                setRatingOrder({ order: activeOrder, action: "cancelled" });
+                setRatingValue(0);
+                setRatingNote("");
                 setActiveOrder(null);
               }}
             />
@@ -22092,6 +22225,183 @@ function DriverDashboard({ profile }) {
       )}
 
       {/* Driver picker — Хүргэлт хуваарилах modal */}
+      {/* ⭐ Үнэлгээ popup — driver хүргэх/цуцлах сонголтоор гарна */}
+      {ratingOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }}
+          onClick={() => !ratingBusy && setRatingOrder(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 420,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
+            border: `1px solid ${T.border}`,
+            maxHeight: "90vh", overflowY: "auto",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-5">
+              {/* Header */}
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">
+                  {ratingOrder.action === "delivered" ? "✅" : "❌"}
+                </div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base mb-1">
+                  {ratingOrder.action === "delivered" ? "Захиалга хүргэгдлээ" : "Захиалга хүргэх боломжгүй"}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                  Operator-ийн ажилд үнэлгээ өгнө үү
+                </div>
+              </div>
+
+              {/* Order info */}
+              <div className="rounded-lg p-2.5 mb-4" style={{ background: T.surfaceAlt }}>
+                <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm">
+                  📞 {ratingOrder.order.customer_phone}
+                </div>
+                {ratingOrder.order.customer_name && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    {ratingOrder.order.customer_name}
+                  </div>
+                )}
+                {ratingOrder.order.delivery_address && (
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
+                    📍 {ratingOrder.order.delivery_address}
+                  </div>
+                )}
+              </div>
+
+              {/* ⭐⭐⭐⭐⭐ Rating selector */}
+              <div className="mb-4">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block text-center">
+                  ⭐ Operator-ийн ажилд үнэлгээ өгөх
+                </label>
+                <div className="flex justify-center gap-2 mb-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button key={star}
+                      onClick={() => setRatingValue(star)}
+                      className="press-btn"
+                      style={{
+                        fontSize: 36,
+                        lineHeight: 1,
+                        opacity: ratingValue >= star ? 1 : 0.3,
+                        transition: "all 0.15s",
+                        cursor: "pointer",
+                      }}>
+                      {ratingValue >= star ? "⭐" : "☆"}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-center">
+                  <span style={{ 
+                    fontFamily: FS, fontWeight: 700,
+                    color: ratingValue >= 4 ? T.ok : ratingValue >= 3 ? T.warn : ratingValue >= 1 ? T.err : T.muted,
+                  }} className="text-sm">
+                    {ratingValue === 0 && "Үнэлгээ өгөөгүй"}
+                    {ratingValue === 1 && "😞 Маш муу"}
+                    {ratingValue === 2 && "😐 Муу"}
+                    {ratingValue === 3 && "🙂 Дунд"}
+                    {ratingValue === 4 && "😊 Сайн"}
+                    {ratingValue === 5 && "🤩 Маш сайн"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Тэмдэглэл */}
+              <div className="mb-4">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                  📝 Тэмдэглэл (заавал биш)
+                </label>
+                <textarea value={ratingNote}
+                  onChange={(e) => setRatingNote(e.target.value)}
+                  placeholder={ratingOrder.action === "cancelled" 
+                    ? "Жнь: Хаяг буруу, утсаа авахгүй..." 
+                    : "Жнь: Утсаар бүх зүйлийг сайн тайлбарласан..."
+                  }
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  rows={3} />
+              </div>
+
+              {/* Action товчнууд */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setRatingOrder(null)} disabled={ratingBusy}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                  Цуцлах
+                </button>
+                <button onClick={async () => {
+                  if (ratingValue === 0) {
+                    alert("⚠ Үнэлгээ өгнө үү (1-5 од)");
+                    return;
+                  }
+                  setRatingBusy(true);
+                  try {
+                    // Operator-ийг олох — энэ захиалгын утсаар operator байсан хүнийг
+                    let operatorId = ratingOrder.order.operator_id;
+                    if (!operatorId && ratingOrder.order.customer_phone) {
+                      // Тус утсанд хийгдсэн дуудлагуудаас operator олох
+                      const { data: callData } = await supabase
+                        .from("biz_calls")
+                        .select("operator_id")
+                        .eq("phone", ratingOrder.order.customer_phone)
+                        .order("created_at", { ascending: false })
+                        .limit(1);
+                      if (callData && callData.length > 0) {
+                        operatorId = callData[0].operator_id;
+                      }
+                    }
+                    
+                    // Update biz_orders
+                    const orderUpdates = {
+                      operator_rating: ratingValue,
+                      operator_rating_note: ratingNote.trim() || null,
+                    };
+                    if (operatorId) orderUpdates.operator_id = operatorId;
+                    
+                    if (ratingOrder.action === "delivered") {
+                      // Stock хасахын тулд updateStatus ажиллуулна
+                      await supabase.from("biz_orders").update(orderUpdates).eq("id", ratingOrder.order.id);
+                      await updateStatus(ratingOrder.order.id, "delivered");
+                    } else {
+                      // Cancelled — note + rating
+                      const cancelNote = ratingNote.trim();
+                      const fullNote = cancelNote ? `[Хүргэх боломжгүй]\n${cancelNote}` : "[Хүргэх боломжгүй]";
+                      await supabase.from("biz_orders").update({
+                        ...orderUpdates,
+                        status: "cancelled",
+                        notes: fullNote,
+                      }).eq("id", ratingOrder.order.id);
+                      await loadAll();
+                    }
+                    
+                    setRatingOrder(null);
+                    setRatingValue(0);
+                    setRatingNote("");
+                  } catch (e) {
+                    if (e.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
+                      setInsufficientStockOrder({ orderId: ratingOrder.order.id, msg: e.message });
+                    } else {
+                      alert("Алдаа: " + e.message);
+                    }
+                  } finally {
+                    setRatingBusy(false);
+                  }
+                }} disabled={ratingBusy}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ 
+                    background: ratingOrder.action === "delivered" ? T.ok : T.err, 
+                    color: "white", fontFamily: FS, fontWeight: 700,
+                  }}>
+                  {ratingBusy ? "Хадгалж байна..." : (ratingOrder.action === "delivered" ? "✓ Хүргэсэн" : "✕ Цуцлах")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Үлдэгдэл хүрэлцэхгүй popup */}
       {insufficientStockOrder && createPortal(
         (() => {
