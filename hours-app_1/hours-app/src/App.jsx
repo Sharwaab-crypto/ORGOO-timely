@@ -22703,6 +22703,7 @@ function ManagerDashboard({ profile }) {
   const [tasks, setTasks] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [editingKpi, setEditingKpi] = useState(null); // KPI засах modal
   const [editingSession, setEditingSession] = useState(null);
   const [, setTick] = useState(0);
 
@@ -22803,6 +22804,47 @@ function ManagerDashboard({ profile }) {
       if (error) throw error;
       setKpiInputDept(null);
       setFeedback({ type: "success", msg: "Хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  // KPI CRUD (manager эрхтэй болсон)
+  const upsertKpiDef = async (data) => {
+    try {
+      if (data.id) {
+        const { error } = await supabase.from("kpi_definitions").update({
+          name: data.name, unit: data.unit, category: data.category,
+          display_order: data.display_order, is_active: data.is_active ?? true,
+          target: data.target, target_period: data.target_period,
+          kpi_type: data.kpi_type || 'input',
+          formula: data.formula || null,
+          decimals: data.decimals ?? 0,
+        }).eq("id", data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("kpi_definitions").insert({
+          department_id: data.department_id,
+          name: data.name, unit: data.unit, category: data.category,
+          display_order: data.display_order || 0,
+          target: data.target, target_period: data.target_period || 'daily',
+          kpi_type: data.kpi_type || 'input',
+          formula: data.formula || null,
+          decimals: data.decimals ?? 0,
+        });
+        if (error) throw error;
+      }
+      setEditingKpi(null);
+      setFeedback({ type: "success", msg: "KPI хадгаллаа" });
+      await loadAll();
+    } catch (e) { setFeedback({ type: "error", msg: e.message }); }
+  };
+
+  const deleteKpiDef = async (id) => {
+    if (!confirm("Энэ KPI-г устгах уу?")) return;
+    try {
+      const { error } = await supabase.from("kpi_definitions").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "KPI устгагдлаа" });
       await loadAll();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
@@ -23021,8 +23063,11 @@ function ManagerDashboard({ profile }) {
             departments={departments}
             kpiDefs={kpiDefs}
             kpiEntries={kpiEntries}
-            isAdmin={false}
+            isAdmin={true}
             currentUserId={profile.id}
+            onAddKpi={() => setEditingKpi("add")}
+            onEditKpi={(k) => setEditingKpi(k)}
+            onDeleteKpi={deleteKpiDef}
             onOpenInputForm={(deptId) => setKpiInputDept(deptId)}
           />
         )}
@@ -23066,6 +23111,16 @@ function ManagerDashboard({ profile }) {
           onSave={editSession}
           onDelete={deleteSession}
           onClose={() => setEditingSession(null)} />
+      )}
+
+      {editingKpi && (
+        <KpiDefFormModal
+          mode={editingKpi === "add" ? "add" : "edit"}
+          kpi={editingKpi === "add" ? null : editingKpi}
+          departments={departments}
+          allKpis={kpiDefs}
+          onSave={upsertKpiDef}
+          onClose={() => setEditingKpi(null)} />
       )}
 
       {kpiInputDept && (
