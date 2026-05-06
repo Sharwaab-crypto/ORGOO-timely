@@ -9700,7 +9700,7 @@ function OperatorKPIReportView({ profile }) {
         name: op.name || "—",
         role: op.role,
         title: op.job_title || "",
-        uniquePhones: new Set(),
+        uniquePhones: 0, // Бүх дуудлагын тоо (давхардсан ч хамаагүй)
         totalCalls: 0,
         totalOrders: 0,
         delivered: 0,
@@ -9712,7 +9712,7 @@ function OperatorKPIReportView({ profile }) {
 
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      opMap[c.created_by].uniquePhones.add(c.phone);
+      opMap[c.created_by].uniquePhones++; // Тус бүрд тоологдоно (биеэрээ давхардаах)
       opMap[c.created_by].totalCalls++;
     });
 
@@ -9736,7 +9736,7 @@ function OperatorKPIReportView({ profile }) {
 
   // Нийт мөр
   const totals = useMemo(() => ({
-    uniquePhones: reportData.reduce((s, r) => s + r.uniquePhones.size, 0),
+    uniquePhones: reportData.reduce((s, r) => s + r.uniquePhones, 0),
     totalCalls: reportData.reduce((s, r) => s + r.totalCalls, 0),
     totalOrders: reportData.reduce((s, r) => s + r.totalOrders, 0),
     delivered: reportData.reduce((s, r) => s + r.delivered, 0),
@@ -9752,8 +9752,8 @@ function OperatorKPIReportView({ profile }) {
         const successRate = op.totalOrders > 0
           ? Math.round((op.delivered / op.totalOrders) * 100)
           : 0;
-        const conversion = op.uniquePhones.size > 0
-          ? Math.round((op.totalOrders / op.uniquePhones.size) * 100)
+        const conversion = op.uniquePhones > 0
+          ? Math.round((op.totalOrders / op.uniquePhones) * 100)
           : 0;
 
         return {
@@ -9761,7 +9761,7 @@ function OperatorKPIReportView({ profile }) {
           "Ажилтны нэр": op.name,
           "Албан тушаал": op.title,
           "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : "Оператор",
-          "Бүртгэсэн дугаар": op.uniquePhones.size,
+          "Бүртгэсэн дугаар": op.uniquePhones,
           "Нийт залгалт": op.totalCalls,
           "Бүртгэсэн захиалга": op.totalOrders,
           "Амжилттай хүргэгдсэн": op.delivered,
@@ -9918,8 +9918,8 @@ function OperatorKPIReportView({ profile }) {
             const successRate = op.totalOrders > 0
               ? Math.round((op.delivered / op.totalOrders) * 100)
               : 0;
-            const conversion = op.uniquePhones.size > 0
-              ? Math.round((op.totalOrders / op.uniquePhones.size) * 100)
+            const conversion = op.uniquePhones > 0
+              ? Math.round((op.totalOrders / op.uniquePhones) * 100)
               : 0;
 
             const roleColor = op.role === "admin" ? "#9333ea"
@@ -9974,7 +9974,7 @@ function OperatorKPIReportView({ profile }) {
                       Дугаар
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
-                      {op.uniquePhones.size}
+                      {op.uniquePhones}
                     </div>
                   </div>
                   <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
