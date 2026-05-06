@@ -8492,9 +8492,9 @@ function CallCenterView({ profile }) {
         </div>
       </div>
 
-      {/* Stats — 4 том карт (БҮХ цаг — period хамаарахгүй) */}
+      {/* Stats — 4 том карт (Tab counts шиг logic-тэй) */}
       {(() => {
-        // ⚠ Stat-уудад БҮХ дуудлагуудыг харах (tab counts шиг)
+        // ⚠ Stat-уудад БҮХ дуудлагуудыг харах
         const allCallsForStats = recentCalls;
 
         // Утсаар groupping
@@ -8505,13 +8505,13 @@ function CallCenterView({ profile }) {
         });
 
         const uniquePhones = Object.keys(phoneGrouped).length;
+        
+        // Cycle-аар тоолно (Tab counts шиг) — олон захиалга нэг дугаараас бий бол бүгдийг тоолно
         let orderedPhones = 0;
         let cancelledPhones = 0;
-        Object.entries(phoneGrouped).forEach(([phone, callList]) => {
-          const sorted = [...callList].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          const latest = sorted[0]?.call_status;
-          if (latest === "ordered") orderedPhones++;
-          else if (latest === "cancelled") cancelledPhones++;
+        allCallsForStats.forEach((c) => {
+          if (c.call_status === "ordered") orderedPhones++;
+          else if (c.call_status === "cancelled") cancelledPhones++;
         });
 
         return (
