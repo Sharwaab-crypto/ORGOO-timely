@@ -8031,9 +8031,55 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CALL CENTER VIEW — Дуудлагын самбар (энгийн)
 // ═══════════════════════════════════════════════════════════════════════════
+// ─── Захиалга detail-ыг ID-аар татж харуулах wrapper ──────────────────
+function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
+  const [order, setOrder] = useState(null);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [{ data: orderData }, { data: itemsData }] = await Promise.all([
+          supabase.from("biz_orders").select("*").eq("id", orderId).single(),
+          supabase.from("biz_order_items").select("*").eq("order_id", orderId),
+        ]);
+        setOrder(orderData);
+        setItems(itemsData || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [orderId]);
+
+  if (loading || !order) return null;
+
+  return (
+    <OrderDetail
+      order={order}
+      items={items}
+      onClose={onClose}
+      onUpdateStatus={async (s) => {
+        try {
+          await supabase.from("biz_orders").update({ status: s }).eq("id", orderId);
+          onClose();
+        } catch (e) { alert("Алдаа: " + e.message); }
+      }}
+      onAssignDriver={() => {}}
+      onCancelWithNote={async () => {
+        try {
+          await supabase.from("biz_orders").update({ status: "cancelled" }).eq("id", orderId);
+          onClose();
+        } catch (e) { alert("Алдаа: " + e.message); }
+      }}
+    />
+  );
+}
+
 function CallCenterView({ profile }) {
   const [showCallModal, setShowCallModal] = useState(false);
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
+  const [existingOrderAlert, setExistingOrderAlert] = useState(null); // { phone, orderId, orderInfo }
+  const [selectedOrderId, setSelectedOrderId] = useState(null); // Засварлах захиалга
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
@@ -9223,6 +9269,29 @@ function CallCenterView({ profile }) {
           profile={profile}
           onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
             try {
+              // 0. Эхлээд утсуудаар "Шинэ" статустай захиалга байгаа эсэхийг шалгах
+              for (const phoneEntry of phoneList) {
+                const { phone } = phoneEntry;
+                const { data: existingNewOrders } = await supabase
+                  .from("biz_orders")
+                  .select("id, customer_phone, customer_name, total_amount, status, created_at")
+                  .eq("customer_phone", phone)
+                  .eq("status", "new")
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+                
+                if (existingNewOrders && existingNewOrders.length > 0) {
+                  // Шинэ захиалгатай — анхааруулга гарга + засварлах руу шилжих
+                  setShowCallModal(false);
+                  setExistingOrderAlert({
+                    phone,
+                    orderId: existingNewOrders[0].id,
+                    orderInfo: existingNewOrders[0],
+                  });
+                  return; // Хадгалахгүй, цаашаа орохгүй
+                }
+              }
+              
               // Тус утсаар customer + call бичих
               for (const phoneEntry of phoneList) {
                 const { phone, notes } = phoneEntry;
@@ -9265,6 +9334,84 @@ function CallCenterView({ profile }) {
           }}
           onClose={() => setShowCallModal(false)}
         />
+      )}
+
+      {/* Засварлах захиалгын detail modal */}
+      {selectedOrderId && (
+        <SelectedOrderDetailWrapper
+          orderId={selectedOrderId}
+          profile={profile}
+          onClose={() => {
+            setSelectedOrderId(null);
+            loadAll();
+          }}
+        />
+      )}
+
+      {/* ⚠ Шинэ захиалга байгаа анхааруулга popup */}
+      {existingOrderAlert && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }}
+          onClick={() => setExistingOrderAlert(null)}>
+          <div style={{
+            background: T.bg, borderRadius: 16, width: "100%", maxWidth: 420,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
+            border: `1px solid ${T.border}`,
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-5">
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-2">⚠</div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.warn }} className="text-lg mb-1">
+                  Захиалга шинэ дээр байна!
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                  Энэ дугаараар хараахан гүйцэтгээгүй захиалга бий
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 mb-4" style={{ background: T.warnSoft, border: `1px solid ${T.warn}` }}>
+                <div style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm">
+                  📞 {existingOrderAlert.phone}
+                </div>
+                {existingOrderAlert.orderInfo.customer_name && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    👤 {existingOrderAlert.orderInfo.customer_name}
+                  </div>
+                )}
+                <div style={{ fontFamily: FD, color: T.warn, fontWeight: 700 }} className="text-base mt-1">
+                  💰 {Number(existingOrderAlert.orderInfo.total_amount || 0).toLocaleString()}₮
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                  📅 {new Date(existingOrderAlert.orderInfo.created_at).toLocaleDateString("mn-MN")}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setExistingOrderAlert(null)}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                  Цуцлах
+                </button>
+                <button onClick={() => {
+                  // Тус захиалгыг засварлахаар нээх
+                  const orderId = existingOrderAlert.orderId;
+                  setExistingOrderAlert(null);
+                  // Order detail nээ — order detail modal trigger
+                  setSelectedOrderId(orderId);
+                }}
+                  className="press-btn py-3 rounded-xl text-sm font-semibold"
+                  style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                  ✏ Засварлах
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {orderForCall && (
