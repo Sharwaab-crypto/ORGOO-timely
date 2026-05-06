@@ -4721,7 +4721,12 @@ function SupplierOrdersView({ profile }) {
           arrived_at: new Date().toISOString(),
         }).eq("id", id);
 
-        alert(`✅ ${order.quantity} ширхэг "${warehouse.name}" агуулахруу орлоглоо!`);
+        // 5. ⭐ Барааны өртөг үнэ (cost_price) шинэчлэх — шинэ ирсэн өртгөөр
+        await supabase.from("inv_products").update({
+          cost_price: unitCost,
+        }).eq("id", order.product_id);
+
+        alert(`✅ ${order.quantity} ширхэг "${warehouse.name}" агуулахруу орлоглоо!\n\n📊 Өртөг үнэ: ${unitCost.toLocaleString()}₮ автомат шинэчлэгдсэн.`);
         await loadAll();
       } catch (e) {
         alert("Алдаа: " + e.message);
