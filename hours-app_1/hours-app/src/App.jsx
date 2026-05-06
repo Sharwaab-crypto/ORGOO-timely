@@ -5084,6 +5084,7 @@ function ZonesView({ profile }) {
   const [loading, setLoading] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [editZone, setEditZone] = useState(null);
+  const [showAllMap, setShowAllMap] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -5144,11 +5145,20 @@ function ZonesView({ profile }) {
             {zones.length} бүс · {drivers.length} хүргэгч
           </div>
         </div>
-        <button onClick={() => { setEditZone(null); setShowEditor(true); }}
-          className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
-          style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
-          + Бүс үүсгэх
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {zones.length > 0 && (
+            <button onClick={() => setShowAllMap(true)}
+              className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.ok}` }}>
+              🗺 Газрын зурагнаас харах
+            </button>
+          )}
+          <button onClick={() => { setEditZone(null); setShowEditor(true); }}
+            className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+            + Бүс үүсгэх
+          </button>
+        </div>
       </div>
 
       {/* Хүргэгч тус бүрийн бүс */}
@@ -5249,7 +5259,245 @@ function ZonesView({ profile }) {
           onClose={() => { setShowEditor(false); setEditZone(null); loadAll(); }}
         />
       )}
+
+      {/* All Zones Map */}
+      {showAllMap && (
+        <AllZonesMapModal
+          zones={zones.filter((z) => z.is_active)}
+          drivers={drivers}
+          onClose={() => setShowAllMap(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Бүх бүсийг нэг газрын зураг дээр харах ─────────────────
+function AllZonesMapModal({ zones, drivers, onClose }) {
+  const [LRef, setLRef] = useState(null);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const layersRef = useRef([]);
+  const [hiddenDrivers, setHiddenDrivers] = useState(new Set()); // Filter
+
+  // Driver name lookup
+  const driverNameById = useMemo(() => {
+    const m = {};
+    drivers.forEach((d) => { m[d.id] = d.name; });
+    return m;
+  }, [drivers]);
+
+  // Visible zones
+  const visibleZones = useMemo(() => {
+    return zones.filter((z) => !hiddenDrivers.has(z.driver_id || "unassigned"));
+  }, [zones, hiddenDrivers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((leaflet) => {
+      if (!cancelled) setLRef(leaflet.default || leaflet);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!LRef || !mapContainerRef.current || mapRef.current) return;
+    const L = LRef;
+    
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+
+    const map = L.map(mapContainerRef.current).setView([47.9183, 106.9173], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    return () => {
+      try { map.remove(); } catch {}
+      mapRef.current = null;
+    };
+  }, [LRef]);
+
+  // Bus draw
+  useEffect(() => {
+    if (!LRef || !mapRef.current) return;
+    const L = LRef;
+    const map = mapRef.current;
+
+    // Хуучин layer-уудыг устгах
+    layersRef.current.forEach((layer) => { try { map.removeLayer(layer); } catch {} });
+    layersRef.current = [];
+
+    // Бүх бүсийг draw + bound
+    const allBounds = [];
+    visibleZones.forEach((z) => {
+      if (!z.polygon || z.polygon.length < 3) return;
+      
+      const poly = L.polygon(z.polygon, {
+        color: z.color || "#ec4899",
+        fillColor: z.color || "#ec4899",
+        fillOpacity: 0.25,
+        weight: 2,
+      }).addTo(map);
+
+      // Tooltip нэр + driver
+      const driverName = z.driver_id ? driverNameById[z.driver_id] || "?" : "Хуваарилаагүй";
+      poly.bindTooltip(`<b>${z.name}</b><br>🚚 ${driverName}`, {
+        sticky: true,
+        direction: "top",
+      });
+      
+      // Center label (бүсийн дунд нэр харуулах)
+      const center = z.polygon.reduce(
+        (acc, pt) => [acc[0] + pt[0], acc[1] + pt[1]], 
+        [0, 0]
+      ).map((v) => v / z.polygon.length);
+      
+      const label = L.marker(center, {
+        icon: L.divIcon({
+          html: `<div style="background: ${z.color || '#ec4899'}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid white;">${z.name}</div>`,
+          iconSize: [120, 24],
+          iconAnchor: [60, 12],
+          className: "zone-label",
+        }),
+      }).addTo(map);
+      
+      layersRef.current.push(poly);
+      layersRef.current.push(label);
+      
+      z.polygon.forEach((pt) => allBounds.push(pt));
+    });
+
+    // Бүх бүсийг харагдахаар zoom хийх
+    if (allBounds.length > 0) {
+      try {
+        map.fitBounds(allBounds, { padding: [40, 40] });
+      } catch (e) { console.error(e); }
+    }
+  }, [visibleZones, LRef, driverNameById]);
+
+  // Driver group toggle
+  const toggleDriver = (driverId) => {
+    setHiddenDrivers((prev) => {
+      const newSet = new Set(prev);
+      const key = driverId || "unassigned";
+      if (newSet.has(key)) newSet.delete(key);
+      else newSet.add(key);
+      return newSet;
+    });
+  };
+
+  // Driver-уудыг group хийх (ямар бүсүүдтэй вэ)
+  const driversWithZones = useMemo(() => {
+    const grouped = {};
+    zones.forEach((z) => {
+      const key = z.driver_id || "unassigned";
+      if (!grouped[key]) {
+        grouped[key] = {
+          id: key,
+          name: z.driver_id ? driverNameById[z.driver_id] || "?" : "Хуваарилаагүй",
+          zones: [],
+          color: z.color,
+        };
+      }
+      grouped[key].zones.push(z);
+    });
+    return Object.values(grouped);
+  }, [zones, driverNameById]);
+
+  return createPortal(
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
+    }}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 1100,
+        height: "94vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.4)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div className="p-3 flex items-center justify-between flex-shrink-0"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🗺 Бүх хүргэлтийн бүсүүд
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {visibleZones.length} / {zones.length} бүс харагдаж байна
+            </div>
+          </div>
+          <button onClick={onClose} className="press-btn p-2" style={{ color: T.muted }}>✕</button>
+        </div>
+
+        {/* Driver legend (filter) */}
+        {driversWithZones.length > 0 && (
+          <div className="p-2 flex items-center gap-1 flex-wrap flex-shrink-0"
+            style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}`, overflowX: "auto" }}>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mr-1">
+              Filter:
+            </span>
+            {driversWithZones.map((d) => {
+              const isHidden = hiddenDrivers.has(d.id);
+              return (
+                <button key={d.id} onClick={() => toggleDriver(d.id)}
+                  className="press-btn px-2 py-1 rounded-full text-[10px] flex items-center gap-1"
+                  style={{
+                    background: isHidden ? T.surface : d.color,
+                    color: isHidden ? T.muted : "white",
+                    fontFamily: FS, fontWeight: 600,
+                    opacity: isHidden ? 0.5 : 1,
+                    border: `1px solid ${d.color}`,
+                  }}>
+                  <span>{isHidden ? "○" : "✓"}</span>
+                  <span>{d.name}</span>
+                  <span style={{ opacity: 0.8 }}>({d.zones.length})</span>
+                </button>
+              );
+            })}
+            {hiddenDrivers.size > 0 && (
+              <button onClick={() => setHiddenDrivers(new Set())}
+                className="press-btn px-2 py-1 rounded-full text-[10px]"
+                style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                ✕ Бүгдийг нээх
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Map */}
+        <div className="flex-1 relative" style={{ minHeight: 300 }}>
+          <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
+          {visibleZones.length === 0 && (
+            <div style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              background: "rgba(245, 158, 11, 0.95)", color: "white",
+              padding: "12px 16px", borderRadius: 8, fontFamily: FS, fontWeight: 600,
+              fontSize: 13, textAlign: "center", pointerEvents: "none", zIndex: 1000,
+            }}>
+              {zones.length === 0 ? "Бүс үүсгээгүй байна" : "Бүх бүсийг hide хийсэн байна"}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-2 flex items-center justify-end flex-shrink-0"
+          style={{ borderTop: `1px solid ${T.border}` }}>
+          <button onClick={onClose}
+            className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+            Хаах
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
