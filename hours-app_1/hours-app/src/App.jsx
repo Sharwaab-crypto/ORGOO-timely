@@ -8504,8 +8504,15 @@ function CallCenterView({ profile }) {
           phoneGrouped[c.phone].push(c);
         });
 
-        // 📞 Нийт дугаар = Бүртгэгдсэн БҮХ unique дугаар (status хамаарахгүй)
-        const uniquePhones = Object.keys(phoneGrouped).length;
+        // 📞 Нийт дугаар = "Залгах" tab logic — сүүлийн status нь ordered/cancelled биш дугаарууд
+        let uniquePhones = 0;
+        Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+          const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          const latestStatus = sorted[0]?.call_status;
+          if (latestStatus !== "ordered" && latestStatus !== "cancelled") {
+            uniquePhones++;
+          }
+        });
         
         // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
         let orderedPhones = 0;
@@ -8602,17 +8609,15 @@ function CallCenterView({ profile }) {
 
           const counts = { calling: 0, ordered: 0, cancelled: 0 };
 
-          // Calling — бүх дугаарыг тоолох (period хамаарахгүй)
+          // Calling — БҮХ дугаарыг тоолно (өмнө захиалга өгсөн ч, шинэ дуудлага байвал залгах ёстой)
+          // Зөвхөн сүүлийн дуудлага нь "ordered" эсвэл "cancelled" биш бол → "calling" tab-руу нэмэгдэнэ
           Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            let currentCycle = [];
-            sorted.forEach((call) => {
-              currentCycle.push(call);
-              if (call.call_status === "ordered" || call.call_status === "cancelled") {
-                currentCycle = [];
-              }
-            });
-            if (currentCycle.length > 0) counts.calling++;
+            const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestStatus = sorted[0]?.call_status;
+            // Сүүлийн status нь pending бол → calling-руу
+            if (latestStatus !== "ordered" && latestStatus !== "cancelled") {
+              counts.calling++;
+            }
           });
 
           // Ordered/Cancelled — period-ээр шүүж тоолох
