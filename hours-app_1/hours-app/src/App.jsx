@@ -10135,7 +10135,7 @@ function SalesDashboardView({ profile }) {
         name: p.name,
         url: p.url,
         is_active: p.is_active,
-        uniquePhones: new Set(),
+        uniquePhones: 0, // Бүх дуудлагын тоо
         totalCalls: 0,
         totalOrders: 0,
         delivered: 0,
@@ -10155,7 +10155,7 @@ function SalesDashboardView({ profile }) {
       name: "Тодорхойгүй",
       url: null,
       is_active: true,
-      uniquePhones: new Set(),
+      uniquePhones: 0,
       totalCalls: 0,
       totalOrders: 0,
       delivered: 0,
@@ -10168,12 +10168,15 @@ function SalesDashboardView({ profile }) {
       cancelledOrders: [],
     };
 
-    // Дуудлагууд
+    // Дуудлагууд — Дуудлагын самбартай ижил logic (бүх дуудлагыг тоолно)
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      map[key].uniquePhones.add(c.phone);
+      map[key].uniquePhones++; // Тус дуудлагыг тоолно (давхардсан ч)
       map[key].totalCalls++;
+      // call_status-аар тоолох
+      if (c.call_status === "ordered") map[key].totalOrders++;
+      else if (c.call_status === "cancelled") map[key].cancelled++;
     });
 
     // Захиалгууд — fb_page_id call дотор хадгалагдсан, тиймээс утсаар хайх
@@ -10247,13 +10250,13 @@ function SalesDashboardView({ profile }) {
       const rows = fbReport.map((p, idx) => ({
         "№": idx + 1,
         "FB Page": p.name,
-        "Нийт дугаар": p.uniquePhones.size,
+        "Нийт дугаар": p.uniquePhones,
         "Нийт залгалт": p.totalCalls,
         "Захиалга": p.totalOrders,
         "Хүргэгдсэн": p.delivered,
         "Хүлээгдэж": p.pending,
         "Цуцалсан": p.cancelled,
-        "Conversion %": p.uniquePhones.size > 0 ? Math.round((p.totalOrders / p.uniquePhones.size) * 100) + "%" : "0%",
+        "Conversion %": p.uniquePhones > 0 ? Math.round((p.totalOrders / p.uniquePhones) * 100) + "%" : "0%",
         "Амжилт %": p.totalOrders > 0 ? Math.round((p.delivered / p.totalOrders) * 100) + "%" : "0%",
         "Орлого (₮)": p.revenue.toLocaleString(),
       }));
@@ -10407,8 +10410,8 @@ function SalesDashboardView({ profile }) {
                   const successRate = p.totalOrders > 0
                     ? Math.round((p.delivered / p.totalOrders) * 100)
                     : 0;
-                  const conversion = p.uniquePhones.size > 0
-                    ? Math.round((p.totalOrders / p.uniquePhones.size) * 100)
+                  const conversion = p.uniquePhones > 0
+                    ? Math.round((p.totalOrders / p.uniquePhones) * 100)
                     : 0;
                   const maxRevenue = Math.max(...fbReport.map((x) => x.revenue), 1);
                   const revenuePercent = (p.revenue / maxRevenue) * 100;
@@ -10459,7 +10462,7 @@ function SalesDashboardView({ profile }) {
                         <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Дугаар</div>
                           <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-base tabular-nums">
-                            {p.uniquePhones.size}
+                            {p.uniquePhones}
                           </div>
                         </div>
                         <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
