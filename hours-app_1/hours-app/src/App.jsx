@@ -11860,6 +11860,9 @@ function DriverSettlementView({ profile }) {
     setExpenseAmount(""); setExpenseNotes("");
   }, [activeDriver]);
 
+  // Bulk open settlements
+  const [bulkOpening, setBulkOpening] = useState(false);
+
   // editOrder нээгдэх үед barааны жагсаалт + захиалгын items татах
   useEffect(() => {
     if (!editOrder) {
@@ -12859,7 +12862,6 @@ function DriverSettlementView({ profile }) {
 
   // Хүргэгчийн жагсаалт
   // Бүгдийг автоматаар нээх
-  const [bulkOpening, setBulkOpening] = useState(false);
   const handleOpenAll = async () => {
     // Нээгдээгүй + хүргэлттэй driver-уудыг олох
     const driversToOpen = driverStats.filter((d) => 
