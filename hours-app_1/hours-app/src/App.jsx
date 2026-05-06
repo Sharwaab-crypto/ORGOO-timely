@@ -13183,17 +13183,15 @@ function DriverSettlementView({ profile }) {
                         · Сүүлийн: <strong>{lastAutoOpenDate}</strong>
                       </span>
                     )}
-                    {lastAutoOpenDate && (
-                      <button onClick={() => {
-                        try { localStorage.removeItem("orgoo-settlement-last-date"); } catch {}
-                        setLastAutoOpenDate("");
-                        alert("✅ Reset! Дараагийн minutе шалгахад дахин ажиллана.");
-                      }}
-                        className="press-btn px-2 py-0.5 rounded text-[10px]"
-                        style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
-                        🔄 Reset
-                      </button>
-                    )}
+                    <button onClick={() => {
+                      try { localStorage.removeItem("orgoo-settlement-last-date"); } catch {}
+                      setLastAutoOpenDate("");
+                      alert("✅ Reset! Дараагийн минутэд шалгахад дахин ажиллана.");
+                    }}
+                      className="press-btn px-2 py-0.5 rounded text-[10px]"
+                      style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                      🔄 Reset
+                    </button>
                   </div>
                 </div>
               )}
