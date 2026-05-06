@@ -679,7 +679,7 @@ function TimeTracker({ profile }) {
 
       {/* Photo capture modal */}
       {photoCapture && createPortal(
-        <PhotoCaptureModal
+        <TimePhotoCaptureModal
           type={photoCapture.type}
           onCapture={completeWithPhoto}
           onSkip={() => completeWithPhoto(null)}
@@ -692,7 +692,7 @@ function TimeTracker({ profile }) {
 }
 
 // ─── Зураг авах modal — Camera-аар selfie авна ────────────
-function PhotoCaptureModal({ type, onCapture, onSkip, onCancel }) {
+function TimePhotoCaptureModal({ type, onCapture, onSkip, onCancel }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
