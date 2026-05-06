@@ -4658,12 +4658,81 @@ function SupplierOrdersView({ profile }) {
   const pendingCount = orders.filter((o) => o.status === "pending" || o.status === "shipping").length;
 
   const updateStatus = async (id, newStatus) => {
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    
+    if (newStatus === "arrived") {
+      // ИРСЭН → автомат орлого хийх
+      if (!confirm(`✅ "${order.product_name}" - ${order.quantity} ширхэг ирсэн.\n\nАгуулахруу автомат орлогдох уу?`)) return;
+      
+      try {
+        // 1. Эхний агуулахыг олох (анхдагч агуулах)
+        const { data: warehouses } = await supabase.from("inv_warehouses")
+          .select("*").order("created_at").limit(1);
+        const warehouse = warehouses?.[0];
+        
+        if (!warehouse) {
+          alert("⚠ Агуулах байхгүй байна! Эхлээд агуулах үүсгэнэ үү.");
+          return;
+        }
+        if (!order.product_id) {
+          alert("⚠ Бараа холбоогүй учир орлого хийх боломжгүй!");
+          return;
+        }
+
+        // 2. Орлогын мөр inv_movements-руу
+        const unitCost = Number(order.quantity) > 0 
+          ? Math.round(Number(order.total_amount || 0) / Number(order.quantity))
+          : 0;
+        
+        await supabase.from("inv_movements").insert({
+          product_id: order.product_id,
+          warehouse_id: warehouse.id,
+          movement_type: "in",
+          quantity: Number(order.quantity),
+          unit_cost: unitCost,
+          total_cost: Number(order.total_amount || 0),
+          notes: `[Гадаадаас ирсэн] Захиалга #${id.slice(0, 8)}${order.notes ? ' · ' + order.notes : ''}`,
+          created_by: profile.id,
+        });
+
+        // 3. Stock шинэчлэх
+        const { data: existingStock } = await supabase.from("inv_stock")
+          .select("*")
+          .eq("product_id", order.product_id)
+          .eq("warehouse_id", warehouse.id)
+          .maybeSingle();
+
+        if (existingStock) {
+          await supabase.from("inv_stock").update({
+            quantity: Number(existingStock.quantity || 0) + Number(order.quantity),
+          }).eq("id", existingStock.id);
+        } else {
+          await supabase.from("inv_stock").insert({
+            product_id: order.product_id,
+            warehouse_id: warehouse.id,
+            quantity: Number(order.quantity),
+          });
+        }
+
+        // 4. Status шинэчлэх
+        await supabase.from("inv_supplier_orders").update({
+          status: "arrived",
+          arrived_at: new Date().toISOString(),
+        }).eq("id", id);
+
+        alert(`✅ ${order.quantity} ширхэг "${warehouse.name}" агуулахруу орлоглоо!`);
+        await loadAll();
+      } catch (e) {
+        alert("Алдаа: " + e.message);
+      }
+      return;
+    }
+    
+    // Бусад status (shipping, cancelled)
     if (!confirm(`Статусыг "${newStatus}" болгох уу?`)) return;
     try {
       const updates = { status: newStatus };
-      if (newStatus === "arrived") {
-        updates.arrived_at = new Date().toISOString();
-      }
       await supabase.from("inv_supplier_orders").update(updates).eq("id", id);
       await loadAll();
     } catch (e) { alert("Алдаа: " + e.message); }
