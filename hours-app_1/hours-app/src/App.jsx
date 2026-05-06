@@ -13074,19 +13074,20 @@ function DriverSettlementView({ profile }) {
                       ))}
                     </select>
                     <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-sm">:</span>
-                    {/* Минут dropdown 00, 15, 30, 45 */}
-                    <select value={scheduledTime.split(":")[1] || "00"}
+                    {/* Минут input — 0-59 */}
+                    <input type="number" value={scheduledTime.split(":")[1] || "00"}
                       onChange={(e) => {
-                        const newTime = `${scheduledTime.split(":")[0] || "18"}:${e.target.value}`;
+                        let v = parseInt(e.target.value, 10);
+                        if (isNaN(v)) v = 0;
+                        if (v < 0) v = 0;
+                        if (v > 59) v = 59;
+                        const newTime = `${scheduledTime.split(":")[0] || "18"}:${String(v).padStart(2, "0")}`;
                         setScheduledTime(newTime);
                         try { localStorage.setItem("orgoo-settlement-time", newTime); } catch {}
                       }}
-                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
-                      className="px-2 py-1 rounded text-sm tabular-nums cursor-pointer">
-                      {["00", "15", "30", "45"].map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
+                      min="0" max="59"
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700, width: 56 }}
+                      className="px-2 py-1 rounded text-sm tabular-nums text-center" />
                   </div>
                 </div>
                 
