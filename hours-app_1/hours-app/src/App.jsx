@@ -12879,6 +12879,7 @@ function DriverSettlementView({ profile }) {
     setBulkOpening(true);
     let successCount = 0;
     let failCount = 0;
+    const errors = [];
     
     try {
       for (const d of driversToOpen) {
@@ -12900,31 +12901,44 @@ function DriverSettlementView({ profile }) {
           }).select().single();
           if (stErr) throw stErr;
 
-          // 2. Захиалгуудыг settlement-руу холбох
-          for (const o of d.deliveredOrders) {
-            await supabase.from("biz_orders").update({
+          // 2. Захиалгуудыг settlement-руу холбох (bulk update)
+          const orderIds = [
+            ...d.deliveredOrders.map((o) => o.id),
+            ...d.cancelledOrders.map((o) => o.id),
+          ];
+          if (orderIds.length > 0) {
+            const { error: updErr } = await supabase.from("biz_orders").update({
               settlement_id: stData.id,
-            }).eq("id", o.id);
-          }
-          for (const o of d.cancelledOrders) {
-            await supabase.from("biz_orders").update({
-              settlement_id: stData.id,
-            }).eq("id", o.id);
+            }).in("id", orderIds);
+            if (updErr) throw updErr;
           }
           
           successCount++;
         } catch (e) {
           console.error(`${d.name} тооцоо нээх алдаа:`, e);
+          errors.push(`${d.name}: ${e.message}`);
           failCount++;
         }
       }
-      
-      alert(`✅ ${successCount} хүргэгчийн тооцоо нээгдлээ!${failCount > 0 ? `\n\n⚠ ${failCount} хүргэгчид алдаа гарсан` : ""}`);
-      await loadAll();
     } catch (e) {
+      console.error("Bulk open алдаа:", e);
       alert("Алдаа: " + e.message);
     } finally {
       setBulkOpening(false);
+      
+      // Үр дүн харуулах
+      let msg = `✅ ${successCount} хүргэгчийн тооцоо нээгдлээ!`;
+      if (failCount > 0) {
+        msg += `\n\n⚠ ${failCount} хүргэгчид алдаа гарсан:\n${errors.slice(0, 3).join("\n")}`;
+      }
+      alert(msg);
+      
+      // Data дахин ачаалах
+      try {
+        await loadAll();
+      } catch (e) {
+        console.error("loadAll алдаа:", e);
+      }
     }
   };
 
