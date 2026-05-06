@@ -8152,6 +8152,11 @@ function CallCenterView({ profile }) {
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
       ]);
+      console.log("[CallCenterView] loadAll fetched:", { 
+        calls: callData?.length, 
+        products: prodData?.length,
+        latestCall: callData?.[0]?.created_at,
+      });
       setRecentCalls(callData || []);
       setProducts(prodData || []);
       setCustomers(custData || []);
