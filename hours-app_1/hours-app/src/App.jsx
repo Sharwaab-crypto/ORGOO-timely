@@ -96,9 +96,16 @@ const fmtClock = (ms) => {
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 };
 const fmtHours = (ms) => (ms/3600000).toFixed(2);
-const fmtTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-const fmtDate = (ts) => new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
-const fmtFullDate = (ts) => new Date(ts).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+// Монголын цагаар форматлах (UTC+8)
+const MN_TZ = "Asia/Ulaanbaatar";
+const fmtTime = (ts) => new Date(ts).toLocaleTimeString("mn-MN", { hour: "numeric", minute: "2-digit", hour12: false, timeZone: MN_TZ });
+const fmtDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { month: "short", day: "numeric", timeZone: MN_TZ });
+const fmtFullDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { year: "numeric", month: "short", day: "numeric", timeZone: MN_TZ });
+// Helper — одоогийн цагийг Монголд нь авах
+const nowInMongolia = () => {
+  const now = new Date();
+  return new Date(now.toLocaleString("en-US", { timeZone: MN_TZ }));
+};
 const startOfDay = (d = new Date()) => { const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); };
 const startOfWeek = () => { const x = new Date(); x.setDate(x.getDate() - x.getDay()); x.setHours(0,0,0,0); return x.getTime(); };
 
@@ -11986,9 +11993,10 @@ function DriverSettlementView({ profile }) {
     if (!autoOpenEnabled) return;
     
     const checkAndOpen = async () => {
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      // Монголын цагийг авах (UTC+8)
+      const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
+      const today = mnNow.toISOString().slice(0, 10);
+      const currentTime = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
       
       if (lastAutoOpenDate === today) return;
       if (currentTime < scheduledTime) return;
