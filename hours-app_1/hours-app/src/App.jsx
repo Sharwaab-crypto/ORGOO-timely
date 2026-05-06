@@ -11890,17 +11890,41 @@ function DriverSettlementView({ profile }) {
     return () => { cancelled = true; };
   }, [editOrder?.order?.id]);
 
+  // Bulk хугацаа state
+  const [bulkPeriod, setBulkPeriod] = useState("all");
+
   // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
     const now = new Date();
-    const farPast = new Date(2020, 0, 1);   // 2020-01-01
-    const farFuture = new Date(2099, 11, 31); // 2099-12-31 (PostgreSQL хүлээн авах хязгаар)
+    const farPast = new Date(2020, 0, 1);
+    const farFuture = new Date(2099, 11, 31);
+    
+    if (bulkPeriod === "today") {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      return { start, end, label: "Өнөөдөр" };
+    }
+    if (bulkPeriod === "yesterday") {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return { start, end, label: "Өчигдөр" };
+    }
+    if (bulkPeriod === "week") {
+      const start = new Date(now);
+      start.setDate(start.getDate() - 7);
+      return { start, end: farFuture, label: "7 хоног" };
+    }
+    if (bulkPeriod === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      return { start, end, label: "Энэ сар" };
+    }
     return { 
       start: farPast, 
       end: farFuture, 
       label: "Бүгд" 
     };
-  }, []);
+  }, [bulkPeriod]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -12987,21 +13011,45 @@ function DriverSettlementView({ profile }) {
         const closableCount = driverStats.filter((d) => !d.openSettlement && d.delivered > 0).length;
         if (closableCount === 0) return null;
         return (
-          <div className="glass rounded-2xl p-3 flex items-center justify-between flex-wrap gap-2"
+          <div className="glass rounded-2xl p-3"
             style={{ background: T.warnSoft, border: `1px solid ${T.warn}` }}>
-            <div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                🔓 Тооцоо нээгдээгүй: {closableCount} хүргэгч
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                  🔓 Тооцоо нээгдээгүй: {closableCount} хүргэгч
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                  Хугацаа сонгож автомат нээх: <strong style={{ color: T.warn }}>{periodRange.label}</strong>
+                </div>
               </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                Бүгдийн тооцоог автомат хугацаагаар нээх
-              </div>
+              <button onClick={handleOpenAll} disabled={bulkOpening}
+                className="press-btn px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
+                style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                {bulkOpening ? "Нээж байна..." : "🔓 Бүгдийг нээх"}
+              </button>
             </div>
-            <button onClick={handleOpenAll} disabled={bulkOpening}
-              className="press-btn px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
-              style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
-              {bulkOpening ? "Нээж байна..." : "🔓 Бүгдийг нээх"}
-            </button>
+            
+            {/* Period selector */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {[
+                { id: "today", label: "Өнөөдөр" },
+                { id: "yesterday", label: "Өчигдөр" },
+                { id: "week", label: "7 хоног" },
+                { id: "month", label: "Энэ сар" },
+                { id: "all", label: "Бүгд" },
+              ].map((p) => (
+                <button key={p.id} onClick={() => setBulkPeriod(p.id)}
+                  className="press-btn px-3 py-1.5 rounded-full text-xs"
+                  style={{
+                    background: bulkPeriod === p.id ? T.warn : T.surface,
+                    color: bulkPeriod === p.id ? "white" : T.ink,
+                    fontFamily: FS, fontWeight: 600,
+                    border: `1px solid ${T.border}`,
+                  }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
         );
       })()}
