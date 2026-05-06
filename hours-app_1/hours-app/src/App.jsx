@@ -8099,6 +8099,20 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             await supabase.from("biz_order_items").insert(newItems);
           }
 
+          // ⭐ Шинэ дуудлагын мөр insert хийн counter +1 болгоно
+          await supabase.from("biz_calls").insert({
+            phone: order.customer_phone,
+            customer_id: order.customer_id || null,
+            notes: "[Захиалга засварласан]",
+            call_status: "ordered",
+            created_by: profile.id,
+            interested_products: data.items.map((it) => ({
+              id: it.product_id,
+              name: it.product_name,
+              qty: it.quantity,
+            })),
+          });
+
           onClose();
         } catch (e) {
           alert("Алдаа: " + e.message);
@@ -12878,6 +12892,12 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               <button
                 disabled={busy || !canSave}
                 onClick={async () => {
+                  // 8 оронтой шалгах
+                  const invalidPhone = validPhones.find((p) => p.phone.trim().length !== 8);
+                  if (invalidPhone) {
+                    alert(`⚠ Утсан дугаар заавал 8 оронтой байх ёстой!\n\nБуруу дугаар: ${invalidPhone.phone}`);
+                    return;
+                  }
                   setBusy(true);
                   await onSave({
                     fb_page_id: fbPageId || null,
@@ -13825,6 +13845,19 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 <button
                   disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
                   onClick={async () => {
+                    // Validation
+                    if (phone.trim().length !== 8) {
+                      alert("⚠ Утсан дугаар заавал 8 оронтой байх ёстой!");
+                      return;
+                    }
+                    if (phone2.trim() && phone2.trim().length !== 8) {
+                      alert("⚠ Дугаар 2 заавал 8 оронтой байх ёстой!");
+                      return;
+                    }
+                    if (!address.trim()) {
+                      alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
+                      return;
+                    }
                     setBusy(true);
                     await onSave({
                       action: "save_only",
@@ -13867,6 +13900,19 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               <button
             disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
             onClick={async () => {
+              // 8 оронтой шалгах
+              if (phone.trim().length !== 8) {
+                alert("⚠ Утсан дугаар заавал 8 оронтой байх ёстой!");
+                return;
+              }
+              if (phone2.trim() && phone2.trim().length !== 8) {
+                alert("⚠ Дугаар 2 заавал 8 оронтой байх ёстой!");
+                return;
+              }
+              if (!address.trim()) {
+                alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
+                return;
+              }
               setBusy(true);
               await onSave({
                 action: "ordered",
