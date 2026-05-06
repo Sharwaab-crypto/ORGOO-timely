@@ -11890,41 +11890,27 @@ function DriverSettlementView({ profile }) {
     return () => { cancelled = true; };
   }, [editOrder?.order?.id]);
 
-  // Bulk хугацаа state
-  const [bulkPeriod, setBulkPeriod] = useState("all");
+  // Bulk автомат нээх — өдөр бүрийн тогтсон цаг
+  const [scheduledTime, setScheduledTime] = useState(() => {
+    try { return localStorage.getItem("orgoo-settlement-time") || "18:00"; } catch { return "18:00"; }
+  });
+  const [autoOpenEnabled, setAutoOpenEnabled] = useState(() => {
+    try { return localStorage.getItem("orgoo-settlement-auto") === "true"; } catch { return false; }
+  });
+  const [lastAutoOpenDate, setLastAutoOpenDate] = useState(() => {
+    try { return localStorage.getItem("orgoo-settlement-last-date") || ""; } catch { return ""; }
+  });
 
   // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
-    const now = new Date();
     const farPast = new Date(2020, 0, 1);
     const farFuture = new Date(2099, 11, 31);
-    
-    if (bulkPeriod === "today") {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      return { start, end, label: "Өнөөдөр" };
-    }
-    if (bulkPeriod === "yesterday") {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return { start, end, label: "Өчигдөр" };
-    }
-    if (bulkPeriod === "week") {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 7);
-      return { start, end: farFuture, label: "7 хоног" };
-    }
-    if (bulkPeriod === "month") {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      return { start, end, label: "Энэ сар" };
-    }
     return { 
       start: farPast, 
       end: farFuture, 
       label: "Бүгд" 
     };
-  }, [bulkPeriod]);
+  }, []);
 
   const loadAll = async () => {
     setLoading(true);
@@ -12886,21 +12872,21 @@ function DriverSettlementView({ profile }) {
 
   // Хүргэгчийн жагсаалт
   // Бүгдийг автоматаар нээх
-  const handleOpenAll = async () => {
+  const handleOpenAll = async (silent = false) => {
     // Нээгдээгүй + хүргэлттэй driver-уудыг олох
     const driversToOpen = driverStats.filter((d) => 
       !d.openSettlement && d.delivered > 0
     );
     
     if (driversToOpen.length === 0) {
-      alert("⚠ Тооцоо нээх боломжтой хүргэгч алга!\n\nБүгд нээгдсэн эсвэл хүргэлт байхгүй.");
-      return;
+      if (!silent) alert("⚠ Тооцоо нээх боломжтой хүргэгч алга!\n\nБүгд нээгдсэн эсвэл хүргэлт байхгүй.");
+      return 0;
     }
 
     const totalOwed = driversToOpen.reduce((s, d) => s + d.owed, 0);
     const totalOrders = driversToOpen.reduce((s, d) => s + d.delivered, 0);
     
-    if (!confirm(`🔓 ${driversToOpen.length} хүргэгчийн тооцоог автомат нээх үү?\n\n📊 Нийт захиалга: ${totalOrders}ш\n💰 Нийт тушаах: ${totalOwed.toLocaleString()}₮\n\nХугацаа: ${periodRange.label}\n\nДараа нь тус бүрийн дүнг оруулж "Тооцоо хаах" даргах ёстой.`)) return;
+    if (!silent && !confirm(`🔓 ${driversToOpen.length} хүргэгчийн тооцоог автомат нээх үү?\n\n📊 Нийт захиалга: ${totalOrders}ш\n💰 Нийт тушаах: ${totalOwed.toLocaleString()}₮\n\nХугацаа: ${periodRange.label}\n\nДараа нь тус бүрийн дүнг оруулж "Тооцоо хаах" даргах ёстой.`)) return 0;
 
     setBulkOpening(true);
     let successCount = 0;
@@ -12957,7 +12943,8 @@ function DriverSettlementView({ profile }) {
       if (failCount > 0) {
         msg += `\n\n⚠ ${failCount} хүргэгчид алдаа гарсан:\n${errors.slice(0, 3).join("\n")}`;
       }
-      alert(msg);
+      if (!silent) alert(msg);
+      console.log("[Bulk open]", msg);
       
       // Data дахин ачаалах
       try {
@@ -12966,7 +12953,43 @@ function DriverSettlementView({ profile }) {
         console.error("loadAll алдаа:", e);
       }
     }
+    return successCount;
   };
+
+  // ⏰ Автомат нээх — өдөр бүрийн тогтсон цагт ажиллана
+  useEffect(() => {
+    if (!autoOpenEnabled) return;
+    
+    const checkAndOpen = async () => {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      
+      // Өнөөдөр аль хэдийн ажилласан бол дахин ажиллахгүй
+      if (lastAutoOpenDate === today) return;
+      
+      // Тогтсон цаг хүрсэн эсвэл өнгөрсөн бол → автомат нээх
+      if (currentTime >= scheduledTime) {
+        console.log(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
+        const count = await handleOpenAll(true); // silent=true
+        if (count > 0) {
+          console.log(`[Auto Open] ${count} хүргэгчийн тооцоо нээгдлээ`);
+        }
+        try {
+          localStorage.setItem("orgoo-settlement-last-date", today);
+          setLastAutoOpenDate(today);
+        } catch {}
+      }
+    };
+    
+    // Тус сайтыг нээсэн үед нэг шалгах
+    checkAndOpen();
+    
+    // Минут бүр шалгах
+    const intervalId = setInterval(checkAndOpen, 60 * 1000);
+    
+    return () => clearInterval(intervalId);
+  }, [autoOpenEnabled, scheduledTime, lastAutoOpenDate, driverStats]);
 
   return (
     <div className="space-y-3">
@@ -13019,36 +13042,54 @@ function DriverSettlementView({ profile }) {
                   🔓 Тооцоо нээгдээгүй: {closableCount} хүргэгч
                 </div>
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                  Хугацаа сонгож автомат нээх: <strong style={{ color: T.warn }}>{periodRange.label}</strong>
+                  Бүх тооцоог автомат нээх
                 </div>
               </div>
-              <button onClick={handleOpenAll} disabled={bulkOpening}
+              <button onClick={() => handleOpenAll(false)} disabled={bulkOpening}
                 className="press-btn px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
                 style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
                 {bulkOpening ? "Нээж байна..." : "🔓 Бүгдийг нээх"}
               </button>
             </div>
             
-            {/* Period selector */}
-            <div className="flex items-center gap-1 flex-wrap">
-              {[
-                { id: "today", label: "Өнөөдөр" },
-                { id: "yesterday", label: "Өчигдөр" },
-                { id: "week", label: "7 хоног" },
-                { id: "month", label: "Энэ сар" },
-                { id: "all", label: "Бүгд" },
-              ].map((p) => (
-                <button key={p.id} onClick={() => setBulkPeriod(p.id)}
-                  className="press-btn px-3 py-1.5 rounded-full text-xs"
+            {/* ⏰ Автомат нээх цаг */}
+            <div className="rounded-lg p-2.5 mt-2" style={{ background: T.bg, border: `1px solid ${T.border}` }}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                    ⏰ Өдөр бүр автомат:
+                  </span>
+                  <input type="time" value={scheduledTime}
+                    onChange={(e) => {
+                      setScheduledTime(e.target.value);
+                      try { localStorage.setItem("orgoo-settlement-time", e.target.value); } catch {}
+                    }}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                    className="px-2 py-1 rounded text-sm tabular-nums" />
+                </div>
+                
+                {/* Toggle */}
+                <button onClick={() => {
+                  const newVal = !autoOpenEnabled;
+                  setAutoOpenEnabled(newVal);
+                  try { localStorage.setItem("orgoo-settlement-auto", String(newVal)); } catch {}
+                }}
+                  className="press-btn px-3 py-1 rounded-full text-xs flex items-center gap-1.5"
                   style={{
-                    background: bulkPeriod === p.id ? T.warn : T.surface,
-                    color: bulkPeriod === p.id ? "white" : T.ink,
+                    background: autoOpenEnabled ? T.ok : T.surfaceAlt,
+                    color: autoOpenEnabled ? "white" : T.muted,
                     fontFamily: FS, fontWeight: 600,
-                    border: `1px solid ${T.border}`,
+                    border: `1px solid ${autoOpenEnabled ? T.ok : T.border}`,
                   }}>
-                  {p.label}
+                  <span>{autoOpenEnabled ? "✓ Идэвхтэй" : "○ Идэвхгүй"}</span>
                 </button>
-              ))}
+              </div>
+              {autoOpenEnabled && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1.5">
+                  ℹ Энэ системийг нээлттэй бол → өдөр бүр <strong style={{ color: T.ok }}>{scheduledTime}</strong> цагт автомат нээгдэнэ
+                  {lastAutoOpenDate && ` · Сүүлийн ажилласан: ${lastAutoOpenDate}`}
+                </div>
+              )}
             </div>
           </div>
         );
