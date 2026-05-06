@@ -8678,14 +8678,11 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-1.5">
             {(() => {
-              // "Залгах дугаар" tab-д бүх дугаарыг харуулах (period үл хамааран)
-              // Бусад tab-уудад period-ээр шүүх
-              const filteredByPeriod = activeTab === "calling"
-                ? recentCalls
-                : recentCalls.filter((c) => {
-                    const d = new Date(c.created_at);
-                    return d >= periodRange.start && d < periodRange.end;
-                  });
+              // Бүх tab-д period filter ажиллана (нэг ижил logic)
+              const filteredByPeriod = recentCalls.filter((c) => {
+                const d = new Date(c.created_at);
+                return d >= periodRange.start && d < periodRange.end;
+              });
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
