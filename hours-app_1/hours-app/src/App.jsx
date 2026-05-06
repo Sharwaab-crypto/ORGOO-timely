@@ -8784,7 +8784,13 @@ function CallCenterView({ profile }) {
                 const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
                 const latestCall = calls[0];
                 const customer = customers.find((cu) => cu.phone === phone);
-                const customerIndex = customers.findIndex((cu) => cu.phone === phone) + 1;
+                
+                // Card-ийн # тоо = тэр cycle-ийн сүүлийн дуудлагын глобал дугаар
+                // recentCalls нь date desc-аар sort хийгдсэн (хамгийн шинэ нь эхэнд)
+                // Бид ascending дугаарыг хүснэ → length - index гэж тооцоолно
+                const callIndex = latestCall 
+                  ? recentCalls.length - recentCalls.findIndex((c) => c.id === latestCall.id)
+                  : null;
 
                 // Сонирхсон бараа нэгтгэх
                 const productMap = new Map();
@@ -8827,7 +8833,7 @@ function CallCenterView({ profile }) {
                     <div className="flex items-center gap-1.5 flex-wrap mb-2">
                       <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FD, fontWeight: 700 }}
                         className="px-2 py-0.5 rounded text-xs">
-                        #{customer ? customerIndex : "—"}
+                        #{callIndex ?? "—"}
                       </span>
                       {customer?.name && (
                         <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
