@@ -11990,21 +11990,37 @@ function DriverSettlementView({ profile }) {
   driverStatsRef.current = driverStats;
   
   useEffect(() => {
-    if (!autoOpenEnabled) return;
+    if (!autoOpenEnabled) {
+      console.log("[Auto Open] Disabled");
+      return;
+    }
+    console.log(`[Auto Open] Initialized — scheduledTime: ${scheduledTime}, lastAutoOpenDate: ${lastAutoOpenDate}`);
     
     const checkAndOpen = async () => {
       // Монголын цагийг авах (UTC+8)
       const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
-      const today = mnNow.toISOString().slice(0, 10);
+      const today = `${mnNow.getFullYear()}-${String(mnNow.getMonth() + 1).padStart(2, "0")}-${String(mnNow.getDate()).padStart(2, "0")}`;
       const currentTime = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
       
-      if (lastAutoOpenDate === today) return;
-      if (currentTime < scheduledTime) return;
+      console.log(`[Auto Open Check] now=${currentTime} (${today}), scheduled=${scheduledTime}, lastDate=${lastAutoOpenDate}`);
+      
+      if (lastAutoOpenDate === today) {
+        console.log("[Auto Open] Already opened today, skipping");
+        return;
+      }
+      if (currentTime < scheduledTime) {
+        console.log(`[Auto Open] Too early (${currentTime} < ${scheduledTime})`);
+        return;
+      }
       
       // Closure-аас одоогийн driverStats авах
       const stats = driverStatsRef.current;
       const driversToOpen = stats.filter((d) => !d.openSettlement && d.delivered > 0);
-      if (driversToOpen.length === 0) return;
+      console.log(`[Auto Open] Found ${driversToOpen.length} drivers to open`);
+      if (driversToOpen.length === 0) {
+        // Өнөөдөр захиалга байхгүй ч → date-ийг хадгалбал маргааш сэргээнэ
+        return;
+      }
       
       console.log(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
       
@@ -13148,9 +13164,37 @@ function DriverSettlementView({ profile }) {
                 </button>
               </div>
               {autoOpenEnabled && (
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1.5">
-                  ℹ Энэ системийг нээлттэй бол → өдөр бүр <strong style={{ color: T.ok }}>{scheduledTime}</strong> цагт автомат нээгдэнэ
-                  {lastAutoOpenDate && ` · Сүүлийн ажилласан: ${lastAutoOpenDate}`}
+                <div className="mt-1.5">
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    ℹ Энэ системийг нээлттэй бол → өдөр бүр <strong style={{ color: T.ok }}>{scheduledTime}</strong> цагт автомат нээгдэнэ
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {(() => {
+                      const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
+                      const cur = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
+                      return (
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          🕐 Одоо: <strong style={{ color: T.highlight }}>{cur}</strong> (Монгол)
+                        </span>
+                      );
+                    })()}
+                    {lastAutoOpenDate && (
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        · Сүүлийн: <strong>{lastAutoOpenDate}</strong>
+                      </span>
+                    )}
+                    {lastAutoOpenDate && (
+                      <button onClick={() => {
+                        try { localStorage.removeItem("orgoo-settlement-last-date"); } catch {}
+                        setLastAutoOpenDate("");
+                        alert("✅ Reset! Дараагийн minutе шалгахад дахин ажиллана.");
+                      }}
+                        className="press-btn px-2 py-0.5 rounded text-[10px]"
+                        style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+                        🔄 Reset
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
