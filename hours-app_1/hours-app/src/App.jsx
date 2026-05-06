@@ -8500,12 +8500,13 @@ function CallCenterView({ profile }) {
         const uniquePhones = allCallsForStats.length;
         
         // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
-        // ✅ Захиалга / 🗑 Цуцалсан — biz_orders-аас тоолно (Борлуулалттай ижил)
-        const orderedPhones = orders.filter((o) => o.status !== "cancelled").length; // Бүх захиалга (cancelled-аас бусад)
-        const cancelledPhones = orders.filter((o) => o.status === "cancelled").length;
-        // Хэрэв call_status тоог хэрэгцээтэй бол доорх ашиглана
-        const orderedCallsCount = allCallsForStats.filter((c) => c.call_status === "ordered").length;
-        const cancelledCallsCount = allCallsForStats.filter((c) => c.call_status === "cancelled").length;
+        // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
+        let orderedPhones = 0;
+        let cancelledPhones = 0;
+        allCallsForStats.forEach((c) => {
+          if (c.call_status === "ordered") orderedPhones++;
+          else if (c.call_status === "cancelled") cancelledPhones++;
+        });
 
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -8605,12 +8606,17 @@ function CallCenterView({ profile }) {
             }
           });
 
-          // Ordered/Cancelled/Delivered — biz_orders ширээнээс тоолно (Борлуулалттай ижил)
-          orders.forEach((o) => {
-            if (o.status === "delivered") counts.delivered++;
-            else if (o.status === "cancelled") counts.cancelled++;
-            else counts.ordered++; // new, processing, etc.
+          // Ordered/Cancelled — call_status-аар тоолно
+          Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+            const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            sorted.forEach((call) => {
+              if (call.call_status === "ordered") counts.ordered++;
+              else if (call.call_status === "cancelled") counts.cancelled++;
+            });
           });
+          
+          // Delivered (амжилттай) — biz_orders ширээгээс
+          counts.delivered = orders.filter((o) => o.status === "delivered").length;
 
           return (
             <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
