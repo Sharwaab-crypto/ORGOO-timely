@@ -8606,8 +8606,9 @@ function CallCenterView({ profile }) {
             }
           });
 
-          // Ordered/Cancelled — call_status-аар тоолно
-          Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+          // Ordered/Cancelled — Cycle logic-аар тоолно (card list-тэй ижил)
+          // Утас бүрд cycle хуваан, status-аар нь тоолно
+          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
             const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             sorted.forEach((call) => {
               if (call.call_status === "ordered") counts.ordered++;
@@ -8617,6 +8618,19 @@ function CallCenterView({ profile }) {
           
           // Delivered (амжилттай) — biz_orders ширээгээс
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
+          // "Захиалга" tab нь delivered-аас өөр учир — delivered тоог хасах
+          // (Card list-руу зөвхөн delivered биш orders харна)
+          const deliveredPhonesSet = new Set(
+            orders.filter((o) => o.status === "delivered").map((o) => o.customer_phone)
+          );
+          let orderedAdjusted = 0;
+          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+            if (deliveredPhonesSet.has(phone)) return; // delivered дугаар → ordered tab-руу орохгүй
+            calls.forEach((call) => {
+              if (call.call_status === "ordered") orderedAdjusted++;
+            });
+          });
+          counts.ordered = orderedAdjusted;
 
           return (
             <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
