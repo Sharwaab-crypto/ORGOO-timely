@@ -8875,17 +8875,31 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // Delivered (амжилттай) дугааруудыг олох — biz_orders-ийн status='delivered'
-              const deliveredPhones = new Set(
-                orders.filter((o) => o.status === "delivered").map((o) => o.customer_phone)
-              );
+              // biz_orders-аас status-ыг авах
+              const orderStatusByPhone = {};
+              orders.forEach((o) => {
+                // Хэрэв олон захиалга нэг утсаар бий бол хамгийн сүүлчийн орлогыг авна
+                const existing = orderStatusByPhone[o.customer_phone];
+                if (!existing || new Date(o.created_at) > new Date(existing.created_at)) {
+                  orderStatusByPhone[o.customer_phone] = o;
+                }
+              });
 
-              // Tab-ийн дагуу filter
+              // Tab-ийн дагуу filter — biz_orders-руу status шалгах
               let filteredCycles = cycleList.filter((cy) => {
+                const order = orderStatusByPhone[cy.phone];
+                
                 if (activeTab === "calling") return cy.status === "calling";
-                if (activeTab === "ordered") return cy.status === "ordered" && !deliveredPhones.has(cy.phone);
-                if (activeTab === "cancelled") return cy.status === "cancelled";
-                if (activeTab === "delivered") return cy.status === "ordered" && deliveredPhones.has(cy.phone);
+                if (activeTab === "ordered") {
+                  // biz_orders status="new"/"processing" — delivered/cancelled биш
+                  return order && order.status !== "delivered" && order.status !== "cancelled";
+                }
+                if (activeTab === "cancelled") {
+                  return order && order.status === "cancelled";
+                }
+                if (activeTab === "delivered") {
+                  return order && order.status === "delivered";
+                }
                 return true;
               });
 
