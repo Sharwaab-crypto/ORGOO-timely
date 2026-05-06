@@ -1767,6 +1767,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
+              <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
               <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
               <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
@@ -1846,6 +1847,7 @@ function AdminDashboard({ profile }) {
                 {view === "hrfile" && "HR хувийн файл"}
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "warehouses" && "Агуулах"}
+                {view === "supplier-orders" && "Захиалсан бараа"}
                 {view === "transfers" && "Бараа хүсэлт"}
                 {view === "movements" && "Барааны хөдөлгөөн"}
                 {view === "stockcount" && "Тооллого"}
@@ -1877,6 +1879,7 @@ function AdminDashboard({ profile }) {
                 {view === "polls" && "Ажилтнуудаас санал авах"}
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
+                {view === "supplier-orders" && "Шинэ бараа гадаадаас захиалах түүх"}
                 {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
                 {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
                 {view === "movements" && "Барааны бүх орлого/зарлагын түүх"}
@@ -2072,6 +2075,10 @@ function AdminDashboard({ profile }) {
 
         {view === "inventory" && (
           <InventoryView profile={profile} isAdmin={true} />
+        )}
+
+        {view === "supplier-orders" && (
+          <SupplierOrdersView profile={profile} />
         )}
 
         {view === "warehouses" && (
@@ -4605,6 +4612,527 @@ function DarkModeToggle() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  INVENTORY VIEW — Бараа нөөц
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  ЗАХИАЛСАН БАРАА — Гадаадаас бараа авч байгаа түүх
+// ═══════════════════════════════════════════════════════════════════════════
+function SupplierOrdersView({ profile }) {
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editOrder, setEditOrder] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: orderData }, { data: prodData }] = await Promise.all([
+        supabase.from("inv_supplier_orders").select("*").order("ordered_at", { ascending: false }),
+        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+      ]);
+      setOrders(orderData || []);
+      setProducts(prodData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Realtime
+  useEffect(() => {
+    const ch = supabase.channel("supplier-orders-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_supplier_orders" }, () => loadAll())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const filteredOrders = orders.filter((o) => {
+    if (filterStatus === "all") return true;
+    return o.status === filterStatus;
+  });
+
+  // Stats
+  const totalQty = orders.reduce((s, o) => s + Number(o.quantity || 0), 0);
+  const totalAmount = orders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const arrivedCount = orders.filter((o) => o.status === "arrived").length;
+  const pendingCount = orders.filter((o) => o.status === "pending" || o.status === "shipping").length;
+
+  const updateStatus = async (id, newStatus) => {
+    if (!confirm(`Статусыг "${newStatus}" болгох уу?`)) return;
+    try {
+      const updates = { status: newStatus };
+      if (newStatus === "arrived") {
+        updates.arrived_at = new Date().toISOString();
+      }
+      await supabase.from("inv_supplier_orders").update(updates).eq("id", id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const deleteOrder = async (id) => {
+    if (!confirm("Энэ захиалгыг устгах уу?")) return;
+    try {
+      await supabase.from("inv_supplier_orders").delete().eq("id", id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
+            🛒 Захиалсан бараа
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+            Гадаадаас бараа авч байгаа түүх
+          </div>
+        </div>
+        <button onClick={() => setShowAddModal(true)}
+          className="press-btn px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
+          style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+          <span>+</span>
+          <span>Бараа нэмэх</span>
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+            📦 Нийт захиалга
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+            {orders.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+            🔢 Нийт ширхэг
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-2xl tabular-nums">
+            {totalQty}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+            💰 Нийт зардал
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+            {Number(totalAmount).toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+            ✅ Ирсэн / ⏳ Хүлээж
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
+            {arrivedCount}<span style={{ color: T.muted, fontSize: 14 }}> / {pendingCount}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="glass rounded-2xl p-2 flex flex-wrap gap-1">
+        {[
+          { id: "all", label: "Бүгд", count: orders.length },
+          { id: "pending", label: "⏳ Хүлээгдэж", count: orders.filter(o => o.status === "pending").length },
+          { id: "shipping", label: "🚢 Зам дээр", count: orders.filter(o => o.status === "shipping").length },
+          { id: "arrived", label: "✅ Ирсэн", count: orders.filter(o => o.status === "arrived").length },
+          { id: "cancelled", label: "✕ Цуцалсан", count: orders.filter(o => o.status === "cancelled").length },
+        ].map((tab) => (
+          <button key={tab.id} onClick={() => setFilterStatus(tab.id)}
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+            style={{
+              background: filterStatus === tab.id ? T.highlight : T.surfaceAlt,
+              color: filterStatus === tab.id ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            <span>{tab.label}</span>
+            <span style={{
+              background: filterStatus === tab.id ? "rgba(255,255,255,0.25)" : T.surface,
+              color: filterStatus === tab.id ? "white" : T.muted,
+            }} className="text-[10px] px-1.5 rounded-full font-bold">
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Жагсаалт */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} />
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📦</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Захиалга алга
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredOrders.map((order) => {
+            const statusInfo = {
+              pending: { label: "⏳ Хүлээгдэж", color: T.warn, bg: T.warnSoft },
+              shipping: { label: "🚢 Зам дээр", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
+              arrived: { label: "✅ Ирсэн", color: T.ok, bg: T.okSoft },
+              cancelled: { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft },
+            }[order.status] || { label: order.status, color: T.muted, bg: T.surfaceAlt };
+
+            return (
+              <div key={order.id} className="glass rounded-xl p-3"
+                style={{ borderLeft: `3px solid ${statusInfo.color}` }}>
+                <div className="flex items-start gap-3">
+                  {/* Image */}
+                  {order.product_image ? (
+                    <img src={order.product_image} alt=""
+                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg flex items-center justify-center text-2xl flex-shrink-0"
+                      style={{ background: T.surfaceAlt }}>📦</div>
+                  )}
+                  
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                        {order.product_name}
+                      </div>
+                      {order.product_sku && (
+                        <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FD, fontWeight: 600 }}
+                          className="text-[10px] px-1.5 py-0.5 rounded">
+                          {order.product_sku}
+                        </span>
+                      )}
+                      <span style={{ background: statusInfo.bg, color: statusInfo.color }}
+                        className="text-[10px] px-2 py-0.5 rounded-full font-bold">
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 text-[11px]">
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Тоо</div>
+                        <div style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }}>
+                          {order.quantity} ширхэг
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Барааны үнэ</div>
+                        <div style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }}>
+                          {Number(order.product_price || 0).toLocaleString()}₮
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Гадаад карго</div>
+                        <div style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }}>
+                          {Number(order.foreign_cargo_fee || 0).toLocaleString()}₮
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Дотоод карго</div>
+                        <div style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }}>
+                          {Number(order.domestic_cargo_fee || 0).toLocaleString()}₮
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Нийт зардал</div>
+                        <div style={{ color: T.ok, fontFamily: FD, fontWeight: 700 }} className="text-base tabular-nums">
+                          {Number(order.total_amount || 0).toLocaleString()}₮
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {order.status === "pending" && (
+                          <button onClick={() => updateStatus(order.id, "shipping")}
+                            className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                            style={{ background: "#3b82f6", color: "white", fontFamily: FS, fontWeight: 600 }}>
+                            🚢 Зам руу
+                          </button>
+                        )}
+                        {(order.status === "pending" || order.status === "shipping") && (
+                          <button onClick={() => updateStatus(order.id, "arrived")}
+                            className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                            style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                            ✅ Ирсэн
+                          </button>
+                        )}
+                        <button onClick={() => setEditOrder(order)}
+                          className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                          style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                          ✏ Засах
+                        </button>
+                        <button onClick={() => deleteOrder(order.id)}
+                          className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                          style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {order.notes && (
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1.5 italic">
+                        💬 {order.notes}
+                      </div>
+                    )}
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] mt-1">
+                      📅 {new Date(order.ordered_at).toLocaleDateString("mn-MN")} 
+                      {order.arrived_at && ` · Ирсэн: ${new Date(order.arrived_at).toLocaleDateString("mn-MN")}`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {(showAddModal || editOrder) && (
+        <SupplierOrderFormModal
+          order={editOrder}
+          products={products}
+          profile={profile}
+          onClose={() => { setShowAddModal(false); setEditOrder(null); loadAll(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Захиалсан бараа нэмэх / засах modal ─────────────────
+function SupplierOrderFormModal({ order, products, profile, onClose }) {
+  const [productId, setProductId] = useState(order?.product_id || "");
+  const [quantity, setQuantity] = useState(order?.quantity || 1);
+  const [productPrice, setProductPrice] = useState(order?.product_price || 0);
+  const [foreignCargo, setForeignCargo] = useState(order?.foreign_cargo_fee || 0);
+  const [domesticCargo, setDomesticCargo] = useState(order?.domestic_cargo_fee || 0);
+  const [notes, setNotes] = useState(order?.notes || "");
+  const [productSearch, setProductSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const selectedProduct = products.find((p) => p.id === productId);
+  const totalAmount = (Number(quantity || 0) * Number(productPrice || 0)) + 
+                      Number(foreignCargo || 0) + Number(domesticCargo || 0);
+
+  const filteredProducts = products.filter((p) =>
+    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+    (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  const save = async () => {
+    if (!selectedProduct) {
+      alert("⚠ Бараа сонгоно уу!");
+      return;
+    }
+    if (Number(quantity) < 1) {
+      alert("⚠ Тоо хэмжээ 1-ээс их байх ёстой!");
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = {
+        product_id: productId,
+        product_name: selectedProduct.name,
+        product_sku: selectedProduct.sku,
+        product_image: selectedProduct.image_url,
+        quantity: Number(quantity),
+        product_price: Number(productPrice),
+        foreign_cargo_fee: Number(foreignCargo),
+        domestic_cargo_fee: Number(domesticCargo),
+        notes: notes.trim() || null,
+      };
+
+      if (order) {
+        await supabase.from("inv_supplier_orders").update(data).eq("id", order.id);
+      } else {
+        await supabase.from("inv_supplier_orders").insert({
+          ...data,
+          ordered_by: profile.id,
+          status: "pending",
+        });
+      }
+      onClose();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+    }} onClick={() => !busy && onClose()}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 500,
+        maxHeight: "90vh", overflowY: "auto",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
+      }} onClick={(e) => e.stopPropagation()}>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {order ? "✏ Захиалга засах" : "+ Шинэ захиалга"}
+            </div>
+            <button onClick={onClose} disabled={busy}
+              className="press-btn p-2" style={{ color: T.muted }}>✕</button>
+          </div>
+
+          {/* Бараа сонгох */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📦 Бараа *
+            </label>
+            {selectedProduct ? (
+              <div className="rounded-lg p-2 flex items-center gap-2" style={{ background: T.okSoft, border: `1px solid ${T.ok}` }}>
+                {selectedProduct.image_url ? (
+                  <img src={selectedProduct.image_url} alt="" className="w-12 h-12 rounded object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded flex items-center justify-center text-xl"
+                    style={{ background: T.surface }}>📦</div>
+                )}
+                <div className="flex-1">
+                  <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                    {selectedProduct.name}
+                  </div>
+                  {selectedProduct.sku && (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      SKU: {selectedProduct.sku}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setProductId("")}
+                  className="press-btn p-1" style={{ color: T.err }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <input value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="🔍 Бараа хайх..."
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {filteredProducts.slice(0, 20).map((p) => (
+                    <button key={p.id} onClick={() => { setProductId(p.id); setProductSearch(""); }}
+                      className="press-btn w-full flex items-center gap-2 p-1.5 rounded text-left"
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                      {p.image_url ? (
+                        <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" />
+                      ) : (
+                        <div className="w-8 h-8 rounded flex items-center justify-center"
+                          style={{ background: T.surface }}>📦</div>
+                      )}
+                      <div className="flex-1">
+                        <div style={{ fontFamily: FS, color: T.ink }} className="text-xs">{p.name}</div>
+                        {p.sku && (
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Quantity */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🔢 Хэдэн ширхэг *
+            </label>
+            <input type="number" value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              min="1"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+              className="w-full px-3 py-2 rounded-lg text-base" />
+          </div>
+
+          {/* Prices */}
+          <div className="grid grid-cols-1 gap-3 mb-3">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                💵 Барааны үнэ (нэг ширхэг)
+              </label>
+              <input type="number" value={productPrice}
+                onChange={(e) => setProductPrice(e.target.value)}
+                min="0"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                🚢 Гадаадын карго үнэ
+              </label>
+              <input type="number" value={foreignCargo}
+                onChange={(e) => setForeignCargo(e.target.value)}
+                min="0"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                🚚 Дотоодын карго үнэ
+              </label>
+              <input type="number" value={domesticCargo}
+                onChange={(e) => setDomesticCargo(e.target.value)}
+                min="0"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Тэмдэглэл
+            </label>
+            <textarea value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Жишээ: Их бөөнтэй..."
+              rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Total */}
+          <div className="rounded-lg p-3 mb-3" style={{ background: T.okSoft, border: `1px solid ${T.ok}` }}>
+            <div className="flex items-center justify-between">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                💰 Нийт зардал
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
+                {Number(totalAmount).toLocaleString()}₮
+              </div>
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+              ({quantity} × {Number(productPrice || 0).toLocaleString()}₮) + {Number(foreignCargo || 0).toLocaleString()}₮ + {Number(domesticCargo || 0).toLocaleString()}₮
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onClose} disabled={busy}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              Цуцлах
+            </button>
+            <button onClick={save} disabled={busy || !productId}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+              {busy ? "Хадгалж..." : "💾 Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function InventoryView({ profile, isAdmin = false }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
