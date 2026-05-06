@@ -4841,10 +4841,21 @@ function SupplierOrdersView({ profile }) {
                     </div>
 
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div>
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Нийт зардал</div>
-                        <div style={{ color: T.ok, fontFamily: FD, fontWeight: 700 }} className="text-base tabular-nums">
-                          {Number(order.total_amount || 0).toLocaleString()}₮
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Нийт зардал</div>
+                          <div style={{ color: T.ok, fontFamily: FD, fontWeight: 700 }} className="text-base tabular-nums">
+                            {Number(order.total_amount || 0).toLocaleString()}₮
+                          </div>
+                        </div>
+                        <div style={{ width: 1, height: 30, background: T.border }} />
+                        <div>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">📊 Өртөг үнэ</div>
+                          <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="text-base tabular-nums">
+                            {Number(order.quantity) > 0 
+                              ? Math.round(Number(order.total_amount || 0) / Number(order.quantity)).toLocaleString() 
+                              : 0}₮
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-wrap">
@@ -5100,7 +5111,7 @@ function SupplierOrderFormModal({ order, products, profile, onClose }) {
 
           {/* Total */}
           <div className="rounded-lg p-3 mb-3" style={{ background: T.okSoft, border: `1px solid ${T.ok}` }}>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-2">
               <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
                 💰 Нийт зардал
               </div>
@@ -5108,7 +5119,15 @@ function SupplierOrderFormModal({ order, products, profile, onClose }) {
                 {Number(totalAmount).toLocaleString()}₮
               </div>
             </div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+            <div className="flex items-center justify-between pb-2" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                📊 Өртөг үнэ (нэг ширхэг)
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
+                {Number(quantity) > 0 ? Math.round(totalAmount / Number(quantity)).toLocaleString() : 0}₮
+              </div>
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1.5">
               ({quantity} × {Number(productPrice || 0).toLocaleString()}₮) + {Number(foreignCargo || 0).toLocaleString()}₮ + {Number(domesticCargo || 0).toLocaleString()}₮
             </div>
           </div>
