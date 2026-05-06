@@ -9115,7 +9115,7 @@ function CallCenterView({ profile }) {
                       </span>
                       <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
                         <Clock size={11} />
-                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(customer?.created_at || latestCall.created_at)}</span>
+                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(latestCall.created_at)}</span>
                       </div>
                       <div className="flex-1" />
                       {(() => {
