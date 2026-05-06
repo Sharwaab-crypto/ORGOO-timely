@@ -8497,22 +8497,8 @@ function CallCenterView({ profile }) {
         // ⚠ Stat-уудад БҮХ дуудлагуудыг харах
         const allCallsForStats = recentCalls;
 
-        // Утсаар groupping
-        const phoneGrouped = {};
-        allCallsForStats.forEach((c) => {
-          if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
-          phoneGrouped[c.phone].push(c);
-        });
-
-        // 📞 Нийт дугаар = "Залгах" tab logic — сүүлийн status нь ordered/cancelled биш дугаарууд
-        let uniquePhones = 0;
-        Object.entries(phoneGrouped).forEach(([phone, calls]) => {
-          const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          const latestStatus = sorted[0]?.call_status;
-          if (latestStatus !== "ordered" && latestStatus !== "cancelled") {
-            uniquePhones++;
-          }
-        });
+        // 📞 Нийт дугаар = БҮХ дуудлагын тоо (давхар ч хамаагүй, нэгтгэхгүй)
+        const uniquePhones = allCallsForStats.length;
         
         // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
         let orderedPhones = 0;
