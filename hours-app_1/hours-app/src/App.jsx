@@ -13543,9 +13543,14 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               placeholder="🔍 Нэр, SKU-аар хайх..."
               style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm mb-3" />
 
-            {/* Сонгосон бараанууд */}
+            {/* Сонгосон бараанууд — 2-оос дээш бараа байвал scroll */}
             {items.length > 0 && (
-              <div className="space-y-2 mb-3 pb-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div className="space-y-2 mb-3 pb-3" style={{ 
+                borderBottom: `1px solid ${T.border}`,
+                maxHeight: items.length > 2 ? 280 : "auto",
+                overflowY: items.length > 2 ? "auto" : "visible",
+                paddingRight: items.length > 2 ? 4 : 0,
+              }}>
                 {items.map((it) => {
                   const p = it.product;
                   return (
