@@ -11977,6 +11977,73 @@ function DriverSettlementView({ profile }) {
     };
   }), [drivers, filteredOrders, openSettlements]);
 
+  // ⏰ Автомат нээх — өдөр бүрийн тогтсон цагт ажиллана
+  // ВАЖНО: ENE useEffect зайлшгүй "if (activeDriver) return"-ын өмнө байх ёстой (hooks order)
+  const driverStatsRef = useRef(driverStats);
+  driverStatsRef.current = driverStats;
+  
+  useEffect(() => {
+    if (!autoOpenEnabled) return;
+    
+    const checkAndOpen = async () => {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      
+      if (lastAutoOpenDate === today) return;
+      if (currentTime < scheduledTime) return;
+      
+      // Closure-аас одоогийн driverStats авах
+      const stats = driverStatsRef.current;
+      const driversToOpen = stats.filter((d) => !d.openSettlement && d.delivered > 0);
+      if (driversToOpen.length === 0) return;
+      
+      console.log(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
+      
+      try {
+        for (const d of driversToOpen) {
+          const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
+            driver_id: d.id,
+            cash_amount: 0, bank_amount: 0, expense_amount: 0,
+            total_submitted: 0,
+            settlement_amount: d.owed,
+            delivered_total: d.deliveredTotal,
+            paid_already: d.paidAlready,
+            period_start: periodRange.start.toISOString(),
+            period_end: periodRange.end.toISOString(),
+            period_label: periodRange.label,
+            order_count: d.delivered,
+            settled_by: profile.id,
+            status: "open",
+          }).select().single();
+          if (stErr) { console.error(`[Auto Open] ${d.name}:`, stErr); continue; }
+          
+          const orderIds = [
+            ...d.deliveredOrders.map((o) => o.id),
+            ...d.cancelledOrders.map((o) => o.id),
+          ];
+          if (orderIds.length > 0) {
+            await supabase.from("biz_orders").update({ settlement_id: stData.id }).in("id", orderIds);
+          }
+        }
+        
+        try {
+          localStorage.setItem("orgoo-settlement-last-date", today);
+          setLastAutoOpenDate(today);
+        } catch {}
+        
+        console.log(`[Auto Open] ${driversToOpen.length} settlement opened`);
+        await loadAll();
+      } catch (e) {
+        console.error("[Auto Open] Error:", e);
+      }
+    };
+    
+    checkAndOpen();
+    const intervalId = setInterval(checkAndOpen, 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [autoOpenEnabled, scheduledTime, lastAutoOpenDate, periodRange, profile.id]);
+
   // Detail харах хэсэг
   if (activeDriver) {
     const driver = driverStats.find((d) => d.id === activeDriver);
@@ -12955,41 +13022,6 @@ function DriverSettlementView({ profile }) {
     }
     return successCount;
   };
-
-  // ⏰ Автомат нээх — өдөр бүрийн тогтсон цагт ажиллана
-  useEffect(() => {
-    if (!autoOpenEnabled) return;
-    
-    const checkAndOpen = async () => {
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
-      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      
-      // Өнөөдөр аль хэдийн ажилласан бол дахин ажиллахгүй
-      if (lastAutoOpenDate === today) return;
-      
-      // Тогтсон цаг хүрсэн эсвэл өнгөрсөн бол → автомат нээх
-      if (currentTime >= scheduledTime) {
-        console.log(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
-        const count = await handleOpenAll(true); // silent=true
-        if (count > 0) {
-          console.log(`[Auto Open] ${count} хүргэгчийн тооцоо нээгдлээ`);
-        }
-        try {
-          localStorage.setItem("orgoo-settlement-last-date", today);
-          setLastAutoOpenDate(today);
-        } catch {}
-      }
-    };
-    
-    // Тус сайтыг нээсэн үед нэг шалгах
-    checkAndOpen();
-    
-    // Минут бүр шалгах
-    const intervalId = setInterval(checkAndOpen, 60 * 1000);
-    
-    return () => clearInterval(intervalId);
-  }, [autoOpenEnabled, scheduledTime, lastAutoOpenDate, driverStats]);
 
   return (
     <div className="space-y-3">
