@@ -8270,6 +8270,7 @@ function CallCenterView({ profile }) {
   useEffect(() => {
     try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
     setPage(1); // Tab сольсон үед хуудсыг 1-руу буулгах
+    loadAll(); // Tab сольсон үед мэдээлэл шинэчлэх
   }, [activeTab]);
 
   // Lock-уудыг ачаалах
