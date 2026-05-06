@@ -9197,58 +9197,16 @@ function CallCenterView({ profile }) {
                 }
 
                 // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
-                // Хэрэв interested_products оруулсан бол ordered, үгүй бол pending
-                const hasProducts = interested_products && Array.isArray(interested_products) && interested_products.length > 0;
+                // Үргэлж pending — Залгах дугаар tab-руу орно
                 await supabase.from("biz_calls").insert({
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
                   fb_page_id: fb_page_id || null,
                   interested_products,
-                  call_status: hasProducts ? "ordered" : "pending",
+                  call_status: "pending",
                   created_by: profile.id,
                 });
-                
-                // Хэрэв ordered бол захиалга үүсгэх
-                if (hasProducts) {
-                  // Бүх products дотроос үнийн нийлбэрийг тооцоолох
-                  const totalAmount = interested_products.reduce((sum, ip) => {
-                    const product = products.find(p => p.id === ip.id);
-                    const price = Number(product?.sale_price || 0);
-                    const qty = Number(ip.qty || 1);
-                    return sum + (price * qty);
-                  }, 0);
-                  
-                  // Order үүсгэх
-                  const { data: newOrder } = await supabase.from("biz_orders").insert({
-                    customer_phone: phone,
-                    customer_id: customerId,
-                    customer_name: existing?.name || null,
-                    total_amount: totalAmount,
-                    paid_amount: 0,
-                    status: "new",
-                    taken_by: profile.id,
-                    operator_id: profile.id,
-                    notes: notes || null,
-                  }).select().single();
-                  
-                  // Order items үүсгэх
-                  if (newOrder) {
-                    const orderItems = interested_products.map((ip) => {
-                      const product = products.find(p => p.id === ip.id);
-                      return {
-                        order_id: newOrder.id,
-                        product_id: ip.id,
-                        product_name: product?.name || "",
-                        product_sku: product?.sku || null,
-                        product_image: product?.image_url || null,
-                        unit_price: Number(product?.sale_price || 0),
-                        quantity: Number(ip.qty || 1),
-                      };
-                    });
-                    await supabase.from("biz_order_items").insert(orderItems);
-                  }
-                }
               }
 
               setShowCallModal(false);
