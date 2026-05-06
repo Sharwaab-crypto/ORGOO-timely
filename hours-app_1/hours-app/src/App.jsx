@@ -13059,13 +13059,35 @@ function DriverSettlementView({ profile }) {
                   <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
                     ⏰ Өдөр бүр автомат:
                   </span>
-                  <input type="time" value={scheduledTime}
-                    onChange={(e) => {
-                      setScheduledTime(e.target.value);
-                      try { localStorage.setItem("orgoo-settlement-time", e.target.value); } catch {}
-                    }}
-                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
-                    className="px-2 py-1 rounded text-sm tabular-nums" />
+                  <div className="flex items-center gap-1">
+                    {/* Цаг dropdown 00-23 */}
+                    <select value={scheduledTime.split(":")[0] || "18"}
+                      onChange={(e) => {
+                        const newTime = `${e.target.value}:${scheduledTime.split(":")[1] || "00"}`;
+                        setScheduledTime(newTime);
+                        try { localStorage.setItem("orgoo-settlement-time", newTime); } catch {}
+                      }}
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                      className="px-2 py-1 rounded text-sm tabular-nums cursor-pointer">
+                      {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-sm">:</span>
+                    {/* Минут dropdown 00, 15, 30, 45 */}
+                    <select value={scheduledTime.split(":")[1] || "00"}
+                      onChange={(e) => {
+                        const newTime = `${scheduledTime.split(":")[0] || "18"}:${e.target.value}`;
+                        setScheduledTime(newTime);
+                        try { localStorage.setItem("orgoo-settlement-time", newTime); } catch {}
+                      }}
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
+                      className="px-2 py-1 rounded text-sm tabular-nums cursor-pointer">
+                      {["00", "15", "30", "45"].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 
                 {/* Toggle */}
