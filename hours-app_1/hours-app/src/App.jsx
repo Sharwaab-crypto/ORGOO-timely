@@ -515,12 +515,13 @@ export default function App() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  NOTIFICATION MANAGER — Push subscription + in-app realtime toast
 // ═══════════════════════════════════════════════════════════════════════════
-// ─── Цаг бүртгэх жижиг компонент (Operator + Driver-руу) ─────────────
+// ─── Цаг бүртгэх (зураг + GPS-тэй) — Operator + Driver-руу ─────────
 function TimeTracker({ profile }) {
   const [active, setActive] = useState(null);
   const [todayHrs, setTodayHrs] = useState(0);
   const [busy, setBusy] = useState(false);
   const [, setTick] = useState(0);
+  const [photoCapture, setPhotoCapture] = useState(null); // { type: "in"|"out", loc?, durationMs? }
 
   useEffect(() => { 
     const id = setInterval(() => setTick((t) => t + 1), 1000); 
@@ -536,7 +537,6 @@ function TimeTracker({ profile }) {
         .maybeSingle();
       setActive(act);
       
-      // Өнөөдрийн цагийн нийлбэр
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const { data: sess } = await supabase
@@ -560,43 +560,81 @@ function TimeTracker({ profile }) {
     return () => { supabase.removeChannel(ch); };
   }, [profile.id]);
 
-  const onStart = async () => {
+  const onStartClick = async () => {
     setBusy(true);
     try {
-      const { error } = await supabase.from("active_sessions").upsert({
-        employee_id: profile.id,
-        start_time: new Date().toISOString(),
-      });
-      if (error) throw error;
-      await loadMy();
+      // GPS байршил татах
+      let loc = null;
+      try {
+        loc = await getGeolocation();
+      } catch (e) {
+        if (!confirm("⚠ Байршил татаж чадсангүй. GPS-гүйгээр үргэлжлүүлэх үү?")) {
+          setBusy(false);
+          return;
+        }
+      }
+      // Photo capture modal нээх
+      setPhotoCapture({ type: "in", loc });
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setBusy(false); }
   };
 
-  const onStop = async () => {
+  const onStopClick = async () => {
     if (!active) return;
     if (!confirm("Цаг бүртгэлийг зогсоох уу?")) return;
     setBusy(true);
     try {
-      const startTime = new Date(active.start_time);
-      const endTime = new Date();
-      const durMs = endTime - startTime;
-      
-      // Session мөр оруулна
-      await supabase.from("sessions").insert({
-        employee_id: profile.id,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        duration_ms: durMs,
-      });
-      // Active session-ыг устгах
-      await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
-      await loadMy();
+      let loc = null;
+      try { loc = await getGeolocation(); } catch (e) {}
+      setPhotoCapture({ type: "out", loc, active });
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setBusy(false); }
   };
 
-  // Live timer
+  const completeWithPhoto = async (photoBlob) => {
+    if (!photoCapture) return;
+    setBusy(true);
+    try {
+      if (photoCapture.type === "in") {
+        // ── START ──
+        const photoUrl = photoBlob ? await uploadClockPhoto(profile.id, photoBlob, "in") : null;
+        const { error } = await supabase.from("active_sessions").upsert({
+          employee_id: profile.id,
+          start_time: new Date().toISOString(),
+          start_lat: photoCapture.loc?.lat,
+          start_lng: photoCapture.loc?.lng,
+          clock_in_photo_url: photoUrl,
+        });
+        if (error) throw error;
+      } else {
+        // ── STOP ──
+        const photoUrl = photoBlob ? await uploadClockPhoto(profile.id, photoBlob, "out") : null;
+        const startTime = new Date(photoCapture.active.start_time);
+        const endTime = new Date();
+        const durMs = endTime - startTime;
+        
+        await supabase.from("sessions").insert({
+          employee_id: profile.id,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          duration_ms: durMs,
+          start_lat: photoCapture.active.start_lat,
+          start_lng: photoCapture.active.start_lng,
+          end_lat: photoCapture.loc?.lat,
+          end_lng: photoCapture.loc?.lng,
+          clock_in_photo_url: photoCapture.active.clock_in_photo_url,
+          clock_out_photo_url: photoUrl,
+        });
+        await supabase.from("active_sessions").delete().eq("employee_id", profile.id);
+      }
+      setPhotoCapture(null);
+      await loadMy();
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+      setPhotoCapture(null);
+    } finally { setBusy(false); }
+  };
+
   let liveHrs = 0;
   if (active) {
     const elapsed = Date.now() - new Date(active.start_time).getTime();
@@ -608,34 +646,174 @@ function TimeTracker({ profile }) {
   const ss = Math.floor(((totalLive - hh) * 60 - mm) * 60);
 
   return (
-    <div className="glass rounded-xl p-2 flex items-center gap-2">
-      <div style={{
-        background: active ? "rgba(16,185,129,0.15)" : T.surfaceAlt,
-        color: active ? T.ok : T.muted,
-      }} className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0">
-        {active ? "▶" : "⏸"}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
-          {active ? "🟢 Ажиллаж байна" : "Цаг бүртгэгдээгүй"}
+    <>
+      <div className="glass rounded-xl p-2 flex items-center gap-2">
+        <div style={{
+          background: active ? "rgba(16,185,129,0.15)" : T.surfaceAlt,
+          color: active ? T.ok : T.muted,
+        }} className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+          {active ? "▶" : "⏸"}
         </div>
-        <div style={{ fontFamily: FD, fontWeight: 700, color: active ? T.ok : T.ink }} className="text-sm tabular-nums">
-          {String(hh).padStart(2, "0")}:{String(mm).padStart(2, "0")}{active && `:${String(ss).padStart(2, "0")}`}
+        <div className="flex-1 min-w-0">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">
+            {active ? "🟢 Ажиллаж байна" : "Цаг бүртгэгдээгүй"}
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: active ? T.ok : T.ink }} className="text-sm tabular-nums">
+            {String(hh).padStart(2, "0")}:{String(mm).padStart(2, "0")}{active && `:${String(ss).padStart(2, "0")}`}
+          </div>
         </div>
+        {active ? (
+          <button onClick={onStopClick} disabled={busy}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ background: T.err, color: "white", fontFamily: FS }}>
+            {busy ? "..." : "⏹ Зогсох"}
+          </button>
+        ) : (
+          <button onClick={onStartClick} disabled={busy}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ background: T.ok, color: "white", fontFamily: FS }}>
+            {busy ? "..." : "▶ Эхлэх"}
+          </button>
+        )}
       </div>
-      {active ? (
-        <button onClick={onStop} disabled={busy}
-          className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
-          style={{ background: T.err, color: "white", fontFamily: FS }}>
-          {busy ? "..." : "⏹ Зогсох"}
-        </button>
-      ) : (
-        <button onClick={onStart} disabled={busy}
-          className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
-          style={{ background: T.ok, color: "white", fontFamily: FS }}>
-          {busy ? "..." : "▶ Эхлэх"}
-        </button>
+
+      {/* Photo capture modal */}
+      {photoCapture && createPortal(
+        <PhotoCaptureModal
+          type={photoCapture.type}
+          onCapture={completeWithPhoto}
+          onSkip={() => completeWithPhoto(null)}
+          onCancel={() => setPhotoCapture(null)}
+        />,
+        document.body
       )}
+    </>
+  );
+}
+
+// ─── Зураг авах modal — Camera-аар selfie авна ────────────
+function PhotoCaptureModal({ type, onCapture, onSkip, onCancel }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [stream, setStream] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 480 } },
+        });
+        if (!mounted) {
+          mediaStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      } catch (e) {
+        setError(e.message);
+      }
+    })();
+    return () => {
+      mounted = false;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
+
+  const takePhoto = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    setBusy(true);
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) onCapture(blob);
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+      }, "image/jpeg", 0.85);
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      background: "rgba(0,0,0,0.85)",
+    }}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 400,
+        boxShadow: "0 24px 48px rgba(0,0,0,0.5)",
+      }}>
+        <div className="p-4">
+          <div className="text-center mb-3">
+            <div className="text-3xl mb-1">📸</div>
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {type === "in" ? "Цаг эхлүүлэх зураг" : "Цаг зогсоох зураг"}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
+              Camera-руу харж зураг авна уу
+            </div>
+          </div>
+
+          {error ? (
+            <div className="rounded-lg p-3 mb-3 text-center" 
+              style={{ background: T.errSoft, color: T.err }}>
+              <div className="text-2xl mb-1">⚠</div>
+              <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                Camera ашиглах боломжгүй
+              </div>
+              <div style={{ fontFamily: FM }} className="text-[10px] mt-1">
+                {error}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg overflow-hidden mb-3" 
+              style={{ background: "black", aspectRatio: "1/1" }}>
+              <video ref={videoRef} autoPlay playsInline muted
+                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+          )}
+          <canvas ref={canvasRef} style={{ display: "none" }} />
+
+          <div className="space-y-2">
+            {!error && (
+              <button onClick={takePhoto} disabled={busy || !stream}
+                className="press-btn w-full py-3 rounded-xl text-sm font-semibold"
+                style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                {busy ? "Хадгалж байна..." : "📸 Зураг авах"}
+              </button>
+            )}
+            <button onClick={() => { 
+              if (stream) stream.getTracks().forEach((t) => t.stop());
+              onSkip();
+            }} disabled={busy}
+              className="press-btn w-full py-2 rounded-xl text-xs"
+              style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              Зураггүйгээр үргэлжлүүлэх
+            </button>
+            <button onClick={() => {
+              if (stream) stream.getTracks().forEach((t) => t.stop());
+              onCancel();
+            }} disabled={busy}
+              className="press-btn w-full py-2 rounded-xl text-xs"
+              style={{ color: T.err, fontFamily: FS }}>
+              Цуцлах
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
