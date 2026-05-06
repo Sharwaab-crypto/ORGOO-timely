@@ -4744,6 +4744,15 @@ function SupplierOrdersView({ profile }) {
   };
 
   const deleteOrder = async (id) => {
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    
+    // Зам дээр / Ирсэн → устгах боломжгүй
+    if (order.status === "shipping" || order.status === "arrived") {
+      alert(`⚠ "${order.status === "shipping" ? "🚢 Зам дээр" : "✅ Ирсэн"}" статустай захиалгыг устгах боломжгүй!\n\nЗөвхөн "⏳ Хүлээгдэж" эсвэл "✕ Цуцалсан" статустай захиалгыг устгах боломжтой.`);
+      return;
+    }
+    
     if (!confirm("Энэ захиалгыг устгах уу?")) return;
     try {
       await supabase.from("inv_supplier_orders").delete().eq("id", id);
@@ -4947,16 +4956,20 @@ function SupplierOrdersView({ profile }) {
                             ✅ Ирсэн
                           </button>
                         )}
-                        <button onClick={() => setEditOrder(order)}
-                          className="press-btn px-2 py-1 rounded-lg text-[10px]"
-                          style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
-                          ✏ Засах
-                        </button>
-                        <button onClick={() => deleteOrder(order.id)}
-                          className="press-btn px-2 py-1 rounded-lg text-[10px]"
-                          style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
-                          🗑
-                        </button>
+                        {(order.status === "pending" || order.status === "cancelled") && (
+                          <>
+                            <button onClick={() => setEditOrder(order)}
+                              className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                              style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                              ✏ Засах
+                            </button>
+                            <button onClick={() => deleteOrder(order.id)}
+                              className="press-btn px-2 py-1 rounded-lg text-[10px]"
+                              style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                              🗑
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     
@@ -12845,6 +12858,76 @@ function DriverSettlementView({ profile }) {
   }
 
   // Хүргэгчийн жагсаалт
+  // Бүгдийг автоматаар нээх
+  const [bulkOpening, setBulkOpening] = useState(false);
+  const handleOpenAll = async () => {
+    // Нээгдээгүй + хүргэлттэй driver-уудыг олох
+    const driversToOpen = driverStats.filter((d) => 
+      !d.openSettlement && d.delivered > 0
+    );
+    
+    if (driversToOpen.length === 0) {
+      alert("⚠ Тооцоо нээх боломжтой хүргэгч алга!\n\nБүгд нээгдсэн эсвэл хүргэлт байхгүй.");
+      return;
+    }
+
+    const totalOwed = driversToOpen.reduce((s, d) => s + d.owed, 0);
+    const totalOrders = driversToOpen.reduce((s, d) => s + d.delivered, 0);
+    
+    if (!confirm(`🔓 ${driversToOpen.length} хүргэгчийн тооцоог автомат нээх үү?\n\n📊 Нийт захиалга: ${totalOrders}ш\n💰 Нийт тушаах: ${totalOwed.toLocaleString()}₮\n\nХугацаа: ${periodRange.label}\n\nДараа нь тус бүрийн дүнг оруулж "Тооцоо хаах" даргах ёстой.`)) return;
+
+    setBulkOpening(true);
+    let successCount = 0;
+    let failCount = 0;
+    
+    try {
+      for (const d of driversToOpen) {
+        try {
+          // 1. Open settlement үүсгэх
+          const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
+            driver_id: d.id,
+            cash_amount: 0, bank_amount: 0, expense_amount: 0,
+            total_submitted: 0,
+            settlement_amount: d.owed,
+            delivered_total: d.deliveredTotal,
+            paid_already: d.paidAlready,
+            period_start: periodRange.start.toISOString(),
+            period_end: periodRange.end.toISOString(),
+            period_label: periodRange.label,
+            order_count: d.delivered,
+            settled_by: profile.id,
+            status: "open",
+          }).select().single();
+          if (stErr) throw stErr;
+
+          // 2. Захиалгуудыг settlement-руу холбох
+          for (const o of d.deliveredOrders) {
+            await supabase.from("biz_orders").update({
+              settlement_id: stData.id,
+            }).eq("id", o.id);
+          }
+          for (const o of d.cancelledOrders) {
+            await supabase.from("biz_orders").update({
+              settlement_id: stData.id,
+            }).eq("id", o.id);
+          }
+          
+          successCount++;
+        } catch (e) {
+          console.error(`${d.name} тооцоо нээх алдаа:`, e);
+          failCount++;
+        }
+      }
+      
+      alert(`✅ ${successCount} хүргэгчийн тооцоо нээгдлээ!${failCount > 0 ? `\n\n⚠ ${failCount} хүргэгчид алдаа гарсан` : ""}`);
+      await loadAll();
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    } finally {
+      setBulkOpening(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Нийт стат */}
@@ -12882,6 +12965,30 @@ function DriverSettlementView({ profile }) {
           </div>
         </div>
       </div>
+
+      {/* 🔓 Бүгдийг автомат нээх товч */}
+      {(() => {
+        const closableCount = driverStats.filter((d) => !d.openSettlement && d.delivered > 0).length;
+        if (closableCount === 0) return null;
+        return (
+          <div className="glass rounded-2xl p-3 flex items-center justify-between flex-wrap gap-2"
+            style={{ background: T.warnSoft, border: `1px solid ${T.warn}` }}>
+            <div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                🔓 Тооцоо нээгдээгүй: {closableCount} хүргэгч
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                Бүгдийн тооцоог автомат хугацаагаар нээх
+              </div>
+            </div>
+            <button onClick={handleOpenAll} disabled={bulkOpening}
+              className="press-btn px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5"
+              style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
+              {bulkOpening ? "Нээж байна..." : "🔓 Бүгдийг нээх"}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Хүргэгчийн жагсаалт */}
       {loading ? (
