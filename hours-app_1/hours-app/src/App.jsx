@@ -1833,6 +1833,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
+              <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
               <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
               <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
@@ -1913,6 +1914,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "warehouses" && "Агуулах"}
                 {view === "supplier-orders" && "Захиалсан бараа"}
+                {view === "locations" && "Байршил"}
                 {view === "transfers" && "Бараа хүсэлт"}
                 {view === "movements" && "Барааны хөдөлгөөн"}
                 {view === "stockcount" && "Тооллого"}
@@ -1945,6 +1947,7 @@ function AdminDashboard({ profile }) {
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "supplier-orders" && "Шинэ бараа гадаадаас захиалах түүх"}
+                {view === "locations" && "Хот, Дүүрэг, Хорооны байршил удирдах"}
                 {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
                 {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
                 {view === "movements" && "Барааны бүх орлого/зарлагын түүх"}
@@ -2144,6 +2147,10 @@ function AdminDashboard({ profile }) {
 
         {view === "supplier-orders" && (
           <SupplierOrdersView profile={profile} />
+        )}
+
+        {view === "locations" && (
+          <LocationsView profile={profile} />
         )}
 
         {view === "warehouses" && (
@@ -4680,6 +4687,365 @@ function DarkModeToggle() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  ЗАХИАЛСАН БАРАА — Гадаадаас бараа авч байгаа түүх
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  📍 LOCATIONS VIEW — Хот / Дүүрэг / Хороо удирдах
+// ═══════════════════════════════════════════════════════════════════════════
+function LocationsView({ profile }) {
+  const [locations, setLocations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editLocation, setEditLocation] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCity, setFilterCity] = useState("");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.from("biz_locations")
+        .select("*").order("city").order("district").order("khoroo");
+      setLocations(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Realtime
+  useEffect(() => {
+    const ch = supabase.channel("locations-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_locations" }, () => loadAll())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const filtered = useMemo(() => {
+    return locations.filter((loc) => {
+      if (filterCity && loc.city !== filterCity) return false;
+      if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        return (loc.city?.toLowerCase().includes(s) || 
+                loc.district?.toLowerCase().includes(s) || 
+                loc.khoroo?.toLowerCase().includes(s));
+      }
+      return true;
+    });
+  }, [locations, searchTerm, filterCity]);
+
+  const cities = useMemo(() => [...new Set(locations.map((l) => l.city))], [locations]);
+
+  const deleteLocation = async (id, name) => {
+    if (!confirm(`"${name}" байршлыг устгах уу?`)) return;
+    try {
+      await supabase.from("biz_locations").delete().eq("id", id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const toggleActive = async (loc) => {
+    try {
+      await supabase.from("biz_locations").update({
+        is_active: !loc.is_active,
+      }).eq("id", loc.id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
+            📍 Байршил
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+            {locations.length} байршил · {cities.length} хот/аймаг
+          </div>
+        </div>
+        <button onClick={() => setShowFormModal(true)}
+          className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+          style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+          + Байршил нэмэх
+        </button>
+      </div>
+
+      {/* Filter + Search */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <input value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="🔍 Хайх..."
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="flex-1 min-w-32 px-3 py-2 rounded-lg text-sm" />
+        <select value={filterCity}
+          onChange={(e) => setFilterCity(e.target.value)}
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="px-3 py-2 rounded-lg text-sm cursor-pointer">
+          <option value="">Бүх хот</option>
+          {cities.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {(searchTerm || filterCity) && (
+          <button onClick={() => { setSearchTerm(""); setFilterCity(""); }}
+            className="press-btn px-3 py-2 rounded-lg text-xs"
+            style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+            ✕ Цэвэрлэх
+          </button>
+        )}
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">📍</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+            Байршил алга
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {filtered.map((loc) => (
+            <div key={loc.id} className="glass rounded-xl p-3 flex items-center gap-3"
+              style={{ 
+                opacity: loc.is_active ? 1 : 0.5,
+                borderLeft: `3px solid ${loc.is_active ? T.ok : T.muted}`,
+              }}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                    {loc.city}
+                  </span>
+                  {loc.district && (
+                    <>
+                      <span style={{ color: T.muted }}>›</span>
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
+                        {loc.district}
+                      </span>
+                    </>
+                  )}
+                  {loc.khoroo && (
+                    <>
+                      <span style={{ color: T.muted }}>›</span>
+                      <span style={{ fontFamily: FS, color: T.muted }} className="text-xs">
+                        {loc.khoroo}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                  📍 {Number(loc.lat).toFixed(4)}, {Number(loc.lng).toFixed(4)}
+                  {loc.notes && ` · ${loc.notes}`}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => toggleActive(loc)}
+                  className="press-btn px-2 py-1 rounded text-[10px]"
+                  style={{
+                    background: loc.is_active ? T.okSoft : T.surfaceAlt,
+                    color: loc.is_active ? T.ok : T.muted,
+                    fontFamily: FS, fontWeight: 600,
+                  }}>
+                  {loc.is_active ? "✓ Идэвхтэй" : "○ Идэвхгүй"}
+                </button>
+                <button onClick={() => setEditLocation(loc)}
+                  className="press-btn px-2 py-1 rounded text-[10px]"
+                  style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                  ✏
+                </button>
+                <button onClick={() => deleteLocation(loc.id, [loc.city, loc.district, loc.khoroo].filter(Boolean).join(" › "))}
+                  className="press-btn px-2 py-1 rounded text-[10px]"
+                  style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                  🗑
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Form Modal */}
+      {(showFormModal || editLocation) && (
+        <LocationFormModal
+          location={editLocation}
+          profile={profile}
+          existingCities={cities}
+          onClose={() => { setShowFormModal(false); setEditLocation(null); loadAll(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Байршил нэмэх / засах modal ─────────────────
+function LocationFormModal({ location, profile, existingCities, onClose }) {
+  const [city, setCity] = useState(location?.city || "");
+  const [district, setDistrict] = useState(location?.district || "");
+  const [khoroo, setKhoroo] = useState(location?.khoroo || "");
+  const [lat, setLat] = useState(location?.lat || "47.9183");
+  const [lng, setLng] = useState(location?.lng || "106.9173");
+  const [notes, setNotes] = useState(location?.notes || "");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!city.trim()) { alert("⚠ Хот/Аймаг заавал"); return; }
+    if (!lat || !lng) { alert("⚠ Координат заавал"); return; }
+    
+    setBusy(true);
+    try {
+      const data = {
+        city: city.trim(),
+        district: district.trim() || null,
+        khoroo: khoroo.trim() || null,
+        lat: Number(lat),
+        lng: Number(lng),
+        notes: notes.trim() || null,
+      };
+
+      if (location) {
+        await supabase.from("biz_locations").update(data).eq("id", location.id);
+      } else {
+        await supabase.from("biz_locations").insert({
+          ...data,
+          created_by: profile.id,
+          is_active: true,
+        });
+      }
+      onClose();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+    }} onClick={() => !busy && onClose()}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 500,
+        maxHeight: "90vh", overflowY: "auto",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
+      }} onClick={(e) => e.stopPropagation()}>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              {location ? "✏ Байршил засах" : "+ Шинэ байршил"}
+            </div>
+            <button onClick={onClose} disabled={busy}
+              className="press-btn p-2" style={{ color: T.muted }}>✕</button>
+          </div>
+
+          {/* City */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🌆 Хот / Аймаг *
+            </label>
+            <input value={city} list="city-suggestions"
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="Жишээ: Улаанбаатар"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+            <datalist id="city-suggestions">
+              {existingCities.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+
+          {/* District */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🏘 Дүүрэг (заавал биш)
+            </label>
+            <input value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              placeholder="Жишээ: Баянгол"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Khoroo */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📮 Хороо (заавал биш)
+            </label>
+            <input value={khoroo}
+              onChange={(e) => setKhoroo(e.target.value)}
+              placeholder="Жишээ: 5-р хороо"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Coordinates */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                📍 Latitude *
+              </label>
+              <input type="number" step="any" value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                placeholder="47.9183"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 600 }}
+                className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                📍 Longitude *
+              </label>
+              <input type="number" step="any" value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                placeholder="106.9173"
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 600 }}
+                className="w-full px-3 py-2 rounded-lg text-sm tabular-nums" />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="mb-3">
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Тэмдэглэл
+            </label>
+            <input value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Талбайн ойролцоо..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Map link */}
+          <div className="rounded-lg p-2 mb-3" style={{ background: T.highlightSoft }}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              💡 Координатыг google maps-аас авна:
+            </div>
+            <a href="https://www.google.com/maps" target="_blank" rel="noreferrer"
+              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+              className="text-xs underline">
+              Google Maps нээх →
+            </a>
+          </div>
+
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onClose} disabled={busy}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              Цуцлах
+            </button>
+            <button onClick={save} disabled={busy}
+              className="press-btn py-3 rounded-xl text-sm font-semibold"
+              style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+              {busy ? "Хадгалж..." : "💾 Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function SupplierOrdersView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -14362,6 +14728,32 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [selectedKhoroo, setSelectedKhoroo] = useState("");
   const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
   const [pinLng, setPinLng] = useState(editOrder?.delivery_lng || null);
+  // DB-аас байршлыг татах
+  const [dbLocations, setDbLocations] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("biz_locations")
+          .select("*").eq("is_active", true).order("city").order("district").order("khoroo");
+        setDbLocations(data || []);
+      } catch (e) { console.error("Locations load:", e); }
+    })();
+  }, []);
+  
+  // Хот/Дүүрэг/Хороог нэгтгэх
+  const dbCities = useMemo(() => {
+    return [...new Set(dbLocations.map((l) => l.city))];
+  }, [dbLocations]);
+  
+  const dbDistricts = useMemo(() => {
+    if (!selectedCity) return [];
+    return [...new Set(dbLocations.filter((l) => l.city === selectedCity && l.district).map((l) => l.district))];
+  }, [dbLocations, selectedCity]);
+  
+  const dbKhoroo = useMemo(() => {
+    if (!selectedCity || !selectedDistrict) return [];
+    return dbLocations.filter((l) => l.city === selectedCity && l.district === selectedDistrict && l.khoroo);
+  }, [dbLocations, selectedCity, selectedDistrict]);
   const [notes, setNotes] = useState(initialNotes || "");
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
@@ -14529,9 +14921,20 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     setSelectedCity(city);
                     setSelectedDistrict("");
                     setSelectedKhoroo("");
-                    if (city && MN_LOCATIONS[city]) {
-                      setPinLat(MN_LOCATIONS[city].lat);
-                      setPinLng(MN_LOCATIONS[city].lng);
+                    if (city) {
+                      // Хот-ийн дундаж координатыг тооцох
+                      const cityLocs = dbLocations.filter((l) => l.city === city && !l.district);
+                      if (cityLocs.length > 0) {
+                        setPinLat(Number(cityLocs[0].lat));
+                        setPinLng(Number(cityLocs[0].lng));
+                      } else {
+                        // Эсвэл эхний дүүргийн координат
+                        const firstLoc = dbLocations.find((l) => l.city === city);
+                        if (firstLoc) {
+                          setPinLat(Number(firstLoc.lat));
+                          setPinLng(Number(firstLoc.lng));
+                        }
+                      }
                     } else {
                       setPinLat(null);
                       setPinLng(null);
@@ -14539,7 +14942,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                   }}
                   style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
                   <option value="">Хот/Аймаг...</option>
-                  {Object.keys(MN_LOCATIONS).map((city) => (
+                  {dbCities.map((city) => (
                     <option key={city} value={city}>{city}</option>
                   ))}
                 </select>
@@ -14550,20 +14953,20 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     const dist = e.target.value;
                     setSelectedDistrict(dist);
                     setSelectedKhoroo("");
-                    if (selectedCity && dist && MN_LOCATIONS[selectedCity]?.districts?.[dist]) {
-                      const d = MN_LOCATIONS[selectedCity].districts[dist];
-                      setPinLat(d.lat);
-                      setPinLng(d.lng);
+                    if (selectedCity && dist) {
+                      const distLoc = dbLocations.find((l) => l.city === selectedCity && l.district === dist && !l.khoroo);
+                      if (distLoc) {
+                        setPinLat(Number(distLoc.lat));
+                        setPinLng(Number(distLoc.lng));
+                      }
                     }
                   }}
                   disabled={!selectedCity}
                   style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
                   <option value="">Дүүрэг...</option>
-                  {selectedCity && MN_LOCATIONS[selectedCity]?.districts && 
-                    Object.keys(MN_LOCATIONS[selectedCity].districts).map((dist) => (
-                      <option key={dist} value={dist}>{dist}</option>
-                    ))
-                  }
+                  {dbDistricts.map((dist) => (
+                    <option key={dist} value={dist}>{dist}</option>
+                  ))}
                 </select>
 
                 {/* Хороо */}
@@ -14572,22 +14975,19 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     const khoroo = e.target.value;
                     setSelectedKhoroo(khoroo);
                     if (selectedCity && selectedDistrict && khoroo) {
-                      const khorooList = MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo || [];
-                      const found = khorooList.find((k) => k.name === khoroo);
+                      const found = dbKhoroo.find((k) => k.khoroo === khoroo);
                       if (found) {
-                        setPinLat(found.lat);
-                        setPinLng(found.lng);
+                        setPinLat(Number(found.lat));
+                        setPinLng(Number(found.lng));
                       }
                     }
                   }}
-                  disabled={!selectedDistrict || (MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo?.length === 0)}
+                  disabled={!selectedDistrict || dbKhoroo.length === 0}
                   style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
                   <option value="">Хороо...</option>
-                  {selectedCity && selectedDistrict && 
-                    (MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo || []).map((k) => (
-                      <option key={k.name} value={k.name}>{k.name}</option>
-                    ))
-                  }
+                  {dbKhoroo.map((k) => (
+                    <option key={k.id} value={k.khoroo}>{k.khoroo}</option>
+                  ))}
                 </select>
               </div>
               {pinLat && pinLng && (
