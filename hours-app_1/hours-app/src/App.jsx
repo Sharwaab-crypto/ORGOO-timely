@@ -8504,7 +8504,19 @@ function CallCenterView({ profile }) {
           phoneGrouped[c.phone].push(c);
         });
 
-        const uniquePhones = Object.keys(phoneGrouped).length;
+        // 📞 Нийт дугаар = "Залгах дугаар" tab-тэй ижил logic (open cycle тоо)
+        let uniquePhones = 0;
+        Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+          const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          let currentCycle = [];
+          sorted.forEach((call) => {
+            currentCycle.push(call);
+            if (call.call_status === "ordered" || call.call_status === "cancelled") {
+              currentCycle = [];
+            }
+          });
+          if (currentCycle.length > 0) uniquePhones++;
+        });
         
         // Cycle-аар тоолно (Tab counts шиг) — олон захиалга нэг дугаараас бий бол бүгдийг тоолно
         let orderedPhones = 0;
@@ -8524,7 +8536,7 @@ function CallCenterView({ profile }) {
                 {uniquePhones}
               </div>
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-                бүртгэгдсэн
+                залгах
               </div>
             </div>
             <div className="glass rounded-2xl p-3">
