@@ -8741,6 +8741,11 @@ function CallCenterView({ profile }) {
                 if (activeTab === "cancelled") return cy.status === "cancelled";
                 return true;
               });
+              
+              // Debug log — tab сольсон үед
+              console.log(`[CallTab] activeTab=${activeTab}, total cycles=${cycleList.length}, filtered=${filteredCycles.length}, statuses:`, 
+                filteredCycles.slice(0, 5).map(c => ({ phone: c.phone, status: c.status }))
+              );
 
               // Хамгийн сүүлчээр болсон цикл нь дээр гарна
               const sortedCycles = filteredCycles.sort((a, b) =>
