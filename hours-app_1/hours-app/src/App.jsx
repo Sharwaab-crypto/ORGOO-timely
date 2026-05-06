@@ -8492,17 +8492,14 @@ function CallCenterView({ profile }) {
         </div>
       </div>
 
-      {/* Stats — 4 том карт (огнооны хүрээгээр шүүгдсэн) */}
+      {/* Stats — 4 том карт (БҮХ цаг — period хамаарахгүй) */}
       {(() => {
-        // Огноогоор шүүсэн дуудлагууд
-        const filteredCalls = recentCalls.filter((c) => {
-          const d = new Date(c.created_at);
-          return d >= periodRange.start && d < periodRange.end;
-        });
+        // ⚠ Stat-уудад БҮХ дуудлагуудыг харах (tab counts шиг)
+        const allCallsForStats = recentCalls;
 
-        // Утсаар groupping (огноо хүрээнд)
+        // Утсаар groupping
         const phoneGrouped = {};
-        filteredCalls.forEach((c) => {
+        allCallsForStats.forEach((c) => {
           if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
           phoneGrouped[c.phone].push(c);
         });
@@ -8535,7 +8532,7 @@ function CallCenterView({ profile }) {
                 ☎ Нийт залгалт
               </div>
               <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
-                {filteredCalls.length}
+                {allCallsForStats.length}
               </div>
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
                 удаа
