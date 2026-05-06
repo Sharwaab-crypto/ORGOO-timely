@@ -101,6 +101,64 @@ const MN_TZ = "Asia/Ulaanbaatar";
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString("mn-MN", { hour: "numeric", minute: "2-digit", hour12: false, timeZone: MN_TZ });
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { month: "short", day: "numeric", timeZone: MN_TZ });
 const fmtFullDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { year: "numeric", month: "short", day: "numeric", timeZone: MN_TZ });
+
+// 🌏 Монголын байршил — хот/аймаг/дүүрэг/хороо
+// lat, lng — газрын зургийн төв координат
+const MN_LOCATIONS = {
+  "Улаанбаатар": {
+    lat: 47.9183, lng: 106.9173,
+    districts: {
+      "Баянгол": {
+        lat: 47.9143, lng: 106.8634,
+        khoroo: Array.from({ length: 23 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.9143 + (i * 0.002 - 0.022), lng: 106.8634 + (i * 0.001 - 0.011) })),
+      },
+      "Баянзүрх": {
+        lat: 47.9237, lng: 107.0156,
+        khoroo: Array.from({ length: 28 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.9237 + (i * 0.002 - 0.027), lng: 107.0156 + (i * 0.001 - 0.013) })),
+      },
+      "Сүхбаатар": {
+        lat: 47.9273, lng: 106.9253,
+        khoroo: Array.from({ length: 20 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.9273 + (i * 0.002 - 0.019), lng: 106.9253 + (i * 0.001 - 0.009) })),
+      },
+      "Чингэлтэй": {
+        lat: 47.9395, lng: 106.9173,
+        khoroo: Array.from({ length: 19 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.9395 + (i * 0.002 - 0.018), lng: 106.9173 + (i * 0.001 - 0.009) })),
+      },
+      "Хан-Уул": {
+        lat: 47.8853, lng: 106.9384,
+        khoroo: Array.from({ length: 16 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.8853 + (i * 0.002 - 0.015), lng: 106.9384 + (i * 0.001 - 0.007) })),
+      },
+      "Сонгинохайрхан": {
+        lat: 47.9242, lng: 106.7843,
+        khoroo: Array.from({ length: 32 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.9242 + (i * 0.002 - 0.031), lng: 106.7843 + (i * 0.001 - 0.015) })),
+      },
+      "Налайх": { lat: 47.7708, lng: 107.2553, khoroo: Array.from({ length: 7 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.7708 + (i * 0.002 - 0.006), lng: 107.2553 + (i * 0.001 - 0.003) })) },
+      "Багануур": { lat: 47.8276, lng: 108.3543, khoroo: Array.from({ length: 5 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.8276 + (i * 0.002 - 0.004), lng: 108.3543 + (i * 0.001 - 0.002) })) },
+      "Багахангай": { lat: 47.7679, lng: 108.4017, khoroo: Array.from({ length: 2 }, (_, i) => ({ name: `${i + 1}-р хороо`, lat: 47.7679, lng: 108.4017 })) },
+    },
+  },
+  "Дархан-Уул": { lat: 49.4860, lng: 105.9230, districts: { "Дархан": { lat: 49.4860, lng: 105.9230, khoroo: [] } } },
+  "Эрдэнэт (Орхон)": { lat: 49.0339, lng: 104.0796, districts: { "Баян-Өндөр": { lat: 49.0339, lng: 104.0796, khoroo: [] } } },
+  "Сэлэнгэ": { lat: 49.4642, lng: 106.2658, districts: { "Сүхбаатар": { lat: 50.2350, lng: 106.2058, khoroo: [] }, "Мандал": { lat: 48.7647, lng: 106.2658, khoroo: [] } } },
+  "Төв": { lat: 47.7866, lng: 106.7666, districts: { "Зуунмод": { lat: 47.7066, lng: 106.9533, khoroo: [] } } },
+  "Хөвсгөл": { lat: 49.6334, lng: 100.1494, districts: { "Мөрөн": { lat: 49.6334, lng: 100.1494, khoroo: [] } } },
+  "Архангай": { lat: 47.3000, lng: 101.4566, districts: { "Цэцэрлэг": { lat: 47.4747, lng: 101.4566, khoroo: [] } } },
+  "Баян-Өлгий": { lat: 48.9647, lng: 89.9519, districts: { "Өлгий": { lat: 48.9647, lng: 89.9519, khoroo: [] } } },
+  "Баянхонгор": { lat: 46.1944, lng: 100.7196, districts: { "Баянхонгор": { lat: 46.1944, lng: 100.7196, khoroo: [] } } },
+  "Булган": { lat: 48.8125, lng: 103.5340, districts: { "Булган": { lat: 48.8125, lng: 103.5340, khoroo: [] } } },
+  "Говь-Алтай": { lat: 46.3964, lng: 96.2669, districts: { "Алтай": { lat: 46.3964, lng: 96.2669, khoroo: [] } } },
+  "Говьсүмбэр": { lat: 46.3389, lng: 108.4444, districts: { "Чойр": { lat: 46.3611, lng: 108.6258, khoroo: [] } } },
+  "Дорноговь": { lat: 44.8856, lng: 110.1389, districts: { "Сайншанд": { lat: 44.8856, lng: 110.1389, khoroo: [] } } },
+  "Дорнод": { lat: 48.0747, lng: 114.5333, districts: { "Чойбалсан": { lat: 48.0747, lng: 114.5333, khoroo: [] } } },
+  "Дундговь": { lat: 45.7625, lng: 106.2697, districts: { "Мандалговь": { lat: 45.7625, lng: 106.2697, khoroo: [] } } },
+  "Завхан": { lat: 47.7717, lng: 96.8479, districts: { "Улиастай": { lat: 47.7414, lng: 96.8444, khoroo: [] } } },
+  "Өвөрхангай": { lat: 46.2666, lng: 102.7666, districts: { "Арвайхээр": { lat: 46.2666, lng: 102.7666, khoroo: [] } } },
+  "Өмнөговь": { lat: 43.5708, lng: 104.4153, districts: { "Даланзадгад": { lat: 43.5708, lng: 104.4153, khoroo: [] } } },
+  "Сүхбаатар": { lat: 46.6797, lng: 113.2778, districts: { "Баруун-Урт": { lat: 46.6797, lng: 113.2778, khoroo: [] } } },
+  "Увс": { lat: 49.9750, lng: 92.0764, districts: { "Улаангом": { lat: 49.9750, lng: 92.0764, khoroo: [] } } },
+  "Ховд": { lat: 48.0050, lng: 91.6447, districts: { "Ховд": { lat: 48.0050, lng: 91.6447, khoroo: [] } } },
+  "Хэнтий": { lat: 47.3216, lng: 110.6555, districts: { "Чингис хот": { lat: 47.3216, lng: 110.6555, khoroo: [] } } },
+};
 // Helper — одоогийн цагийг Монголд нь авах
 const nowInMongolia = () => {
   const now = new Date();
@@ -10257,6 +10315,8 @@ function CallCenterView({ profile }) {
                   customer_phone2: data.phone2,
                   customer_name: data.name,
                   delivery_address: data.address,
+                  delivery_lat: data.delivery_lat || null,
+                  delivery_lng: data.delivery_lng || null,
                   source: "phone",
                   status: "new",
                   subtotal: data.subtotal,
@@ -14296,6 +14356,12 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
   const [address, setAddress] = useState(editOrder?.delivery_address || "");
+  // 🌏 Location selector
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedDistrict, setSelectedDistrict] = useState("");
+  const [selectedKhoroo, setSelectedKhoroo] = useState("");
+  const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
+  const [pinLng, setPinLng] = useState(editOrder?.delivery_lng || null);
   const [notes, setNotes] = useState(initialNotes || "");
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
@@ -14449,15 +14515,104 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               </div>
             </div>
 
+            {/* 🌏 Location selector — Хот/Аймаг → Дүүрэг → Хороо */}
+            <div>
+              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                <MapPin size={11} style={{ color: "#10b981" }} />
+                Байршил сонгох
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {/* Хот/Аймаг */}
+                <select value={selectedCity}
+                  onChange={(e) => {
+                    const city = e.target.value;
+                    setSelectedCity(city);
+                    setSelectedDistrict("");
+                    setSelectedKhoroo("");
+                    if (city && MN_LOCATIONS[city]) {
+                      setPinLat(MN_LOCATIONS[city].lat);
+                      setPinLng(MN_LOCATIONS[city].lng);
+                    } else {
+                      setPinLat(null);
+                      setPinLng(null);
+                    }
+                  }}
+                  style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
+                  <option value="">Хот/Аймаг...</option>
+                  {Object.keys(MN_LOCATIONS).map((city) => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+
+                {/* Дүүрэг */}
+                <select value={selectedDistrict}
+                  onChange={(e) => {
+                    const dist = e.target.value;
+                    setSelectedDistrict(dist);
+                    setSelectedKhoroo("");
+                    if (selectedCity && dist && MN_LOCATIONS[selectedCity]?.districts?.[dist]) {
+                      const d = MN_LOCATIONS[selectedCity].districts[dist];
+                      setPinLat(d.lat);
+                      setPinLng(d.lng);
+                    }
+                  }}
+                  disabled={!selectedCity}
+                  style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
+                  <option value="">Дүүрэг...</option>
+                  {selectedCity && MN_LOCATIONS[selectedCity]?.districts && 
+                    Object.keys(MN_LOCATIONS[selectedCity].districts).map((dist) => (
+                      <option key={dist} value={dist}>{dist}</option>
+                    ))
+                  }
+                </select>
+
+                {/* Хороо */}
+                <select value={selectedKhoroo}
+                  onChange={(e) => {
+                    const khoroo = e.target.value;
+                    setSelectedKhoroo(khoroo);
+                    if (selectedCity && selectedDistrict && khoroo) {
+                      const khorooList = MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo || [];
+                      const found = khorooList.find((k) => k.name === khoroo);
+                      if (found) {
+                        setPinLat(found.lat);
+                        setPinLng(found.lng);
+                      }
+                    }
+                  }}
+                  disabled={!selectedDistrict || (MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo?.length === 0)}
+                  style={inputStyle} className="w-full px-2 py-2 rounded-lg text-xs cursor-pointer">
+                  <option value="">Хороо...</option>
+                  {selectedCity && selectedDistrict && 
+                    (MN_LOCATIONS[selectedCity]?.districts?.[selectedDistrict]?.khoroo || []).map((k) => (
+                      <option key={k.name} value={k.name}>{k.name}</option>
+                    ))
+                  }
+                </select>
+              </div>
+              {pinLat && pinLng && (
+                <div className="mt-1.5 px-2 py-1 rounded text-[10px] flex items-center gap-1.5"
+                  style={{ background: T.okSoft, color: T.ok, fontFamily: FM }}>
+                  <span>📍</span>
+                  <span>Pin: {pinLat.toFixed(4)}, {pinLng.toFixed(4)}</span>
+                  {(selectedCity || selectedDistrict || selectedKhoroo) && (
+                    <span className="ml-auto" style={{ fontWeight: 600 }}>
+                      {[selectedCity, selectedDistrict, selectedKhoroo].filter(Boolean).join(" › ")}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Address */}
             <div>
               <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
                 <MapPin size={11} style={{ color: T.highlight }} />
-                <span style={{ color: T.err }}>*</span> Хүргэх хаяг
+                <span style={{ color: T.err }}>*</span> Хүргэх хаяг (дэлгэрэнгүй)
               </label>
               <textarea value={address} onChange={(e) => setAddress(e.target.value)}
                 rows={2}
-                placeholder="Дүүрэг, хороо, байр, тоот..."
+                placeholder="Байр, тоот, орцны дугаар..."
                 style={inputStyle} className="w-full px-3 py-2 rounded-lg text-sm resize-none" />
             </div>
 
@@ -14813,6 +14968,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       phone2: phone2.trim() || null,
                       name: name.trim() || null,
                       address: address.trim() || null,
+                      delivery_lat: pinLat,
+                      delivery_lng: pinLng,
                       notes: notes.trim() || null,
                       subtotal,
                       deliveryFee: fee,
@@ -14859,6 +15016,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       phone2: phone2.trim() || null,
                       name: name.trim() || null,
                       address: address.trim() || null,
+                      delivery_lat: pinLat,
+                      delivery_lng: pinLng,
                       notes: notes.trim() || null,
                       subtotal,
                       deliveryFee: fee,
@@ -14914,6 +15073,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 phone2: phone2.trim() || null,
                 name: name.trim() || null,
                 address: address.trim() || null,
+                delivery_lat: pinLat,
+                delivery_lng: pinLng,
                 notes: notes.trim() || null,
                 callType,
                 subtotal,
