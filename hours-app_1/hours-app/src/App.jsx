@@ -8616,20 +8616,23 @@ function CallCenterView({ profile }) {
             });
           });
           
-          // Delivered (амжилттай) — biz_orders ширээгээс
-          counts.delivered = orders.filter((o) => o.status === "delivered").length;
-          // "Захиалга" tab нь delivered-аас өөр учир — delivered тоог хасах
-          // (Card list-руу зөвхөн delivered биш orders харна)
+          // Delivered (амжилттай) — card list-тэй ижил logic
+          // Cycle нь "ordered" статустай + утас delivered болсон бол → амжилттай tab-руу
           const deliveredPhonesSet = new Set(
             orders.filter((o) => o.status === "delivered").map((o) => o.customer_phone)
           );
+          let deliveredCycles = 0;
           let orderedAdjusted = 0;
           Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            if (deliveredPhonesSet.has(phone)) return; // delivered дугаар → ordered tab-руу орохгүй
+            const isDelivered = deliveredPhonesSet.has(phone);
             calls.forEach((call) => {
-              if (call.call_status === "ordered") orderedAdjusted++;
+              if (call.call_status === "ordered") {
+                if (isDelivered) deliveredCycles++;
+                else orderedAdjusted++;
+              }
             });
           });
+          counts.delivered = deliveredCycles;
           counts.ordered = orderedAdjusted;
 
           return (
