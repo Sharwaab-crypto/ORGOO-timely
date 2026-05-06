@@ -10174,9 +10174,6 @@ function SalesDashboardView({ profile }) {
       if (!map[key]) return;
       map[key].uniquePhones++; // Тус дуудлагыг тоолно (давхардсан ч)
       map[key].totalCalls++;
-      // call_status-аар тоолох
-      if (c.call_status === "ordered") map[key].totalOrders++;
-      else if (c.call_status === "cancelled") map[key].cancelled++;
     });
 
     // Захиалгууд — fb_page_id call дотор хадгалагдсан, тиймээс утсаар хайх
