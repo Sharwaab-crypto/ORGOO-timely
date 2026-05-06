@@ -8505,6 +8505,16 @@ function CallCenterView({ profile }) {
         // 📞 Нийт дугаар = Анхдагч бүртгэгдсэн дугаарын тоо
         const uniquePhones = allCallsForStats.length;
         
+        // ☎ Нийт залгалт = "Залгалт" хийсэн дуудлага
+        // (no_answer, unreachable, callback, ordered, cancelled — operator залгасан)
+        const totalCallAttempts = recentCalls.filter((c) => 
+          c.call_status === "no_answer" ||
+          c.call_status === "unreachable" ||
+          c.call_status === "callback" ||
+          c.call_status === "ordered" ||
+          c.call_status === "cancelled"
+        ).length;
+        
         // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
         let orderedPhones = 0;
         let cancelledPhones = 0;
@@ -8531,7 +8541,7 @@ function CallCenterView({ profile }) {
                 ☎ Нийт залгалт
               </div>
               <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
-                {allCallsForStats.length}
+                {totalCallAttempts}
               </div>
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
                 удаа
