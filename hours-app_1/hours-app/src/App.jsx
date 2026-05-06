@@ -8978,9 +8978,17 @@ function CallCenterView({ profile }) {
                 calls.forEach((c) => {
                   if (c.interested_products && Array.isArray(c.interested_products)) {
                     c.interested_products.forEach((p) => {
+                      // products массиваас бараа олж image_url нэмэх
+                      const productInfo = products.find((pr) => pr.id === p.id);
+                      const enriched = {
+                        ...p,
+                        image_url: p.image_url || productInfo?.image_url || null,
+                        sku: p.sku || productInfo?.sku || null,
+                        name: p.name || productInfo?.name || "—",
+                      };
                       const existing = productMap.get(p.id);
                       if (existing) existing.totalQty += (p.qty || 1);
-                      else productMap.set(p.id, { ...p, totalQty: p.qty || 1 });
+                      else productMap.set(p.id, { ...enriched, totalQty: p.qty || 1 });
                     });
                   }
                 });
