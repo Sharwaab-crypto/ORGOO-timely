@@ -8885,20 +8885,38 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // Tab-ийн дагуу filter — biz_orders-руу status шалгах
-              let filteredCycles = cycleList.filter((cy) => {
+              // Cycles-ыг сүүлчийн өдрөөр sort (шинэ нь эхэнд)
+              const sortedCycleList = [...cycleList].sort((a, b) =>
+                new Date(b.latestDate) - new Date(a.latestDate)
+              );
+
+              // Tab-ийн дагуу filter
+              // Cycle nь 1 утас 2+ ordered хийгдсэн ч → зөвхөн НЭГ card гарна
+              // Тус утсаар хамгийн сүүлчийн cycle-ийг л харна
+              const seenPhones = new Set();
+              let filteredCycles = sortedCycleList.filter((cy) => {
                 const order = orderStatusByPhone[cy.phone];
                 
                 if (activeTab === "calling") return cy.status === "calling";
-                if (activeTab === "ordered") {
-                  // biz_orders status="new"/"processing" — delivered/cancelled биш
-                  return order && order.status !== "delivered" && order.status !== "cancelled";
-                }
-                if (activeTab === "cancelled") {
-                  return order && order.status === "cancelled";
-                }
-                if (activeTab === "delivered") {
-                  return order && order.status === "delivered";
+                
+                // Тус утсаар нэг л card харах (хамгийн сүүлчийн cycle)
+                if (activeTab === "ordered" || activeTab === "cancelled" || activeTab === "delivered") {
+                  if (seenPhones.has(cy.phone)) return false;
+                  
+                  let matches = false;
+                  if (activeTab === "ordered") {
+                    matches = order && order.status !== "delivered" && order.status !== "cancelled";
+                  } else if (activeTab === "cancelled") {
+                    matches = order && order.status === "cancelled";
+                  } else if (activeTab === "delivered") {
+                    matches = order && order.status === "delivered";
+                  }
+                  
+                  if (matches) {
+                    seenPhones.add(cy.phone);
+                    return true;
+                  }
+                  return false;
                 }
                 return true;
               });
