@@ -8031,15 +8031,12 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CALL CENTER VIEW — Дуудлагын самбар (энгийн)
 // ═══════════════════════════════════════════════════════════════════════════
-// ─── Захиалга засварлах modal — бараа нэмэх/устгах боломжтой ─────────
+// ─── Захиалга засварлахаар CallReceiveModal нээх wrapper ──────────────
 function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [showAddProduct, setShowAddProduct] = useState(false);
-  const [productSearch, setProductSearch] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -8050,313 +8047,65 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
           supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         ]);
         setOrder(orderData);
-        setItems((itemsData || []).map((it) => ({ ...it, _originalQty: it.quantity })));
+        setItems(itemsData || []);
         setAllProducts(prodData || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
   }, [orderId]);
 
-  const updateItemQty = (itemId, newQty) => {
-    if (newQty < 1) return;
-    setItems((prev) => prev.map((it) => 
-      it.id === itemId ? { ...it, quantity: newQty } : it
-    ));
-  };
-
-  const removeItem = (itemId) => {
-    setItems((prev) => prev.filter((it) => it.id !== itemId));
-  };
-
-  const addProduct = (product) => {
-    // Аль хэдийн бий бол qty +1
-    const exists = items.find((it) => it.product_id === product.id);
-    if (exists) {
-      updateItemQty(exists.id, exists.quantity + 1);
-    } else {
-      // Шинэ item нэмэх
-      const tempId = `new_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      setItems((prev) => [...prev, {
-        id: tempId,
-        order_id: orderId,
-        product_id: product.id,
-        product_name: product.name,
-        product_sku: product.sku,
-        product_image: product.image_url,
-        unit_price: Number(product.sale_price || 0),
-        quantity: 1,
-        _new: true,
-      }]);
-    }
-    setShowAddProduct(false);
-    setProductSearch("");
-  };
-
-  const totalAmount = items.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0);
-
-  const saveChanges = async () => {
-    setBusy(true);
-    try {
-      // Items-ыг шинэчлэх
-      // 1. Шинэ items insert
-      const newItems = items.filter((it) => it._new);
-      for (const it of newItems) {
-        await supabase.from("biz_order_items").insert({
-          order_id: orderId,
-          product_id: it.product_id,
-          product_name: it.product_name,
-          product_sku: it.product_sku,
-          product_image: it.product_image,
-          unit_price: it.unit_price,
-          quantity: it.quantity,
-        });
-      }
-      
-      // 2. Өөрчлөгдсөн items update
-      const modifiedItems = items.filter((it) => !it._new && it._originalQty !== it.quantity);
-      for (const it of modifiedItems) {
-        await supabase.from("biz_order_items").update({
-          quantity: it.quantity,
-        }).eq("id", it.id);
-      }
-      
-      // 3. Устгасан items delete
-      const { data: dbItems } = await supabase.from("biz_order_items").select("id").eq("order_id", orderId);
-      const currentIds = items.filter((it) => !it._new).map((it) => it.id);
-      const removedIds = (dbItems || []).map((d) => d.id).filter((id) => !currentIds.includes(id));
-      if (removedIds.length > 0) {
-        await supabase.from("biz_order_items").delete().in("id", removedIds);
-      }
-      
-      // 4. Order total шинэчлэх
-      await supabase.from("biz_orders").update({
-        total_amount: totalAmount,
-      }).eq("id", orderId);
-      
-      onClose();
-    } catch (e) {
-      alert("Алдаа: " + e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const updateStatus = async (newStatus) => {
-    if (!confirm(`Захиалгын статусыг "${newStatus}" болгох уу?`)) return;
-    setBusy(true);
-    try {
-      await supabase.from("biz_orders").update({ status: newStatus }).eq("id", orderId);
-      onClose();
-    } catch (e) {
-      alert("Алдаа: " + e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading || !order) return null;
 
-  const filteredProducts = allProducts.filter((p) => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-    (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
-  );
+  // initialProducts-ыг items-аас бэлдэх
+  const initialProducts = items.map((it) => ({
+    id: it.product_id,
+    qty: it.quantity,
+  }));
 
-  return createPortal(
-    <div style={{
-      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
-      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
-    }} onClick={() => !busy && onClose()}>
-      <div style={{
-        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 600,
-        maxHeight: "90vh", overflowY: "auto",
-        boxShadow: "0 24px 48px rgba(0,0,0,0.4)",
-      }} onClick={(e) => e.stopPropagation()}>
-        <div className="p-4">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                ✏ Захиалга засварлах
-              </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                📞 {order.customer_phone}
-              </div>
-            </div>
-            <button onClick={onClose} disabled={busy}
-              className="press-btn p-2 rounded-lg" style={{ color: T.muted }}>
-              ✕
-            </button>
-          </div>
+  return (
+    <CallReceiveModal
+      products={allProducts}
+      profile={profile}
+      initialPhone={order.customer_phone}
+      initialName={order.customer_name}
+      initialNotes={order.notes}
+      initialProducts={initialProducts}
+      isEditMode={true}
+      editOrder={order}
+      onSave={async (data) => {
+        try {
+          // Order шинэчлэх
+          await supabase.from("biz_orders").update({
+            customer_name: data.name,
+            delivery_address: data.address,
+            customer_phone2: data.phone2,
+            notes: data.notes,
+            total_amount: data.totalAmount,
+            paid_amount: data.paidAmount,
+          }).eq("id", orderId);
 
-          {/* Customer info */}
-          <div className="rounded-lg p-2.5 mb-3" style={{ background: T.surfaceAlt }}>
-            <div className="flex items-center justify-between">
-              <div>
-                {order.customer_name && (
-                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                    👤 {order.customer_name}
-                  </div>
-                )}
-                {order.delivery_address && (
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
-                    📍 {order.delivery_address}
-                  </div>
-                )}
-              </div>
-              <div style={{
-                background: order.status === "delivered" ? "#10b981" : order.status === "cancelled" ? T.err : T.warn,
-                color: "white",
-              }} className="px-2 py-0.5 rounded-full text-[10px] font-bold">
-                {order.status}
-              </div>
-            </div>
-          </div>
+          // Order items — бүгдийг устгаад дахин insert
+          await supabase.from("biz_order_items").delete().eq("order_id", orderId);
+          if (data.items && data.items.length > 0) {
+            const newItems = data.items.map((it) => ({
+              order_id: orderId,
+              product_id: it.product_id,
+              product_name: it.product_name,
+              quantity: it.quantity,
+              unit_price: it.unit_price,
+              total_amount: it.total_amount,
+              notes: it.notes,
+            }));
+            await supabase.from("biz_order_items").insert(newItems);
+          }
 
-          {/* Items жагсаалт */}
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-2">
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-                🛍 Бараа ({items.length})
-              </div>
-              <button onClick={() => setShowAddProduct(true)} disabled={busy}
-                className="press-btn px-3 py-1 rounded-lg text-xs"
-                style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
-                + Бараа нэмэх
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {items.length === 0 ? (
-                <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
-                  <div className="text-3xl mb-1">🛍</div>
-                  <div className="text-xs">Бараагүй</div>
-                </div>
-              ) : items.map((it) => (
-                <div key={it.id} className="flex items-center gap-2 rounded-lg p-2"
-                  style={{ background: T.surfaceAlt, border: it._new ? `1px solid ${T.ok}` : `1px solid ${T.border}` }}>
-                  {it.product_image ? (
-                    <img src={it.product_image} alt="" 
-                      className="w-12 h-12 rounded object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-12 h-12 rounded flex items-center justify-center text-xl flex-shrink-0"
-                      style={{ background: T.surface }}>📦</div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
-                      {it.product_name}
-                    </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                      {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => updateItemQty(it.id, it.quantity - 1)}
-                      className="press-btn w-7 h-7 rounded flex items-center justify-center text-sm"
-                      style={{ background: T.surface, color: T.ink }}>−</button>
-                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink, width: 28 }}
-                      className="text-center text-sm tabular-nums">
-                      {it.quantity}
-                    </div>
-                    <button onClick={() => updateItemQty(it.id, it.quantity + 1)}
-                      className="press-btn w-7 h-7 rounded flex items-center justify-center text-sm"
-                      style={{ background: T.surface, color: T.ink }}>+</button>
-                    <button onClick={() => removeItem(it.id)}
-                      className="press-btn w-7 h-7 rounded flex items-center justify-center text-sm ml-1"
-                      style={{ background: T.errSoft, color: T.err }}>🗑</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Total */}
-          <div className="rounded-lg p-2.5 mb-3 flex items-center justify-between"
-            style={{ background: T.okSoft, border: `1px solid ${T.ok}` }}>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-              💰 Нийт дүн
-            </div>
-            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
-              {totalAmount.toLocaleString()}₮
-            </div>
-          </div>
-
-          {/* Status тоговч */}
-          <div className="space-y-2 mb-3">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              Статус солих
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => updateStatus("delivered")} disabled={busy}
-                className="press-btn py-2 rounded-lg text-xs"
-                style={{ background: "#10b981", color: "white", fontFamily: FS, fontWeight: 600 }}>
-                ✓ Хүргэгдсэн
-              </button>
-              <button onClick={() => updateStatus("cancelled")} disabled={busy}
-                className="press-btn py-2 rounded-lg text-xs"
-                style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
-                ✕ Цуцлах
-              </button>
-            </div>
-          </div>
-
-          {/* Бараа сонгох popup */}
-          {showAddProduct && (
-            <div className="rounded-lg p-3 mb-3" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
-                  🛒 Бараа сонгох
-                </div>
-                <button onClick={() => { setShowAddProduct(false); setProductSearch(""); }}
-                  className="press-btn p-1" style={{ color: T.muted }}>✕</button>
-              </div>
-              <input value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                placeholder="Бараа хайх..."
-                style={{ background: T.bg, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                className="w-full px-3 py-2 rounded-lg text-sm mb-2" />
-              <div className="space-y-1 max-h-60 overflow-y-auto">
-                {filteredProducts.slice(0, 20).map((p) => (
-                  <button key={p.id} onClick={() => addProduct(p)}
-                    className="press-btn w-full flex items-center gap-2 rounded p-1.5 text-left"
-                    style={{ background: T.bg, border: `1px solid ${T.border}` }}>
-                    {p.image_url ? (
-                      <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded flex items-center justify-center text-sm"
-                        style={{ background: T.surfaceAlt }}>📦</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div style={{ fontFamily: FS, color: T.ink }} className="text-xs truncate">
-                        {p.name}
-                      </div>
-                      <div style={{ color: T.ok, fontFamily: FD, fontWeight: 600 }} className="text-[10px]">
-                        {Number(p.sale_price || 0).toLocaleString()}₮
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Save товч */}
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={onClose} disabled={busy}
-              className="press-btn py-3 rounded-xl text-sm font-semibold"
-              style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              Цуцлах
-            </button>
-            <button onClick={saveChanges} disabled={busy}
-              className="press-btn py-3 rounded-xl text-sm font-semibold"
-              style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
-              {busy ? "Хадгалж байна..." : "💾 Хадгалах"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+          onClose();
+        } catch (e) {
+          alert("Алдаа: " + e.message);
+        }
+      }}
+      onClose={onClose}
+    />
   );
 }
 
