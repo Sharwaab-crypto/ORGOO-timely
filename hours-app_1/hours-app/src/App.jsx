@@ -8179,6 +8179,17 @@ function CallCenterView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+
+  // Realtime — biz_calls + biz_orders шинэчлэгдэхэд автомат refresh
+  useEffect(() => {
+    const ch = supabase
+      .channel("call-center-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_calls" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, () => loadAll())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
