@@ -8106,6 +8106,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             notes: "[Захиалга засварласан]",
             call_status: "ordered",
             created_by: profile.id,
+            created_at: new Date().toISOString(),
             interested_products: data.items.map((it) => ({
               id: it.product_id,
               name: it.product_name,
@@ -8386,6 +8387,7 @@ function CallCenterView({ profile }) {
         notes: `[${statusLabel}]`,
         call_status: status,
         created_by: profile.id,
+        created_at: new Date().toISOString(),
       });
       await releaseLock(statusPopupCall.phone);
       setStatusPopupCall(null);
@@ -9425,6 +9427,7 @@ function CallCenterView({ profile }) {
                   interested_products,
                   call_status: "pending",
                   created_by: profile.id,
+                  created_at: new Date().toISOString(),
                 });
               }
 
@@ -9552,6 +9555,7 @@ function CallCenterView({ profile }) {
                   notes: `[ЦУЦАЛСАН] ${data.notes}`,
                   call_status: "cancelled",
                   created_by: profile.id,
+                  created_at: new Date().toISOString(),
                 });
                 // Тэр утсаар бүх pending/no_answer/callback-н статусыг "cancelled" болгох
                 await supabase.from("biz_calls")
