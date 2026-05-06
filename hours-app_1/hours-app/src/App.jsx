@@ -8715,34 +8715,17 @@ function CallCenterView({ profile }) {
               counts.calling++;
             }
           });
-
-          // Ordered/Cancelled — Cycle logic-аар тоолно (card list-тэй ижил)
-          // Утас бүрд cycle хуваан, status-аар нь тоолно
-          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            sorted.forEach((call) => {
-              if (call.call_status === "ordered") counts.ordered++;
-              else if (call.call_status === "cancelled") counts.cancelled++;
-            });
-          });
           
           // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
           
-          // "Захиалга болсон" tab — ordered cycle тоо (delivered БИШ)
-          const deliveredPhonesSet = new Set(
-            orders.filter((o) => o.status === "delivered").map((o) => o.customer_phone)
-          );
-          let orderedAdjusted = 0;
-          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            const isDelivered = deliveredPhonesSet.has(phone);
-            calls.forEach((call) => {
-              if (call.call_status === "ordered" && !isDelivered) {
-                orderedAdjusted++;
-              }
-            });
-          });
-          counts.ordered = orderedAdjusted;
+          // "Захиалга болсон" — biz_orders ширээгээс шууд (OrdersView-тэй ижил)
+          counts.ordered = orders.filter((o) => 
+            o.status !== "delivered" && o.status !== "cancelled"
+          ).length;
+          
+          // "Цуцалсан" — biz_orders.status='cancelled'
+          counts.cancelled = orders.filter((o) => o.status === "cancelled").length;
 
           return (
             <>
