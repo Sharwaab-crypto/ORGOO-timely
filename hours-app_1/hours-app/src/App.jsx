@@ -1834,6 +1834,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
               <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
+              <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
               <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
               <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
               <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
@@ -1915,6 +1916,7 @@ function AdminDashboard({ profile }) {
                 {view === "warehouses" && "Агуулах"}
                 {view === "supplier-orders" && "Захиалсан бараа"}
                 {view === "locations" && "Байршил"}
+                {view === "zones" && "Хүргэлтийн бүс"}
                 {view === "transfers" && "Бараа хүсэлт"}
                 {view === "movements" && "Барааны хөдөлгөөн"}
                 {view === "stockcount" && "Тооллого"}
@@ -1948,6 +1950,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа, нөөц, орлого/зарлага хяналт"}
                 {view === "supplier-orders" && "Шинэ бараа гадаадаас захиалах түүх"}
                 {view === "locations" && "Хот, Дүүрэг, Хорооны байршил удирдах"}
+                {view === "zones" && "Хүргэгч тус бүрийн polygon бүсүүд"}
                 {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
                 {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
                 {view === "movements" && "Барааны бүх орлого/зарлагын түүх"}
@@ -2151,6 +2154,10 @@ function AdminDashboard({ profile }) {
 
         {view === "locations" && (
           <LocationsView profile={profile} />
+        )}
+
+        {view === "zones" && (
+          <ZonesView profile={profile} />
         )}
 
         {view === "warehouses" && (
@@ -5063,6 +5070,441 @@ function LocationFormModal({ location, profile, existingCities, onClose }) {
           onClose={() => setShowMapPicker(false)}
         />
       )}
+    </div>,
+    document.body
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  🗺 ZONES VIEW — Хүргэлтийн бүсүүдийг удирдах
+// ═══════════════════════════════════════════════════════════════════════════
+function ZonesView({ profile }) {
+  const [zones, setZones] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editZone, setEditZone] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: zoneData }, { data: drvData }] = await Promise.all([
+        supabase.from("biz_zones").select("*").order("name"),
+        supabase.from("profiles").select("id, name").eq("role", "driver").order("name"),
+      ]);
+      setZones(zoneData || []);
+      setDrivers(drvData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Realtime
+  useEffect(() => {
+    const ch = supabase.channel("zones-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_zones" }, () => loadAll())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const deleteZone = async (id, name) => {
+    if (!confirm(`"${name}" бүсийг устгах уу?`)) return;
+    try {
+      await supabase.from("biz_zones").delete().eq("id", id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const toggleActive = async (z) => {
+    try {
+      await supabase.from("biz_zones").update({ is_active: !z.is_active }).eq("id", z.id);
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const driversWithZones = useMemo(() => {
+    return drivers.map((d) => {
+      const driverZones = zones.filter((z) => z.driver_id === d.id && z.is_active);
+      return { ...d, zones: driverZones };
+    });
+  }, [drivers, zones]);
+
+  const unassignedZones = zones.filter((z) => !z.driver_id);
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
+            🗺 Хүргэлтийн бүс
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+            {zones.length} бүс · {drivers.length} хүргэгч
+          </div>
+        </div>
+        <button onClick={() => { setEditZone(null); setShowEditor(true); }}
+          className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+          style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+          + Бүс үүсгэх
+        </button>
+      </div>
+
+      {/* Хүргэгч тус бүрийн бүс */}
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <Loader2 className="spin mx-auto" size={20} />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {driversWithZones.map((d) => (
+            <div key={d.id} className="glass rounded-2xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div style={{ background: "#0ea5e9", color: "white" }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                  {d.name?.charAt(0) || "🚚"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                    🚚 {d.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    {d.zones.length} бүс
+                  </div>
+                </div>
+              </div>
+              {d.zones.length > 0 && (
+                <div className="space-y-1">
+                  {d.zones.map((z) => (
+                    <div key={z.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+                      style={{ background: T.surfaceAlt, borderLeft: `3px solid ${z.color}` }}>
+                      <span style={{ background: z.color, width: 12, height: 12, borderRadius: 4 }}></span>
+                      <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs flex-1">
+                        {z.name}
+                      </span>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        {(z.polygon || []).length} цэг
+                      </span>
+                      <button onClick={() => { setEditZone(z); setShowEditor(true); }}
+                        className="press-btn px-2 py-0.5 rounded text-[10px]"
+                        style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                        ✏
+                      </button>
+                      <button onClick={() => deleteZone(z.id, z.name)}
+                        className="press-btn px-2 py-0.5 rounded text-[10px]"
+                        style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                        🗑
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {d.zones.length === 0 && (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] italic px-2">
+                  Бүс хуваарилагдаагүй
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Unassigned */}
+          {unassignedZones.length > 0 && (
+            <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.warn }} className="text-sm mb-2">
+                ⚠ Хуваарилагдаагүй бүс ({unassignedZones.length})
+              </div>
+              <div className="space-y-1">
+                {unassignedZones.map((z) => (
+                  <div key={z.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+                    style={{ background: T.surfaceAlt, borderLeft: `3px solid ${z.color}` }}>
+                    <span style={{ background: z.color, width: 12, height: 12, borderRadius: 4 }}></span>
+                    <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs flex-1">
+                      {z.name}
+                    </span>
+                    <button onClick={() => { setEditZone(z); setShowEditor(true); }}
+                      className="press-btn px-2 py-0.5 rounded text-[10px]"
+                      style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      ✏ Хуваарилах
+                    </button>
+                    <button onClick={() => deleteZone(z.id, z.name)}
+                      className="press-btn px-2 py-0.5 rounded text-[10px]"
+                      style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      🗑
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Editor Modal */}
+      {showEditor && (
+        <ZoneEditorModal
+          zone={editZone}
+          drivers={drivers}
+          profile={profile}
+          onClose={() => { setShowEditor(false); setEditZone(null); loadAll(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Бүс editor modal — газрын зураг дээр polygon үүсгэх ─────────────────
+function ZoneEditorModal({ zone, drivers, profile, onClose }) {
+  const [name, setName] = useState(zone?.name || "");
+  const [color, setColor] = useState(zone?.color || "#ec4899");
+  const [driverId, setDriverId] = useState(zone?.driver_id || "");
+  const [notes, setNotes] = useState(zone?.notes || "");
+  const [polygon, setPolygon] = useState(zone?.polygon || []);
+  const [busy, setBusy] = useState(false);
+
+  const [LRef, setLRef] = useState(null);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const polyRef = useRef(null);
+  const markersRef = useRef([]);
+
+  // Leaflet load
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((leaflet) => {
+      if (!cancelled) setLRef(leaflet.default || leaflet);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Map setup
+  useEffect(() => {
+    if (!LRef || !mapContainerRef.current || mapRef.current) return;
+    const L = LRef;
+    
+    // CSS link
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+
+    const center = polygon.length > 0 
+      ? [polygon[0][0], polygon[0][1]] 
+      : [47.9183, 106.9173];
+    
+    const map = L.map(mapContainerRef.current).setView(center, 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    // Click → polygon-руу цэг нэмэх
+    map.on("click", (e) => {
+      const newPoint = [e.latlng.lat, e.latlng.lng];
+      setPolygon((p) => [...p, newPoint]);
+    });
+
+    return () => {
+      try { map.remove(); } catch {}
+      mapRef.current = null;
+    };
+  }, [LRef]);
+
+  // Polygon redraw
+  useEffect(() => {
+    if (!LRef || !mapRef.current) return;
+    const L = LRef;
+    const map = mapRef.current;
+
+    // Хуучин polygon + marker устгах
+    if (polyRef.current) {
+      try { map.removeLayer(polyRef.current); } catch {}
+      polyRef.current = null;
+    }
+    markersRef.current.forEach((m) => { try { map.removeLayer(m); } catch {} });
+    markersRef.current = [];
+
+    if (polygon.length === 0) return;
+
+    // Шинэ polygon (3+ цэг бол) эсвэл polyline (2 цэг бол) эсвэл нэг marker
+    if (polygon.length >= 3) {
+      polyRef.current = L.polygon(polygon, { 
+        color, fillColor: color, fillOpacity: 0.3, weight: 2 
+      }).addTo(map);
+    } else if (polygon.length === 2) {
+      polyRef.current = L.polyline(polygon, { color, weight: 2, dashArray: "5, 5" }).addTo(map);
+    }
+
+    // Цэг тус бүрд marker
+    polygon.forEach((pt, idx) => {
+      const m = L.circleMarker([pt[0], pt[1]], {
+        radius: 6, color: "white", fillColor: color, fillOpacity: 1, weight: 2,
+      }).addTo(map);
+      m.bindTooltip(String(idx + 1), { permanent: true, direction: "top", offset: [0, -8] });
+      // Click marker → устгах
+      m.on("click", (e) => {
+        e.originalEvent.stopPropagation();
+        setPolygon((p) => p.filter((_, i) => i !== idx));
+      });
+      markersRef.current.push(m);
+    });
+  }, [polygon, color, LRef]);
+
+  const undoLast = () => setPolygon((p) => p.slice(0, -1));
+  const clearAll = () => { if (confirm("Бүх цэгийг устгах уу?")) setPolygon([]); };
+
+  const save = async () => {
+    if (!name.trim()) { alert("⚠ Бүсийн нэр заавал"); return; }
+    if (polygon.length < 3) { alert("⚠ Дор хаяж 3 цэг хэрэгтэй (polygon үүсгэх)"); return; }
+
+    setBusy(true);
+    try {
+      const data = {
+        name: name.trim(),
+        color,
+        driver_id: driverId || null,
+        notes: notes.trim() || null,
+        polygon,
+      };
+
+      if (zone) {
+        await supabase.from("biz_zones").update(data).eq("id", zone.id);
+      } else {
+        await supabase.from("biz_zones").insert({
+          ...data, created_by: profile.id, is_active: true,
+        });
+      }
+      onClose();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  const colorOptions = ["#ec4899", "#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#14b8a6", "#f97316"];
+
+  return createPortal(
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
+    }}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 900,
+        height: "92vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.4)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div className="p-3 flex items-center justify-between flex-shrink-0"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+            🗺 {zone ? "Бүс засах" : "+ Шинэ бүс"}
+          </div>
+          <button onClick={onClose} disabled={busy}
+            className="press-btn p-2" style={{ color: T.muted }}>✕</button>
+        </div>
+
+        {/* Form */}
+        <div className="p-3 grid grid-cols-1 md:grid-cols-3 gap-2 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📝 Бүсийн нэр *
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Жнь: Баянгол төв"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🚚 Хүргэгч
+            </label>
+            <select value={driverId} onChange={(e) => setDriverId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm cursor-pointer">
+              <option value="">Сонгох...</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>🚚 {d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              🎨 Өнгө
+            </label>
+            <div className="flex items-center gap-1">
+              {colorOptions.map((c) => (
+                <button key={c} onClick={() => setColor(c)}
+                  style={{
+                    background: c, width: 28, height: 28, borderRadius: 6,
+                    border: color === c ? "3px solid white" : "2px solid transparent",
+                    boxShadow: color === c ? "0 0 0 2px " + c : "none",
+                  }} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="p-2 flex items-center justify-between flex-wrap gap-2 flex-shrink-0"
+          style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-xs flex items-center gap-2">
+            <span>💡 Газрын зураг дээр <strong style={{ color: T.highlight }}>дарж</strong> цэг нэмнэ. Цэгийг <strong style={{ color: T.err }}>дарж</strong> устгана.</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs px-2">
+              {polygon.length} цэг
+            </span>
+            <button onClick={undoLast} disabled={polygon.length === 0}
+              className="press-btn px-2 py-1 rounded text-xs"
+              style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 600 }}>
+              ↶ Буцах
+            </button>
+            <button onClick={clearAll} disabled={polygon.length === 0}
+              className="press-btn px-2 py-1 rounded text-xs"
+              style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+              ✕ Цэвэрлэх
+            </button>
+          </div>
+        </div>
+
+        {/* Map */}
+        <div className="flex-1 relative" style={{ minHeight: 300 }}>
+          <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
+          {polygon.length < 3 && (
+            <div style={{
+              position: "absolute", top: 12, left: 12, right: 12, zIndex: 1000,
+              background: "rgba(245, 158, 11, 0.95)", color: "white",
+              padding: "8px 12px", borderRadius: 8, fontFamily: FS, fontWeight: 600,
+              fontSize: 12, textAlign: "center", pointerEvents: "none",
+            }}>
+              {polygon.length === 0 && "Газрын зураг дээр дарж эхний цэг тавина уу"}
+              {polygon.length === 1 && "1 цэг бий — дор хаяж 3 цэг хэрэгтэй"}
+              {polygon.length === 2 && "2 цэг бий — дор хаяж 3 цэг хэрэгтэй"}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="p-3 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${T.border}` }}>
+          <button onClick={onClose} disabled={busy}
+            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+            Цуцлах
+          </button>
+          <button onClick={save} disabled={busy || polygon.length < 3 || !name.trim()}
+            className="press-btn flex-[2] py-3 rounded-xl text-sm font-semibold"
+            style={{ 
+              background: polygon.length >= 3 && name.trim() ? T.highlight : T.surfaceAlt, 
+              color: polygon.length >= 3 && name.trim() ? "white" : T.muted, 
+              fontFamily: FS, fontWeight: 700,
+            }}>
+            {busy ? "Хадгалж..." : "💾 Хадгалах"}
+          </button>
+        </div>
+      </div>
     </div>,
     document.body
   );
