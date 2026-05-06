@@ -8358,6 +8358,7 @@ function CallCenterView({ profile }) {
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
   });
+  const [searchPhone, setSearchPhone] = useState(""); // дугаар хайх
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
@@ -8744,7 +8745,26 @@ function CallCenterView({ profile }) {
           counts.ordered = orderedAdjusted;
 
           return (
-            <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
+            <>
+              {/* 🔍 Дугаар хайх */}
+              <div className="glass rounded-2xl p-2 mb-2 flex items-center gap-2">
+                <span className="text-base flex-shrink-0 ml-1">🔍</span>
+                <input value={searchPhone}
+                  onChange={(e) => setSearchPhone(e.target.value)}
+                  placeholder="Дугаар хайх..."
+                  inputMode="numeric"
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" />
+                {searchPhone && (
+                  <button onClick={() => setSearchPhone("")}
+                    className="press-btn p-2 rounded-lg flex-shrink-0"
+                    style={{ background: T.errSoft, color: T.err }}>
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
               <button onClick={() => setActiveTab("calling")}
                 className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
                 style={{
@@ -8810,6 +8830,7 @@ function CallCenterView({ profile }) {
                 </span>
               </button>
             </div>
+            </>
           );
         })()}
         {loading ? (
@@ -8877,13 +8898,21 @@ function CallCenterView({ profile }) {
               );
 
               // Tab-ийн дагуу filter
-              const filteredCycles = cycleList.filter((cy) => {
+              let filteredCycles = cycleList.filter((cy) => {
                 if (activeTab === "calling") return cy.status === "calling";
                 if (activeTab === "ordered") return cy.status === "ordered" && !deliveredPhones.has(cy.phone);
                 if (activeTab === "cancelled") return cy.status === "cancelled";
                 if (activeTab === "delivered") return cy.status === "ordered" && deliveredPhones.has(cy.phone);
                 return true;
               });
+
+              // 🔍 Хайлтын filter
+              if (searchPhone.trim()) {
+                const searchTerm = searchPhone.trim().toLowerCase();
+                filteredCycles = filteredCycles.filter((cy) => 
+                  cy.phone.toLowerCase().includes(searchTerm)
+                );
+              }
 
               // Хамгийн сүүлчээр болсон цикл нь дээр гарна
               const sortedCycles = filteredCycles.sort((a, b) =>
