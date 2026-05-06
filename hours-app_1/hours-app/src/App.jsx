@@ -8493,13 +8493,18 @@ function CallCenterView({ profile }) {
 
       {/* Stats — 4 том карт */}
       {(() => {
-        // ⚠ Stat-уудад БҮХ дуудлагуудыг харах
-        const allCallsForStats = recentCalls;
+        // ⚠ Stat-уудад зөвхөн анхдагч дугаар бүртгэлийг тоолно
+        // ("Дуудаад авахгүй" гэх мэт sub-status-уудыг хасна)
+        const allCallsForStats = recentCalls.filter((c) => 
+          !c.call_status || 
+          c.call_status === "pending" || 
+          c.call_status === "ordered" || 
+          c.call_status === "cancelled"
+        );
 
-        // 📞 Нийт дугаар = БҮХ дуудлагын тоо (давхар ч хамаагүй, нэгтгэхгүй)
+        // 📞 Нийт дугаар = Анхдагч бүртгэгдсэн дугаарын тоо
         const uniquePhones = allCallsForStats.length;
         
-        // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
         // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
         let orderedPhones = 0;
         let cancelledPhones = 0;
