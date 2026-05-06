@@ -8678,11 +8678,8 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-1.5">
             {(() => {
-              // Бүх tab-д period filter ажиллана (нэг ижил logic)
-              const filteredByPeriod = recentCalls.filter((c) => {
-                const d = new Date(c.created_at);
-                return d >= periodRange.start && d < periodRange.end;
-              });
+              // Бүх дуудлагуудыг ашиглана (period filter байхгүй)
+              const filteredByPeriod = recentCalls;
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
@@ -8817,7 +8814,7 @@ function CallCenterView({ profile }) {
                 const isNew = customer && (Date.now() - new Date(customer.created_at).getTime()) < 7 * 86400 * 1000;
 
                 return (
-                  <div key={phone} className="glass rounded-xl p-2.5"
+                  <div key={`${phone}-${cycle.cycleIndex}-${cycle.status}`} className="glass rounded-xl p-2.5"
                     style={{
                       borderLeft: `3px solid ${
                         cycle.status === "ordered" ? T.ok :
