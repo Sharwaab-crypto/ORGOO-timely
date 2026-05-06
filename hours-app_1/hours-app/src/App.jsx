@@ -4889,6 +4889,7 @@ function LocationFormModal({ location, profile, existingCities, onClose }) {
   const [lng, setLng] = useState(location?.lng || "106.9173");
   const [notes, setNotes] = useState(location?.notes || "");
   const [busy, setBusy] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   const save = async () => {
     if (!city.trim()) { alert("⚠ Хот/Аймаг заавал"); return; }
@@ -5014,16 +5015,24 @@ function LocationFormModal({ location, profile, existingCities, onClose }) {
               className="w-full px-3 py-2 rounded-lg text-sm" />
           </div>
 
-          {/* Map link */}
-          <div className="rounded-lg p-2 mb-3" style={{ background: T.highlightSoft }}>
+          {/* Pin map товч */}
+          <button onClick={() => setShowMapPicker(true)}
+            className="press-btn w-full py-3 rounded-xl text-sm mb-3 flex items-center justify-center gap-2"
+            style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.highlight}` }}>
+            <span className="text-base">🗺</span>
+            <span>Газрын зурагнаас pin зооглох</span>
+          </button>
+
+          {/* Map link backup */}
+          <div className="rounded-lg p-2 mb-3" style={{ background: T.surfaceAlt }}>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              💡 Координатыг google maps-аас авна:
+              💡 Эсвэл координатыг шууд оруулна уу. Google Maps:{" "}
+              <a href="https://www.google.com/maps" target="_blank" rel="noreferrer"
+                style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                className="underline">
+                нээх →
+              </a>
             </div>
-            <a href="https://www.google.com/maps" target="_blank" rel="noreferrer"
-              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
-              className="text-xs underline">
-              Google Maps нээх →
-            </a>
           </div>
 
           {/* Actions */}
@@ -5041,6 +5050,19 @@ function LocationFormModal({ location, profile, existingCities, onClose }) {
           </div>
         </div>
       </div>
+      
+      {/* Map Picker */}
+      {showMapPicker && (
+        <MapPickerModal
+          order={{ delivery_lat: Number(lat), delivery_lng: Number(lng) }}
+          onSave={(newLat, newLng) => {
+            setLat(String(newLat));
+            setLng(String(newLng));
+            setShowMapPicker(false);
+          }}
+          onClose={() => setShowMapPicker(false)}
+        />
+      )}
     </div>,
     document.body
   );
