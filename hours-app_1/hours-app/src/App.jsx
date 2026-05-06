@@ -8036,6 +8036,7 @@ function CallCenterView({ profile }) {
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
+  const [orders, setOrders] = useState([]); // delivered тоо тооцох
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [fbPages, setFbPages] = useState([]);
@@ -8145,14 +8146,16 @@ function CallCenterView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }] = await Promise.all([
+      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, { data: ordData }] = await Promise.all([
         supabase.from("biz_calls").select("*").order("created_at", { ascending: false }),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("biz_customers").select("*"),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
+        supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at"),
       ]);
       setRecentCalls(callData || []);
+      setOrders(ordData || []);
       setProducts(prodData || []);
       setCustomers(custData || []);
       setProfiles(profData || []);
@@ -8589,7 +8592,7 @@ function CallCenterView({ profile }) {
             phoneGrouped[c.phone].push(c);
           });
 
-          const counts = { calling: 0, ordered: 0, cancelled: 0 };
+          const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
 
           // Calling — БҮХ дугаарыг тоолно (өмнө захиалга өгсөн ч, шинэ дуудлага байвал залгах ёстой)
           // Зөвхөн сүүлийн дуудлага нь "ordered" эсвэл "cancelled" биш бол → "calling" tab-руу нэмэгдэнэ
@@ -8610,6 +8613,9 @@ function CallCenterView({ profile }) {
               else if (call.call_status === "cancelled") counts.cancelled++;
             });
           });
+          
+          // Delivered (амжилттай) — biz_orders ширээгээс
+          counts.delivered = orders.filter((o) => o.status === "delivered").length;
 
           return (
             <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
@@ -8659,6 +8665,22 @@ function CallCenterView({ profile }) {
                   color: activeTab === "cancelled" ? "white" : T.muted,
                 }} className="text-[10px] px-1.5 rounded-full font-bold">
                   {counts.cancelled}
+                </span>
+              </button>
+              <button onClick={() => setActiveTab("delivered")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "delivered" ? "#10b981" : T.surfaceAlt,
+                  color: activeTab === "delivered" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>🎉</span>
+                <span>Амжилттай</span>
+                <span style={{
+                  background: activeTab === "delivered" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "delivered" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {counts.delivered || 0}
                 </span>
               </button>
             </div>
@@ -8723,11 +8745,17 @@ function CallCenterView({ profile }) {
                 }
               });
 
+              // Delivered (амжилттай) дугааруудыг олох — biz_orders-ийн status='delivered'
+              const deliveredPhones = new Set(
+                orders.filter((o) => o.status === "delivered").map((o) => o.customer_phone)
+              );
+
               // Tab-ийн дагуу filter
               const filteredCycles = cycleList.filter((cy) => {
                 if (activeTab === "calling") return cy.status === "calling";
-                if (activeTab === "ordered") return cy.status === "ordered";
+                if (activeTab === "ordered") return cy.status === "ordered" && !deliveredPhones.has(cy.phone);
                 if (activeTab === "cancelled") return cy.status === "cancelled";
+                if (activeTab === "delivered") return cy.status === "ordered" && deliveredPhones.has(cy.phone);
                 return true;
               });
 
@@ -8740,12 +8768,16 @@ function CallCenterView({ profile }) {
                 return (
                   <div className="glass rounded-2xl p-8 text-center">
                     <div className="text-4xl mb-2">
-                      {activeTab === "calling" ? "📞" : activeTab === "ordered" ? "✅" : "🗑"}
+                      {activeTab === "calling" ? "📞" : 
+                       activeTab === "ordered" ? "✅" : 
+                       activeTab === "cancelled" ? "🗑" :
+                       activeTab === "delivered" ? "🎉" : "📞"}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
                       {activeTab === "calling" && "Залгах дугаар алга"}
                       {activeTab === "ordered" && "Захиалга болсон дугаар алга"}
                       {activeTab === "cancelled" && "Устгагдсан дугаар алга"}
+                      {activeTab === "delivered" && "Амжилттай хүргэгдсэн дугаар алга"}
                     </div>
                   </div>
                 );
@@ -8817,6 +8849,7 @@ function CallCenterView({ profile }) {
                   <div key={`${phone}-${cycle.cycleIndex}-${cycle.status}`} className="glass rounded-xl p-2.5"
                     style={{
                       borderLeft: `3px solid ${
+                        activeTab === "delivered" ? "#10b981" :
                         cycle.status === "ordered" ? T.ok :
                         cycle.status === "cancelled" ? T.err :
                         cycle.status === "calling" ? "#0ea5e9" :
