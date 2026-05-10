@@ -102,6 +102,22 @@ const fmtTime = (ts) => new Date(ts).toLocaleTimeString("mn-MN", { hour: "numeri
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { month: "short", day: "numeric", timeZone: MN_TZ });
 const fmtFullDate = (ts) => new Date(ts).toLocaleDateString("mn-MN", { year: "numeric", month: "short", day: "numeric", timeZone: MN_TZ });
 
+// 🚀 Debounce — олон realtime event нэг дор ирэхэд queue хийх (DB-руу хэт олон query явахаас сэргийлнэ)
+function useDebouncedCallback(callback, delay = 800) {
+  const timeoutRef = useRef(null);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  return useMemo(() => {
+    return (...args) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        callbackRef.current(...args);
+      }, delay);
+    };
+  }, [delay]);
+}
+
 // 🌏 Монголын байршил — хот/аймаг/дүүрэг/хороо
 // lat, lng — газрын зургийн төв координат
 const MN_LOCATIONS = {
@@ -1243,21 +1259,24 @@ function AdminDashboard({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // Debounced loadAll — олон realtime event нэг дор ирэхэд 1 удаа дуудна
+  const debouncedReload = useDebouncedCallback(loadAll, 800);
+
   useEffect(() => {
     const ch = supabase.channel("admin-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "active_sessions" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "manager_employees" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_definitions" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_entries" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "active_sessions" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sites" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_sites" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "manager_employees" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_definitions" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kpi_entries" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -4717,10 +4736,11 @@ function LocationsView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime
+  // Debounced realtime — олон event нэг дор бол 1 удаа дуудна
+  const debouncedReload = useDebouncedCallback(loadAll, 800);
   useEffect(() => {
     const ch = supabase.channel("locations-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_locations" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_locations" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -5101,10 +5121,11 @@ function ZonesView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime
+  // Debounced realtime
+  const debouncedReload = useDebouncedCallback(loadAll, 800);
   useEffect(() => {
     const ch = supabase.channel("zones-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_zones" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_zones" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -5781,10 +5802,11 @@ function SupplierOrdersView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime
+  // Debounced realtime
+  const debouncedReload = useDebouncedCallback(loadAll, 800);
   useEffect(() => {
     const ch = supabase.channel("supplier-orders-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "inv_supplier_orders" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_supplier_orders" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
