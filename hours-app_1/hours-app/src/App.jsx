@@ -10675,14 +10675,12 @@ function CallCenterView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
 
-  // Realtime — biz_calls + biz_orders шинэчлэгдэхэд автомат refresh
+  // 🔄 10 секунд тутамд автомат refresh (realtime-аас илүү тогтвортой)
   useEffect(() => {
-    const ch = supabase
-      .channel("call-center-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_calls" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, () => loadAll())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const interval = setInterval(() => {
+      loadAll();
+    }, 10000); // 10 секунд
+    return () => clearInterval(interval);
   }, []);
 
   // Дугаар click — calling lock + захиалга нээх
@@ -17964,19 +17962,14 @@ function OrdersView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-
-  // Realtime subscription — захиалга өөрчлөгдсөнийг шууд харах
+  // 🔄 10 секунд тутамд автомат refresh (realtime-аас илүү тогтвортой)
   useEffect(() => {
-    const channel = supabase
-      .channel("admin-orders-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "biz_orders" },
-        () => { loadAll(); }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const interval = setInterval(() => {
+      loadAll();
+    }, 10000); // 10 секунд
+    return () => clearInterval(interval);
   }, []);
+
   // Filter
   let filtered = orders;
   if (filter !== "all") {
@@ -25498,28 +25491,13 @@ function DriverDashboard({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime subscription — шинэ захиалга, status өөрчлөлтийг шууд харах
+  // 🔄 10 секунд тутамд автомат refresh
   useEffect(() => {
-    const channel = supabase
-      .channel("driver-orders-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "biz_orders" },
-        (payload) => {
-          const o = payload.new || payload.old;
-          if (!o) return;
-          const isMyOrder = o.driver_id === profile.id;
-          const isUnassignedNew = !o.driver_id && o.status === "new";
-          const wasMyOrder = payload.old?.driver_id === profile.id;
-          if (isMyOrder || isUnassignedNew || wasMyOrder) {
-            loadAll();
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [profile.id]);
+    const interval = setInterval(() => {
+      loadAll();
+    }, 10000); // 10 секунд
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLogout = async () => {
     if (!confirm("Гарах уу?")) return;
