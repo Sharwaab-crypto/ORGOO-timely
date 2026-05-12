@@ -16364,8 +16364,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
   const [address, setAddress] = useState(editOrder?.delivery_address || "");
-  // 🌏 Location selector
-  const [selectedCity, setSelectedCity] = useState("");
+  // 🌏 Location selector — анхдагчаар Улаанбаатар
+  const [selectedCity, setSelectedCity] = useState("Улаанбаатар");
   const [selectedDistrict, setSelectedDistrict] = useState("");
   const [selectedKhoroo, setSelectedKhoroo] = useState("");
   const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
@@ -16378,6 +16378,22 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
         const { data } = await supabase.from("biz_locations")
           .select("*").eq("is_active", true).order("city").order("district").order("khoroo");
         setDbLocations(data || []);
+        
+        // Анхдагчаар Улаанбаатар сонгох → координат тохируулах
+        if (!editOrder && data) {
+          const ubLocs = data.filter((l) => l.city === "Улаанбаатар" && !l.district);
+          if (ubLocs.length > 0) {
+            setPinLat(Number(ubLocs[0].lat));
+            setPinLng(Number(ubLocs[0].lng));
+          } else {
+            // эсвэл эхний УБ-ын дүүрэг
+            const firstUb = data.find((l) => l.city === "Улаанбаатар");
+            if (firstUb) {
+              setPinLat(Number(firstUb.lat));
+              setPinLng(Number(firstUb.lng));
+            }
+          }
+        }
       } catch (e) { console.error("Locations load:", e); }
     })();
   }, []);
