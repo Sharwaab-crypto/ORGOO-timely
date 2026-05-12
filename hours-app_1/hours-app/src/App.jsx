@@ -10675,10 +10675,14 @@ function CallCenterView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
 
-  // 🔄 10 секунд тутамд автомат refresh (realtime-аас илүү тогтвортой)
+  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadAll();
+    const interval = setInterval(async () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      await loadAll();
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }, 10000); // 10 секунд
     return () => clearInterval(interval);
   }, []);
@@ -17978,10 +17982,14 @@ function OrdersView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // 🔄 10 секунд тутамд автомат refresh (realtime-аас илүү тогтвортой)
+  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadAll();
+    const interval = setInterval(async () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      await loadAll();
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }, 10000); // 10 секунд
     return () => clearInterval(interval);
   }, []);
@@ -25507,10 +25515,16 @@ function DriverDashboard({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // 🔄 10 секунд тутамд автомат refresh
+  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadAll();
+    const interval = setInterval(async () => {
+      // Refresh-ийн өмнө scroll-ыг хадгалах
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      await loadAll();
+      // Refresh-ийн дараа scroll-ыг сэргээх
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }, 10000); // 10 секунд
     return () => clearInterval(interval);
   }, []);
