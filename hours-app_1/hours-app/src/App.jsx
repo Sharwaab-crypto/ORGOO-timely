@@ -5614,17 +5614,64 @@ function ZoneEditorModal({ zone, drivers, profile, onClose }) {
       polyRef.current = L.polyline(polygon, { color, weight: 2, dashArray: "5, 5" }).addTo(map);
     }
 
-    // Цэг тус бүрд marker
+    // Цэг тус бүрд draggable marker
     polygon.forEach((pt, idx) => {
-      const m = L.circleMarker([pt[0], pt[1]], {
-        radius: 6, color: "white", fillColor: color, fillOpacity: 1, weight: 2,
-      }).addTo(map);
-      m.bindTooltip(String(idx + 1), { permanent: true, direction: "top", offset: [0, -8] });
-      // Click marker → устгах
-      m.on("click", (e) => {
-        e.originalEvent.stopPropagation();
-        setPolygon((p) => p.filter((_, i) => i !== idx));
+      // Хувийн divIcon — өнгөтэй жижиг цэг + дугаар
+      const icon = L.divIcon({
+        html: `<div style="
+          background: ${color};
+          width: 22px; height: 22px;
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          display: flex; align-items: center; justify-content: center;
+          color: white; font-weight: 700; font-size: 11px;
+          cursor: move;
+        ">${idx + 1}</div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+        className: "zone-point",
       });
+      
+      const m = L.marker([pt[0], pt[1]], { 
+        icon, 
+        draggable: true,
+      }).addTo(map);
+
+      // Drag → polygon шинэчлэх
+      m.on("drag", (e) => {
+        const newLatLng = e.target.getLatLng();
+        // Real-time polygon update (drag дотор)
+        if (polyRef.current) {
+          const currentLatLngs = polyRef.current.getLatLngs()[0] || polyRef.current.getLatLngs();
+          if (Array.isArray(currentLatLngs)) {
+            currentLatLngs[idx] = newLatLng;
+            polyRef.current.setLatLngs(currentLatLngs);
+          }
+        }
+      });
+      
+      m.on("dragend", (e) => {
+        const newLatLng = e.target.getLatLng();
+        setPolygon((p) => p.map((point, i) => 
+          i === idx ? [newLatLng.lat, newLatLng.lng] : point
+        ));
+      });
+
+      // Right-click (эсвэл long-press) → устгах
+      m.on("contextmenu", (e) => {
+        e.originalEvent.preventDefault();
+        e.originalEvent.stopPropagation();
+        if (confirm(`Цэг #${idx + 1} устгах уу?`)) {
+          setPolygon((p) => p.filter((_, i) => i !== idx));
+        }
+      });
+
+      // Tooltip — хэрэглэх заавар
+      m.bindTooltip(`#${idx + 1} · Чирж зөөх · Баруун товч → устгах`, {
+        direction: "top", offset: [0, -16],
+      });
+      
       markersRef.current.push(m);
     });
   }, [polygon, color, LRef]);
@@ -5727,7 +5774,7 @@ function ZoneEditorModal({ zone, drivers, profile, onClose }) {
         <div className="p-2 flex items-center justify-between flex-wrap gap-2 flex-shrink-0"
           style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-xs flex items-center gap-2">
-            <span>💡 Газрын зураг дээр <strong style={{ color: T.highlight }}>дарж</strong> цэг нэмнэ. Цэгийг <strong style={{ color: T.err }}>дарж</strong> устгана.</span>
+            <span>💡 Газрын зураг дээр <strong style={{ color: T.highlight }}>дарж</strong> цэг нэмнэ · <strong style={{ color: T.ok }}>Цэгийг чирж</strong> зөөнө · <strong style={{ color: T.err }}>Баруун товч</strong> устгана</span>
           </div>
           <div className="flex items-center gap-1">
             <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs px-2">
