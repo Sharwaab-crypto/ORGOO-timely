@@ -25486,9 +25486,12 @@ function DriverDashboard({ profile }) {
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
   });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-driver-filter", filter); } catch {}
+    setPage(1); // Filter солихтой адил эхний хуудас руу
   }, [filter]);
 
   const loadAll = async () => {
@@ -25498,10 +25501,12 @@ function DriverDashboard({ profile }) {
       const [{ data: ownOrders }, { data: newOrders }, { data: driversData }] = await Promise.all([
         supabase.from("biz_orders").select("*")
           .eq("driver_id", profile.id)
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(10000),
         supabase.from("biz_orders").select("*")
           .is("driver_id", null).eq("status", "new")
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(10000),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver"),
       ]);
 
@@ -25521,7 +25526,8 @@ function DriverDashboard({ profile }) {
         const { data: itemData } = await supabase
           .from("biz_order_items")
           .select("*")
-          .in("order_id", orderIds);
+          .in("order_id", orderIds)
+          .limit(50000);
 
         const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
         const { data: prodData } = productIds.length > 0
@@ -25669,6 +25675,11 @@ function DriverDashboard({ profile }) {
     if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
     return true;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pagedFiltered = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   const counts = {
     available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
@@ -25906,7 +25917,7 @@ function DriverDashboard({ profile }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {filtered.map((o, idx) => {
+            {pagedFiltered.map((o, idx) => {
               const hasPin = o.delivery_lat && o.delivery_lng;
               return (
               <div key={o.id} className="glass rounded-xl p-3"
@@ -26040,6 +26051,40 @@ function DriverDashboard({ profile }) {
               </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {view === "orders" && filtered.length > PAGE_SIZE && (
+          <div className="glass rounded-2xl p-3 flex items-center justify-between flex-wrap gap-2">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+              {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filtered.length)} / {filtered.length}
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(1)} disabled={page === 1}
+                className="press-btn px-2 py-1 rounded text-xs"
+                style={{ background: page === 1 ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                ⏮
+              </button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+                className="press-btn px-2 py-1 rounded text-xs"
+                style={{ background: page === 1 ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                ◀
+              </button>
+              <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="px-3 text-sm">
+                {page} / {totalPages}
+              </span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="press-btn px-2 py-1 rounded text-xs"
+                style={{ background: page === totalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                ▶
+              </button>
+              <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+                className="press-btn px-2 py-1 rounded text-xs"
+                style={{ background: page === totalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                ⏭
+              </button>
+            </div>
           </div>
         )}
         </>)}
