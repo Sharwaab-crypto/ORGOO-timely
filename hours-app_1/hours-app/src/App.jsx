@@ -10027,6 +10027,119 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ⚠ LOW STOCK ALERT BANNER — Бараа дуусах анхааруулга
+// ═══════════════════════════════════════════════════════════════════════════
+function LowStockAlertBanner() {
+  const [lowProducts, setLowProducts] = useState([]);
+  const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  const load = async () => {
+    try {
+      const { data } = await supabase.from("inv_products")
+        .select("id, name, sku, stock, min_stock, image_url")
+        .gt("min_stock", 0);
+      
+      const low = (data || []).filter((p) => p.stock <= p.min_stock);
+      // Хамгийн бага үлдэгдлээр sort
+      low.sort((a, b) => a.stock - b.stock);
+      setLowProducts(low);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // Realtime — debounce
+  const debouncedLoad = useDebouncedCallback(load, 1000);
+  useEffect(() => {
+    const ch = supabase.channel("low-stock-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_products" }, debouncedLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_stock" }, debouncedLoad)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  if (lowProducts.length === 0 || dismissed) return null;
+
+  const outOfStock = lowProducts.filter((p) => p.stock <= 0);
+  const lowStock = lowProducts.filter((p) => p.stock > 0);
+
+  return (
+    <div className="glass rounded-2xl p-3 mb-3"
+      style={{ 
+        background: outOfStock.length > 0 ? T.errSoft : T.warnSoft, 
+        border: `2px solid ${outOfStock.length > 0 ? T.err : T.warn}`,
+      }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{outOfStock.length > 0 ? "🔴" : "⚠"}</span>
+          <div>
+            <div style={{ 
+              color: outOfStock.length > 0 ? T.err : T.warn, 
+              fontFamily: FS, fontWeight: 700,
+            }} className="text-sm">
+              {outOfStock.length > 0 
+                ? `${outOfStock.length} бараа ДУУССАН!`
+                : `${lowStock.length} бараа дуусаж байна`
+              }
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              Захиалга авахаас өмнө шалгана уу
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setExpanded(!expanded)}
+            className="press-btn px-2 py-1 rounded text-[10px]"
+            style={{ 
+              background: outOfStock.length > 0 ? T.err : T.warn, 
+              color: "white", fontFamily: FS, fontWeight: 600,
+            }}>
+            {expanded ? "▲ Хаах" : "▼ Дэлгэрэнгүй"}
+          </button>
+          <button onClick={() => setDismissed(true)}
+            className="press-btn px-2 py-1 rounded text-[10px]"
+            style={{ background: T.surface, color: T.muted, fontFamily: FS }}>
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="space-y-1 mt-2 max-h-60 overflow-y-auto">
+          {lowProducts.map((p) => (
+            <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+              style={{ background: T.surfaceAlt }}>
+              {p.image_url ? (
+                <img src={p.image_url} alt={p.name}
+                  style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+              ) : (
+                <div style={{ background: T.surface, width: 32, height: 32, borderRadius: 6 }}
+                  className="flex items-center justify-center text-base flex-shrink-0">📦</div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs truncate">
+                  {p.name}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                  {p.sku} · Мин: {p.min_stock}
+                </div>
+              </div>
+              <div style={{
+                color: p.stock <= 0 ? T.err : T.warn,
+                fontFamily: FD, fontWeight: 700,
+              }} className="text-sm tabular-nums">
+                {p.stock} ширхэг
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CallCenterView({ profile }) {
   const [showCallModal, setShowCallModal] = useState(false);
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
@@ -10309,6 +10422,9 @@ function CallCenterView({ profile }) {
 
   return (
     <div className="space-y-3">
+      {/* ⚠ Бараа дуусах анхааруулга */}
+      <LowStockAlertBanner />
+
       {/* Period selector */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
