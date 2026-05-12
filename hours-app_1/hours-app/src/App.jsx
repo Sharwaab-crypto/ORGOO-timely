@@ -25497,16 +25497,33 @@ function DriverDashboard({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // Өөрт оноогдсон + бүх шинэ оноогдоогүй захиалга + driver-уудын жагсаалт
-      const [{ data: ownOrders }, { data: newOrders }, { data: driversData }] = await Promise.all([
-        supabase.from("biz_orders").select("*")
-          .eq("driver_id", profile.id)
-          .order("created_at", { ascending: false })
-          .limit(10000),
-        supabase.from("biz_orders").select("*")
-          .is("driver_id", null).eq("status", "new")
-          .order("created_at", { ascending: false })
-          .limit(10000),
+      // Хэрэглэгчийн бүх захиалгуудыг pagination-аар татах (1000 limit-ийг bypass)
+      const fetchAllPages = async (query) => {
+        const PAGE = 1000;
+        let all = [];
+        let from = 0;
+        while (true) {
+          const { data, error } = await query.range(from, from + PAGE - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          all = all.concat(data);
+          if (data.length < PAGE) break;
+          from += PAGE;
+        }
+        return all;
+      };
+
+      const [ownOrders, newOrders, { data: driversData }] = await Promise.all([
+        fetchAllPages(
+          supabase.from("biz_orders").select("*")
+            .eq("driver_id", profile.id)
+            .order("created_at", { ascending: false })
+        ),
+        fetchAllPages(
+          supabase.from("biz_orders").select("*")
+            .is("driver_id", null).eq("status", "new")
+            .order("created_at", { ascending: false })
+        ),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver"),
       ]);
 
@@ -25523,11 +25540,21 @@ function DriverDashboard({ profile }) {
 
       if (all.length > 0) {
         const orderIds = all.map((o) => o.id);
-        const { data: itemData } = await supabase
-          .from("biz_order_items")
-          .select("*")
-          .in("order_id", orderIds)
-          .limit(50000);
+        // Items pagination — олон захиалгад олон item байх боломжтой
+        let itemData = [];
+        const ITEMS_PAGE = 1000;
+        let from = 0;
+        while (true) {
+          const { data } = await supabase
+            .from("biz_order_items")
+            .select("*")
+            .in("order_id", orderIds)
+            .range(from, from + ITEMS_PAGE - 1);
+          if (!data || data.length === 0) break;
+          itemData = itemData.concat(data);
+          if (data.length < ITEMS_PAGE) break;
+          from += ITEMS_PAGE;
+        }
 
         const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
         const { data: prodData } = productIds.length > 0
