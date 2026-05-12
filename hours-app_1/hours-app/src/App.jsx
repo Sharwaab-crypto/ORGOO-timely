@@ -5660,7 +5660,7 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
         try {
           await supabase.from("biz_orders").update({
             driver_id: o.zone.driver_id,
-            status: "assigned",
+            // status хэвээр үлдэнэ (new) — driver харагдах нь чухал
           }).eq("id", o.id);
           successCount++;
         } catch (e) {
@@ -25663,7 +25663,7 @@ function DriverDashboard({ profile }) {
   // Filter
   const filtered = orders.filter((o) => {
     if (filter === "available") return o.status === "new" && !o.driver_id;
-    if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending");
+    if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned");
     // Хүргэсэн ба Цуцалсан tab-аас тооцоо хаагдсан (settlement_id-тэй) захиалгуудыг хасах
     if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
     if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
@@ -25672,7 +25672,7 @@ function DriverDashboard({ profile }) {
 
   const counts = {
     available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
-    active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending")).length,
+    active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
     cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
   };
