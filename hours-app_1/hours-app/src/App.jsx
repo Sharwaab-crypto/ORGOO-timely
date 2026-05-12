@@ -16728,6 +16728,50 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                 return;
               }
+              
+              // 🔴 ДАВТАН ЗАХИАЛГА ШАЛГАХ — Сүүлийн 1 цагт тус утсаар захиалга бий эсэх
+              if (!isEditMode) {
+                try {
+                  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+                  const { data: recent } = await supabase
+                    .from("biz_orders")
+                    .select("id, order_number, status, created_at, total_amount, taken_by")
+                    .eq("customer_phone", phone.trim())
+                    .gte("created_at", oneHourAgo)
+                    .neq("status", "cancelled")
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+                  
+                  if (recent && recent.length > 0) {
+                    const r = recent[0];
+                    const minsAgo = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 60000);
+                    const statusLabel = {
+                      new: "Шинэ",
+                      assigned: "Хүргэлтэнд",
+                      out_for_delivery: "Замд",
+                      delivered: "Хүргэгдсэн",
+                    }[r.status] || r.status;
+                    
+                    const ok = confirm(
+                      `⚠ ДАВТАН ЗАХИАЛГА АНХААРУУЛГА!\n\n` +
+                      `📞 ${phone.trim()} дугаараар саяхан захиалга бүртгэгдсэн:\n\n` +
+                      `📦 ${r.order_number}\n` +
+                      `📊 Статус: ${statusLabel}\n` +
+                      `💰 Дүн: ${Number(r.total_amount || 0).toLocaleString()}₮\n` +
+                      `🕒 ${minsAgo} минутын өмнө\n\n` +
+                      `Шинэ захиалгыг үргэлжлүүлэх үү?`
+                    );
+                    if (!ok) {
+                      setBusy(false);
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  console.error("Duplicate check error:", e);
+                  // Шалгах боломжгүй бол үргэлжлүүлнэ
+                }
+              }
+              
               setBusy(true);
               await onSave({
                 action: "ordered",
