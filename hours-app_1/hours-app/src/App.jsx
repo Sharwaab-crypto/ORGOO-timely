@@ -5284,6 +5284,7 @@ function ZonesView({ profile }) {
           zone={editZone}
           drivers={drivers}
           profile={profile}
+          otherZones={zones.filter((z) => z.id !== editZone?.id && z.is_active)}
           onClose={() => { setShowEditor(false); setEditZone(null); loadAll(); }}
         />
       )}
@@ -5530,7 +5531,7 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
 }
 
 // ─── Бүс editor modal — газрын зураг дээр polygon үүсгэх ─────────────────
-function ZoneEditorModal({ zone, drivers, profile, onClose }) {
+function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
   const [name, setName] = useState(zone?.name || "");
   const [color, setColor] = useState(zone?.color || "#ec4899");
   const [driverId, setDriverId] = useState(zone?.driver_id || "");
@@ -5576,6 +5577,50 @@ function ZoneEditorModal({ zone, drivers, profile, onClose }) {
     }).addTo(map);
 
     mapRef.current = map;
+
+    // 📍 Өмнө үүсгэсэн бүсүүдийг background-аар draw (хагас-нэвчилттэй)
+    const driverNameById = {};
+    drivers.forEach((d) => { driverNameById[d.id] = d.name; });
+    
+    otherZones.forEach((z) => {
+      if (!z.polygon || z.polygon.length < 3) return;
+      const bgPoly = L.polygon(z.polygon, {
+        color: z.color || "#999",
+        fillColor: z.color || "#999",
+        fillOpacity: 0.15,           // Маш цайвар
+        weight: 1,                    // Нимгэн border
+        dashArray: "5, 5",            // Тасархай шугам — "background" гэдэг тэмдэгт
+        interactive: false,           // Click нь шинэ цэг нэмэхэд саад болохгүй
+      }).addTo(map);
+      
+      // Бүсийн дунд label
+      const center = z.polygon.reduce(
+        (acc, pt) => [acc[0] + pt[0], acc[1] + pt[1]], 
+        [0, 0]
+      ).map((v) => v / z.polygon.length);
+      
+      const drvName = z.driver_id ? (driverNameById[z.driver_id] || "?") : "—";
+      L.marker(center, {
+        icon: L.divIcon({
+          html: `<div style="
+            background: ${z.color || '#999'}; 
+            color: white; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-size: 10px; 
+            font-weight: 600; 
+            opacity: 0.7;
+            white-space: nowrap; 
+            border: 1px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+          ">${z.name} · ${drvName}</div>`,
+          iconSize: [120, 18],
+          iconAnchor: [60, 9],
+          className: "zone-bg-label",
+        }),
+        interactive: false,
+      }).addTo(map);
+    });
 
     // Click → polygon-руу цэг нэмэх
     map.on("click", (e) => {
@@ -5775,6 +5820,11 @@ function ZoneEditorModal({ zone, drivers, profile, onClose }) {
           style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-xs flex items-center gap-2">
             <span>💡 Газрын зураг дээр <strong style={{ color: T.highlight }}>дарж</strong> цэг нэмнэ · <strong style={{ color: T.ok }}>Цэгийг чирж</strong> зөөнө · <strong style={{ color: T.err }}>Баруун товч</strong> устгана</span>
+            {otherZones.length > 0 && (
+              <span style={{ color: T.muted, opacity: 0.7 }}>
+                · 👁 {otherZones.length} өмнөх бүс харагдаж байна
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs px-2">
