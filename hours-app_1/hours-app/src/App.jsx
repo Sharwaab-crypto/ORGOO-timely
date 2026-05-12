@@ -1846,6 +1846,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
               <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
+              <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
@@ -1942,6 +1943,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "sales" && "Борлуулалтын самбар"}
+                {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
                 {view === "settlement-reports" && "Тооцооний тайлан"}
                 {view === "orders" && "Захиалга"}
@@ -1977,6 +1979,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Утсан захиалга хүлээн авах"}
                 {view === "operator-kpi" && "Ажилтан тус бүрийн дуудлага, захиалгын тоон үзүүлэлт"}
                 {view === "sales" && "FB page тус бүрийн борлуулалтын тайлан"}
+                {view === "delivery-dashboard" && "Хүргэгч тус бүрийн ажлын хяналт"}
                 {view === "settlement" && "Хүргэгч тус бүрийн тооцоо нэгтгэл"}
                 {view === "settlement-reports" && "Хаагдсан тооцооны түүх"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
@@ -2205,6 +2208,10 @@ function AdminDashboard({ profile }) {
 
         {view === "sales" && (
           <SalesDashboardView profile={profile} />
+        )}
+
+        {view === "delivery-dashboard" && (
+          <DeliveryDashboardView profile={profile} />
         )}
 
         {view === "settlement" && (
@@ -12159,6 +12166,314 @@ function OperatorKPIReportView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SALES DASHBOARD — Борлуулалтын самбар (FB page-аар KPI)
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  🚚 DELIVERY DASHBOARD — Хүргэлтийн самбар (admin/manager-руу)
+// ═══════════════════════════════════════════════════════════════════════════
+function DeliveryDashboardView({ profile }) {
+  const [drivers, setDrivers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [period, setPeriod] = useState("today"); // today, yesterday, week, month, all
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [{ data: drvData }, { data: ordData }] = await Promise.all([
+        supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
+        supabase.from("biz_orders").select("*").not("driver_id", "is", null).order("created_at", { ascending: false }),
+      ]);
+      setDrivers(drvData || []);
+      setOrders(ordData || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // Realtime — debounced
+  const debouncedReload = useDebouncedCallback(loadAll, 800);
+  useEffect(() => {
+    const ch = supabase.channel("delivery-dashboard-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  // Period filter
+  const periodRange = useMemo(() => {
+    // Монголын цаг
+    const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
+    
+    if (period === "today") {
+      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate());
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      return { start, end, label: "Өнөөдөр" };
+    }
+    if (period === "yesterday") {
+      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate() - 1);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      return { start, end, label: "Өчигдөр" };
+    }
+    if (period === "week") {
+      const start = new Date(mnNow);
+      start.setDate(start.getDate() - 7);
+      return { start, end: new Date(2099, 11, 31), label: "7 хоног" };
+    }
+    if (period === "month") {
+      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), 1);
+      return { start, end: new Date(2099, 11, 31), label: "Энэ сар" };
+    }
+    return { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" };
+  }, [period]);
+
+  // Filtered orders by period
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const d = new Date(o.created_at);
+      return d >= periodRange.start && d < periodRange.end;
+    });
+  }, [orders, periodRange]);
+
+  // Хүргэгч тус бүрийн статистик
+  const driverStats = useMemo(() => {
+    return drivers.map((d) => {
+      const driverOrders = filteredOrders.filter((o) => o.driver_id === d.id);
+      const delivered = driverOrders.filter((o) => o.status === "delivered");
+      const cancelled = driverOrders.filter((o) => o.status === "cancelled");
+      const pending = driverOrders.filter((o) => 
+        o.status === "new" || o.status === "assigned" || o.status === "out_for_delivery"
+      );
+      
+      const deliveredAmount = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+      const deliveryFee = delivered.reduce((s, o) => s + Number(o.delivery_fee || 0), 0);
+      
+      return {
+        ...d,
+        total: driverOrders.length,
+        delivered: delivered.length,
+        cancelled: cancelled.length,
+        pending: pending.length,
+        deliveredAmount,
+        deliveryFee,
+        deliveryRate: driverOrders.length > 0 
+          ? Math.round((delivered.length / driverOrders.length) * 100) 
+          : 0,
+      };
+    }).sort((a, b) => b.delivered - a.delivered); // Хамгийн их хүргэгчээр sort
+  }, [drivers, filteredOrders]);
+
+  // Нийт стат
+  const totalStats = useMemo(() => {
+    return driverStats.reduce((acc, d) => ({
+      total: acc.total + d.total,
+      delivered: acc.delivered + d.delivered,
+      cancelled: acc.cancelled + d.cancelled,
+      pending: acc.pending + d.pending,
+      deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
+      deliveryFee: acc.deliveryFee + d.deliveryFee,
+    }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 });
+  }, [driverStats]);
+
+  if (loading && drivers.length === 0) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center">
+        <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Period selector */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-1 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs mr-1">
+            📅 Хугацаа:
+          </span>
+          {[
+            { id: "today", label: "Өнөөдөр" },
+            { id: "yesterday", label: "Өчигдөр" },
+            { id: "week", label: "7 хоног" },
+            { id: "month", label: "Энэ сар" },
+            { id: "all", label: "Бүгд" },
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{
+                background: period === p.id ? T.highlight : T.surface,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+                border: `1px solid ${T.border}`,
+              }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Нийт стат */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            🚚 Хүргэгч
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xl mt-1">
+            {drivers.length}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ background: T.okSoft }}>
+          <div style={{ color: T.ok, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            ✓ Амжилттай
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl mt-1">
+            {totalStats.delivered}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ background: T.errSoft }}>
+          <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            ✕ Цуцалсан
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl mt-1">
+            {totalStats.cancelled}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ background: T.warnSoft }}>
+          <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            ⏳ Хүлээгдэж
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl mt-1">
+            {totalStats.pending}
+          </div>
+        </div>
+      </div>
+
+      {/* Нийт мөнгө */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            💰 Амжилттай нийт дүн
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg mt-1 tabular-nums">
+            {totalStats.deliveredAmount.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+            🚀 Хүргэлтийн хөлс
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg mt-1 tabular-nums">
+            {totalStats.deliveryFee.toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
+      {/* Хүргэгч тус бүрийн жагсаалт */}
+      <div className="space-y-2">
+        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm px-1">
+          🚚 Хүргэгч тус бүрийн ажил
+        </div>
+        {driverStats.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center">
+            <div className="text-4xl mb-2">🚚</div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+              Хүргэгч алга
+            </div>
+          </div>
+        ) : (
+          driverStats.map((d) => (
+            <div key={d.id} className="glass rounded-2xl p-3"
+              style={{ 
+                borderLeft: `3px solid ${
+                  d.total === 0 ? T.muted :
+                  d.deliveryRate >= 80 ? T.ok :
+                  d.deliveryRate >= 50 ? T.warn : T.err
+                }`,
+              }}>
+              {/* Driver info */}
+              <div className="flex items-center gap-3 mb-2">
+                <div style={{ background: "#0ea5e9", color: "white" }}
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                  {d.name?.charAt(0) || "🚚"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                    🚚 {d.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    Нийт: {d.total} · Амжилт: {d.deliveryRate}%
+                  </div>
+                </div>
+                {d.total > 0 && (
+                  <div className="text-right">
+                    <div style={{ 
+                      color: d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err,
+                      fontFamily: FD, fontWeight: 700,
+                    }} className="text-base">
+                      {d.deliveryRate}%
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                      амжилт
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Stats grid */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="rounded-lg p-2 text-center" style={{ background: T.okSoft }}>
+                  <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">
+                    ✓ Амжилт
+                  </div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base">
+                    {d.delivered}
+                  </div>
+                </div>
+                <div className="rounded-lg p-2 text-center" style={{ background: T.errSoft }}>
+                  <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">
+                    ✕ Цуцалсан
+                  </div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base">
+                    {d.cancelled}
+                  </div>
+                </div>
+                <div className="rounded-lg p-2 text-center" style={{ background: T.warnSoft }}>
+                  <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase">
+                    ⏳ Хүлээ.
+                  </div>
+                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base">
+                    {d.pending}
+                  </div>
+                </div>
+              </div>
+
+              {/* Money */}
+              {d.delivered > 0 && (
+                <div className="mt-2 pt-2 flex items-center justify-between text-xs"
+                  style={{ borderTop: `1px solid ${T.border}` }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                    💰 Нийт орлого
+                  </div>
+                  <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="tabular-nums">
+                    {d.deliveredAmount.toLocaleString()}₮
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer info */}
+      <div className="glass rounded-2xl p-3 text-center"
+        style={{ background: T.surfaceAlt }}>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+          📊 Хугацаа: <strong>{periodRange.label}</strong> · Нийт захиалга: <strong>{totalStats.total}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SalesDashboardView({ profile }) {
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
