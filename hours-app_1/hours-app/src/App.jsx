@@ -118,6 +118,44 @@ function useDebouncedCallback(callback, delay = 800) {
   }, [delay]);
 }
 
+// 📍 Point-in-polygon — Ray casting algorithm
+// Цэг (lat, lng) нь polygon дотор байгаа эсэхийг шалгана
+function isPointInPolygon(point, polygon) {
+  if (!polygon || polygon.length < 3) return false;
+  const [lat, lng] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [latI, lngI] = polygon[i];
+    const [latJ, lngJ] = polygon[j];
+    const intersect = ((lngI > lng) !== (lngJ > lng)) &&
+      (lat < (latJ - latI) * (lng - lngI) / (lngJ - lngI) + latI);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// 🚚 Захиалгын координатаар → ямар бүсэд багтахыг олох
+async function findZoneByLocation(lat, lng) {
+  if (!lat || !lng) return null;
+  try {
+    const { data: zones } = await supabase.from("biz_zones")
+      .select("id, name, driver_id, polygon")
+      .eq("is_active", true);
+    
+    if (!zones || zones.length === 0) return null;
+    
+    for (const zone of zones) {
+      if (isPointInPolygon([Number(lat), Number(lng)], zone.polygon || [])) {
+        return zone;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error("findZoneByLocation error:", e);
+    return null;
+  }
+}
+
 // 🌏 Монголын байршил — хот/аймаг/дүүрэг/хороо
 // lat, lng — газрын зургийн төв координат
 const MN_LOCATIONS = {
@@ -5112,6 +5150,7 @@ function ZonesView({ profile }) {
   const [showEditor, setShowEditor] = useState(false);
   const [editZone, setEditZone] = useState(null);
   const [showAllMap, setShowAllMap] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -5175,15 +5214,22 @@ function ZonesView({ profile }) {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {zones.length > 0 && (
-            <button onClick={() => setShowAllMap(true)}
-              className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
-              style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.ok}` }}>
-              🗺 Газрын зурагнаас харах
-            </button>
+            <>
+              <button onClick={() => setShowAssign(true)}
+                className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                🚚 Захиалга хуваарилах
+              </button>
+              <button onClick={() => setShowAllMap(true)}
+                className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.ok}` }}>
+                🗺 Газрын зурагнаас харах
+              </button>
+            </>
           )}
           <button onClick={() => { setEditZone(null); setShowEditor(true); }}
             className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
-            style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.border}` }}>
             + Бүс үүсгэх
           </button>
         </div>
@@ -5295,6 +5341,16 @@ function ZonesView({ profile }) {
           zones={zones.filter((z) => z.is_active)}
           drivers={drivers}
           onClose={() => setShowAllMap(false)}
+        />
+      )}
+
+      {/* Assign Orders Modal */}
+      {showAssign && (
+        <AssignOrdersModal
+          zones={zones.filter((z) => z.is_active && z.driver_id)}
+          drivers={drivers}
+          profile={profile}
+          onClose={() => setShowAssign(false)}
         />
       )}
     </div>
@@ -5522,6 +5578,331 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
             className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
             style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
             Хаах
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Захиалга хуваарилах modal — координатаар бүсэд хамаарах захиалгуудыг олох ─────
+function AssignOrdersModal({ zones, drivers, profile, onClose }) {
+  const [unassignedOrders, setUnassignedOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [assigning, setAssigning] = useState(false);
+  const [assignResult, setAssignResult] = useState(null); // { matched: [...], unmatched: [...] }
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Driver name lookup
+  const driverNameById = useMemo(() => {
+    const m = {};
+    drivers.forEach((d) => { m[d.id] = d.name; });
+    return m;
+  }, [drivers]);
+
+  // Хуваарилагдаагүй захиалгуудыг татах
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await supabase.from("biz_orders")
+          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
+          .is("driver_id", null)
+          .in("status", ["new", "assigned"])
+          .order("created_at", { ascending: false });
+        setUnassignedOrders(data || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  // Coordinate-той захиалга бүрд тохирох бүсийг олох
+  const analyzed = useMemo(() => {
+    const matched = [];   // зөв бүс олдсон
+    const unmatched = []; // бүс олдоогүй (gps бий ч)
+    const noGps = [];     // координат байхгүй
+    
+    unassignedOrders.forEach((o) => {
+      if (!o.delivery_lat || !o.delivery_lng) {
+        noGps.push(o);
+        return;
+      }
+      const point = [Number(o.delivery_lat), Number(o.delivery_lng)];
+      const zone = zones.find((z) => isPointInPolygon(point, z.polygon || []));
+      if (zone) {
+        matched.push({ ...o, zone, driverName: driverNameById[zone.driver_id] });
+      } else {
+        unmatched.push(o);
+      }
+    });
+    
+    return { matched, unmatched, noGps };
+  }, [unassignedOrders, zones, driverNameById]);
+
+  // Хуваарилах товч
+  const handleAssign = async () => {
+    if (analyzed.matched.length === 0) {
+      alert("⚠ Бүс олдсон захиалга алга");
+      return;
+    }
+    
+    const toAssign = analyzed.matched.filter((o) => selectedIds.size === 0 || selectedIds.has(o.id));
+    
+    if (!confirm(`🚚 ${toAssign.length} захиалгыг хуваарилах уу?\n\nХүргэгчид автомат assign хийгдэнэ.`)) return;
+    
+    setAssigning(true);
+    let successCount = 0;
+    let failCount = 0;
+    
+    try {
+      for (const o of toAssign) {
+        try {
+          await supabase.from("biz_orders").update({
+            driver_id: o.zone.driver_id,
+            status: "assigned",
+          }).eq("id", o.id);
+          successCount++;
+        } catch (e) {
+          console.error(`Assign error for ${o.order_number}:`, e);
+          failCount++;
+        }
+      }
+      
+      alert(`✅ ${successCount} захиалга хуваарилагдлаа${failCount > 0 ? `\n⚠ ${failCount} алдаа гарсан` : ""}`);
+      
+      // Reload
+      const { data } = await supabase.from("biz_orders")
+        .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
+        .is("driver_id", null)
+        .in("status", ["new", "assigned"])
+        .order("created_at", { ascending: false });
+      setUnassignedOrders(data || []);
+      setSelectedIds(new Set());
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const ns = new Set(prev);
+      if (ns.has(id)) ns.delete(id);
+      else ns.add(id);
+      return ns;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === analyzed.matched.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(analyzed.matched.map((o) => o.id)));
+    }
+  };
+
+  return createPortal(
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
+    }}>
+      <div style={{
+        background: T.bg, borderRadius: 16, width: "100%", maxWidth: 700,
+        height: "92vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.4)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div className="p-3 flex items-center justify-between flex-shrink-0"
+          style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🚚 Захиалга хуваарилах
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              Хуваарилагдаагүй захиалгуудыг бүсээр нь хуваарилна
+            </div>
+          </div>
+          <button onClick={onClose} className="press-btn p-2" style={{ color: T.muted }}>✕</button>
+        </div>
+
+        {/* Stats */}
+        {!loading && (
+          <div className="p-3 grid grid-cols-3 gap-2 flex-shrink-0"
+            style={{ borderBottom: `1px solid ${T.border}` }}>
+            <div className="rounded-lg p-2 text-center" style={{ background: T.okSoft }}>
+              <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">
+                ✓ Бүс олдсон
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl">
+                {analyzed.matched.length}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 text-center" style={{ background: T.warnSoft }}>
+              <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase">
+                ⚠ Бүс олдоогүй
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl">
+                {analyzed.unmatched.length}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 text-center" style={{ background: T.errSoft }}>
+              <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">
+                ❌ GPS алга
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl">
+                {analyzed.noGps.length}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action bar */}
+        {analyzed.matched.length > 0 && (
+          <div className="px-3 py-2 flex items-center justify-between flex-shrink-0"
+            style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
+            <button onClick={toggleSelectAll}
+              className="press-btn px-3 py-1 rounded text-xs"
+              style={{ background: T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+              {selectedIds.size === analyzed.matched.length ? "☐ Бүгдийг сонгохгүй" : "☑ Бүгдийг сонгох"}
+            </button>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {selectedIds.size > 0 ? `${selectedIds.size} сонгогдсон` : "Бүгдийг хуваарилна"}
+            </span>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3">
+          {loading ? (
+            <div className="text-center py-8">
+              <Loader2 className="spin mx-auto" size={20} />
+            </div>
+          ) : unassignedOrders.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-2">✅</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                Хуваарилагдаагүй захиалга алга!
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Бүс олдсон захиалгууд */}
+              {analyzed.matched.length > 0 && (
+                <div>
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1 px-1">
+                    ✓ Хуваарилахад бэлэн ({analyzed.matched.length})
+                  </div>
+                  <div className="space-y-1">
+                    {analyzed.matched.map((o) => (
+                      <div key={o.id} className="rounded-lg p-2 cursor-pointer"
+                        onClick={() => toggleSelect(o.id)}
+                        style={{ 
+                          background: selectedIds.has(o.id) ? T.highlightSoft : T.surface,
+                          border: `1px solid ${selectedIds.has(o.id) ? T.highlight : T.border}`,
+                        }}>
+                        <div className="flex items-start gap-2">
+                          <input type="checkbox" checked={selectedIds.has(o.id)}
+                            onChange={() => toggleSelect(o.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ marginTop: 3 }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+                                {o.order_number}
+                              </span>
+                              <span style={{ 
+                                background: o.zone.color, color: "white", 
+                                padding: "1px 6px", borderRadius: 4, fontFamily: FS, fontWeight: 600,
+                              }} className="text-[10px]">
+                                {o.zone.name}
+                              </span>
+                              <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-[11px]">
+                                → 🚚 {o.driverName}
+                              </span>
+                            </div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                              📞 {o.customer_phone} · {o.customer_name || "—"} · {Number(o.total_amount).toLocaleString()}₮
+                            </div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] truncate">
+                              📍 {o.delivery_address || "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Бүс олдоогүй захиалгууд */}
+              {analyzed.unmatched.length > 0 && (
+                <div>
+                  <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1 px-1">
+                    ⚠ Бүс олдоогүй ({analyzed.unmatched.length})
+                  </div>
+                  <div className="space-y-1">
+                    {analyzed.unmatched.map((o) => (
+                      <div key={o.id} className="rounded-lg p-2"
+                        style={{ background: T.warnSoft, border: `1px solid ${T.warn}` }}>
+                        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+                          {o.order_number}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          📞 {o.customer_phone} · 📍 ({Number(o.delivery_lat).toFixed(4)}, {Number(o.delivery_lng).toFixed(4)})
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* GPS алга */}
+              {analyzed.noGps.length > 0 && (
+                <div>
+                  <div style={{ color: T.err, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1 px-1">
+                    ❌ GPS координат алга ({analyzed.noGps.length})
+                  </div>
+                  <div className="space-y-1">
+                    {analyzed.noGps.map((o) => (
+                      <div key={o.id} className="rounded-lg p-2"
+                        style={{ background: T.errSoft, border: `1px solid ${T.err}` }}>
+                        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+                          {o.order_number}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          📞 {o.customer_phone} · {o.delivery_address || "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="p-3 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${T.border}` }}>
+          <button onClick={onClose} disabled={assigning}
+            className="press-btn flex-1 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>
+            Хаах
+          </button>
+          <button onClick={handleAssign}
+            disabled={assigning || analyzed.matched.length === 0}
+            className="press-btn flex-[2] py-3 rounded-xl text-sm font-semibold"
+            style={{ 
+              background: analyzed.matched.length > 0 ? T.highlight : T.surfaceAlt, 
+              color: analyzed.matched.length > 0 ? "white" : T.muted, 
+              fontFamily: FS, fontWeight: 700,
+            }}>
+            {assigning 
+              ? "Хуваарилж..." 
+              : `🚚 ${selectedIds.size > 0 ? selectedIds.size : analyzed.matched.length} захиалгыг хуваарилах`
+            }
           </button>
         </div>
       </div>
@@ -11626,6 +12007,7 @@ function CallCenterView({ profile }) {
 
               // 2. Order create
               const orderNumber = `ZA-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 9000) + 1000}`;
+              
               const { data: order, error } = await supabase
                 .from("biz_orders")
                 .insert({
