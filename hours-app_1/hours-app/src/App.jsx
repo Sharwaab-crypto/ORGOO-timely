@@ -12007,33 +12007,61 @@ function CallCenterView({ profile }) {
                 }
               }
 
-              // 2. Order create
-              const orderNumber = `ZA-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 9000) + 1000}`;
+              // 2. Order create — давхардсан тохиолдолд retry хийнэ
+              let order = null;
+              let lastError = null;
+              const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
               
-              const { data: order, error } = await supabase
-                .from("biz_orders")
-                .insert({
-                  order_number: orderNumber,
-                  customer_id: customerId,
-                  customer_phone: data.phone,
-                  customer_phone2: data.phone2,
-                  customer_name: data.name,
-                  delivery_address: data.address,
-                  delivery_lat: data.delivery_lat || null,
-                  delivery_lng: data.delivery_lng || null,
-                  source: "phone",
-                  status: "new",
-                  subtotal: data.subtotal,
-                  delivery_fee: data.deliveryFee,
-                  total_amount: data.totalAmount,
-                  paid_amount: data.paidAmount,
-                  balance_due: data.balanceDue,
-                  notes: data.notes,
-                  taken_by: profile.id,
-                })
-                .select()
-                .single();
-              if (error) throw error;
+              for (let attempt = 0; attempt < 5; attempt++) {
+                // Илүү unique: timestamp last-4-digit + random 4-digit
+                const ts = Date.now().toString().slice(-4);
+                const rnd = Math.floor(Math.random() * 9000) + 1000;
+                const orderNumber = `ZA-${dateStr}-${ts}${rnd}`;
+                
+                const { data: newOrder, error: insertErr } = await supabase
+                  .from("biz_orders")
+                  .insert({
+                    order_number: orderNumber,
+                    customer_id: customerId,
+                    customer_phone: data.phone,
+                    customer_phone2: data.phone2,
+                    customer_name: data.name,
+                    delivery_address: data.address,
+                    delivery_lat: data.delivery_lat || null,
+                    delivery_lng: data.delivery_lng || null,
+                    source: "phone",
+                    status: "new",
+                    subtotal: data.subtotal,
+                    delivery_fee: data.deliveryFee,
+                    total_amount: data.totalAmount,
+                    paid_amount: data.paidAmount,
+                    balance_due: data.balanceDue,
+                    notes: data.notes,
+                    taken_by: profile.id,
+                  })
+                  .select()
+                  .single();
+                
+                if (!insertErr) {
+                  order = newOrder;
+                  break;
+                }
+                
+                lastError = insertErr;
+                // Хэрэв duplicate key алдаа бол → retry
+                if (insertErr.message?.includes("duplicate") || insertErr.code === "23505") {
+                  console.log(`[Retry ${attempt + 1}/5] Duplicate order_number, retrying...`);
+                  // 100мс хүлээгээд дахин туршина
+                  await new Promise((r) => setTimeout(r, 100 + Math.random() * 100));
+                  continue;
+                }
+                // Бусад алдаа бол → шууд буцах
+                throw insertErr;
+              }
+              
+              if (!order) {
+                throw lastError || new Error("Захиалга үүсгэх алдаа");
+              }
 
               // 3. Order items
               const orderItems = data.items.map((it) => ({
