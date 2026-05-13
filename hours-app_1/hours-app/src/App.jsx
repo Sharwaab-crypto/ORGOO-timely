@@ -25754,13 +25754,11 @@ function DriverDashboard({ profile }) {
   const filtered = orders.filter((o) => {
     if (filter === "available") return o.status === "new" && !o.driver_id;
     if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned");
-    // 🆕 Хуваарилагдсан — миний өөрийн захиалга + миний бүсэд багтах захиалгууд
+    // 🆕 Хуваарилах — зөвхөн Шинэ хэсэгт байгаа + миний бүсэд багтсан pin-тэй
     if (filter === "myzone") {
-      const isMine = o.driver_id === profile.id;
-      const isInZone = !o.driver_id && o.status === "new" && isInMyZone(o);
-      return (isMine || isInZone) && o.status !== "delivered" && o.status !== "cancelled";
+      return o.status === "new" && !o.driver_id && isInMyZone(o);
     }
-    // 🆕 Тодорхойгүй — миний биш захиалгууд (бусад driver-руу хуваарилагдсан биш)
+    // ❓ Тодорхойгүй — надад хуваарилагдсан ч миний бүсэд багтахгүй
     if (filter === "unknown") {
       return o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned");
     }
@@ -25777,11 +25775,7 @@ function DriverDashboard({ profile }) {
 
   const counts = {
     available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
-    myzone: orders.filter((o) => {
-      const isMine = o.driver_id === profile.id;
-      const isInZone = !o.driver_id && o.status === "new" && isInMyZone(o);
-      return (isMine || isInZone) && o.status !== "delivered" && o.status !== "cancelled";
-    }).length,
+    myzone: orders.filter((o) => o.status === "new" && !o.driver_id && isInMyZone(o)).length,
     unknown: orders.filter((o) => o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
