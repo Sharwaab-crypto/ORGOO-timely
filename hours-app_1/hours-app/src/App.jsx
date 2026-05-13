@@ -26347,9 +26347,17 @@ function DriverDashboard({ profile }) {
                         try {
                           await supabase.from("biz_orders").update({
                             driver_id: profile.id,
-                            is_unknown: false, // Авсаар → Тодорхойгүй биш болно
+                            is_unknown: false,
                             status: "new",
                           }).eq("id", o.id);
+                          // Optimistic update
+                          setOrders((prev) => prev.map((order) =>
+                            order.id === o.id
+                              ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+                              : order
+                          ));
+                          // 🚚 Хүргэх tab-руу автомат шилжих
+                          setFilter("active");
                           await loadAll();
                         } catch (e) { alert("Алдаа: " + e.message); }
                       }}
