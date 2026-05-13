@@ -10692,18 +10692,42 @@ function CallCenterView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // 🔔 Badge + Realtime
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const lastLoadTime = useRef(Date.now());
 
-  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const scrollY = window.scrollY || document.documentElement.scrollTop;
-      await loadAll();
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
-    }, 10000); // 10 секунд
-    return () => clearInterval(interval);
+    const channel = supabase
+      .channel("callcenter-badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_calls" },
+        (payload) => {
+          const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
+          if (evtTime < lastLoadTime.current) return;
+          setPendingChanges((prev) => prev + 1);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_orders" },
+        (payload) => {
+          const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
+          if (evtTime < lastLoadTime.current) return;
+          setPendingChanges((prev) => prev + 1);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
+
+  const handleRefresh = async () => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    lastLoadTime.current = Date.now();
+    setPendingChanges(0);
+    await loadAll();
+    requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+  };
 
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
@@ -10823,6 +10847,25 @@ function CallCenterView({ profile }) {
 
   return (
     <div className="space-y-3">
+      {/* 🔔 Шинэчлэх badge */}
+      {pendingChanges > 0 && (
+        <button onClick={handleRefresh}
+          className="press-btn w-full py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+          style={{
+            background: "linear-gradient(135deg, #f59e0b, #f97316)",
+            color: "white",
+            fontFamily: FS,
+            fontWeight: 700,
+            boxShadow: "0 4px 16px rgba(245, 158, 11, 0.5)",
+            position: "sticky", top: 8, zIndex: 100,
+          }}>
+          <span className="text-lg">🔔</span>
+          <span className="text-sm">
+            {pendingChanges} шинэ өөрчлөлт байна — Дарж шинэчлэх
+          </span>
+        </button>
+      )}
+
       {/* ⚠ Бараа дуусах анхааруулга */}
       <LowStockAlertBanner />
 
@@ -18027,17 +18070,33 @@ function OrdersView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
+  // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const lastLoadTime = useRef(Date.now());
+
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const scrollY = window.scrollY || document.documentElement.scrollTop;
-      await loadAll();
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
-    }, 10000); // 10 секунд
-    return () => clearInterval(interval);
+    const channel = supabase
+      .channel("orders-view-badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_orders" },
+        (payload) => {
+          const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
+          if (evtTime < lastLoadTime.current) return;
+          setPendingChanges((prev) => prev + 1);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
+
+  const handleRefresh = async () => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    lastLoadTime.current = Date.now();
+    setPendingChanges(0);
+    await loadAll();
+    requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+  };
 
   // Filter
   let filtered = orders;
@@ -18205,6 +18264,25 @@ function OrdersView({ profile }) {
 
   return (
     <div className="space-y-3">
+      {/* 🔔 Шинэчлэх badge */}
+      {pendingChanges > 0 && (
+        <button onClick={handleRefresh}
+          className="press-btn w-full py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+          style={{
+            background: "linear-gradient(135deg, #f59e0b, #f97316)",
+            color: "white",
+            fontFamily: FS,
+            fontWeight: 700,
+            boxShadow: "0 4px 16px rgba(245, 158, 11, 0.5)",
+            position: "sticky", top: 8, zIndex: 100,
+          }}>
+          <span className="text-lg">🔔</span>
+          <span className="text-sm">
+            {pendingChanges} шинэ өөрчлөлт байна — Дарж шинэчлэх
+          </span>
+        </button>
+      )}
+
       {/* List/Map toggle */}
       <div className="glass rounded-2xl p-2 flex gap-1">
         <button onClick={() => setViewMode("list")}
@@ -25603,21 +25681,52 @@ function DriverDashboard({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
-  // Map view үед — автомат refresh хийхгүй (map gain өөрчлөгдөхөөс сэргийлнэ)
+  // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const lastLoadTime = useRef(Date.now());
+
   useEffect(() => {
-    if (viewMode === "map") return; // Map үед refresh skip
-    const interval = setInterval(async () => {
-      // Refresh-ийн өмнө scroll-ыг хадгалах
-      const scrollY = window.scrollY || document.documentElement.scrollTop;
-      await loadAll();
-      // Refresh-ийн дараа scroll-ыг сэргээх
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
-    }, 10000); // 10 секунд
-    return () => clearInterval(interval);
-  }, [viewMode]);
+    // Realtime channel — DB өөрчлөгдөхөд badge counter +1
+    const channel = supabase
+      .channel(`driver-badge-${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "biz_orders" },
+        (payload) => {
+          // Сүүлд татсан хугацаанаас хойш өөрчлөгдсөн бол л badge харуулах
+          const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
+          if (evtTime < lastLoadTime.current) return;
+          
+          const o = payload.new || payload.old;
+          if (!o) return;
+          
+          // Зөвхөн чухал өөрчлөлтийг тоолох:
+          // - Шинэ захиалга (driver_id=null, status=new)
+          // - Миний захиалгад өөрчлөлт
+          // - Тодорхойгүй захиалга
+          const isRelevant = 
+            (!o.driver_id && o.status === "new") ||
+            o.driver_id === profile.id ||
+            o.is_unknown === true;
+          
+          if (isRelevant) {
+            setPendingChanges((prev) => prev + 1);
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => { supabase.removeChannel(channel); };
+  }, [profile.id]);
+
+  // Manual refresh — Badge даргах
+  const handleRefresh = async () => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    lastLoadTime.current = Date.now();
+    setPendingChanges(0);
+    await loadAll();
+    requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+  };
 
   const handleLogout = async () => {
     if (!confirm("Гарах уу?")) return;
@@ -25978,6 +26087,31 @@ function DriverDashboard({ profile }) {
             🗺 Газрын зураг
           </button>
         </div>
+
+        {/* 🔔 Шинэчлэх badge (зөвхөн өөрчлөлт байх үед) */}
+        {pendingChanges > 0 && (
+          <div style={{
+            position: "sticky",
+            top: 8,
+            zIndex: 100,
+          }}>
+            <button onClick={handleRefresh}
+              className="press-btn w-full py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              style={{
+                background: "linear-gradient(135deg, #f59e0b, #f97316)",
+                color: "white",
+                fontFamily: FS,
+                fontWeight: 700,
+                boxShadow: "0 4px 16px rgba(245, 158, 11, 0.5)",
+                animation: "pulse 2s infinite",
+              }}>
+              <span className="text-lg">🔔</span>
+              <span className="text-sm">
+                {pendingChanges} шинэ өөрчлөлт байна — Дарж шинэчлэх
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Filter tabs */}
         <div className="glass rounded-2xl p-2 flex gap-1 flex-wrap">
