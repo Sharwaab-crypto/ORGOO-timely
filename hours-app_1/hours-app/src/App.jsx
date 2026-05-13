@@ -152,6 +152,50 @@ async function fetchAllRows(queryBuilder) {
   return all;
 }
 
+// 🧩 Хэт олон ID-тай .in() query-г chunk-аар асууна
+// PostgREST URL ~8KB хязгаартай. UUID 37 char × 200 ≈ 7400 → аюулгүй
+// Chunk бүрд pagination бас хийнэ (нэг chunk-д >1000 row байж болно)
+async function fetchInChunks(table, ids, options = {}) {
+  const {
+    select = "*",
+    filterColumn = "id",
+    chunkSize = 200,
+  } = options;
+
+  if (!ids || ids.length === 0) return [];
+
+  // Давхар ID арилгах
+  const uniqueIds = [...new Set(ids)];
+  const results = [];
+
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunk = uniqueIds.slice(i, i + chunkSize);
+
+    // Chunk бүрд pagination (1000-аар)
+    let from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(select)
+        .in(filterColumn, chunk)
+        .range(from, from + PAGE - 1);
+
+      if (error) {
+        console.error(`[fetchInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
+        throw error;
+      }
+      if (!data || data.length === 0) break;
+      results.push(...data);
+      if (data.length < PAGE) break;
+      from += PAGE;
+      if (from > 50000) break;
+    }
+  }
+
+  return results;
+}
+
 // 🚚 Захиалгын координатаар → ямар бүсэд багтахыг олох
 async function findZoneByLocation(lat, lng) {
   if (!lat || !lng) return null;
@@ -12859,7 +12903,16 @@ function DeliveryDashboardView({ profile }) {
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [period, setPeriod] = useState("today"); // today, yesterday, week, month, all
+  const [period, setPeriod] = useState("today");
+  const [dailyGoal, setDailyGoal] = useState(() => {
+    try { return Number(localStorage.getItem("orgoo-delivery-daily-goal")) || 30; }
+    catch { return 30; }
+  });
+
+  // Daily goal-ийг localStorage-д хадгалах
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-delivery-daily-goal", String(dailyGoal)); } catch {}
+  }, [dailyGoal]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -12885,80 +12938,194 @@ function DeliveryDashboardView({ profile }) {
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  // Period filter
-  const periodRange = useMemo(() => {
-    // Монголын цаг
+  // ═════════════════════════════════════════════════════════════════════════
+  // ОДОО + ӨМНӨХ period (харьцуулахын тулд)
+  // ═════════════════════════════════════════════════════════════════════════
+  const { currentRange, previousRange } = useMemo(() => {
     const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
-    
+    const DAY = 86400000;
+
     if (period === "today") {
       const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate());
-      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-      return { start, end, label: "Өнөөдөр" };
+      const end = new Date(start.getTime() + DAY);
+      return {
+        currentRange: { start, end, label: "Өнөөдөр" },
+        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Өчигдөр" },
+      };
     }
     if (period === "yesterday") {
       const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate() - 1);
-      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-      return { start, end, label: "Өчигдөр" };
+      const end = new Date(start.getTime() + DAY);
+      return {
+        currentRange: { start, end, label: "Өчигдөр" },
+        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Урьд өдөр" },
+      };
     }
     if (period === "week") {
-      const start = new Date(mnNow);
-      start.setDate(start.getDate() - 7);
-      return { start, end: new Date(2099, 11, 31), label: "7 хоног" };
+      const end = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate() + 1);
+      const start = new Date(end.getTime() - 7 * DAY);
+      return {
+        currentRange: { start, end, label: "7 хоног" },
+        previousRange: { start: new Date(start.getTime() - 7 * DAY), end: start, label: "Өмнөх 7 хоног" },
+      };
     }
     if (period === "month") {
       const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), 1);
-      return { start, end: new Date(2099, 11, 31), label: "Энэ сар" };
+      const end = new Date(mnNow.getFullYear(), mnNow.getMonth() + 1, 1);
+      return {
+        currentRange: { start, end, label: "Энэ сар" },
+        previousRange: {
+          start: new Date(mnNow.getFullYear(), mnNow.getMonth() - 1, 1),
+          end: start,
+          label: "Өнгөрсөн сар",
+        },
+      };
     }
-    return { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" };
+    return {
+      currentRange: { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" },
+      previousRange: null,
+    };
   }, [period]);
 
-  // Filtered orders by period
-  const filteredOrders = useMemo(() => {
+  const periodRange = currentRange;
+
+  const filteredOrders = useMemo(() => orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d >= currentRange.start && d < currentRange.end;
+  }), [orders, currentRange]);
+
+  const previousFilteredOrders = useMemo(() => {
+    if (!previousRange) return [];
     return orders.filter((o) => {
       const d = new Date(o.created_at);
-      return d >= periodRange.start && d < periodRange.end;
+      return d >= previousRange.start && d < previousRange.end;
     });
-  }, [orders, periodRange]);
+  }, [orders, previousRange]);
 
-  // Хүргэгч тус бүрийн статистик
-  const driverStats = useMemo(() => {
-    return drivers.map((d) => {
-      const driverOrders = filteredOrders.filter((o) => o.driver_id === d.id);
-      const delivered = driverOrders.filter((o) => o.status === "delivered");
-      const cancelled = driverOrders.filter((o) => o.status === "cancelled");
-      const pending = driverOrders.filter((o) => 
-        o.status === "new" || o.status === "assigned" || o.status === "out_for_delivery"
+  const computeStats = (driverList, ordList) => driverList.map((d) => {
+    const driverOrders = ordList.filter((o) => o.driver_id === d.id);
+    const delivered = driverOrders.filter((o) => o.status === "delivered");
+    const cancelled = driverOrders.filter((o) => o.status === "cancelled");
+    const pending = driverOrders.filter((o) =>
+      o.status === "new" || o.status === "assigned" || o.status === "out_for_delivery"
+    );
+    const deliveredAmount = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+    const deliveryFee = delivered.reduce((s, o) => s + Number(o.delivery_fee || 0), 0);
+    return {
+      ...d,
+      total: driverOrders.length,
+      delivered: delivered.length,
+      cancelled: cancelled.length,
+      pending: pending.length,
+      deliveredAmount,
+      deliveryFee,
+      deliveryRate: driverOrders.length > 0
+        ? Math.round((delivered.length / driverOrders.length) * 100)
+        : 0,
+    };
+  });
+
+  const driverStats = useMemo(
+    () => computeStats(drivers, filteredOrders).sort((a, b) => b.delivered - a.delivered),
+    [drivers, filteredOrders]
+  );
+
+  const previousDriverStats = useMemo(
+    () => computeStats(drivers, previousFilteredOrders),
+    [drivers, previousFilteredOrders]
+  );
+
+  const prevStatsMap = useMemo(() => {
+    const map = {};
+    previousDriverStats.forEach((d) => { map[d.id] = d; });
+    return map;
+  }, [previousDriverStats]);
+
+  const totalStats = useMemo(() => driverStats.reduce((acc, d) => ({
+    total: acc.total + d.total,
+    delivered: acc.delivered + d.delivered,
+    cancelled: acc.cancelled + d.cancelled,
+    pending: acc.pending + d.pending,
+    deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
+    deliveryFee: acc.deliveryFee + d.deliveryFee,
+  }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 }),
+  [driverStats]);
+
+  const previousTotalStats = useMemo(() => previousDriverStats.reduce((acc, d) => ({
+    total: acc.total + d.total,
+    delivered: acc.delivered + d.delivered,
+    cancelled: acc.cancelled + d.cancelled,
+    pending: acc.pending + d.pending,
+    deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
+    deliveryFee: acc.deliveryFee + d.deliveryFee,
+  }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 }),
+  [previousDriverStats]);
+
+  const goalForPeriod = useMemo(() => {
+    if (period === "today" || period === "yesterday") return dailyGoal;
+    if (period === "week") return dailyGoal * 7;
+    if (period === "month") {
+      const y = currentRange.start.getFullYear();
+      const m = currentRange.start.getMonth();
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      return dailyGoal * daysInMonth;
+    }
+    return 0;
+  }, [period, dailyGoal, currentRange]);
+
+  const goalProgress = goalForPeriod > 0
+    ? Math.min(100, Math.round((totalStats.delivered / goalForPeriod) * 100))
+    : 0;
+
+  const TrendBadge = ({ current, previous, invert = false }) => {
+    if (!previousRange) return null;
+    if (previous === 0 && current === 0) return null;
+    if (previous === 0 && current > 0) {
+      return (
+        <span style={{ color: invert ? T.err : T.ok, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
+          ↑ Шинэ
+        </span>
       );
-      
-      const deliveredAmount = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
-      const deliveryFee = delivered.reduce((s, o) => s + Number(o.delivery_fee || 0), 0);
-      
-      return {
-        ...d,
-        total: driverOrders.length,
-        delivered: delivered.length,
-        cancelled: cancelled.length,
-        pending: pending.length,
-        deliveredAmount,
-        deliveryFee,
-        deliveryRate: driverOrders.length > 0 
-          ? Math.round((delivered.length / driverOrders.length) * 100) 
-          : 0,
-      };
-    }).sort((a, b) => b.delivered - a.delivered); // Хамгийн их хүргэгчээр sort
-  }, [drivers, filteredOrders]);
+    }
+    if (previous > 0 && current === 0) {
+      return (
+        <span style={{ color: invert ? T.ok : T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
+          ↓ -100%
+        </span>
+      );
+    }
+    const diff = current - previous;
+    const pct = Math.round((diff / previous) * 100);
+    const isFlat = diff === 0;
+    const isUp = diff > 0;
+    const color = isFlat ? T.muted : (isUp !== invert ? T.ok : T.err);
+    const arrow = isFlat ? "→" : isUp ? "↑" : "↓";
+    return (
+      <span style={{ color, fontFamily: FM, fontWeight: 600 }} className="text-[10px] tabular-nums">
+        {arrow} {pct > 0 ? "+" : ""}{pct}%
+      </span>
+    );
+  };
 
-  // Нийт стат
-  const totalStats = useMemo(() => {
-    return driverStats.reduce((acc, d) => ({
-      total: acc.total + d.total,
-      delivered: acc.delivered + d.delivered,
-      cancelled: acc.cancelled + d.cancelled,
-      pending: acc.pending + d.pending,
-      deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
-      deliveryFee: acc.deliveryFee + d.deliveryFee,
-    }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 });
-  }, [driverStats]);
+  const ProgressBar = ({ value, max = 100, color = T.highlight, height = 6 }) => {
+    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+    return (
+      <div style={{
+        height,
+        background: T.surfaceAlt,
+        borderRadius: height,
+        overflow: "hidden",
+      }} className="w-full">
+        <div style={{
+          width: `${pct}%`,
+          height: "100%",
+          background: color,
+          borderRadius: height,
+          transition: "width 400ms ease",
+        }} />
+      </div>
+    );
+  };
 
   if (loading && drivers.length === 0) {
     return (
@@ -12995,9 +13162,71 @@ function DeliveryDashboardView({ profile }) {
             </button>
           ))}
         </div>
+        {previousRange && (
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2">
+            ↔️ Харьцуулна: <strong>{currentRange.label}</strong> vs <strong>{previousRange.label}</strong>
+          </div>
+        )}
       </div>
 
-      {/* Нийт стат */}
+      {/* 🎯 ЗОРИЛГО PROGRESS */}
+      {goalForPeriod > 0 && (
+        <div className="glass rounded-2xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                🎯 Зорилго
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                ({periodRange.label})
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={dailyGoal}
+                min={1}
+                onChange={(e) => setDailyGoal(Math.max(1, Number(e.target.value) || 1))}
+                className="w-14 px-2 py-1 rounded-md text-xs text-center"
+                style={{
+                  background: T.surface,
+                  color: T.ink,
+                  fontFamily: FM,
+                  border: `1px solid ${T.border}`,
+                }}
+              />
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                /өдөр
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+              {totalStats.delivered}
+              <span style={{ color: T.muted, fontWeight: 400 }} className="text-sm"> / {goalForPeriod}</span>
+            </div>
+            <div style={{
+              color: goalProgress >= 100 ? T.ok : goalProgress >= 70 ? T.warn : T.err,
+              fontFamily: FD, fontWeight: 700,
+            }} className="text-lg tabular-nums">
+              {goalProgress}%
+            </div>
+          </div>
+          <ProgressBar
+            value={totalStats.delivered}
+            max={goalForPeriod}
+            color={goalProgress >= 100 ? T.ok : goalProgress >= 70 ? T.warn : T.highlight}
+            height={8}
+          />
+          {goalProgress >= 100 && (
+            <div style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }} className="text-[10px] mt-1.5 text-center">
+              🎉 Зорилго биеллээ!
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Нийт стат + Trend */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <div className="glass rounded-2xl p-3">
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
@@ -13008,24 +13237,33 @@ function DeliveryDashboardView({ profile }) {
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ background: T.okSoft }}>
-          <div style={{ color: T.ok, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            ✓ Амжилттай
+          <div className="flex items-center justify-between">
+            <div style={{ color: T.ok, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              ✓ Амжилттай
+            </div>
+            <TrendBadge current={totalStats.delivered} previous={previousTotalStats.delivered} />
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl mt-1">
             {totalStats.delivered}
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ background: T.errSoft }}>
-          <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            ✕ Цуцалсан
+          <div className="flex items-center justify-between">
+            <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              ✕ Цуцалсан
+            </div>
+            <TrendBadge current={totalStats.cancelled} previous={previousTotalStats.cancelled} invert />
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl mt-1">
             {totalStats.cancelled}
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ background: T.warnSoft }}>
-          <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            ⏳ Хүлээгдэж
+          <div className="flex items-center justify-between">
+            <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              ⏳ Хүлээгдэж
+            </div>
+            <TrendBadge current={totalStats.pending} previous={previousTotalStats.pending} invert />
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl mt-1">
             {totalStats.pending}
@@ -13033,19 +13271,25 @@ function DeliveryDashboardView({ profile }) {
         </div>
       </div>
 
-      {/* Нийт мөнгө */}
+      {/* Нийт мөнгө + trend */}
       <div className="grid grid-cols-2 gap-2">
         <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            💰 Амжилттай нийт дүн
+          <div className="flex items-center justify-between">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              💰 Амжилттай нийт дүн
+            </div>
+            <TrendBadge current={totalStats.deliveredAmount} previous={previousTotalStats.deliveredAmount} />
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg mt-1 tabular-nums">
             {totalStats.deliveredAmount.toLocaleString()}₮
           </div>
         </div>
         <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            🚀 Хүргэлтийн хөлс
+          <div className="flex items-center justify-between">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+              🚀 Хүргэлтийн хөлс
+            </div>
+            <TrendBadge current={totalStats.deliveryFee} previous={previousTotalStats.deliveryFee} />
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg mt-1 tabular-nums">
             {totalStats.deliveryFee.toLocaleString()}₮
@@ -13066,86 +13310,103 @@ function DeliveryDashboardView({ profile }) {
             </div>
           </div>
         ) : (
-          driverStats.map((d) => (
-            <div key={d.id} className="glass rounded-2xl p-3"
-              style={{ 
-                borderLeft: `3px solid ${
-                  d.total === 0 ? T.muted :
-                  d.deliveryRate >= 80 ? T.ok :
-                  d.deliveryRate >= 50 ? T.warn : T.err
-                }`,
-              }}>
-              {/* Driver info */}
-              <div className="flex items-center gap-3 mb-2">
-                <div style={{ background: "#0ea5e9", color: "white" }}
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-                  {d.name?.charAt(0) || "🚚"}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                    🚚 {d.name}
+          driverStats.map((d) => {
+            const prev = prevStatsMap[d.id];
+            return (
+              <div key={d.id} className="glass rounded-2xl p-3"
+                style={{
+                  borderLeft: `3px solid ${
+                    d.total === 0 ? T.muted :
+                    d.deliveryRate >= 80 ? T.ok :
+                    d.deliveryRate >= 50 ? T.warn : T.err
+                  }`,
+                }}>
+                <div className="flex items-center gap-3 mb-2">
+                  <div style={{ background: "#0ea5e9", color: "white" }}
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                    {d.name?.charAt(0) || "🚚"}
                   </div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                    Нийт: {d.total} · Амжилт: {d.deliveryRate}%
-                  </div>
-                </div>
-                {d.total > 0 && (
-                  <div className="text-right">
-                    <div style={{ 
-                      color: d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err,
-                      fontFamily: FD, fontWeight: 700,
-                    }} className="text-base">
-                      {d.deliveryRate}%
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                      🚚 {d.name}
                     </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                      амжилт
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] flex items-center gap-1.5 flex-wrap">
+                      <span>Нийт: {d.total}</span>
+                      <span>·</span>
+                      <span>Амжилт: {d.deliveryRate}%</span>
+                      {prev && <TrendBadge current={d.delivered} previous={prev.delivered} />}
+                    </div>
+                  </div>
+                  {d.total > 0 && (
+                    <div className="text-right">
+                      <div style={{
+                        color: d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err,
+                        fontFamily: FD, fontWeight: 700,
+                      }} className="text-base">
+                        {d.deliveryRate}%
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                        амжилт
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {d.total > 0 && (
+                  <div className="mb-2">
+                    <ProgressBar
+                      value={d.delivered}
+                      max={d.total}
+                      color={d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err}
+                      height={5}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div className="rounded-lg p-2 text-center" style={{ background: T.okSoft }}>
+                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">
+                      ✓ Амжилт
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base">
+                      {d.delivered}
+                    </div>
+                  </div>
+                  <div className="rounded-lg p-2 text-center" style={{ background: T.errSoft }}>
+                    <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">
+                      ✕ Цуцалсан
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base">
+                      {d.cancelled}
+                    </div>
+                  </div>
+                  <div className="rounded-lg p-2 text-center" style={{ background: T.warnSoft }}>
+                    <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase">
+                      ⏳ Хүлээ.
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base">
+                      {d.pending}
+                    </div>
+                  </div>
+                </div>
+
+                {d.delivered > 0 && (
+                  <div className="mt-2 pt-2 flex items-center justify-between text-xs"
+                    style={{ borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                      💰 Нийт орлого
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {prev && <TrendBadge current={d.deliveredAmount} previous={prev.deliveredAmount} />}
+                      <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="tabular-nums">
+                        {d.deliveredAmount.toLocaleString()}₮
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
-
-              {/* Stats grid */}
-              <div className="grid grid-cols-3 gap-1.5">
-                <div className="rounded-lg p-2 text-center" style={{ background: T.okSoft }}>
-                  <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">
-                    ✓ Амжилт
-                  </div>
-                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base">
-                    {d.delivered}
-                  </div>
-                </div>
-                <div className="rounded-lg p-2 text-center" style={{ background: T.errSoft }}>
-                  <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">
-                    ✕ Цуцалсан
-                  </div>
-                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base">
-                    {d.cancelled}
-                  </div>
-                </div>
-                <div className="rounded-lg p-2 text-center" style={{ background: T.warnSoft }}>
-                  <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase">
-                    ⏳ Хүлээ.
-                  </div>
-                  <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base">
-                    {d.pending}
-                  </div>
-                </div>
-              </div>
-
-              {/* Money */}
-              {d.delivered > 0 && (
-                <div className="mt-2 pt-2 flex items-center justify-between text-xs"
-                  style={{ borderTop: `1px solid ${T.border}` }}>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                    💰 Нийт орлого
-                  </div>
-                  <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="tabular-nums">
-                    {d.deliveredAmount.toLocaleString()}₮
-                  </div>
-                </div>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -13154,11 +13415,15 @@ function DeliveryDashboardView({ profile }) {
         style={{ background: T.surfaceAlt }}>
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
           📊 Хугацаа: <strong>{periodRange.label}</strong> · Нийт захиалга: <strong>{totalStats.total}</strong>
+          {previousRange && (
+            <> · Өмнөх: <strong>{previousTotalStats.total}</strong></>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
 
 function SalesDashboardView({ profile }) {
   const [calls, setCalls] = useState([]);
@@ -18050,9 +18315,12 @@ function OrdersView({ profile }) {
       // Items load
       if (ordData && ordData.length > 0) {
         const orderIds = ordData.map((o) => o.id);
-        const itemData = await fetchAllRows(
-          supabase.from("biz_order_items").select("*").in("order_id", orderIds)
-        );
+        // 🧩 Chunk-аар асуух (URL хязгаараас хальдгийг засна)
+        const itemData = await fetchInChunks("biz_order_items", orderIds, {
+          select: "*",
+          filterColumn: "order_id",
+          chunkSize: 200,
+        });
 
         const prodMap = {};
         (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
@@ -24769,9 +25037,12 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
             return;
           }
 
-          const { data: itemData } = await supabase
-            .from("biz_order_items").select("product_id, product_name, quantity")
-            .in("order_id", orderIds);
+          // 🧩 Chunk-аар асуух (URL хязгаараас хальдгийг засна)
+          const itemData = await fetchInChunks("biz_order_items", orderIds, {
+            select: "product_id, product_name, quantity",
+            filterColumn: "order_id",
+            chunkSize: 200,
+          });
 
           const requiredMap = {};
           (itemData || []).forEach((it) => {
@@ -25656,10 +25927,12 @@ function DriverDashboard({ profile }) {
 
       if (all.length > 0) {
         const orderIds = all.map((o) => o.id);
-        // Items pagination — олон захиалгад олон item байх боломжтой
-        const itemData = await fetchAllRows(
-          supabase.from("biz_order_items").select("*").in("order_id", orderIds)
-        );
+        // 🧩 Chunk-аар асуух — 1207+ захиалгатай driver-д URL хязгаар хальж байсныг засна
+        const itemData = await fetchInChunks("biz_order_items", orderIds, {
+          select: "*",
+          filterColumn: "order_id",
+          chunkSize: 200,
+        });
 
         const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
         const { data: prodData } = productIds.length > 0
