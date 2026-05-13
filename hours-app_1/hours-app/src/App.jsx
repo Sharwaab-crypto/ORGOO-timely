@@ -25976,7 +25976,7 @@ function DriverDashboard({ profile }) {
             )}
           </button>
 
-          {/* 📍 Хуваарилагдсан (миний бүсэд) */}
+          {/* 📍 Хуваарилах (миний бүсэд) */}
           {myZones.length > 0 && (
             <button onClick={() => setFilter("myzone")}
               className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
@@ -25986,7 +25986,7 @@ function DriverDashboard({ profile }) {
                 fontFamily: FS, fontWeight: 600,
                 minWidth: "100px",
               }}>
-              📍 Хуваарилагдсан ({counts.myzone})
+              📍 Хуваарилах ({counts.myzone})
               {counts.myzone > 0 && filter !== "myzone" && (
                 <span style={{
                   position: "absolute", top: -4, right: -4,
