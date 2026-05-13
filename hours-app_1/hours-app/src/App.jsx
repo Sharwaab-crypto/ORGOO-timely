@@ -26175,23 +26175,26 @@ function DriverDashboard({ profile }) {
                 {/* Action buttons */}
                 {!o.driver_id && o.status === "new" ? (
                   // Эзэнгүй захиалга — Авах эсвэл Хуваарилах
-                  <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className={filter === "unknown" ? "mt-2" : "grid grid-cols-2 gap-2 mt-2"}>
                     <button onClick={(e) => { e.stopPropagation(); claimOrder(o.id); }}
-                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                       style={{
                         background: "linear-gradient(135deg, #9333ea, #c026d3)",
                         color: "white", fontFamily: FS,
                       }}>
                       🆕 Өөртөө авах
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setAssignDriverOrder(o); }}
-                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                      style={{
-                        background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS,
-                        border: `1px solid #0ea5e9`,
-                      }}>
-                      🚚 Хүргэлт хуваарилах
-                    </button>
+                    {/* "Тодорхойгүй" tab дотор бол → "Хүргэлт хуваарилах" товч АЛГА */}
+                    {filter !== "unknown" && (
+                      <button onClick={(e) => { e.stopPropagation(); setAssignDriverOrder(o); }}
+                        className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{
+                          background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS,
+                          border: `1px solid #0ea5e9`,
+                        }}>
+                        🚚 Хүргэлт хуваарилах
+                      </button>
+                    )}
                   </div>
                 ) : (o.status === "new" || o.status === "pending") && (
                   <div className="space-y-2 mt-2">
@@ -26252,16 +26255,21 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                     <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => updateStatus(o.id, "delivered")}
-                        className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                        style={{ background: T.ok, color: "white", fontFamily: FS }}>
-                        ✓ Хүргэсэн
-                      </button>
-                      <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
-                        className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                        style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                        ✕ Хүргэх боломжгүй
-                      </button>
+                      {/* "Тодорхойгүй" tab дотор → миний биш бол → "Хүргэсэн / Цуцлах" товч ХАРАГДАХГҮЙ */}
+                      {!(filter === "unknown" && o.driver_id !== profile.id) && (
+                        <>
+                          <button onClick={() => updateStatus(o.id, "delivered")}
+                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                            ✓ Хүргэсэн
+                          </button>
+                          <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
+                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                            ✕ Хүргэх боломжгүй
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
