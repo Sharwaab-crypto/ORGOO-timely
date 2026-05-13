@@ -18729,10 +18729,16 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         maxZoom: 19,
       }).addTo(map);
 
-      // Mobile дээр container хэмжээ зөв тооцох
+      // Mobile дээр container хэмжээ зөв тооцох — multiple invalidate
       setTimeout(() => {
         if (mapRef.current) mapRef.current.invalidateSize();
       }, 100);
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 500);
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 1000);
 
       setMapReady(true); // ⭐ markers effect-руу мэдэгдэх
     })();
@@ -25598,7 +25604,9 @@ function DriverDashboard({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
   // 🔄 10 секунд тутамд автомат refresh — scroll position хадгална
+  // Map view үед — автомат refresh хийхгүй (map gain өөрчлөгдөхөөс сэргийлнэ)
   useEffect(() => {
+    if (viewMode === "map") return; // Map үед refresh skip
     const interval = setInterval(async () => {
       // Refresh-ийн өмнө scroll-ыг хадгалах
       const scrollY = window.scrollY || document.documentElement.scrollTop;
@@ -25609,7 +25617,7 @@ function DriverDashboard({ profile }) {
       });
     }, 10000); // 10 секунд
     return () => clearInterval(interval);
-  }, []);
+  }, [viewMode]);
 
   const handleLogout = async () => {
     if (!confirm("Гарах уу?")) return;
