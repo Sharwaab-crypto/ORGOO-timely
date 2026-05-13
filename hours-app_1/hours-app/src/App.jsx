@@ -618,8 +618,7 @@ export default function App() {
     <>
       {installBanner}
       <NotificationManager profile={profile} />
-      {profile.role === "admin" ? <AdminDashboard profile={profile} />
-        : profile.role === "manager" ? <ManagerDashboard profile={profile} />
+      {(profile.role === "admin" || profile.role === "manager") ? <AdminDashboard profile={profile} />
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
@@ -1990,7 +1989,7 @@ function AdminDashboard({ profile }) {
                       {profile.name}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
-                      Админ
+                      {profile.role === "manager" ? "Ахлагч" : "Админ"}
                     </div>
                   </div>
                   <DarkModeToggle />
