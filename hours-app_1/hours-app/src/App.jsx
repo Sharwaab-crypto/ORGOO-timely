@@ -25769,11 +25769,11 @@ function DriverDashboard({ profile }) {
 
   // Filter
   const filtered = orders.filter((o) => {
-    if (filter === "available") return o.status === "new" && !o.driver_id;
-    if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned");
+    if (filter === "available") return o.status === "new" && !o.driver_id && !o.is_unknown;
+    if (filter === "active") return o.driver_id === profile.id && !o.is_unknown && (o.status === "new" || o.status === "pending" || o.status === "assigned");
     // 🆕 Хуваарилах — зөвхөн Шинэ хэсэгт байгаа + миний бүсэд багтсан pin-тэй
     if (filter === "myzone") {
-      return o.status === "new" && !o.driver_id && isInMyZone(o);
+      return o.status === "new" && !o.driver_id && !o.is_unknown && isInMyZone(o);
     }
     // ❓ Тодорхойгүй — БҮХ DRIVER хардаг
     //   1. Шинэ дотор GPS байхгүй захиалга (хуваарилагдаагүй)
@@ -25795,14 +25795,14 @@ function DriverDashboard({ profile }) {
   const pagedFiltered = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   const counts = {
-    available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
-    myzone: orders.filter((o) => o.status === "new" && !o.driver_id && isInMyZone(o)).length,
+    available: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length,
+    myzone: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown && isInMyZone(o)).length,
     unknown: orders.filter((o) => {
       const noGpsNew = o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng);
       const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
       return noGpsNew || markedUnknown;
     }).length,
-    active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
+    active: orders.filter((o) => o.driver_id === profile.id && !o.is_unknown && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
     cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
   };
