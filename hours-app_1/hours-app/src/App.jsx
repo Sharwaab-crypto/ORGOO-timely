@@ -134,6 +134,24 @@ function isPointInPolygon(point, polygon) {
   return inside;
 }
 
+// 🚀 Supabase 1000-н row hard limit-ийг bypass хийх pagination helper
+// Хязгаарлалтгүй бүх row татаж буцаана
+async function fetchAllRows(queryBuilder) {
+  const PAGE = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryBuilder.range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+    if (from > 50000) break; // safety: 50K row хүртэл
+  }
+  return all;
+}
+
 // 🚚 Захиалгын координатаар → ямар бүсэд багтахыг олох
 async function findZoneByLocation(lat, lng) {
   if (!lat || !lng) return null;
@@ -10638,13 +10656,13 @@ function CallCenterView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: callData }, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, { data: ordData }] = await Promise.all([
-        supabase.from("biz_calls").select("*").order("created_at", { ascending: false }),
+      const [callData, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
+        fetchAllRows(supabase.from("biz_calls").select("*").order("created_at", { ascending: false })),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
-        supabase.from("biz_customers").select("*"),
+        fetchAllRows(supabase.from("biz_customers").select("*")),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
-        supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at"),
+        fetchAllRows(supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at")),
       ]);
       setRecentCalls(callData || []);
       setOrders(ordData || []);
@@ -12407,9 +12425,9 @@ function OperatorKPIReportView({ profile }) {
     (async () => {
       setLoading(true);
       try {
-        const [{ data: callData }, { data: ordData }, { data: opData }] = await Promise.all([
-          supabase.from("biz_calls").select("*"),
-          supabase.from("biz_orders").select("*"),
+        const [callData, ordData, { data: opData }] = await Promise.all([
+          fetchAllRows(supabase.from("biz_calls").select("*")),
+          fetchAllRows(supabase.from("biz_orders").select("*")),
           supabase.from("profiles")
             .select("id, name, role, job_title")
             .in("role", ["admin", "manager", "operator"])
@@ -12803,9 +12821,9 @@ function DeliveryDashboardView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: drvData }, { data: ordData }] = await Promise.all([
+      const [{ data: drvData }, ordData] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        supabase.from("biz_orders").select("*").not("driver_id", "is", null).order("created_at", { ascending: false }),
+        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).order("created_at", { ascending: false })),
       ]);
       setDrivers(drvData || []);
       setOrders(ordData || []);
@@ -13153,10 +13171,10 @@ function SalesDashboardView({ profile }) {
     (async () => {
       setLoading(true);
       try {
-        const [{ data: callData }, { data: ordData }, { data: itmData }, { data: prodData }, { data: fbData }] = await Promise.all([
-          supabase.from("biz_calls").select("*"),
-          supabase.from("biz_orders").select("*"),
-          supabase.from("biz_order_items").select("*"),
+        const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
+          fetchAllRows(supabase.from("biz_calls").select("*")),
+          fetchAllRows(supabase.from("biz_orders").select("*")),
+          fetchAllRows(supabase.from("biz_order_items").select("*")),
           supabase.from("inv_products").select("id, name, image_url, sku"),
           supabase.from("biz_fb_pages").select("*"),
         ]);
@@ -14022,10 +14040,10 @@ function DriverSettlementView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: drvData }, { data: ordData }, { data: openSettleData }] = await Promise.all([
+      const [{ data: drvData }, ordData, openSettleData] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        supabase.from("biz_orders").select("*").not("driver_id", "is", null),
-        supabase.from("biz_settlements").select("*").eq("status", "open"),
+        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_settlements").select("*").eq("status", "open")),
       ]);
       setDrivers(drvData || []);
       setOrders(ordData || []);
@@ -17977,8 +17995,8 @@ function OrdersView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: ordData }, { data: prodData }, { data: drvData }] = await Promise.all([
-        supabase.from("biz_orders").select("*").order("created_at", { ascending: false }).limit(2000),
+      const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
+        fetchAllRows(supabase.from("biz_orders").select("*").order("created_at", { ascending: false })),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
@@ -17989,10 +18007,9 @@ function OrdersView({ profile }) {
       // Items load
       if (ordData && ordData.length > 0) {
         const orderIds = ordData.map((o) => o.id);
-        const { data: itemData } = await supabase
-          .from("biz_order_items")
-          .select("*")
-          .in("order_id", orderIds);
+        const itemData = await fetchAllRows(
+          supabase.from("biz_order_items").select("*").in("order_id", orderIds)
+        );
 
         const prodMap = {};
         (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
@@ -25497,29 +25514,13 @@ function DriverDashboard({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // Хэрэглэгчийн бүх захиалгуудыг pagination-аар татах (1000 limit-ийг bypass)
-      const fetchAllPages = async (query) => {
-        const PAGE = 1000;
-        let all = [];
-        let from = 0;
-        while (true) {
-          const { data, error } = await query.range(from, from + PAGE - 1);
-          if (error) throw error;
-          if (!data || data.length === 0) break;
-          all = all.concat(data);
-          if (data.length < PAGE) break;
-          from += PAGE;
-        }
-        return all;
-      };
-
       const [ownOrders, newOrders, { data: driversData }] = await Promise.all([
-        fetchAllPages(
+        fetchAllRows(
           supabase.from("biz_orders").select("*")
             .eq("driver_id", profile.id)
             .order("created_at", { ascending: false })
         ),
-        fetchAllPages(
+        fetchAllRows(
           supabase.from("biz_orders").select("*")
             .is("driver_id", null).eq("status", "new")
             .order("created_at", { ascending: false })
@@ -25541,20 +25542,9 @@ function DriverDashboard({ profile }) {
       if (all.length > 0) {
         const orderIds = all.map((o) => o.id);
         // Items pagination — олон захиалгад олон item байх боломжтой
-        let itemData = [];
-        const ITEMS_PAGE = 1000;
-        let from = 0;
-        while (true) {
-          const { data } = await supabase
-            .from("biz_order_items")
-            .select("*")
-            .in("order_id", orderIds)
-            .range(from, from + ITEMS_PAGE - 1);
-          if (!data || data.length === 0) break;
-          itemData = itemData.concat(data);
-          if (data.length < ITEMS_PAGE) break;
-          from += ITEMS_PAGE;
-        }
+        const itemData = await fetchAllRows(
+          supabase.from("biz_order_items").select("*").in("order_id", orderIds)
+        );
 
         const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
         const { data: prodData } = productIds.length > 0
