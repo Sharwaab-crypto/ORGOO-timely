@@ -154,7 +154,6 @@ async function fetchAllRows(queryBuilder) {
 
 // 🧩 Хэт олон ID-тай .in() query-г chunk-аар асууна
 // PostgREST URL ~8KB хязгаартай. UUID 37 char × 200 ≈ 7400 → аюулгүй
-// Chunk бүрд pagination бас хийнэ (нэг chunk-д >1000 row байж болно)
 async function fetchInChunks(table, ids, options = {}) {
   const {
     select = "*",
@@ -163,15 +162,11 @@ async function fetchInChunks(table, ids, options = {}) {
   } = options;
 
   if (!ids || ids.length === 0) return [];
-
-  // Давхар ID арилгах
   const uniqueIds = [...new Set(ids)];
   const results = [];
 
   for (let i = 0; i < uniqueIds.length; i += chunkSize) {
     const chunk = uniqueIds.slice(i, i + chunkSize);
-
-    // Chunk бүрд pagination (1000-аар)
     let from = 0;
     const PAGE = 1000;
     while (true) {
@@ -180,7 +175,6 @@ async function fetchInChunks(table, ids, options = {}) {
         .select(select)
         .in(filterColumn, chunk)
         .range(from, from + PAGE - 1);
-
       if (error) {
         console.error(`[fetchInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
         throw error;
@@ -192,7 +186,6 @@ async function fetchInChunks(table, ids, options = {}) {
       if (from > 50000) break;
     }
   }
-
   return results;
 }
 
@@ -26213,7 +26206,8 @@ function DriverDashboard({ profile }) {
         .from("biz_orders")
         .update({
           driver_id: profile.id,
-          status: "pending",
+          status: "new",            // 🆕 "new" — Button 2-той зөрчилгүй болгох
+          is_unknown: false,        // 🆕 Тодорхойгүй flag-ийг арилгах
           assigned_at: new Date().toISOString(),
           assigned_by: profile.id,
         })
@@ -26226,7 +26220,15 @@ function DriverDashboard({ profile }) {
         await loadAll();
         return;
       }
-      alert("✅ Захиалга таны нэр дээр шилжлээ!");
+      // 🚚 Хүргэх tab-руу автомат шилжих (UX сайжруулах)
+      setFilter("active");
+      // Optimistic update — UI шууд шинэчлэх
+      setOrders((prev) => prev.map((order) =>
+        order.id === orderId
+          ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+          : order
+      ));
+      alert("✅ Захиалга 'Хүргэх' хэсэгт орлоо!");
       await loadAll();
     } catch (e) {
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
