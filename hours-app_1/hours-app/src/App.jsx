@@ -26218,12 +26218,33 @@ function DriverDashboard({ profile }) {
                       <button onClick={async () => {
                         if (!confirm("❓ Энэ захиалгыг 'Тодорхойгүй' болгох уу?\n\nБусад driver хариц хариуцагч авах боломжтой.")) return;
                         try {
-                          await supabase.from("biz_orders").update({ 
+                          const { error, data } = await supabase.from("biz_orders").update({ 
                             is_unknown: true,
-                            driver_id: null, // Driver-аас гаргана
-                          }).eq("id", o.id);
+                            driver_id: null,
+                          }).eq("id", o.id).select();
+                          
+                          console.log("[Тодорхойгүй болгох] Result:", { error, data });
+                          
+                          if (error) {
+                            alert("⚠ Алдаа: " + error.message);
+                            return;
+                          }
+                          
+                          // Optimistic update — захиалгыг state-аас шинэчилнэ
+                          setOrders((prev) => prev.map((order) => 
+                            order.id === o.id 
+                              ? { ...order, is_unknown: true, driver_id: null }
+                              : order
+                          ));
+                          
+                          // Дараа нь loadAll - бүх data шинэчилнэ
                           await loadAll();
-                        } catch (e) { alert("Алдаа: " + e.message); }
+                          
+                          alert("✅ Захиалга 'Тодорхойгүй' хэсэгт орлоо");
+                        } catch (e) { 
+                          console.error("[Тодорхойгүй болгох] Error:", e);
+                          alert("Алдаа: " + (e.message || JSON.stringify(e))); 
+                        }
                       }}
                         className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.warn}` }}>
