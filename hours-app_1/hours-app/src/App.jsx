@@ -25758,9 +25758,13 @@ function DriverDashboard({ profile }) {
     if (filter === "myzone") {
       return o.status === "new" && !o.driver_id && isInMyZone(o);
     }
-    // ❓ Тодорхойгүй — надад хуваарилагдсан ч миний бүсэд багтахгүй
+    // ❓ Тодорхойгүй — 2 эх үүсвэр:
+    //   1. Шинэ дотор GPS байхгүй захиалга
+    //   2. Driver өөрөө "Хүргэх" tab-аас "Тодорхойгүй" руу шилжүүлсэн (is_unknown=true)
     if (filter === "unknown") {
-      return o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned");
+      const noGpsNew = o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng);
+      const markedUnknown = o.driver_id === profile.id && o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
+      return noGpsNew || markedUnknown;
     }
     // Хүргэсэн ба Цуцалсан tab-аас тооцоо хаагдсан (settlement_id-тэй) захиалгуудыг хасах
     if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
@@ -25776,7 +25780,11 @@ function DriverDashboard({ profile }) {
   const counts = {
     available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
     myzone: orders.filter((o) => o.status === "new" && !o.driver_id && isInMyZone(o)).length,
-    unknown: orders.filter((o) => o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
+    unknown: orders.filter((o) => {
+      const noGpsNew = o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng);
+      const markedUnknown = o.driver_id === profile.id && o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
+      return noGpsNew || markedUnknown;
+    }).length,
     active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
     cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
@@ -25995,8 +26003,8 @@ function DriverDashboard({ profile }) {
             </button>
           )}
 
-          {/* ❓ Тодорхойгүй (миний бүсэд биш ч надад хуваарилагдсан) */}
-          {myZones.length > 0 && counts.unknown > 0 && (
+          {/* ❓ Тодорхойгүй */}
+          {counts.unknown > 0 && (
             <button onClick={() => setFilter("unknown")}
               className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
               style={{
@@ -26170,10 +26178,37 @@ function DriverDashboard({ profile }) {
                   </div>
                 ) : (o.status === "new" || o.status === "pending") && (
                   <div className="space-y-2 mt-2">
-                    {/* "Тодорхойгүй" tab үед → шилжүүлэх товч */}
+                    {/* "Хүргэх" tab дотор → "Тодорхойгүй болгох" товч */}
+                    {filter === "active" && o.driver_id === profile.id && !o.is_unknown && (
+                      <button onClick={async () => {
+                        if (!confirm("❓ Энэ захиалгыг 'Тодорхойгүй' болгох уу?\n\nДараа нь хүсвэл буцаан 'Хүргэх'-руу шилжүүлж болно.")) return;
+                        try {
+                          await supabase.from("biz_orders").update({ is_unknown: true }).eq("id", o.id);
+                          await loadAll();
+                        } catch (e) { alert("Алдаа: " + e.message); }
+                      }}
+                        className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.warn}` }}>
+                        ❓ Тодорхойгүй болгох
+                      </button>
+                    )}
+                    {/* "Тодорхойгүй" tab дотор → буцааж "Хүргэх" болгох */}
+                    {filter === "unknown" && o.driver_id === profile.id && o.is_unknown && (
+                      <button onClick={async () => {
+                        try {
+                          await supabase.from("biz_orders").update({ is_unknown: false }).eq("id", o.id);
+                          await loadAll();
+                        } catch (e) { alert("Алдаа: " + e.message); }
+                      }}
+                        className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.ok}` }}>
+                        ↩ "Хүргэх"-руу буцаах
+                      </button>
+                    )}
+                    {/* "Тодорхойгүй" tab үед → зөв бүсийн жолоочид шилжүүлэх */}
                     {filter === "unknown" && o.driver_id === profile.id && (
                       <button onClick={() => reassignByZone(o)}
-                        className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
                         📤 Зөв бүсийн жолоочид шилжүүлэх
                       </button>
