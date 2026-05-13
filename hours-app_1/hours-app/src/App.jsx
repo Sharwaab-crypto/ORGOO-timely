@@ -26340,16 +26340,24 @@ function DriverDashboard({ profile }) {
                   </div>
                 ) : (o.status === "new" || o.status === "pending") && (
                   <div className="space-y-2 mt-2">
-                    {/* "Тодорхойгүй" tab дотор → "Өөртөө авах" товч (бусад driver-ийн захиалга эсвэл хуваарилагдаагүй) */}
-                    {filter === "unknown" && o.driver_id !== profile.id && (
+                    {/* "Тодорхойгүй" tab дотор → "Өөртөө авах" товч (БҮХ unknown захиалгад) */}
+                    {filter === "unknown" && (
                       <button onClick={async () => {
                         if (!confirm(`✅ Энэ захиалгыг өөртөө авах уу?\n\n#${o.order_number || o.id.slice(0, 8)}\n📞 ${o.customer_phone}\n💰 ${Number(o.total_amount).toLocaleString()}₮\n\nЭнэ нь таны "🚚 Хүргэх" хэсэгт орно.`)) return;
                         try {
-                          await supabase.from("biz_orders").update({
+                          const { error, data } = await supabase.from("biz_orders").update({
                             driver_id: profile.id,
                             is_unknown: false,
                             status: "new",
-                          }).eq("id", o.id);
+                          }).eq("id", o.id).select();
+                          
+                          console.log("[Өөртөө авах] Result:", { error, data });
+                          
+                          if (error) {
+                            alert("⚠ Алдаа: " + error.message);
+                            return;
+                          }
+                          
                           // Optimistic update
                           setOrders((prev) => prev.map((order) =>
                             order.id === o.id
@@ -26359,7 +26367,10 @@ function DriverDashboard({ profile }) {
                           // 🚚 Хүргэх tab-руу автомат шилжих
                           setFilter("active");
                           await loadAll();
-                        } catch (e) { alert("Алдаа: " + e.message); }
+                        } catch (e) { 
+                          console.error("[Өөртөө авах] Error:", e);
+                          alert("Алдаа: " + (e.message || JSON.stringify(e))); 
+                        }
                       }}
                         className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
@@ -26383,16 +26394,12 @@ function DriverDashboard({ profile }) {
                             return;
                           }
                           
-                          // Optimistic update — захиалгыг state-аас шинэчилнэ
                           setOrders((prev) => prev.map((order) => 
                             order.id === o.id 
                               ? { ...order, is_unknown: true, driver_id: null }
                               : order
                           ));
-                          
-                          // Дараа нь loadAll - бүх data шинэчилнэ
                           await loadAll();
-                          
                           alert("✅ Захиалга 'Тодорхойгүй' хэсэгт орлоо");
                         } catch (e) { 
                           console.error("[Тодорхойгүй болгох] Error:", e);
@@ -26405,8 +26412,8 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                     <div className="grid grid-cols-2 gap-2">
-                      {/* "Тодорхойгүй" tab дотор → миний биш бол → "Хүргэсэн / Цуцлах" товч ХАРАГДАХГҮЙ */}
-                      {!(filter === "unknown" && o.driver_id !== profile.id) && (
+                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн / Цуцлах" товч АЛГА */}
+                      {filter !== "unknown" && (
                         <>
                           <button onClick={() => updateStatus(o.id, "delivered")}
                             className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
