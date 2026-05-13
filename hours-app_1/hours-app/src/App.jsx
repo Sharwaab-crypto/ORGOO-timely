@@ -25505,6 +25505,20 @@ function DriverDashboard({ profile }) {
   });
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 100;
+  const [myZones, setMyZones] = useState([]); // driver-ийн polygon бүсүүд
+
+  // Driver-ийн бүсүүдийг татах
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("biz_zones")
+          .select("id, name, color, polygon")
+          .eq("driver_id", profile.id)
+          .eq("is_active", true);
+        setMyZones(data || []);
+      } catch (e) { console.error("Zones load:", e); }
+    })();
+  }, [profile.id]);
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-driver-filter", filter); } catch {}
@@ -25683,10 +25697,73 @@ function DriverDashboard({ profile }) {
     }
   };
 
+  // Захиалга миний бүсэд багтах эсэхийг шалгах
+  const isInMyZone = (order) => {
+    if (myZones.length === 0) return false;
+    if (!order.delivery_lat || !order.delivery_lng) return false;
+    const point = [Number(order.delivery_lat), Number(order.delivery_lng)];
+    return myZones.some((z) => isPointInPolygon(point, z.polygon || []));
+  };
+
+  // 🔄 Захиалгыг бусдын бүсийн driver-руу шилжүүлэх (Тодорхойгүй tab дотроос)
+  const reassignByZone = async (order) => {
+    if (!order.delivery_lat || !order.delivery_lng) {
+      alert("⚠ Энэ захиалгад GPS координат байхгүй — гар аргаар хуваарилна уу");
+      return;
+    }
+    try {
+      // Бүх driver-ийн бүсүүдийг шалгаж, тус координат багтах бүсийг олох
+      const { data: allZones } = await supabase.from("biz_zones")
+        .select("id, name, driver_id, polygon")
+        .eq("is_active", true);
+      
+      if (!allZones || allZones.length === 0) {
+        alert("⚠ Бүс үүсгэгдээгүй байна");
+        return;
+      }
+      
+      const point = [Number(order.delivery_lat), Number(order.delivery_lng)];
+      const matchingZone = allZones.find((z) => 
+        z.driver_id !== profile.id && isPointInPolygon(point, z.polygon || [])
+      );
+      
+      if (!matchingZone || !matchingZone.driver_id) {
+        alert("⚠ Тохирох бүс олдсонгүй\n\nЭнэ захиалга ямар бүсэд ч багтаагүй байна.");
+        return;
+      }
+      
+      // Driver нэр авах
+      const { data: drv } = await supabase.from("profiles")
+        .select("name").eq("id", matchingZone.driver_id).single();
+      
+      if (!confirm(`📤 Энэ захиалгыг шилжүүлэх үү?\n\nАажах driver: 🚚 ${drv?.name || "?"}\nБүс: ${matchingZone.name}`)) return;
+      
+      // Driver солих
+      await supabase.from("biz_orders").update({
+        driver_id: matchingZone.driver_id,
+      }).eq("id", order.id);
+      
+      alert(`✅ Захиалга 🚚 ${drv?.name} -руу амжилттай шилжсэн!`);
+      await loadAll();
+    } catch (e) {
+      alert("Алдаа: " + e.message);
+    }
+  };
+
   // Filter
   const filtered = orders.filter((o) => {
     if (filter === "available") return o.status === "new" && !o.driver_id;
     if (filter === "active") return o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned");
+    // 🆕 Хуваарилагдсан — миний өөрийн захиалга + миний бүсэд багтах захиалгууд
+    if (filter === "myzone") {
+      const isMine = o.driver_id === profile.id;
+      const isInZone = !o.driver_id && o.status === "new" && isInMyZone(o);
+      return (isMine || isInZone) && o.status !== "delivered" && o.status !== "cancelled";
+    }
+    // 🆕 Тодорхойгүй — миний биш захиалгууд (бусад driver-руу хуваарилагдсан биш)
+    if (filter === "unknown") {
+      return o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned");
+    }
     // Хүргэсэн ба Цуцалсан tab-аас тооцоо хаагдсан (settlement_id-тэй) захиалгуудыг хасах
     if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
     if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
@@ -25700,6 +25777,12 @@ function DriverDashboard({ profile }) {
 
   const counts = {
     available: orders.filter((o) => o.status === "new" && !o.driver_id).length,
+    myzone: orders.filter((o) => {
+      const isMine = o.driver_id === profile.id;
+      const isInZone = !o.driver_id && o.status === "new" && isInMyZone(o);
+      return (isMine || isInZone) && o.status !== "delivered" && o.status !== "cancelled";
+    }).length,
+    unknown: orders.filter((o) => o.driver_id === profile.id && !isInMyZone(o) && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     active: orders.filter((o) => o.driver_id === profile.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
     cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
@@ -25872,7 +25955,7 @@ function DriverDashboard({ profile }) {
         {/* Filter tabs */}
         <div className="glass rounded-2xl p-2 flex gap-1 flex-wrap">
           <button onClick={() => setFilter("available")}
-            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
             style={{
               background: filter === "available" ? "#9333ea" : T.surfaceAlt,
               color: filter === "available" ? "white" : T.ink,
@@ -25892,8 +25975,48 @@ function DriverDashboard({ profile }) {
               </span>
             )}
           </button>
+
+          {/* 📍 Хуваарилагдсан (миний бүсэд) */}
+          {myZones.length > 0 && (
+            <button onClick={() => setFilter("myzone")}
+              className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
+              style={{
+                background: filter === "myzone" ? "#10b981" : T.surfaceAlt,
+                color: filter === "myzone" ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+                minWidth: "100px",
+              }}>
+              📍 Хуваарилагдсан ({counts.myzone})
+              {counts.myzone > 0 && filter !== "myzone" && (
+                <span style={{
+                  position: "absolute", top: -4, right: -4,
+                  background: T.err, color: "white",
+                  width: 16, height: 16, borderRadius: "50%",
+                  fontSize: 9, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {counts.myzone}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* ❓ Тодорхойгүй (миний бүсэд биш ч надад хуваарилагдсан) */}
+          {myZones.length > 0 && counts.unknown > 0 && (
+            <button onClick={() => setFilter("unknown")}
+              className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
+              style={{
+                background: filter === "unknown" ? "#f59e0b" : T.surfaceAlt,
+                color: filter === "unknown" ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+                minWidth: "100px",
+              }}>
+              ❓ Тодорхойгүй ({counts.unknown})
+            </button>
+          )}
+
           <button onClick={() => setFilter("active")}
-            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "active" ? "#0ea5e9" : T.surfaceAlt,
               color: filter === "active" ? "white" : T.ink,
@@ -25903,7 +26026,7 @@ function DriverDashboard({ profile }) {
             🚚 Хүргэх ({counts.active})
           </button>
           <button onClick={() => setFilter("delivered")}
-            className="flex-1 press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "delivered" ? T.ok : T.surfaceAlt,
               color: filter === "delivered" ? "white" : T.ink,
@@ -26052,17 +26175,27 @@ function DriverDashboard({ profile }) {
                     </button>
                   </div>
                 ) : (o.status === "new" || o.status === "pending") && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <button onClick={() => updateStatus(o.id, "delivered")}
-                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                      style={{ background: T.ok, color: "white", fontFamily: FS }}>
-                      ✓ Хүргэсэн
-                    </button>
-                    <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
-                      className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                      style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                      ✕ Хүргэх боломжгүй
-                    </button>
+                  <div className="space-y-2 mt-2">
+                    {/* "Тодорхойгүй" tab үед → шилжүүлэх товч */}
+                    {filter === "unknown" && o.driver_id === profile.id && (
+                      <button onClick={() => reassignByZone(o)}
+                        className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                        📤 Зөв бүсийн жолоочид шилжүүлэх
+                      </button>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => updateStatus(o.id, "delivered")}
+                        className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                        ✓ Хүргэсэн
+                      </button>
+                      <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
+                        className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                        ✕ Хүргэх боломжгүй
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
