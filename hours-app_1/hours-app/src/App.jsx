@@ -18435,7 +18435,13 @@ function OrdersView({ profile }) {
 
   // Filter
   let filtered = orders;
-  if (filter !== "all") {
+  if (filter === "unknown") {
+    // ❓ Тодорхойгүй — is_unknown=true эсвэл GPS байхгүй шинэ захиалга
+    filtered = filtered.filter((o) =>
+      o.is_unknown === true ||
+      (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng))
+    );
+  } else if (filter !== "all") {
     filtered = filtered.filter((o) => o.status === filter);
   }
   if (driverFilter !== "all") {
@@ -18458,6 +18464,10 @@ function OrdersView({ profile }) {
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === "new").length,
+    unknown: orders.filter((o) =>
+      o.is_unknown === true ||
+      (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng))
+    ).length,
     pending: orders.filter((o) => o.status === "pending").length,
     delivered: orders.filter((o) => o.status === "delivered").length,
     cancelled: orders.filter((o) => o.status === "cancelled").length,
@@ -18660,6 +18670,15 @@ function OrdersView({ profile }) {
               fontFamily: FS, fontWeight: 600,
             }}>
             🆕 Шинэ ({orders.filter((o) => o.status === "new").length})
+          </button>
+          <button onClick={() => setFilter("unknown")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "unknown" ? "#f59e0b" : T.surfaceAlt,
+              color: filter === "unknown" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            ❓ Тодорхойгүй ({counts.unknown})
           </button>
           <button onClick={() => setFilter("pending")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
