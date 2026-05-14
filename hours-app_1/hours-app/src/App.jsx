@@ -16,7 +16,45 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer,
 } from "recharts";
+import * as Sentry from "@sentry/react";
 import { supabase, isConfigured } from "./supabaseClient";
+
+// 🛡️ SENTRY ERROR MONITORING
+// .env-д VITE_SENTRY_DSN тохируулсан үед л идэвхжинэ
+// DSN олох: https://sentry.io → Project Settings → Client Keys
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN || "";
+if (SENTRY_DSN && !window.__sentryInitialized) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE || "production",
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: false,        // Текстийг харагдуулах (sensitive биш бол)
+        blockAllMedia: false,
+        maskAllInputs: true,       // Input field-ийг далдалж нууцлал хамгаалах
+      }),
+    ],
+    // Performance monitoring (10% session дээр л идэвхжинэ)
+    tracesSampleRate: 0.1,
+    // Session Replay (алдаа гарсан session-уудыг бичнэ)
+    replaysSessionSampleRate: 0.0,   // 0%: ердийн session бичихгүй
+    replaysOnErrorSampleRate: 1.0,   // 100%: АЛДАА гарсан session-ийг бичнэ
+    // Хэрэгцээгүй алдааг филтрлэх
+    ignoreErrors: [
+      "ResizeObserver loop limit exceeded",
+      "Non-Error promise rejection captured",
+      "Network request failed",
+      "Failed to fetch",
+    ],
+    beforeSend(event, hint) {
+      // Localhost дээрх алдаа Sentry-руу илгээхгүй
+      if (window.location.hostname === "localhost") return null;
+      return event;
+    },
+  });
+  window.__sentryInitialized = true;
+}
 
 // VAPID public key (Push Notifications)
 // Энэ түлхүүрийг үүсгэж .env эсвэл шууд энд оруулна
@@ -143,8 +181,21 @@ const isDev = (() => {
   try { return import.meta.env?.DEV === true; }
   catch { return false; }
 })();
-const logDev = (...args) => { if (isDev) logDev(...args); };
-const logErr = (...args) => { console.error(...args); }; // алдааг үргэлж logging
+const logDev = (...args) => { if (isDev) console.log(...args); };
+const logErr = (...args) => {
+  console.error(...args);
+  // 🛡️ Sentry-руу алдаа илгээх (production-д)
+  if (SENTRY_DSN && !isDev) {
+    const err = args.find(a => a instanceof Error);
+    if (err) {
+      Sentry.captureException(err, { extra: { context: args[0] } });
+    } else {
+      Sentry.captureMessage(args.map(a =>
+        typeof a === "string" ? a : JSON.stringify(a)
+      ).join(" "), "error");
+    }
+  }
+};
 
 async function fetchAllRows(queryBuilder) {
   const PAGE = 1000;
@@ -453,7 +504,82 @@ const FD = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans
 // ═══════════════════════════════════════════════════════════════════════════
 //  ROOT
 // ═══════════════════════════════════════════════════════════════════════════
-export default function App() {
+
+// 🛡️ ErrorBoundary Fallback UI (алдаа гарвал харагдах page)
+function ErrorFallback({ error, resetError }) {
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "1rem",
+      background: "linear-gradient(135deg, #fef3c7 0%, #fee2e2 100%)",
+    }}>
+      <div style={{
+        maxWidth: "420px",
+        background: "white",
+        borderRadius: "16px",
+        padding: "2rem",
+        boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: "48px", marginBottom: "1rem" }}>⚠️</div>
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.5rem", color: "#1f2937" }}>
+          Алдаа гарлаа
+        </h2>
+        <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: "1.5rem", lineHeight: 1.5 }}>
+          Уучлаарай, системд гэнэтийн алдаа гарлаа. Програмыг дахин ачаалж үзнэ үү.
+          {SENTRY_DSN && <span><br/><span style={{ fontSize: "11px", opacity: 0.7 }}>Алдааг автоматаар техникийн багт мэдээллээ.</span></span>}
+        </p>
+        {isDev && error && (
+          <details style={{ textAlign: "left", marginBottom: "1rem", padding: "0.5rem", background: "#fef2f2", borderRadius: "8px" }}>
+            <summary style={{ cursor: "pointer", fontSize: "11px", color: "#991b1b", fontWeight: 600 }}>
+              Dev info
+            </summary>
+            <pre style={{ fontSize: "10px", color: "#7f1d1d", marginTop: "0.5rem", overflow: "auto", maxHeight: "200px" }}>
+              {error.message}
+              {"\n\n"}
+              {error.stack}
+            </pre>
+          </details>
+        )}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={() => { resetError(); window.location.reload(); }}
+            style={{
+              flex: 1,
+              padding: "0.75rem 1rem",
+              background: "linear-gradient(135deg, #f97316, #ec4899)",
+              color: "white",
+              border: "none",
+              borderRadius: "10px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "0.875rem",
+            }}>
+            🔄 Дахин ачаалах
+          </button>
+          <button onClick={() => { supabase.auth.signOut(); window.location.href = "/"; }}
+            style={{
+              flex: 1,
+              padding: "0.75rem 1rem",
+              background: "#f3f4f6",
+              color: "#374151",
+              border: "1px solid #e5e7eb",
+              borderRadius: "10px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "0.875rem",
+            }}>
+            Гарах
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppRoot() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -613,15 +739,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session) { setProfile(null); return; }
+    if (!session) {
+      setProfile(null);
+      // 🛡️ Sentry: гарсан үед user context-ийг арилгана
+      if (SENTRY_DSN) Sentry.setUser(null);
+      return;
+    }
     (async () => {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", session.user.id)
         .maybeSingle();
-      if (error) console.error("profile load:", error);
+      if (error) logErr("profile load:", error);
       setProfile(data);
+      // 🛡️ Sentry: нэвтэрсэн хэрэглэгчийг context-руу нэмнэ (PII биш — id+role л)
+      if (SENTRY_DSN && data) {
+        Sentry.setUser({
+          id: data.id,
+          username: data.name || "—",
+          role: data.role || "unknown",
+        });
+      }
     })();
   }, [session]);
 
@@ -31661,4 +31800,22 @@ function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
       </div>
     </Modal>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEFAULT EXPORT — Sentry ErrorBoundary-аар ороосон App
+// ═══════════════════════════════════════════════════════════════════════════
+export default function App() {
+  // Хэрэв Sentry тохируулагдсан бол ErrorBoundary-аар ороох, эс бол шууд AppRoot
+  if (SENTRY_DSN) {
+    return (
+      <Sentry.ErrorBoundary
+        fallback={(props) => <ErrorFallback {...props} />}
+        showDialog={false}
+      >
+        <AppRoot />
+      </Sentry.ErrorBoundary>
+    );
+  }
+  return <AppRoot />;
 }
