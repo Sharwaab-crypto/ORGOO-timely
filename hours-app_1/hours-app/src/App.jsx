@@ -10363,6 +10363,8 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
   ]);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState({});
+  // 🔍 ProductSearchSelect аль мөр-руу нээх (1 удаа 1 мөр)
+  const [openSearchRow, setOpenSearchRow] = useState(null);
 
   // Load warehouses
   useEffect(() => {
@@ -10514,15 +10516,14 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
               const product = products.find((p) => p.id === it.productId);
               return (
                 <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
-                  <select value={it.productId} onChange={(e) => selectProduct(it.id, e.target.value)}
-                    style={inputStyle} className={inputClass}>
-                    <option value="">— Сонгох —</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.stock} {p.unit})
-                      </option>
-                    ))}
-                  </select>
+                  <ProductSearchSelect
+                    products={products}
+                    value={it.productId}
+                    onChange={(pid) => selectProduct(it.id, pid)}
+                    isOpen={openSearchRow === it.id}
+                    onOpen={() => setOpenSearchRow(it.id)}
+                    onClose={() => setOpenSearchRow(null)}
+                  />
                   <input type="number" value={it.quantity}
                     onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
                     placeholder="0"
