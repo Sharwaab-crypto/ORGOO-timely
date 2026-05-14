@@ -15001,7 +15001,7 @@ function DriverSettlementView({ profile }) {
                 // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
-                    prepaid_amount: Number(o.paid_amount || 0), // 🆕 Тооцоо хаахын өмнөх төлбөр
+                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -15028,7 +15028,7 @@ function DriverSettlementView({ profile }) {
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
                     settlement_id: stData.id,
-                    prepaid_amount: Number(o.paid_amount || 0), // 🆕 Тооцоо хаахын өмнөх төлбөр
+                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
