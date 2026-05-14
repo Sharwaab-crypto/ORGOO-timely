@@ -15856,9 +15856,39 @@ function DriverSettlementView({ profile }) {
           {driverStats.map((d) => (
             <div key={d.id}
               className="glass rounded-2xl p-3"
-              style={{ borderLeft: d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
+              style={{
+                // 🔓 Нээлттэй тооцоо — хязгаар + background өөрчлөх
+                borderLeft: d.isOpenSettlement
+                  ? `4px solid ${T.warn}`
+                  : d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}`,
+                background: d.isOpenSettlement
+                  ? "rgba(245,158,11,0.08)"           // ⭐ Шар background — нээлттэй
+                  : undefined,
+                border: d.isOpenSettlement
+                  ? `1px solid rgba(245,158,11,0.3)`
+                  : undefined,
+              }}>
+              {/* 🔓 Нээлттэй тооцооны badge */}
+              {d.isOpenSettlement && (
+                <div className="mb-2 px-2 py-1 rounded-md flex items-center gap-1.5"
+                  style={{ background: T.warn, color: "white" }}>
+                  <span className="text-[10px]">⏳</span>
+                  <span style={{ fontFamily: FS, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider">
+                    Тооцоо нээлттэй
+                  </span>
+                  {d.openSettle?.created_at && (
+                    <span style={{ fontFamily: FM, opacity: 0.9 }} className="text-[9px] ml-auto">
+                      {new Date(d.openSettle.created_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mb-2">
-                <div style={{ background: "#0ea5e9", color: "white" }}
+                <div style={{
+                  background: d.isOpenSettlement ? T.warn : "#0ea5e9",
+                  color: "white",
+                }}
                   className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
                   {d.name?.charAt(0) || "🚚"}
                 </div>
@@ -15909,12 +15939,23 @@ function DriverSettlementView({ profile }) {
                 </div>
               </div>
 
-              {/* Тооцоо нээх товч */}
+              {/* Тооцоо нээх/үргэлжлүүлэх товч */}
               <button
                 onClick={() => setConfirmingDriverId(d.id)}
-                className="press-btn glow-primary w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-                style={{ fontFamily: FS, fontWeight: 700 }}>
-                📂 Тооцоо нээх
+                className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                style={{
+                  fontFamily: FS, fontWeight: 700,
+                  // 🔓 Нээлттэй бол өөр өнгө + текст
+                  background: d.isOpenSettlement
+                    ? `linear-gradient(135deg, ${T.warn}, #ea580c)`
+                    : undefined,
+                  color: d.isOpenSettlement ? "white" : undefined,
+                  boxShadow: d.isOpenSettlement
+                    ? "0 4px 14px rgba(245,158,11,0.35)"
+                    : undefined,
+                }}
+                {...(!d.isOpenSettlement && { className: "press-btn glow-primary w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" })}>
+                {d.isOpenSettlement ? "✏ Тооцоог үргэлжлүүлэх" : "📂 Тооцоо нээх"}
               </button>
             </div>
           ))}
