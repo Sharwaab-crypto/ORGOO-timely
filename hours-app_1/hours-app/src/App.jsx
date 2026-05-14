@@ -16017,6 +16017,9 @@ function SettlementReportsView({ profile }) {
   const [filterYear, setFilterYear] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
   const [filterDriver, setFilterDriver] = useState("all");
+  // 📅 Гар огнооны хязгаар (date range)
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -16048,11 +16051,22 @@ function SettlementReportsView({ profile }) {
     if (filterYear !== "all" && d.getFullYear() !== Number(filterYear)) return false;
     if (filterMonth !== "all" && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterDriver !== "all" && r.driver_id !== filterDriver) return false;
+    // 📅 Date range filter
+    if (filterStartDate) {
+      const [y, m, day] = filterStartDate.split("-").map(Number);
+      const startD = new Date(y, m - 1, day, 0, 0, 0);
+      if (d < startD) return false;
+    }
+    if (filterEndDate) {
+      const [y, m, day] = filterEndDate.split("-").map(Number);
+      const endD = new Date(y, m - 1, day, 23, 59, 59);
+      if (d > endD) return false;
+    }
     return true;
   });
 
   // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
-  useEffect(() => { setPage(1); }, [filterYear, filterMonth, filterDriver]);
+  useEffect(() => { setPage(1); }, [filterYear, filterMonth, filterDriver, filterStartDate, filterEndDate]);
 
   // Тооцоолол (filter-ийн хүрээнд)
   const totalSubmitted = filteredReports.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
@@ -16256,20 +16270,107 @@ function SettlementReportsView({ profile }) {
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
             🔍 Шүүлтүүр
-            {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
+            {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all" || filterStartDate || filterEndDate) && (
               <span style={{ background: T.highlight, color: "white" }} className="text-[10px] px-2 py-0.5 rounded-full">
                 идэвхтэй
               </span>
             )}
           </div>
-          {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
-            <button onClick={() => { setFilterYear("all"); setFilterMonth("all"); setFilterDriver("all"); }}
+          {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all" || filterStartDate || filterEndDate) && (
+            <button onClick={() => {
+              setFilterYear("all"); setFilterMonth("all"); setFilterDriver("all");
+              setFilterStartDate(""); setFilterEndDate("");
+            }}
               className="press-btn text-[11px] px-3 py-1 rounded-lg"
               style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
               ✕ Цэвэрлэх
             </button>
           )}
         </div>
+
+        {/* 🎯 Quick preset товчнууд */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mr-1">
+            ⚡ Хурдан:
+          </span>
+          <button onClick={() => {
+            const today = new Date().toISOString().slice(0, 10);
+            setFilterStartDate(today); setFilterEndDate(today);
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өнөөдөр
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().slice(0, 10);
+            setFilterStartDate(yesterdayStr); setFilterEndDate(yesterdayStr);
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өчигдөр
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 6);
+            setFilterStartDate(weekAgo.toISOString().slice(0, 10));
+            setFilterEndDate(today.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            7 хоног
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            setFilterStartDate(monthStart.toISOString().slice(0, 10));
+            setFilterEndDate(today.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Энэ сар
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const monthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            const monthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+            setFilterStartDate(monthStart.toISOString().slice(0, 10));
+            setFilterEndDate(monthEnd.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өнгөрсөн сар
+          </button>
+        </div>
+
+        {/* 📅 Гар огнооны хязгаар */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">
+              📅 Эхлэх огноо
+            </label>
+            <input type="date" value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">
+              📅 Дуусах огноо
+            </label>
+            <input type="date" value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           {/* Жил */}
           <div>
