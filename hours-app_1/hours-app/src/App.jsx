@@ -16941,6 +16941,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [selectedKhoroo, setSelectedKhoroo] = useState("");
   const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
   const [pinLng, setPinLng] = useState(editOrder?.delivery_lng || null);
+  const [showPinMap, setShowPinMap] = useState(false); // 🗺 Map modal-ийг харуулах
   // DB-аас байршлыг татах
   const [dbLocations, setDbLocations] = useState([]);
   useEffect(() => {
@@ -17225,11 +17226,23 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                   <span>📍</span>
                   <span>Pin: {pinLat.toFixed(4)}, {pinLng.toFixed(4)}</span>
                   {(selectedCity || selectedDistrict || selectedKhoroo) && (
-                    <span className="ml-auto" style={{ fontWeight: 600 }}>
-                      {[selectedCity, selectedDistrict, selectedKhoroo].filter(Boolean).join(" › ")}
+                    <span style={{ fontWeight: 600 }}>
+                      • {[selectedCity, selectedDistrict, selectedKhoroo].filter(Boolean).join(" › ")}
                     </span>
                   )}
+                  <button type="button" onClick={() => setShowPinMap(true)}
+                    className="ml-auto press-btn px-2 py-0.5 rounded text-[10px] flex items-center gap-1"
+                    style={{ background: T.ok, color: "white", fontFamily: FM, fontWeight: 600 }}>
+                    🗺 Газрын зураг дээр сонгох
+                  </button>
                 </div>
+              )}
+              {(!pinLat || !pinLng) && (
+                <button type="button" onClick={() => setShowPinMap(true)}
+                  className="mt-1.5 press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+                  style={{ background: T.highlight, color: "white", fontFamily: FM, fontWeight: 600 }}>
+                  🗺 Газрын зураг дээр pin сонгох
+                </button>
               )}
             </div>
 
@@ -17818,7 +17831,160 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           )}
         </div>
       </div>
+
+      {/* 🗺 Pin Map Modal — Газрын зураг дээр дарж pin сонгох */}
+      {showPinMap && (
+        <PinMapModal
+          initialLat={pinLat || 47.918873}
+          initialLng={pinLng || 106.917701}
+          onSelect={(lat, lng) => {
+            setPinLat(lat);
+            setPinLng(lng);
+            setShowPinMap(false);
+          }}
+          onClose={() => setShowPinMap(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── 🗺 Pin Map Modal — Map дээр pin сонгох ──────────────────────────
+function PinMapModal({ initialLat, initialLng, onSelect, onClose }) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const [currentLat, setCurrentLat] = useState(initialLat);
+  const [currentLng, setCurrentLng] = useState(initialLng);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const L = (await import("leaflet")).default;
+
+      // Leaflet CSS load (хэрэв байхгүй бол)
+      if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+
+      if (cancelled || !containerRef.current || mapRef.current) return;
+
+      const map = L.map(containerRef.current).setView([initialLat, initialLng], 14);
+      mapRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OSM",
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Container хэмжээг зөв тооцох (modal-аас болж)
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 100);
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 300);
+
+      // 📍 Эхний pin
+      const customIcon = L.divIcon({
+        html: `<div style="background:#ec4899;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:14px;">📍</span></div>`,
+        className: "",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+      const marker = L.marker([initialLat, initialLng], {
+        icon: customIcon,
+        draggable: true, // ⭐ Pin-ийг чирж зөөж болно
+      }).addTo(map);
+      markerRef.current = marker;
+
+      // Marker-ийг чирэхэд lat/lng шинэчлэх
+      marker.on("dragend", (e) => {
+        const { lat, lng } = e.target.getLatLng();
+        setCurrentLat(lat);
+        setCurrentLng(lng);
+      });
+
+      // Map дээр дарахад pin тэр газар луу шилжих
+      map.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        marker.setLatLng([lat, lng]);
+        setCurrentLat(lat);
+        setCurrentLng(lng);
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, []);
+
+  return createPortal(
+    <div onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 100,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "1rem",
+      }}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="modal-content rounded-2xl overflow-hidden"
+        style={{
+          width: "100%", maxWidth: "640px",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+        }}>
+        {/* Header */}
+        <div style={{ borderBottom: `1px solid ${T.border}` }}
+          className="px-4 py-3 flex items-center justify-between">
+          <div>
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🗺 Хүргэх хаягийг сонгох
+            </h3>
+            <p style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+              Map дээр дарах эсвэл pin-г чирэх
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Map */}
+        <div style={{ position: "relative", flex: 1, minHeight: "400px" }}>
+          <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "400px" }} />
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }}
+          className="px-4 py-3">
+          <div className="flex items-center gap-2 mb-3 text-[11px]"
+            style={{ color: T.muted, fontFamily: FM }}>
+            <span>📍 Сонгосон цэг:</span>
+            <span style={{ color: T.ink, fontWeight: 600 }} className="tabular-nums">
+              {currentLat.toFixed(6)}, {currentLng.toFixed(6)}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onClose}
+              className="glass-soft press-btn py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS, color: T.ink }}>
+              Болих
+            </button>
+            <button onClick={() => onSelect(currentLat, currentLng)}
+              className="glow-primary press-btn py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ fontFamily: FS }}>
+              <CheckCircle2 size={14} />
+              ✓ Сонгох
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
