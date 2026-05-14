@@ -14916,8 +14916,10 @@ function DriverSettlementView({ profile }) {
                 if (updErr) throw updErr;
 
                 // Захиалгуудын paid_amount шинэчлэх (delivered)
+                // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
+                    prepaid_amount: Number(o.paid_amount || 0), // 🆕 Тооцоо хаахын өмнөх төлбөр
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -14944,6 +14946,7 @@ function DriverSettlementView({ profile }) {
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
                     settlement_id: stData.id,
+                    prepaid_amount: Number(o.paid_amount || 0), // 🆕 Тооцоо хаахын өмнөх төлбөр
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -16055,7 +16058,7 @@ function SettlementReportsView({ profile }) {
       setLoadingOrders(true);
       try {
         const { data, error } = await supabase.from("biz_orders")
-          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, status, delivered_at, cancelled_at, created_at")
+          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, status, delivered_at, cancelled_at, created_at")
           .eq("settlement_id", activeReport.id)
           .order("delivered_at", { ascending: false, nullsFirst: false });
         if (error) throw error;
@@ -16315,7 +16318,7 @@ function SettlementReportsView({ profile }) {
             ) : (
               <>
                 {/* Sub-summary */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="grid grid-cols-4 gap-2 mb-3">
                   <div style={{ background: T.okSoft }} className="rounded-lg p-2">
                     <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">✓ Хүргэсэн</div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
@@ -16328,6 +16331,18 @@ function SettlementReportsView({ profile }) {
                       {settlementOrders.filter(o => o.status === "cancelled").length}
                     </div>
                   </div>
+                  <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-2">
+                    <div style={{ color: "#3b82f6", fontFamily: FM }} className="text-[9px] uppercase">💰 Урьдч.</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => Number(o.prepaid_amount || 0) > 0).length}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(16,185,129,0.06)" }} className="rounded-lg p-2">
+                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">💸 Урьдч.дүн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xs tabular-nums">
+                      {Number(r.paid_already || 0).toLocaleString()}₮
+                    </div>
+                  </div>
                 </div>
 
                 {/* Order list */}
@@ -16335,16 +16350,26 @@ function SettlementReportsView({ profile }) {
                   {settlementOrders.map((o, idx) => {
                     const isDelivered = o.status === "delivered";
                     const isCancelled = o.status === "cancelled";
+                    const prepaidAmt = Number(o.prepaid_amount || 0);
+                    const isPrepaid = prepaidAmt > 0; // 🔵 Урьдчилж төлсөн эсэх
                     return (
                       <div key={o.id}
                         className="rounded-lg p-2.5 flex items-center gap-3"
                         style={{
-                          background: T.surfaceAlt,
-                          borderLeft: `3px solid ${isDelivered ? T.ok : isCancelled ? T.err : T.muted}`,
+                          background: isPrepaid ? "rgba(59,130,246,0.06)" : T.surfaceAlt, // 🔵 Урьдч. — цэнхэр bg
+                          borderLeft: `3px solid ${
+                            isPrepaid ? "#3b82f6" :     // 🔵 урьдчилж төлсөн (хамгийн чухал)
+                            isDelivered ? T.ok :
+                            isCancelled ? T.err : T.muted
+                          }`,
                         }}>
                         <div style={{
-                          background: isDelivered ? T.okSoft : isCancelled ? T.errSoft : T.surfaceAlt,
-                          color: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
+                          background: isPrepaid ? "rgba(59,130,246,0.2)" :
+                                      isDelivered ? T.okSoft :
+                                      isCancelled ? T.errSoft : T.surfaceAlt,
+                          color: isPrepaid ? "#3b82f6" :
+                                 isDelivered ? T.ok :
+                                 isCancelled ? T.err : T.muted,
                           fontFamily: FD, fontWeight: 700,
                         }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
                           {idx + 1}
@@ -16360,6 +16385,14 @@ function SettlementReportsView({ profile }) {
                             }} className="text-[9px] px-1.5 py-0.5 rounded-full">
                               {isDelivered ? "✓ Хүргэсэн" : isCancelled ? "✕ Цуцалсан" : o.status}
                             </span>
+                            {isPrepaid && (
+                              <span style={{
+                                background: "#3b82f6", color: "white",
+                                fontFamily: FS, fontWeight: 700,
+                              }} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                💰 Урьдчилж {prepaidAmt.toLocaleString()}₮
+                              </span>
+                            )}
                           </div>
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 flex-wrap mt-0.5">
                             {o.customer_name && <span>👤 {o.customer_name}</span>}
