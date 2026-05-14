@@ -1323,7 +1323,7 @@ function AdminDashboard({ profile }) {
       supabase.from("departments").select("*").order("name"),
       supabase.from("leaves").select("*").order("created_at", { ascending: false }),
       supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
-      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
       supabase.from("tasks").select("*").order("created_at", { ascending: false }),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
@@ -27323,7 +27323,7 @@ function ManagerDashboard({ profile }) {
       supabase.from("employee_sites").select("*"),
       supabase.from("departments").select("*").order("name"),
       supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
-      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
       supabase.from("tasks").select("*").order("created_at", { ascending: false }),
     ]);
     if (me.data) setTeam(me.data.map((m) => m.profiles).filter(Boolean));
@@ -29329,6 +29329,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
   const [confirmDelKpi, setConfirmDelKpi] = useState(null);
   const [viewMode, setViewMode] = useState("cards"); // cards | charts
   const [chartType, setChartType] = useState("bar"); // bar | line | area
+  const [chartGroupBy, setChartGroupBy] = useState("day"); // day | week | month
 
   const today = new Date();
   const [selectedDate, setSelectedDate] = useState(today.toISOString().slice(0, 10));
@@ -29495,13 +29496,23 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
           </div>
 
           {viewMode === "charts" && (
-            <select value={chartType} onChange={(e) => setChartType(e.target.value)}
-              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-              className="px-3 py-2 rounded-lg border text-xs outline-none">
-              <option value="bar">Багана</option>
-              <option value="line">Шугам</option>
-              <option value="area">Талбай</option>
-            </select>
+            <>
+              <select value={chartGroupBy} onChange={(e) => setChartGroupBy(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-3 py-2 rounded-lg border text-xs outline-none"
+                title="Бүлэглэх">
+                <option value="day">📅 Өдөр бүр</option>
+                <option value="week">🗓 7/7 хоног (сүүлийн 5)</option>
+                <option value="month">📆 Сар (сүүлийн 5)</option>
+              </select>
+              <select value={chartType} onChange={(e) => setChartType(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="px-3 py-2 rounded-lg border text-xs outline-none">
+                <option value="bar">Багана</option>
+                <option value="line">Шугам</option>
+                <option value="area">Талбай</option>
+              </select>
+            </>
           )}
 
           <button onClick={() => exportKpiToExcel(visibleDepts, kpiDefs, filteredEntries, periodRange)}
@@ -29557,8 +29568,10 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                 <KpiChartView
                   deptKpis={deptKpis}
                   filteredEntries={filteredEntries}
+                  allEntries={kpiEntries}
                   periodRange={periodRange}
                   chartType={chartType}
+                  groupBy={chartGroupBy}
                 />
               ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -30200,10 +30213,10 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI CHART VIEW — Чартаар харах
 // ═══════════════════════════════════════════════════════════════════════════
-function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
+function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day" }) {
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
-  // Огнооны массив (start-аас end хүртэл)
+  // Огнооны массив (start-аас end хүртэл) — өдөр бүрд
   const dateList = useMemo(() => {
     const list = [];
     const start = new Date(periodRange.start);
@@ -30216,8 +30229,74 @@ function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
     return list;
   }, [periodRange]);
 
-  // Огноо тус бүрд KPI утгуудыг буулгах
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helper: KPI-ийн нийт дүн (date range дотор) — calculated/copy/normal KPI support
+  // ─────────────────────────────────────────────────────────────────────────
+  const computeKpiValue = (kpi, entries, startISO, endISO) => {
+    const inRange = (e, id) => e.kpi_id === id && e.entry_date >= startISO && e.entry_date <= endISO;
+    if (kpi.kpi_type === "calculated" && kpi.formula?.numerator_id && kpi.formula?.denominator_id) {
+      const n = entries.filter(e => inRange(e, kpi.formula.numerator_id)).reduce((s, e) => s + Number(e.value), 0);
+      const d = entries.filter(e => inRange(e, kpi.formula.denominator_id)).reduce((s, e) => s + Number(e.value), 0);
+      const op = kpi.formula.operator;
+      if (op === "divide") return d === 0 ? 0 : n / d;
+      if (op === "multiply") return n * d;
+      if (op === "add") return n + d;
+      if (op === "subtract") return n - d;
+      return 0;
+    }
+    if (kpi.kpi_type === "copy" && kpi.formula?.source_id) {
+      return entries.filter(e => inRange(e, kpi.formula.source_id)).reduce((s, e) => s + Number(e.value), 0);
+    }
+    return entries.filter(e => inRange(e, kpi.id)).reduce((s, e) => s + Number(e.value), 0);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Chart data: groupBy-аас хамаарч
+  //   "day"   → өдөр бүр (хуучин логик)
+  //   "week"  → сүүлийн 5 долоо хоног (anchor-аас 7-7 хоногоор)
+  //   "month" → сүүлийн 5 сар
+  // ─────────────────────────────────────────────────────────────────────────
+  const fmtDate = (d) => d.toISOString().slice(0, 10);
+
   const chartData = useMemo(() => {
+    // 📆 СҮҮЛИЙН 5 САР
+    if (groupBy === "month") {
+      const anchor = new Date(periodRange.end);
+      const rows = [];
+      for (let i = 4; i >= 0; i--) {
+        const monthStart = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+        const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() - i + 1, 0);
+        const label = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
+        const row = { date: label };
+        deptKpis.forEach((kpi) => {
+          row[kpi.name] = computeKpiValue(kpi, allEntries || [], fmtDate(monthStart), fmtDate(monthEnd));
+        });
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    // 🗓 СҮҮЛИЙН 5 ДОЛОО ХОНОГ — anchor-аас (сонгосон огноо) 7-7 хоногоор
+    if (groupBy === "week") {
+      const anchor = new Date(periodRange.end);
+      const rows = [];
+      for (let i = 4; i >= 0; i--) {
+        // Week i: anchor - (i+1)*7 + 1 ... anchor - i*7
+        const wEnd = new Date(anchor);
+        wEnd.setDate(wEnd.getDate() - i * 7);
+        const wStart = new Date(wEnd);
+        wStart.setDate(wStart.getDate() - 6);
+        const label = `${String(wStart.getMonth() + 1).padStart(2, "0")}-${String(wStart.getDate()).padStart(2, "0")} → ${String(wEnd.getMonth() + 1).padStart(2, "0")}-${String(wEnd.getDate()).padStart(2, "0")}`;
+        const row = { date: label };
+        deptKpis.forEach((kpi) => {
+          row[kpi.name] = computeKpiValue(kpi, allEntries || [], fmtDate(wStart), fmtDate(wEnd));
+        });
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    // 📅 ӨДӨР БҮР (default — period-ийн зурвас дотор)
     return dateList.map((date) => {
       const row = { date: date.slice(5) }; // MM-DD
       deptKpis.forEach((kpi) => {
@@ -30226,10 +30305,10 @@ function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
       });
       return row;
     });
-  }, [dateList, deptKpis, filteredEntries]);
+  }, [dateList, deptKpis, filteredEntries, allEntries, groupBy, periodRange]);
 
-  // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд)
-  const isSingleDay = dateList.length === 1;
+  // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд) — зөвхөн day grouping үед
+  const isSingleDay = groupBy === "day" && dateList.length === 1;
 
   if (deptKpis.length === 0) {
     return (
@@ -30239,10 +30318,18 @@ function KpiChartView({ deptKpis, filteredEntries, periodRange, chartType }) {
     );
   }
 
-  if (filteredEntries.length === 0) {
+  if (filteredEntries.length === 0 && groupBy === "day") {
     return (
       <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
         <p className="text-sm">Сонгосон хугацаанд тоо оруулаагүй байна</p>
+      </div>
+    );
+  }
+
+  if ((groupBy === "week" || groupBy === "month") && (!allEntries || allEntries.length === 0)) {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">Тоон утга оруулаагүй байна</p>
       </div>
     );
   }
