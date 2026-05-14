@@ -7180,6 +7180,10 @@ function InventoryView({ profile, isAdmin = false }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [movements, setMovements] = useState([]);
+  const [receivings, setReceivings] = useState([]); // 🆕 Бөөн орлогын header
+  const [warehouses, setWarehouses] = useState([]); // 🆕 Агуулахууд (нэр харуулах)
+  const [expandedReceiving, setExpandedReceiving] = useState(null); // 🆕 Click-ээр өргөтгөгдөх
+  const [receivingItems, setReceivingItems] = useState({}); // 🆕 cache: receiving_id => movements[]
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [movementFor, setMovementFor] = useState(null); // { product, type: "in"|"out" }
@@ -7196,11 +7200,20 @@ function InventoryView({ profile, isAdmin = false }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: prodData }, { data: catData }, { data: movData }, { data: stkData }] = await Promise.all([
+      const [
+        { data: prodData },
+        { data: catData },
+        { data: movData },
+        { data: stkData },
+        { data: recvData },     // 🆕 Бөөн орлогын header-ууд
+        { data: whData },        // 🆕 Агуулахууд
+      ] = await Promise.all([
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("inv_stock").select("product_id, quantity"),
+        supabase.from("inv_receivings").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("inv_warehouses").select("id, name, type"),
       ]);
       // Бараа тус бүрийн нийт нөөцийг inv_stock-аас тооцоолох (multi-warehouse)
       const stockByProduct = {};
@@ -7214,7 +7227,9 @@ function InventoryView({ profile, isAdmin = false }) {
       setProducts(productsWithStock);
       setCategories(catData || []);
       setMovements(movData || []);
-    } catch (e) { console.error(e); }
+      setReceivings(recvData || []);   // 🆕
+      setWarehouses(whData || []);      // 🆕
+    } catch (e) { logErr("[inventory loadAll]", e); }
     finally { setLoading(false); }
   };
 
@@ -7562,57 +7577,123 @@ function InventoryView({ profile, isAdmin = false }) {
           </div>
         )
       ) : (
-        // History
-        movements.length === 0 ? (
+        // History — 📦 Бөөн орлогын түүх (захиалга биш)
+        receivings.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
-            <div className="text-4xl mb-2">📜</div>
+            <div className="text-4xl mb-2">📦</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Хөдөлгөөн хараахан байхгүй байна
+              Бөөн орлого хараахан байхгүй байна
             </div>
           </div>
         ) : (
-          <div className="glass rounded-2xl p-3 overflow-x-auto">
-            <table className="w-full" style={{ minWidth: 600 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Огноо</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Бараа</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "center" }} className="text-[10px] uppercase tracking-wider pb-2">Төрөл</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Тоо ширхэг</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Дүн</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.slice(0, 50).map((m) => {
-                  const product = products.find((p) => p.id === m.product_id);
-                  return (
-                    <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-                      <td style={{ fontFamily: FM, color: T.muted }} className="text-[10px] py-2">
-                        {new Date(m.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                      <td style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="text-xs py-2">
-                        {product?.name || "—"}
-                      </td>
-                      <td className="text-xs py-2 text-center">
-                        <span style={{
-                          background: m.movement_type === "in" ? "rgba(16,185,129,0.1)" : m.movement_type === "out" ? T.errSoft : T.surfaceAlt,
-                          color: m.movement_type === "in" ? T.ok : m.movement_type === "out" ? T.err : T.muted,
-                          fontFamily: FS, fontWeight: 600,
-                        }} className="px-2 py-0.5 rounded text-[10px]">
-                          {m.movement_type === "in" ? "📥 Орлого" : m.movement_type === "out" ? "📤 Борлуулалт" : "⚙ Засвар"}
+          <div className="space-y-2">
+            {receivings.map((rec) => {
+              const wh = warehouses.find((w) => w.id === rec.warehouse_id);
+              const isOpen = expandedReceiving === rec.id;
+              const items = receivingItems[rec.id] || [];
+              return (
+                <div key={rec.id} className="glass rounded-xl overflow-hidden">
+                  {/* Header — click-ээр өргөтгөгдөнө */}
+                  <button onClick={async () => {
+                    if (isOpen) {
+                      setExpandedReceiving(null);
+                      return;
+                    }
+                    setExpandedReceiving(rec.id);
+                    // Item-уудыг хараахан татаагүй бол татах
+                    if (!receivingItems[rec.id]) {
+                      try {
+                        const { data } = await supabase.from("inv_movements")
+                          .select("*")
+                          .eq("receiving_id", rec.id)
+                          .order("created_at", { ascending: true });
+                        setReceivingItems((prev) => ({ ...prev, [rec.id]: data || [] }));
+                      } catch (e) { logErr("[receiving items]", e); }
+                    }
+                  }}
+                    className="press-btn w-full p-3 text-left flex items-center gap-3"
+                    style={{ borderLeft: `3px solid ${T.ok}` }}>
+                    <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                      📦
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                          {rec.receiving_number || `#${rec.id.slice(0, 8)}`}
                         </span>
-                      </td>
-                      <td style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }} className="text-xs py-2 text-right tabular-nums">
-                        {Number(m.quantity).toLocaleString()}
-                      </td>
-                      <td style={{ fontFamily: FM, color: T.muted }} className="text-xs py-2 text-right tabular-nums">
-                        {m.total_amount ? Number(m.total_amount).toLocaleString() + "₮" : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {wh && (
+                          <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                            className="text-[10px] px-1.5 py-0.5 rounded">
+                            {wh.type === "main" ? "🏢" : "🚚"} {wh.name}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-2 flex-wrap mt-0.5">
+                        <span>📅 {new Date(rec.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                        {rec.supplier_name && <span>· 🏪 {rec.supplier_name}</span>}
+                        {rec.supplier_phone && <span>· 📞 {rec.supplier_phone}</span>}
+                      </div>
+                      {rec.notes && (
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                          💬 {rec.notes}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                        {Number(rec.total_amount || 0).toLocaleString()}₮
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1 justify-end">
+                        <span>{rec.item_count || items.length || "—"} бараа</span>
+                        <span>{isOpen ? "▲" : "▼"}</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Дэлгэрэнгүй бараа жагсаалт */}
+                  {isOpen && (
+                    <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }} className="px-3 py-2">
+                      {items.length === 0 ? (
+                        <div className="py-3 text-center">
+                          <Loader2 className="spin mx-auto" size={14} style={{ color: T.muted }} />
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="grid grid-cols-[1fr_60px_80px_80px] gap-2 pb-1 mb-1"
+                            style={{ borderBottom: `1px solid ${T.border}` }}>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Нэгж үнэ</div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
+                          </div>
+                          {items.map((m) => {
+                            const prod = products.find((p) => p.id === m.product_id);
+                            return (
+                              <div key={m.id}
+                                className="grid grid-cols-[1fr_60px_80px_80px] gap-2 py-1 items-center text-xs">
+                                <div style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="truncate">
+                                  {prod?.name || `(устсан бараа)`}
+                                </div>
+                                <div style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-right tabular-nums">
+                                  ×{Number(m.quantity).toLocaleString()}
+                                </div>
+                                <div style={{ fontFamily: FM, color: T.muted }} className="text-right tabular-nums">
+                                  {Number(m.unit_price || 0).toLocaleString()}₮
+                                </div>
+                                <div style={{ fontFamily: FD, color: T.ok, fontWeight: 700 }} className="text-right tabular-nums">
+                                  {Number(m.total_amount || 0).toLocaleString()}₮
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )
       )}
