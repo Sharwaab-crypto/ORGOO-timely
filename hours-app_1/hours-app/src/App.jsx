@@ -14882,6 +14882,11 @@ function DriverSettlementView({ profile }) {
                   bank_amount: bank, bank_notes: bankNotes.trim() || null,
                   expense_amount: expense, expense_notes: expenseNotes.trim() || null,
                   total_submitted: totalSubmitted,
+                  // 🔧 Бүх тоонуудыг шинэчлэх (open үед хадгалснаас өөрчлөгдсөн магадгүй)
+                  paid_already: driver.paidAlready,
+                  delivered_total: driver.deliveredTotal,
+                  settlement_amount: driver.owed,
+                  order_count: driver.delivered,
                   settled_at: new Date().toISOString(),
                   status: "closed", // ⭐ Хаах
                 }).eq("id", driver.openSettle.id);
