@@ -29592,25 +29592,67 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     total = entries.reduce((sum, e) => sum + Number(e.value), 0);
                   }
 
-                  // Trend: Хэрэв 7 хоног мөн өнгөрсөн 7 хоног харьцуулах
-                  let trend = null;
-                  if (period === "week" || period === "day" || period === "yesterday") {
-                    const dayShift = period === "week" ? 7 : 1;
-                    const prevStart = new Date(periodRange.start);
-                    prevStart.setDate(prevStart.getDate() - dayShift);
-                    const prevEnd = new Date(periodRange.end);
-                    prevEnd.setDate(prevEnd.getDate() - dayShift);
-                    const prevEntries = kpiEntries.filter(e =>
-                      e.kpi_id === kpi.id &&
-                      e.entry_date >= prevStart.toISOString().slice(0,10) &&
-                      e.entry_date <= prevEnd.toISOString().slice(0,10)
-                    );
-                    const prevTotal = prevEntries.reduce((s, e) => s + Number(e.value), 0);
-                    if (prevTotal > 0) {
-                      const change = ((total - prevTotal) / prevTotal) * 100;
-                      trend = { change, up: change > 0 };
+                  // 📊 Computed trends — 7 хоног vs өмнөх 7 хоног + Сар vs өмнөх сар
+                  // Anchor date нь сонгосон period-ийн төгсгөл (өнөөдөр/өчигдөр/сонгосон огноо)
+                  const fmtDate = (d) => d.toISOString().slice(0, 10);
+                  const anchorDate = new Date(periodRange.end);
+
+                  // Helper: тухайн KPI-н нийт дүн (date range дотор)
+                  const computeRangeTotal = (startISO, endISO) => {
+                    if (kpi.kpi_type === "calculated" && kpi.formula?.numerator_id && kpi.formula?.denominator_id) {
+                      const n = kpiEntries
+                        .filter(e => e.kpi_id === kpi.formula.numerator_id && e.entry_date >= startISO && e.entry_date <= endISO)
+                        .reduce((s, e) => s + Number(e.value), 0);
+                      const d = kpiEntries
+                        .filter(e => e.kpi_id === kpi.formula.denominator_id && e.entry_date >= startISO && e.entry_date <= endISO)
+                        .reduce((s, e) => s + Number(e.value), 0);
+                      const op = kpi.formula.operator;
+                      if (op === "divide") return d === 0 ? 0 : n / d;
+                      if (op === "multiply") return n * d;
+                      if (op === "add") return n + d;
+                      if (op === "subtract") return n - d;
+                      return 0;
                     }
-                  }
+                    if (kpi.kpi_type === "copy" && kpi.formula?.source_id) {
+                      return kpiEntries
+                        .filter(e => e.kpi_id === kpi.formula.source_id && e.entry_date >= startISO && e.entry_date <= endISO)
+                        .reduce((s, e) => s + Number(e.value), 0);
+                    }
+                    return kpiEntries
+                      .filter(e => e.kpi_id === kpi.id && e.entry_date >= startISO && e.entry_date <= endISO)
+                      .reduce((s, e) => s + Number(e.value), 0);
+                  };
+
+                  // 🗓 Сүүлийн 7 хоног (anchor - 6 to anchor)
+                  const last7End = new Date(anchorDate);
+                  const last7Start = new Date(anchorDate);
+                  last7Start.setDate(last7Start.getDate() - 6);
+                  // Өмнөх 7 хоног (anchor - 13 to anchor - 7)
+                  const prev7End = new Date(anchorDate);
+                  prev7End.setDate(prev7End.getDate() - 7);
+                  const prev7Start = new Date(anchorDate);
+                  prev7Start.setDate(prev7Start.getDate() - 13);
+
+                  const last7Total = computeRangeTotal(fmtDate(last7Start), fmtDate(last7End));
+                  const prev7Total = computeRangeTotal(fmtDate(prev7Start), fmtDate(prev7End));
+                  const trend7d = prev7Total > 0
+                    ? ((last7Total - prev7Total) / prev7Total) * 100
+                    : (last7Total > 0 ? 100 : null);
+
+                  // 📆 Анхорын сар vs өмнөх сар
+                  const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+                  const monthEnd = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0);
+                  const prevMonthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth() - 1, 1);
+                  const prevMonthEnd = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 0);
+
+                  const currMonthTotal = computeRangeTotal(fmtDate(monthStart), fmtDate(monthEnd));
+                  const prevMonthTotal = computeRangeTotal(fmtDate(prevMonthStart), fmtDate(prevMonthEnd));
+                  const trendMonth = prevMonthTotal > 0
+                    ? ((currMonthTotal - prevMonthTotal) / prevMonthTotal) * 100
+                    : (currMonthTotal > 0 ? 100 : null);
+
+                  // ↗/↘ icon-руу backwards compat (7d-г primary)
+                  const trend = trend7d !== null ? { change: trend7d, up: trend7d > 0 } : null;
 
                   // Тус KPI-н өнгийг тогтоогдоход (display_order эсвэл index ашиглан)
                   const kpiIndex = deptKpis.findIndex(k => k.id === kpi.id);
@@ -29728,15 +29770,42 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                         <polyline points={svgPoints} fill="none" stroke="white" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
                       </svg>
 
-                      {/* Trend or target */}
-                      {trend ? (
-                        <div className="flex items-center gap-1 mt-1.5">
-                          <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }} className="text-[9px]">
-                            {trend.up ? "+" : ""}{trend.change.toFixed(1)}%
+                      {/* 📊 Comparison trends — 7 хоног + Сар */}
+                      <div className="mt-1.5 space-y-0.5">
+                        <div className="flex items-center justify-between text-[9px]">
+                          <span style={{ opacity: 0.7, fontFamily: FM }} className="flex items-center gap-1">
+                            <span>📅</span> 7 хоног
                           </span>
-                          <span style={{ opacity: 0.7, fontFamily: FM }} className="text-[9px]">vs өмнөх</span>
+                          {trend7d !== null ? (
+                            <span style={{
+                              opacity: 0.95, fontFamily: FM, fontWeight: 700,
+                              color: trend7d >= 0 ? "rgba(255,255,255,0.98)" : "rgba(255,215,215,0.95)"
+                            }} className="tabular-nums">
+                              {trend7d > 0 ? "↗ +" : trend7d < 0 ? "↘ " : "→ "}{trend7d.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span style={{ opacity: 0.4, fontFamily: FM }}>—</span>
+                          )}
                         </div>
-                      ) : kpi.target && entries.length > 0 ? (() => {
+                        <div className="flex items-center justify-between text-[9px]">
+                          <span style={{ opacity: 0.7, fontFamily: FM }} className="flex items-center gap-1">
+                            <span>🗓</span> Сар
+                          </span>
+                          {trendMonth !== null ? (
+                            <span style={{
+                              opacity: 0.95, fontFamily: FM, fontWeight: 700,
+                              color: trendMonth >= 0 ? "rgba(255,255,255,0.98)" : "rgba(255,215,215,0.95)"
+                            }} className="tabular-nums">
+                              {trendMonth > 0 ? "↗ +" : trendMonth < 0 ? "↘ " : "→ "}{trendMonth.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span style={{ opacity: 0.4, fontFamily: FM }}>—</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Target progress (хэрэв байвал) */}
+                      {kpi.target && entries.length > 0 ? (() => {
                         let targetTotal = Number(kpi.target);
                         if (kpi.target_period === "daily") {
                           const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
