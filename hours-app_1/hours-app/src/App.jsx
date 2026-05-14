@@ -30415,30 +30415,146 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   const ChartComponent = chartType === "line" ? LineChart : chartType === "area" ? AreaChart : BarChart;
   const DataComponent = chartType === "line" ? Line : chartType === "area" ? Area : Bar;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 📊 KPI бүрийн өсөлт/бууралтын дүгнэлт (зөвхөн week/month grouping үед)
+  // Сүүлийн периодыг өмнөх перидтэй харьцуулна
+  // ─────────────────────────────────────────────────────────────────────────
+  const kpiChanges = useMemo(() => {
+    if (groupBy === "day" || chartData.length < 2) return null;
+    const lastRow = chartData[chartData.length - 1];   // Хамгийн сүүлийн период
+    const prevRow = chartData[chartData.length - 2];   // Өмнөх период
+    return deptKpis.map((kpi, i) => {
+      const lastVal = Number(lastRow[kpi.name] || 0);
+      const prevVal = Number(prevRow[kpi.name] || 0);
+      const diff = lastVal - prevVal;
+      const pct = prevVal > 0
+        ? (diff / prevVal) * 100
+        : (lastVal > 0 ? 100 : 0);
+      return {
+        id: kpi.id,
+        name: kpi.name,
+        unit: kpi.unit,
+        decimals: kpi.decimals || 0,
+        lastVal,
+        prevVal,
+        diff,
+        pct,
+        status: diff > 0 ? "up" : diff < 0 ? "down" : "flat",
+        color: COLORS[i % COLORS.length],
+      };
+    });
+  }, [chartData, deptKpis, groupBy]);
+
+  const summary = useMemo(() => {
+    if (!kpiChanges) return null;
+    const up = kpiChanges.filter(k => k.status === "up");
+    const down = kpiChanges.filter(k => k.status === "down");
+    const flat = kpiChanges.filter(k => k.status === "flat");
+    const validPcts = kpiChanges.filter(k => k.prevVal > 0 || k.lastVal > 0).map(k => k.pct);
+    const avgPct = validPcts.length > 0
+      ? validPcts.reduce((s, v) => s + v, 0) / validPcts.length
+      : 0;
+    return { up, down, flat, avgPct };
+  }, [kpiChanges]);
+
+  const periodLabel = groupBy === "week" ? "долоо хоног" : groupBy === "month" ? "сар" : "өдөр";
+
   return (
-    <div className="glass-soft rounded-2xl p-4">
-      <ResponsiveContainer width="100%" height={350}>
-        <ChartComponent data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {deptKpis.map((kpi, i) => (
-            <DataComponent
-              key={kpi.id}
-              type="monotone"
-              dataKey={kpi.name}
-              stroke={COLORS[i % COLORS.length]}
-              fill={COLORS[i % COLORS.length]}
-              fillOpacity={chartType === "area" ? 0.3 : 1}
-              radius={chartType === "bar" ? [4, 4, 0, 0] : 0}
-              strokeWidth={chartType === "line" ? 2.5 : 1}
-              dot={chartType === "line" ? { r: 3 } : false}
-            />
-          ))}
-        </ChartComponent>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      {/* Chart */}
+      <div className="glass-soft rounded-2xl p-4">
+        <ResponsiveContainer width="100%" height={350}>
+          <ChartComponent data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            {deptKpis.map((kpi, i) => (
+              <DataComponent
+                key={kpi.id}
+                type="monotone"
+                dataKey={kpi.name}
+                stroke={COLORS[i % COLORS.length]}
+                fill={COLORS[i % COLORS.length]}
+                fillOpacity={chartType === "area" ? 0.3 : 1}
+                radius={chartType === "bar" ? [4, 4, 0, 0] : 0}
+                strokeWidth={chartType === "line" ? 2.5 : 1}
+                dot={chartType === "line" ? { r: 3 } : false}
+              />
+            ))}
+          </ChartComponent>
+        </ResponsiveContainer>
+      </div>
+
+      {/* 📊 Summary section — Сүүлийн период vs өмнөх период */}
+      {summary && kpiChanges && kpiChanges.length > 0 && (
+        <div className="glass-soft rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+              📊 Сүүлийн {periodLabel} vs өмнөх {periodLabel}
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }}>
+                ↗ {summary.up.length}
+              </span>
+              <span style={{ color: T.err, fontFamily: FM, fontWeight: 600 }}>
+                ↘ {summary.down.length}
+              </span>
+              {summary.flat.length > 0 && (
+                <span style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }}>
+                  → {summary.flat.length}
+                </span>
+              )}
+              <span style={{
+                color: summary.avgPct > 0 ? T.ok : summary.avgPct < 0 ? T.err : T.muted,
+                fontFamily: FD, fontWeight: 700,
+              }} className="text-sm">
+                Дундаж: {summary.avgPct > 0 ? "+" : ""}{summary.avgPct.toFixed(1)}%
+              </span>
+            </div>
+          </div>
+
+          {/* KPI бүрийн өөрчлөлт */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {kpiChanges.map((k) => (
+              <div key={k.id}
+                className="rounded-xl p-2.5 flex items-center justify-between"
+                style={{
+                  background: k.status === "up" ? "rgba(16,185,129,0.08)"
+                           : k.status === "down" ? "rgba(239,68,68,0.08)"
+                           : "rgba(107,114,128,0.06)",
+                  border: `1px solid ${
+                    k.status === "up" ? "rgba(16,185,129,0.2)"
+                    : k.status === "down" ? "rgba(239,68,68,0.2)"
+                    : "rgba(107,114,128,0.15)"
+                  }`,
+                }}>
+                <div className="flex-1 min-w-0">
+                  <div style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }} className="text-[11px] truncate" title={k.name}>
+                    {k.name}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                    {k.prevVal.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
+                    <span className="mx-1">→</span>
+                    {k.lastVal.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
+                    {k.unit && <span className="ml-0.5 opacity-70">{k.unit}</span>}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div style={{
+                    color: k.status === "up" ? T.ok : k.status === "down" ? T.err : T.muted,
+                    fontFamily: FD, fontWeight: 700,
+                  }} className="text-sm tabular-nums">
+                    {k.status === "up" ? "↗ +" : k.status === "down" ? "↘ " : "→ "}
+                    {k.pct.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
