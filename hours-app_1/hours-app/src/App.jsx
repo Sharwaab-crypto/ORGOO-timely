@@ -27691,6 +27691,12 @@ function DriverDashboard({ profile }) {
                       <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
                         {Number(o.total_amount).toLocaleString()}₮
                       </span>
+                      {Number(o.paid_amount || 0) > 0 && (
+                        <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700 }}
+                          className="text-[10px] px-1.5 py-0.5 rounded-full">
+                          💰 Урьдчилж: {Number(o.paid_amount).toLocaleString()}₮
+                        </span>
+                      )}
                       {Number(o.balance_due || 0) > 0 && (
                         <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
                           className="text-[10px] px-1.5 py-0.5 rounded-full">
