@@ -12754,7 +12754,7 @@ function OperatorKPIReportView({ profile }) {
         name: op.name || "—",
         role: op.role,
         title: op.job_title || "",
-        uniquePhones: 0, // Бүх дуудлагын тоо (давхардсан ч хамаагүй)
+        uniquePhonesSet: new Set(), // 🆕 Set ашиглан давхардаагүй утсыг тоологдох
         totalCalls: 0,
         totalOrders: 0,
         delivered: 0,
@@ -12766,7 +12766,7 @@ function OperatorKPIReportView({ profile }) {
 
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      opMap[c.created_by].uniquePhones++; // Тус бүрд тоологдоно (биеэрээ давхардаах)
+      if (c.phone) opMap[c.created_by].uniquePhonesSet.add(c.phone); // 🆕 Уникаль утас
       opMap[c.created_by].totalCalls++;
     });
 
@@ -12783,7 +12783,9 @@ function OperatorKPIReportView({ profile }) {
       }
     });
 
+    // 🆕 Set-ийг size болгож хувиргах
     return Object.values(opMap)
+      .map((op) => ({ ...op, uniquePhones: op.uniquePhonesSet.size }))
       .filter((op) => op.totalCalls > 0 || op.totalOrders > 0)
       .sort((a, b) => b.delivered - a.delivered);
   }, [filteredCalls, filteredOrders, operators]);
@@ -13025,7 +13027,7 @@ function OperatorKPIReportView({ profile }) {
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                   <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
-                      Дугаар
+                      Бүртгэсэн дугаар
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
                       {op.uniquePhones}
@@ -13033,7 +13035,7 @@ function OperatorKPIReportView({ profile }) {
                   </div>
                   <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
-                      Залгалт
+                      Нийт залгалт
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-lg tabular-nums">
                       {op.totalCalls}
@@ -17956,6 +17958,19 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const menuButtonRef = useRef(null);
 
+  // 🔧 Scroll хийхэд эсвэл page resize-ийг menu автомат хаагдана
+  // (position:fixed-аас болж menu өөр захиалга дээр харагдахаас сэргийлэх)
+  useEffect(() => {
+    if (!showMenu) return;
+    const close = () => setShowMenu(false);
+    window.addEventListener("scroll", close, true); // capture: scrollable container-уудыг бас барих
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [showMenu]);
+
   // Items-аас нийт тоо ширхэг + эхний барааны зураг
   const totalQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
   const firstItem = items[0];
@@ -18110,7 +18125,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
               setMenuPos({
-                top: rect.bottom + window.scrollY + 4,
+                top: rect.bottom + 4,                        // 🔧 viewport-relative (window.scrollY хасав)
                 right: window.innerWidth - rect.right,
               });
               setShowMenu(!showMenu);
