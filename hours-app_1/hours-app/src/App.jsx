@@ -29330,6 +29330,11 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
   const [viewMode, setViewMode] = useState("cards"); // cards | charts
   const [chartType, setChartType] = useState("bar"); // bar | line | area
   const [chartGroupBy, setChartGroupBy] = useState("day"); // day | week | month
+  // 🗓 Хэлтэс бүрд тус тусдаа anchor огноо хадгалах { [deptId]: "YYYY-MM-DD" }
+  const [deptAnchorDates, setDeptAnchorDates] = useState({});
+  const setDeptAnchor = (deptId, dateISO) => {
+    setDeptAnchorDates((prev) => ({ ...prev, [deptId]: dateISO }));
+  };
 
   const today = new Date();
   const [selectedDate, setSelectedDate] = useState(today.toISOString().slice(0, 10));
@@ -29565,14 +29570,49 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 
               {/* KPI cards or Charts */}
               {viewMode === "charts" ? (
-                <KpiChartView
-                  deptKpis={deptKpis}
-                  filteredEntries={filteredEntries}
-                  allEntries={kpiEntries}
-                  periodRange={periodRange}
-                  chartType={chartType}
-                  groupBy={chartGroupBy}
-                />
+                <>
+                  {/* 🗓 Хэлтсийн anchor огноо — Зөвхөн week/month grouping үед */}
+                  {(chartGroupBy === "week" || chartGroupBy === "month") && (
+                    <div className="glass-soft rounded-xl p-3 mb-3 flex items-center gap-2 flex-wrap">
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        {chartGroupBy === "week" ? "🗓 Эхлэх огноо" : "📆 Эхлэх сар"}
+                      </span>
+                      <input
+                        type="date"
+                        value={deptAnchorDates[dept.id] || new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setDeptAnchor(dept.id, e.target.value)}
+                        style={{
+                          borderColor: T.border,
+                          background: "rgba(255,255,255,0.9)",
+                          color: T.ink,
+                          fontFamily: FM,
+                        }}
+                        className="px-3 py-1.5 rounded-lg border text-xs outline-none focus:border-black"
+                      />
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                        {chartGroupBy === "week"
+                          ? "→ Сонгосон огнооноос буцаж сүүлийн 5 долоо хоног"
+                          : "→ Сонгосон сараас буцаж сүүлийн 5 сар"}
+                      </span>
+                      <button
+                        onClick={() => setDeptAnchor(dept.id, new Date().toISOString().slice(0, 10))}
+                        style={{ color: T.highlight, fontFamily: FM }}
+                        className="press-btn ml-auto text-[10px] uppercase tracking-wider hover:opacity-70"
+                        title="Өнөөдөр болгох">
+                        Өнөөдөр
+                      </button>
+                    </div>
+                  )}
+                  <KpiChartView
+                    deptKpis={deptKpis}
+                    filteredEntries={filteredEntries}
+                    allEntries={kpiEntries}
+                    periodRange={periodRange}
+                    chartType={chartType}
+                    groupBy={chartGroupBy}
+                    anchorDate={deptAnchorDates[dept.id]}
+                  />
+                </>
               ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {deptKpis.map((kpi) => {
@@ -30213,8 +30253,14 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI CHART VIEW — Чартаар харах
 // ═══════════════════════════════════════════════════════════════════════════
-function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day" }) {
+function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate }) {
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+  // 🗓 Anchor огноо: хэрэв хэлтсийн anchor өгөгдсөн бол түүнийг, эс бол period-ийн төгсгөл
+  const effectiveAnchor = useMemo(() => {
+    if (anchorDate) return new Date(anchorDate + "T00:00:00");
+    return new Date(periodRange.end);
+  }, [anchorDate, periodRange.end]);
 
   // Огнооны массив (start-аас end хүртэл) — өдөр бүрд
   const dateList = useMemo(() => {
@@ -30261,7 +30307,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   const chartData = useMemo(() => {
     // 📆 СҮҮЛИЙН 5 САР
     if (groupBy === "month") {
-      const anchor = new Date(periodRange.end);
+      const anchor = effectiveAnchor;
       const rows = [];
       for (let i = 4; i >= 0; i--) {
         const monthStart = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
@@ -30278,7 +30324,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
     // 🗓 СҮҮЛИЙН 5 ДОЛОО ХОНОГ — anchor-аас (сонгосон огноо) 7-7 хоногоор
     if (groupBy === "week") {
-      const anchor = new Date(periodRange.end);
+      const anchor = effectiveAnchor;
       const rows = [];
       for (let i = 4; i >= 0; i--) {
         // Week i: anchor - (i+1)*7 + 1 ... anchor - i*7
@@ -30305,7 +30351,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       });
       return row;
     });
-  }, [dateList, deptKpis, filteredEntries, allEntries, groupBy, periodRange]);
+  }, [dateList, deptKpis, filteredEntries, allEntries, groupBy, effectiveAnchor]);
 
   // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд) — зөвхөн day grouping үед
   const isSingleDay = groupBy === "day" && dateList.length === 1;
