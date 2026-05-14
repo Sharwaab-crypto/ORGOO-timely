@@ -16042,12 +16042,14 @@ function SettlementReportsView({ profile }) {
   // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
   const [showOrdersList, setShowOrdersList] = useState(false);
   const [settlementOrders, setSettlementOrders] = useState([]);
+  const [settlementItems, setSettlementItems] = useState({}); // 🆕 order_id => items[]
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   // activeReport өөрчлөгдөхөд харагдалт хааж зурна
   useEffect(() => {
     setShowOrdersList(false);
     setSettlementOrders([]);
+    setSettlementItems({}); // 🆕 reset
   }, [activeReport?.id]);
 
   // showOrdersList-ийг идэвхжүүлэхэд захиалгуудыг татах
@@ -16063,6 +16065,22 @@ function SettlementReportsView({ profile }) {
           .order("delivered_at", { ascending: false, nullsFirst: false });
         if (error) throw error;
         setSettlementOrders(data || []);
+
+        // 🆕 Бүх захиалгын item-уудыг chunked татах
+        if (data && data.length > 0) {
+          const orderIds = data.map(o => o.id);
+          const items = await fetchInChunks("biz_order_items", orderIds, {
+            select: "id, order_id, product_name, quantity, unit_price, total_amount",
+            filterColumn: "order_id",
+          });
+          // Group by order_id
+          const grouped = {};
+          for (const it of items) {
+            if (!grouped[it.order_id]) grouped[it.order_id] = [];
+            grouped[it.order_id].push(it);
+          }
+          setSettlementItems(grouped);
+        }
       } catch (e) {
         logErr("[settlementOrders fetch]", e);
         alert("Захиалгын мэдээлэл татахад алдаа гарлаа: " + e.message);
@@ -16351,77 +16369,120 @@ function SettlementReportsView({ profile }) {
                     const isDelivered = o.status === "delivered";
                     const isCancelled = o.status === "cancelled";
                     const prepaidAmt = Number(o.prepaid_amount || 0);
-                    const isPrepaid = prepaidAmt > 0; // 🔵 Урьдчилж төлсөн эсэх
+                    const paidAmt = Number(o.paid_amount || 0);
+                    const totalAmt = Number(o.total_amount || 0);
+                    const isPrepaid = prepaidAmt > 0;
+                    const orderItems = settlementItems[o.id] || [];
                     return (
                       <div key={o.id}
-                        className="rounded-lg p-2.5 flex items-center gap-3"
+                        className="rounded-lg p-2.5"
                         style={{
-                          background: isPrepaid ? "rgba(59,130,246,0.06)" : T.surfaceAlt, // 🔵 Урьдч. — цэнхэр bg
+                          background: isPrepaid ? "rgba(59,130,246,0.06)" : T.surfaceAlt,
                           borderLeft: `3px solid ${
-                            isPrepaid ? "#3b82f6" :     // 🔵 урьдчилж төлсөн (хамгийн чухал)
+                            isPrepaid ? "#3b82f6" :
                             isDelivered ? T.ok :
                             isCancelled ? T.err : T.muted
                           }`,
                         }}>
-                        <div style={{
-                          background: isPrepaid ? "rgba(59,130,246,0.2)" :
-                                      isDelivered ? T.okSoft :
-                                      isCancelled ? T.errSoft : T.surfaceAlt,
-                          color: isPrepaid ? "#3b82f6" :
-                                 isDelivered ? T.ok :
-                                 isCancelled ? T.err : T.muted,
-                          fontFamily: FD, fontWeight: 700,
-                        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
-                              #{o.order_number || o.id.slice(0, 8)}
-                            </span>
-                            <span style={{
-                              background: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
-                              color: "white", fontFamily: FS, fontWeight: 600,
-                            }} className="text-[9px] px-1.5 py-0.5 rounded-full">
-                              {isDelivered ? "✓ Хүргэсэн" : isCancelled ? "✕ Цуцалсан" : o.status}
-                            </span>
-                            {isPrepaid && (
-                              <span style={{
-                                background: "#3b82f6", color: "white",
-                                fontFamily: FS, fontWeight: 700,
-                              }} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                                💰 Урьдчилж {prepaidAmt.toLocaleString()}₮
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 flex-wrap mt-0.5">
-                            {o.customer_name && <span>👤 {o.customer_name}</span>}
-                            {o.customer_phone && (
-                              <a href={`tel:${o.customer_phone}`}
-                                style={{ color: T.highlight, fontWeight: 600 }}>
-                                📞 {o.customer_phone}
-                              </a>
-                            )}
-                          </div>
-                          {o.delivery_address && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
-                              📍 {o.delivery_address}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right flex-shrink-0">
+                        {/* Header row */}
+                        <div className="flex items-center gap-3">
                           <div style={{
+                            background: isPrepaid ? "rgba(59,130,246,0.2)" :
+                                        isDelivered ? T.okSoft :
+                                        isCancelled ? T.errSoft : T.surfaceAlt,
+                            color: isPrepaid ? "#3b82f6" :
+                                   isDelivered ? T.ok :
+                                   isCancelled ? T.err : T.muted,
                             fontFamily: FD, fontWeight: 700,
-                            color: isDelivered ? T.ok : isCancelled ? T.muted : T.ink,
-                          }} className="text-sm tabular-nums">
-                            {Number(o.total_amount || 0).toLocaleString()}₮
+                          }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                            {idx + 1}
                           </div>
-                          {o.delivered_at && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                              {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                                #{o.order_number || o.id.slice(0, 8)}
+                              </span>
+                              <span style={{
+                                background: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
+                                color: "white", fontFamily: FS, fontWeight: 600,
+                              }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                                {isDelivered ? "✓ Хүргэсэн" : isCancelled ? "✕ Цуцалсан" : o.status}
+                              </span>
+                              {isPrepaid && (
+                                <span style={{
+                                  background: "#3b82f6", color: "white",
+                                  fontFamily: FS, fontWeight: 700,
+                                }} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                  💰 Урьдчилж {prepaidAmt.toLocaleString()}₮
+                                </span>
+                              )}
                             </div>
-                          )}
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 flex-wrap mt-0.5">
+                              {o.customer_name && <span>👤 {o.customer_name}</span>}
+                              {o.customer_phone && (
+                                <a href={`tel:${o.customer_phone}`}
+                                  style={{ color: T.highlight, fontWeight: 600 }}>
+                                  📞 {o.customer_phone}
+                                </a>
+                              )}
+                            </div>
+                            {o.delivery_address && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                                📍 {o.delivery_address}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div style={{
+                              fontFamily: FD, fontWeight: 700,
+                              color: isDelivered ? T.ok : isCancelled ? T.muted : T.ink,
+                            }} className="text-sm tabular-nums">
+                              {totalAmt.toLocaleString()}₮
+                            </div>
+                            {/* 💵 Төлсөн дүн */}
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                              💵 Төлсөн: {paidAmt.toLocaleString()}₮
+                            </div>
+                            {o.delivered_at && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                                {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                              </div>
+                            )}
+                          </div>
                         </div>
+
+                        {/* 🛍 Бараа жагсаалт */}
+                        {orderItems.length > 0 && (
+                          <div className="mt-2 pt-2 ml-10"
+                            style={{ borderTop: `1px dashed ${T.border}` }}>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                              🛍 Бараа ({orderItems.length})
+                            </div>
+                            <div className="space-y-1">
+                              {orderItems.map((it) => (
+                                <div key={it.id} className="flex items-center gap-2 text-[10px]">
+                                  <span style={{
+                                    background: T.highlight, color: "white",
+                                    fontFamily: FD, fontWeight: 700,
+                                  }} className="px-1.5 py-0.5 rounded text-[9px] tabular-nums">
+                                    ×{it.quantity}
+                                  </span>
+                                  <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }}
+                                    className="flex-1 truncate">
+                                    {it.product_name || "—"}
+                                  </span>
+                                  <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">
+                                    {Number(it.unit_price || 0).toLocaleString()}₮
+                                  </span>
+                                  <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }}
+                                    className="tabular-nums w-16 text-right">
+                                    {Number(it.total_amount || it.quantity * it.unit_price || 0).toLocaleString()}₮
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
