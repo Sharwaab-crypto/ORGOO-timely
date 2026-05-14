@@ -7577,125 +7577,186 @@ function InventoryView({ profile, isAdmin = false }) {
           </div>
         )
       ) : (
-        // History — 📦 Бөөн орлогын түүх (захиалга биш)
-        receivings.length === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="text-4xl mb-2">📦</div>
-            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Бөөн орлого хараахан байхгүй байна
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {receivings.map((rec) => {
-              const wh = warehouses.find((w) => w.id === rec.warehouse_id);
-              const isOpen = expandedReceiving === rec.id;
-              const items = receivingItems[rec.id] || [];
-              return (
-                <div key={rec.id} className="glass rounded-xl overflow-hidden">
-                  {/* Header — click-ээр өргөтгөгдөнө */}
-                  <button onClick={async () => {
-                    if (isOpen) {
-                      setExpandedReceiving(null);
-                      return;
-                    }
-                    setExpandedReceiving(rec.id);
-                    // Item-уудыг хараахан татаагүй бол татах
-                    if (!receivingItems[rec.id]) {
-                      try {
-                        const { data } = await supabase.from("inv_movements")
-                          .select("*")
-                          .eq("receiving_id", rec.id)
-                          .order("created_at", { ascending: true });
-                        setReceivingItems((prev) => ({ ...prev, [rec.id]: data || [] }));
-                      } catch (e) { logErr("[receiving items]", e); }
-                    }
-                  }}
-                    className="press-btn w-full p-3 text-left flex items-center gap-3"
-                    style={{ borderLeft: `3px solid ${T.ok}` }}>
-                    <div style={{ background: "rgba(16,185,129,0.1)", color: T.ok }}
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0">
-                      📦
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
-                          {rec.receiving_number || `#${rec.id.slice(0, 8)}`}
-                        </span>
-                        {wh && (
-                          <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
-                            className="text-[10px] px-1.5 py-0.5 rounded">
-                            {wh.type === "main" ? "🏢" : "🚚"} {wh.name}
+        // History — 📦 Бөөн орлогын түүх + нэг бараатай орлогууд
+        (() => {
+          // Бүх орлогуудыг нэгтгэх
+          const bulkReceivings = receivings.map((r) => ({
+            type: "bulk",
+            id: r.id,
+            created_at: r.created_at,
+            receiving_number: r.receiving_number,
+            warehouse_id: r.warehouse_id,
+            supplier_name: r.supplier_name,
+            supplier_phone: r.supplier_phone,
+            notes: r.notes,
+            total_amount: r.total_amount,
+            item_count: r.item_count,
+          }));
+          // Нэг бараатай орлого (receiving_id-гүй "in")
+          const singleIns = movements
+            .filter((m) => m.movement_type === "in" && !m.receiving_id)
+            .map((m) => ({
+              type: "single",
+              id: m.id,
+              created_at: m.created_at,
+              receiving_number: m.reference_number,
+              warehouse_id: m.warehouse_id,
+              supplier_name: null,
+              supplier_phone: null,
+              notes: m.notes,
+              total_amount: m.total_amount,
+              product_id: m.product_id,
+              quantity: m.quantity,
+              unit_price: m.unit_price,
+              reason: m.reason,
+            }));
+          // Огнооор эрэмбэлэх
+          const allIncomes = [...bulkReceivings, ...singleIns]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+          if (allIncomes.length === 0) {
+            return (
+              <div className="glass rounded-2xl p-8 text-center">
+                <div className="text-4xl mb-2">📦</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                  Орлого хараахан байхгүй байна
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              {allIncomes.map((rec) => {
+                const wh = warehouses.find((w) => w.id === rec.warehouse_id);
+                const isBulk = rec.type === "bulk";
+                const isOpen = expandedReceiving === rec.id;
+                const items = receivingItems[rec.id] || [];
+                // Нэг бараатай нь — шууд барааны нэр
+                const product = !isBulk ? products.find((p) => p.id === rec.product_id) : null;
+                return (
+                  <div key={rec.type + ":" + rec.id} className="glass rounded-xl overflow-hidden">
+                    {/* Header */}
+                    <button onClick={async () => {
+                      if (!isBulk) return; // Single — өргөтгөх хэрэггүй
+                      if (isOpen) {
+                        setExpandedReceiving(null);
+                        return;
+                      }
+                      setExpandedReceiving(rec.id);
+                      if (!receivingItems[rec.id]) {
+                        try {
+                          const { data } = await supabase.from("inv_movements")
+                            .select("*")
+                            .eq("receiving_id", rec.id)
+                            .order("created_at", { ascending: true });
+                          setReceivingItems((prev) => ({ ...prev, [rec.id]: data || [] }));
+                        } catch (e) { logErr("[receiving items]", e); }
+                      }
+                    }}
+                      className={`w-full p-3 text-left flex items-center gap-3 ${isBulk ? "press-btn" : ""}`}
+                      style={{ borderLeft: `3px solid ${isBulk ? T.ok : "#3b82f6"}`, cursor: isBulk ? "pointer" : "default" }}>
+                      <div style={{
+                        background: isBulk ? "rgba(16,185,129,0.1)" : "rgba(59,130,246,0.1)",
+                        color: isBulk ? T.ok : "#3b82f6",
+                      }}
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                        {isBulk ? "📦" : "📥"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{
+                            background: isBulk ? T.okSoft : "rgba(59,130,246,0.1)",
+                            color: isBulk ? T.ok : "#3b82f6",
+                            fontFamily: FS, fontWeight: 700,
+                          }} className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                            {isBulk ? "🛒 Бөөн орлого" : "📥 Нэг бараатай"}
                           </span>
+                          <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                            {rec.receiving_number || `#${rec.id.slice(0, 8)}`}
+                          </span>
+                          {wh && (
+                            <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[10px] px-1.5 py-0.5 rounded">
+                              {wh.type === "main" ? "🏢" : "🚚"} {wh.name}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-2 flex-wrap mt-0.5">
+                          <span>📅 {new Date(rec.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                          {rec.supplier_name && <span>· 🏪 {rec.supplier_name}</span>}
+                          {rec.supplier_phone && <span>· 📞 {rec.supplier_phone}</span>}
+                          {!isBulk && product && <span>· 🛍 {product.name} ×{rec.quantity}</span>}
+                        </div>
+                        {rec.notes && (
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                            💬 {rec.notes}
+                          </div>
                         )}
                       </div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-2 flex-wrap mt-0.5">
-                        <span>📅 {new Date(rec.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                        {rec.supplier_name && <span>· 🏪 {rec.supplier_name}</span>}
-                        {rec.supplier_phone && <span>· 📞 {rec.supplier_phone}</span>}
-                      </div>
-                      {rec.notes && (
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
-                          💬 {rec.notes}
+                      <div className="text-right flex-shrink-0">
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: isBulk ? T.ok : "#3b82f6" }} className="text-base tabular-nums">
+                          {Number(rec.total_amount || 0).toLocaleString()}₮
                         </div>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
-                        {Number(rec.total_amount || 0).toLocaleString()}₮
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1 justify-end">
+                          {isBulk ? (
+                            <>
+                              <span>{rec.item_count || items.length || "—"} бараа</span>
+                              <span>{isOpen ? "▲" : "▼"}</span>
+                            </>
+                          ) : (
+                            <span>×{rec.quantity}</span>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1 justify-end">
-                        <span>{rec.item_count || items.length || "—"} бараа</span>
-                        <span>{isOpen ? "▲" : "▼"}</span>
-                      </div>
-                    </div>
-                  </button>
+                    </button>
 
-                  {/* Дэлгэрэнгүй бараа жагсаалт */}
-                  {isOpen && (
-                    <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }} className="px-3 py-2">
-                      {items.length === 0 ? (
-                        <div className="py-3 text-center">
-                          <Loader2 className="spin mx-auto" size={14} style={{ color: T.muted }} />
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <div className="grid grid-cols-[1fr_60px_80px_80px] gap-2 pb-1 mb-1"
-                            style={{ borderBottom: `1px solid ${T.border}` }}>
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Нэгж үнэ</div>
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
+                    {/* Дэлгэрэнгүй (зөвхөн bulk-руу) */}
+                    {isBulk && isOpen && (
+                      <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }} className="px-3 py-2">
+                        {items.length === 0 ? (
+                          <div className="py-3 text-center">
+                            <Loader2 className="spin mx-auto" size={14} style={{ color: T.muted }} />
                           </div>
-                          {items.map((m) => {
-                            const prod = products.find((p) => p.id === m.product_id);
-                            return (
-                              <div key={m.id}
-                                className="grid grid-cols-[1fr_60px_80px_80px] gap-2 py-1 items-center text-xs">
-                                <div style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="truncate">
-                                  {prod?.name || `(устсан бараа)`}
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="grid grid-cols-[1fr_60px_80px_80px] gap-2 pb-1 mb-1"
+                              style={{ borderBottom: `1px solid ${T.border}` }}>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Нэгж үнэ</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
+                            </div>
+                            {items.map((m) => {
+                              const prod = products.find((p) => p.id === m.product_id);
+                              return (
+                                <div key={m.id}
+                                  className="grid grid-cols-[1fr_60px_80px_80px] gap-2 py-1 items-center text-xs">
+                                  <div style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="truncate">
+                                    {prod?.name || `(устсан бараа)`}
+                                  </div>
+                                  <div style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-right tabular-nums">
+                                    ×{Number(m.quantity).toLocaleString()}
+                                  </div>
+                                  <div style={{ fontFamily: FM, color: T.muted }} className="text-right tabular-nums">
+                                    {Number(m.unit_price || 0).toLocaleString()}₮
+                                  </div>
+                                  <div style={{ fontFamily: FD, color: T.ok, fontWeight: 700 }} className="text-right tabular-nums">
+                                    {Number(m.total_amount || 0).toLocaleString()}₮
+                                  </div>
                                 </div>
-                                <div style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-right tabular-nums">
-                                  ×{Number(m.quantity).toLocaleString()}
-                                </div>
-                                <div style={{ fontFamily: FM, color: T.muted }} className="text-right tabular-nums">
-                                  {Number(m.unit_price || 0).toLocaleString()}₮
-                                </div>
-                                <div style={{ fontFamily: FD, color: T.ok, fontWeight: 700 }} className="text-right tabular-nums">
-                                  {Number(m.total_amount || 0).toLocaleString()}₮
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
       )}
 
       {editing && (
