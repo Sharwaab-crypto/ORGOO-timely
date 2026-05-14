@@ -16036,6 +16036,39 @@ function SettlementReportsView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
 
+  // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
+  const [showOrdersList, setShowOrdersList] = useState(false);
+  const [settlementOrders, setSettlementOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  // activeReport өөрчлөгдөхөд харагдалт хааж зурна
+  useEffect(() => {
+    setShowOrdersList(false);
+    setSettlementOrders([]);
+  }, [activeReport?.id]);
+
+  // showOrdersList-ийг идэвхжүүлэхэд захиалгуудыг татах
+  useEffect(() => {
+    if (!showOrdersList || !activeReport) return;
+    if (settlementOrders.length > 0) return; // Аль хэдийн татсан
+    (async () => {
+      setLoadingOrders(true);
+      try {
+        const { data, error } = await supabase.from("biz_orders")
+          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, status, delivered_at, cancelled_at, created_at")
+          .eq("settlement_id", activeReport.id)
+          .order("delivered_at", { ascending: false, nullsFirst: false });
+        if (error) throw error;
+        setSettlementOrders(data || []);
+      } catch (e) {
+        logErr("[settlementOrders fetch]", e);
+        alert("Захиалгын мэдээлэл татахад алдаа гарлаа: " + e.message);
+      } finally {
+        setLoadingOrders(false);
+      }
+    })();
+  }, [showOrdersList, activeReport]);
+
   // Шүүлтүүр
   const [filterYear, setFilterYear] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
@@ -16237,9 +16270,12 @@ function SettlementReportsView({ profile }) {
           </div>
           <div className="flex items-center justify-between py-1">
             <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Захиалгын тоо</span>
-            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
-              {r.order_count}
-            </span>
+            <button onClick={() => setShowOrdersList(!showOrdersList)}
+              className="press-btn flex items-center gap-1.5 px-2 py-0.5 rounded-md"
+              style={{ background: showOrdersList ? T.highlight : T.surfaceAlt, color: showOrdersList ? "white" : T.ink, fontFamily: FD, fontWeight: 600 }}>
+              <span className="text-sm tabular-nums">{r.order_count}</span>
+              <span className="text-[10px]">{showOrdersList ? "▲" : "▼"}</span>
+            </button>
           </div>
           {settler && (
             <div className="flex items-center justify-between py-1">
@@ -16250,6 +16286,117 @@ function SettlementReportsView({ profile }) {
             </div>
           )}
         </div>
+
+        {/* 📦 Захиалгуудын дэлгэрэнгүй жагсаалт (toggle) */}
+        {showOrdersList && (
+          <div className="glass rounded-2xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+                📦 Захиалгууд ({settlementOrders.length})
+              </div>
+              <button onClick={() => setShowOrdersList(false)}
+                style={{ color: T.muted }} className="press-btn">
+                <X size={16} />
+              </button>
+            </div>
+
+            {loadingOrders ? (
+              <div className="py-8 text-center">
+                <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-2">Татагдаж байна...</div>
+              </div>
+            ) : settlementOrders.length === 0 ? (
+              <div className="py-6 text-center">
+                <div className="text-3xl mb-2">📭</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                  Захиалга олдсонгүй
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Sub-summary */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div style={{ background: T.okSoft }} className="rounded-lg p-2">
+                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">✓ Хүргэсэн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => o.status === "delivered").length}
+                    </div>
+                  </div>
+                  <div style={{ background: T.errSoft }} className="rounded-lg p-2">
+                    <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">✕ Цуцалсан</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => o.status === "cancelled").length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Order list */}
+                <div className="space-y-1.5" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+                  {settlementOrders.map((o, idx) => {
+                    const isDelivered = o.status === "delivered";
+                    const isCancelled = o.status === "cancelled";
+                    return (
+                      <div key={o.id}
+                        className="rounded-lg p-2.5 flex items-center gap-3"
+                        style={{
+                          background: T.surfaceAlt,
+                          borderLeft: `3px solid ${isDelivered ? T.ok : isCancelled ? T.err : T.muted}`,
+                        }}>
+                        <div style={{
+                          background: isDelivered ? T.okSoft : isCancelled ? T.errSoft : T.surfaceAlt,
+                          color: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
+                          fontFamily: FD, fontWeight: 700,
+                        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                              #{o.order_number || o.id.slice(0, 8)}
+                            </span>
+                            <span style={{
+                              background: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
+                              color: "white", fontFamily: FS, fontWeight: 600,
+                            }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                              {isDelivered ? "✓ Хүргэсэн" : isCancelled ? "✕ Цуцалсан" : o.status}
+                            </span>
+                          </div>
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 flex-wrap mt-0.5">
+                            {o.customer_name && <span>👤 {o.customer_name}</span>}
+                            {o.customer_phone && (
+                              <a href={`tel:${o.customer_phone}`}
+                                style={{ color: T.highlight, fontWeight: 600 }}>
+                                📞 {o.customer_phone}
+                              </a>
+                            )}
+                          </div>
+                          {o.delivery_address && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                              📍 {o.delivery_address}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div style={{
+                            fontFamily: FD, fontWeight: 700,
+                            color: isDelivered ? T.ok : isCancelled ? T.muted : T.ink,
+                          }} className="text-sm tabular-nums">
+                            {Number(o.total_amount || 0).toLocaleString()}₮
+                          </div>
+                          {o.delivered_at && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                              {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   }
