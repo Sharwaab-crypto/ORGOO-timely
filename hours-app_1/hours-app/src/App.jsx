@@ -137,6 +137,15 @@ function isPointInPolygon(point, polygon) {
 
 // 🚀 Supabase 1000-н row hard limit-ийг bypass хийх pagination helper
 // Хязгаарлалтгүй бүх row татаж буцаана
+
+// 🔧 Production-руу sensitive data leak хийхгүй байх — зөвхөн dev-д
+const isDev = (() => {
+  try { return import.meta.env?.DEV === true; }
+  catch { return false; }
+})();
+const logDev = (...args) => { if (isDev) logDev(...args); };
+const logErr = (...args) => { console.error(...args); }; // алдааг үргэлж logging
+
 async function fetchAllRows(queryBuilder) {
   const PAGE = 1000;
   let all = [];
@@ -188,6 +197,36 @@ async function fetchInChunks(table, ids, options = {}) {
     }
   }
   return results;
+}
+
+// 🔧 .in()-ийг chunk-аар UPDATE хийх (URL хязгаараас сэргийлэх)
+async function updateInChunks(table, filterColumn, ids, updateData, chunkSize = 200) {
+  if (!ids || ids.length === 0) return { error: null };
+  const uniqueIds = [...new Set(ids)];
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunk = uniqueIds.slice(i, i + chunkSize);
+    const { error } = await supabase.from(table).update(updateData).in(filterColumn, chunk);
+    if (error) {
+      console.error(`[updateInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
+      return { error };
+    }
+  }
+  return { error: null };
+}
+
+// 🔧 .in()-ийг chunk-аар DELETE хийх
+async function deleteInChunks(table, filterColumn, ids, chunkSize = 200) {
+  if (!ids || ids.length === 0) return { error: null };
+  const uniqueIds = [...new Set(ids)];
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunk = uniqueIds.slice(i, i + chunkSize);
+    const { error } = await supabase.from(table).delete().in(filterColumn, chunk);
+    if (error) {
+      console.error(`[deleteInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
+      return { error };
+    }
+  }
+  return { error: null };
 }
 
 // 🚚 Захиалгын координатаар → ямар бүсэд багтахыг олох
@@ -1312,42 +1351,59 @@ function AdminDashboard({ profile }) {
   const [editingAnn, setEditingAnn] = useState(null);
 
   const loadAll = async () => {
-    const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
-      supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver"]).order("created_at", { ascending: false }),
-      supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
-      supabase.from("active_sessions").select("*"),
-      supabase.from("approvals").select("*").order("created_at", { ascending: false }),
-      supabase.from("sites").select("*").order("name"),
-      supabase.from("employee_sites").select("*"),
-      supabase.from("manager_employees").select("*"),
-      supabase.from("departments").select("*").order("name"),
-      supabase.from("leaves").select("*").order("created_at", { ascending: false }),
-      supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
-      supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
-      supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-      supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
-    ]);
-    if (emps.data) {
-      // Бүх ажилтан (employee, operator, driver) — Багууд хэсэгт харагдана
-      setEmployees(emps.data.filter((p) => ["employee", "operator", "driver"].includes(p.role)));
-      setManagers(emps.data.filter((p) => p.role === "manager"));
+    try {
+      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
+        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver"]).order("created_at", { ascending: false }),
+        supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
+        supabase.from("active_sessions").select("*"),
+        supabase.from("approvals").select("*").order("created_at", { ascending: false }),
+        supabase.from("sites").select("*").order("name"),
+        supabase.from("employee_sites").select("*"),
+        supabase.from("manager_employees").select("*"),
+        supabase.from("departments").select("*").order("name"),
+        supabase.from("leaves").select("*").order("created_at", { ascending: false }),
+        supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
+        supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+        supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+      ]);
+
+      // 🔧 Алдаа гарсан query-уудыг log хийх (silent failure-аас сэргийлэх)
+      const errs = [];
+      if (emps.error) errs.push(`profiles: ${emps.error.message}`);
+      if (sess.error) errs.push(`sessions: ${sess.error.message}`);
+      if (active.error) errs.push(`active_sessions: ${active.error.message}`);
+      if (apps.error) errs.push(`approvals: ${apps.error.message}`);
+      if (st.error) errs.push(`sites: ${st.error.message}`);
+      if (dept.error) errs.push(`departments: ${dept.error.message}`);
+      if (errs.length > 0) {
+        logErr("[AdminDashboard.loadAll] errors:", errs);
+      }
+
+      if (emps.data) {
+        setEmployees(emps.data.filter((p) => ["employee", "operator", "driver"].includes(p.role)));
+        setManagers(emps.data.filter((p) => p.role === "manager"));
+      }
+      if (sess.data) setSessions(sess.data);
+      if (active.data) {
+        const map = {};
+        active.data.forEach((a) => { map[a.employee_id] = a; });
+        setActiveSessions(map);
+      }
+      if (apps.data) setApprovals(apps.data);
+      if (st.data) setSites(st.data);
+      if (es.data) setEmployeeSites(es.data);
+      if (me.data) setManagerEmployees(me.data);
+      if (dept.data) setDepartments(dept.data);
+      if (lvs.data) setLeaves(lvs.data);
+      if (kpiD.data) setKpiDefs(kpiD.data);
+      if (kpiE.data) setKpiEntries(kpiE.data);
+      if (tsk.data) setTasks(tsk.data);
+      if (ann.data) setAnnouncements(ann.data);
+    } catch (e) {
+      logErr("[AdminDashboard.loadAll] exception:", e);
+      setFeedback?.({ type: "error", msg: "Өгөгдөл татаж чадсангүй: " + (e.message || "Холбоо тасарсан") });
     }
-    if (sess.data) setSessions(sess.data);
-    if (active.data) {
-      const map = {};
-      active.data.forEach((a) => { map[a.employee_id] = a; });
-      setActiveSessions(map);
-    }
-    if (apps.data) setApprovals(apps.data);
-    if (st.data) setSites(st.data);
-    if (es.data) setEmployeeSites(es.data);
-    if (me.data) setManagerEmployees(me.data);
-    if (dept.data) setDepartments(dept.data);
-    if (lvs.data) setLeaves(lvs.data);
-    if (kpiD.data) setKpiDefs(kpiD.data);
-    if (kpiE.data) setKpiEntries(kpiE.data);
-    if (tsk.data) setTasks(tsk.data);
-    if (ann.data) setAnnouncements(ann.data);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -1417,10 +1473,12 @@ function AdminDashboard({ profile }) {
 
       // Save site assignments
       if (Array.isArray(siteIds)) {
-        await supabase.from("employee_sites").delete().eq("employee_id", userId);
+        const { error: delErr } = await supabase.from("employee_sites").delete().eq("employee_id", userId);
+        if (delErr) { logErr("[employee_sites delete]", delErr); throw delErr; }
         if (siteIds.length > 0) {
           const rows = siteIds.map((sid) => ({ employee_id: userId, site_id: sid }));
-          await supabase.from("employee_sites").insert(rows);
+          const { error: insErr } = await supabase.from("employee_sites").insert(rows);
+          if (insErr) { logErr("[employee_sites insert]", insErr); throw insErr; }
         }
       }
 
@@ -7518,7 +7576,7 @@ function WarehousesView({ profile }) {
       if (whErr) console.error("Warehouse load error:", whErr);
       if (stkErr) console.error("Stock load error:", stkErr);
       if (prdErr) console.error("Products load error:", prdErr);
-      console.log("WarehousesView loaded:", {
+      logDev("WarehousesView loaded:", {
         warehouses: whData?.length || 0,
         stock: stkData?.length || 0,
         products: prdData?.length || 0,
@@ -8599,7 +8657,9 @@ function TransferRequestsView({ profile }) {
       // Items
       if (reqData && reqData.length > 0) {
         const ids = reqData.map((r) => r.id);
-        const { data: itemData } = await supabase.from("inv_transfer_items").select("*").in("request_id", ids);
+        const itemData = await fetchInChunks("inv_transfer_items", ids, {
+          select: "*", filterColumn: "request_id", chunkSize: 200,
+        });
         const map = {};
         (itemData || []).forEach((i) => {
           if (!map[i.request_id]) map[i.request_id] = [];
@@ -8610,7 +8670,9 @@ function TransferRequestsView({ profile }) {
         // Profiles
         const profileIds = [...new Set(reqData.map((r) => r.requester_id).filter(Boolean))];
         if (profileIds.length > 0) {
-          const { data: prfData } = await supabase.from("profiles").select("id, name, job_title").in("id", profileIds);
+          const prfData = await fetchInChunks("profiles", profileIds, {
+            select: "id, name, job_title", filterColumn: "id", chunkSize: 200,
+          });
           const pMap = {};
           (prfData || []).forEach((p) => { pMap[p.id] = p; });
           setProfilesData(pMap);
@@ -12160,7 +12222,7 @@ function CallCenterView({ profile }) {
                 lastError = insertErr;
                 // Хэрэв duplicate key алдаа бол → retry
                 if (insertErr.message?.includes("duplicate") || insertErr.code === "23505") {
-                  console.log(`[Retry ${attempt + 1}/5] Duplicate order_number, retrying...`);
+                  logDev(`[Retry ${attempt + 1}/5] Duplicate order_number, retrying...`);
                   // 100мс хүлээгээд дахин туршина
                   await new Promise((r) => setTimeout(r, 100 + Math.random() * 100));
                   continue;
@@ -14422,10 +14484,10 @@ function DriverSettlementView({ profile }) {
   
   useEffect(() => {
     if (!autoOpenEnabled) {
-      console.log("[Auto Open] Disabled");
+      logDev("[Auto Open] Disabled");
       return;
     }
-    console.log(`[Auto Open] Initialized — scheduledTime: ${scheduledTime}, lastAutoOpenDate: ${lastAutoOpenDate}`);
+    logDev(`[Auto Open] Initialized — scheduledTime: ${scheduledTime}, lastAutoOpenDate: ${lastAutoOpenDate}`);
     
     const checkAndOpen = async () => {
       // Монголын цагийг авах (UTC+8)
@@ -14433,27 +14495,27 @@ function DriverSettlementView({ profile }) {
       const today = `${mnNow.getFullYear()}-${String(mnNow.getMonth() + 1).padStart(2, "0")}-${String(mnNow.getDate()).padStart(2, "0")}`;
       const currentTime = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
       
-      console.log(`[Auto Open Check] now=${currentTime} (${today}), scheduled=${scheduledTime}, lastDate=${lastAutoOpenDate}`);
+      logDev(`[Auto Open Check] now=${currentTime} (${today}), scheduled=${scheduledTime}, lastDate=${lastAutoOpenDate}`);
       
       if (lastAutoOpenDate === today) {
-        console.log("[Auto Open] Already opened today, skipping");
+        logDev("[Auto Open] Already opened today, skipping");
         return;
       }
       if (currentTime < scheduledTime) {
-        console.log(`[Auto Open] Too early (${currentTime} < ${scheduledTime})`);
+        logDev(`[Auto Open] Too early (${currentTime} < ${scheduledTime})`);
         return;
       }
       
       // Closure-аас одоогийн driverStats авах
       const stats = driverStatsRef.current;
       const driversToOpen = stats.filter((d) => !d.openSettlement && d.delivered > 0);
-      console.log(`[Auto Open] Found ${driversToOpen.length} drivers to open`);
+      logDev(`[Auto Open] Found ${driversToOpen.length} drivers to open`);
       if (driversToOpen.length === 0) {
         // Өнөөдөр захиалга байхгүй ч → date-ийг хадгалбал маргааш сэргээнэ
         return;
       }
       
-      console.log(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
+      logDev(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
       
       try {
         for (const d of driversToOpen) {
@@ -14478,7 +14540,7 @@ function DriverSettlementView({ profile }) {
             ...d.cancelledOrders.map((o) => o.id),
           ];
           if (orderIds.length > 0) {
-            await supabase.from("biz_orders").update({ settlement_id: stData.id }).in("id", orderIds);
+            await updateInChunks("biz_orders", "id", orderIds, { settlement_id: stData.id });
           }
         }
         
@@ -14487,7 +14549,7 @@ function DriverSettlementView({ profile }) {
           setLastAutoOpenDate(today);
         } catch {}
         
-        console.log(`[Auto Open] ${driversToOpen.length} settlement opened`);
+        logDev(`[Auto Open] ${driversToOpen.length} settlement opened`);
         await loadAll();
       } catch (e) {
         console.error("[Auto Open] Error:", e);
@@ -15232,7 +15294,7 @@ function DriverSettlementView({ profile }) {
                       // Устгасан
                       const removedIds = removedItems.map((x) => x.id);
                       if (removedIds.length > 0) {
-                        await supabase.from("biz_order_items").delete().in("id", removedIds);
+                        await deleteInChunks("biz_order_items", "id", removedIds);
                       }
                       // Modified
                       for (const it of editOrderItems.filter((x) => x.id && x._modified)) {
@@ -15441,9 +15503,9 @@ function DriverSettlementView({ profile }) {
             ...d.cancelledOrders.map((o) => o.id),
           ];
           if (orderIds.length > 0) {
-            const { error: updErr } = await supabase.from("biz_orders").update({
+            const { error: updErr } = await updateInChunks("biz_orders", "id", orderIds, {
               settlement_id: stData.id,
-            }).in("id", orderIds);
+            });
             if (updErr) throw updErr;
           }
           
@@ -15466,7 +15528,7 @@ function DriverSettlementView({ profile }) {
         msg += `\n\n⚠ ${failCount} хүргэгчид алдаа гарсан:\n${errors.slice(0, 3).join("\n")}`;
       }
       if (!silent) alert(msg);
-      console.log("[Bulk open]", msg);
+      logDev("[Bulk open]", msg);
       
       // Data дахин ачаалах
       try {
@@ -24546,7 +24608,7 @@ function DriverRequestsView({ profile }) {
       if (reqErr) console.error("Request fetch error:", reqErr);
       if (prdErr) console.error("Product fetch error:", prdErr);
       if (stkErr) console.error("Stock fetch error:", stkErr);
-      console.log("Loaded:", {
+      logDev("Loaded:", {
         requests: reqData?.length,
         warehouses: whData?.length,
         products: prdData?.length,
@@ -24560,7 +24622,9 @@ function DriverRequestsView({ profile }) {
 
       if (reqData && reqData.length > 0) {
         const ids = reqData.map((r) => r.id);
-        const { data: itemData } = await supabase.from("inv_transfer_items").select("*").in("request_id", ids);
+        const itemData = await fetchInChunks("inv_transfer_items", ids, {
+          select: "*", filterColumn: "request_id", chunkSize: 200,
+        });
         const map = {};
         (itemData || []).forEach((i) => {
           if (!map[i.request_id]) map[i.request_id] = [];
@@ -25941,7 +26005,7 @@ function DriverDashboard({ profile }) {
 
         const productIds = [...new Set((itemData || []).map((it) => it.product_id).filter(Boolean))];
         const { data: prodData } = productIds.length > 0
-          ? await supabase.from("inv_products").select("id, image_url").in("id", productIds)
+          ? await fetchInChunks("inv_products", productIds, { select: "id, image_url", filterColumn: "id", chunkSize: 200 }).then(d => ({ data: d }))
           : { data: [] };
         const prodMap = {};
         (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
@@ -26082,7 +26146,7 @@ function DriverDashboard({ profile }) {
               alert(`⚠ Барааны хөдөлгөөн бичигдсэнгүй\n\n${debugInfo.join("\n")}\n\n💡 Шийдэл: SQL editor-д "driver-stock-rls-fix.sql" ажиллуул.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
               if (!confirm("Үргэлжлүүлэх үү?")) return;
             } else {
-              console.log("✓ Stock хасагдсан:", debugInfo.join(" | "));
+              logDev("✓ Stock хасагдсан:", debugInfo.join(" | "));
             }
           }
         }
@@ -26638,7 +26702,7 @@ function DriverDashboard({ profile }) {
                             status: "new",
                           }).eq("id", o.id).select();
                           
-                          console.log("[Өөртөө авах] Result:", { error, data });
+                          logDev("[Өөртөө авах] Result:", { error, data });
                           
                           if (error) {
                             alert("⚠ Алдаа: " + error.message);
@@ -26674,7 +26738,7 @@ function DriverDashboard({ profile }) {
                             driver_id: null,
                           }).eq("id", o.id).select();
                           
-                          console.log("[Тодорхойгүй болгох] Result:", { error, data });
+                          logDev("[Тодорхойгүй болгох] Result:", { error, data });
                           
                           if (error) {
                             alert("⚠ Алдаа: " + error.message);
