@@ -18436,11 +18436,13 @@ function OrdersView({ profile }) {
   // Filter
   let filtered = orders;
   if (filter === "unknown") {
-    // ❓ Тодорхойгүй — is_unknown=true эсвэл GPS байхгүй шинэ захиалга
-    filtered = filtered.filter((o) =>
-      o.is_unknown === true ||
-      (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng))
-    );
+    // ❓ Тодорхойгүй — is_unknown=true ЭСВЭЛ GPS байхгүй шинэ захиалга
+    // ❗ Цуцлагдсан / Хүргэгдсэн захиалга энд харагдахгүй (аль хэдийн шийдэгдсэн)
+    filtered = filtered.filter((o) => {
+      if (o.status === "delivered" || o.status === "cancelled") return false;
+      return o.is_unknown === true ||
+             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+    });
   } else if (filter !== "all") {
     filtered = filtered.filter((o) => o.status === filter);
   }
@@ -18464,10 +18466,11 @@ function OrdersView({ profile }) {
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === "new").length,
-    unknown: orders.filter((o) =>
-      o.is_unknown === true ||
-      (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng))
-    ).length,
+    unknown: orders.filter((o) => {
+      if (o.status === "delivered" || o.status === "cancelled") return false;
+      return o.is_unknown === true ||
+             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+    }).length,
     pending: orders.filter((o) => o.status === "pending").length,
     delivered: orders.filter((o) => o.status === "delivered").length,
     cancelled: orders.filter((o) => o.status === "cancelled").length,
