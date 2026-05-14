@@ -16359,7 +16359,7 @@ function SettlementReportsView({ profile }) {
                   <div style={{ background: "rgba(16,185,129,0.06)" }} className="rounded-lg p-2">
                     <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">💸 Урьдч.дүн</div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xs tabular-nums">
-                      {Number(r.paid_already || 0).toLocaleString()}₮
+                      {settlementOrders.reduce((s, o) => s + Number(o.prepaid_amount || 0), 0).toLocaleString()}₮
                     </div>
                   </div>
                 </div>
