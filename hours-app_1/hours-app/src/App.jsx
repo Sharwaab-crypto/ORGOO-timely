@@ -30417,7 +30417,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   // ─────────────────────────────────────────────────────────────────────────
   // 📊 KPI бүрийн өсөлт/бууралтын дүгнэлт (зөвхөн week/month grouping үед)
-  // Сүүлийн периодыг өмнөх перидтэй харьцуулна
+  // Бүх 5 период + сүүлийн өөрчлөлтийг тооцох
   // ─────────────────────────────────────────────────────────────────────────
   const kpiChanges = useMemo(() => {
     if (groupBy === "day" || chartData.length < 2) return null;
@@ -30430,6 +30430,20 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       const pct = prevVal > 0
         ? (diff / prevVal) * 100
         : (lastVal > 0 ? 100 : 0);
+
+      // 📅 Бүх периодын утгууд + label-ууд
+      const periods = chartData.map((row, idx) => {
+        const val = Number(row[kpi.name] || 0);
+        let pctVsPrev = null;
+        if (idx > 0) {
+          const prevP = Number(chartData[idx - 1][kpi.name] || 0);
+          if (prevP > 0) pctVsPrev = ((val - prevP) / prevP) * 100;
+          else if (val > 0) pctVsPrev = 100;
+          else pctVsPrev = 0;
+        }
+        return { label: row.date, value: val, pctVsPrev };
+      });
+
       return {
         id: kpi.id,
         name: kpi.name,
@@ -30441,6 +30455,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         pct,
         status: diff > 0 ? "up" : diff < 0 ? "down" : "flat",
         color: COLORS[i % COLORS.length],
+        periods,
       };
     });
   }, [chartData, deptKpis, groupBy]);
@@ -30515,40 +30530,74 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
             </div>
           </div>
 
-          {/* KPI бүрийн өөрчлөлт */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {/* KPI бүрийн өөрчлөлт — 5 период бүхэл утга */}
+          <div className="space-y-2">
             {kpiChanges.map((k) => (
               <div key={k.id}
-                className="rounded-xl p-2.5 flex items-center justify-between"
+                className="rounded-xl p-3"
                 style={{
-                  background: k.status === "up" ? "rgba(16,185,129,0.08)"
-                           : k.status === "down" ? "rgba(239,68,68,0.08)"
-                           : "rgba(107,114,128,0.06)",
+                  background: k.status === "up" ? "rgba(16,185,129,0.05)"
+                           : k.status === "down" ? "rgba(239,68,68,0.05)"
+                           : "rgba(107,114,128,0.04)",
                   border: `1px solid ${
-                    k.status === "up" ? "rgba(16,185,129,0.2)"
-                    : k.status === "down" ? "rgba(239,68,68,0.2)"
-                    : "rgba(107,114,128,0.15)"
+                    k.status === "up" ? "rgba(16,185,129,0.18)"
+                    : k.status === "down" ? "rgba(239,68,68,0.18)"
+                    : "rgba(107,114,128,0.12)"
                   }`,
                 }}>
-                <div className="flex-1 min-w-0">
-                  <div style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }} className="text-[11px] truncate" title={k.name}>
-                    {k.name}
+                {/* Header — KPI нэр + сүүлийн өөрчлөлт */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div style={{ background: k.color, width: 8, height: 8, borderRadius: "50%", flexShrink: 0 }} />
+                    <div style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }} className="text-xs truncate" title={k.name}>
+                      {k.name}
+                      {k.unit && <span style={{ color: T.muted, fontWeight: 400 }} className="ml-1 text-[10px]">({k.unit})</span>}
+                    </div>
                   </div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
-                    {k.prevVal.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
-                    <span className="mx-1">→</span>
-                    {k.lastVal.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
-                    {k.unit && <span className="ml-0.5 opacity-70">{k.unit}</span>}
-                  </div>
-                </div>
-                <div className="text-right">
                   <div style={{
                     color: k.status === "up" ? T.ok : k.status === "down" ? T.err : T.muted,
                     fontFamily: FD, fontWeight: 700,
-                  }} className="text-sm tabular-nums">
+                  }} className="text-sm tabular-nums whitespace-nowrap">
                     {k.status === "up" ? "↗ +" : k.status === "down" ? "↘ " : "→ "}
                     {k.pct.toFixed(1)}%
                   </div>
+                </div>
+
+                {/* 5 период — grid layout */}
+                <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${k.periods.length}, minmax(0, 1fr))` }}>
+                  {k.periods.map((p, idx) => {
+                    const isLast = idx === k.periods.length - 1;
+                    const isUp = p.pctVsPrev !== null && p.pctVsPrev > 0;
+                    const isDown = p.pctVsPrev !== null && p.pctVsPrev < 0;
+                    return (
+                      <div key={idx}
+                        className="rounded-lg p-1.5 text-center"
+                        style={{
+                          background: isLast ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.5)",
+                          border: isLast ? `1px solid ${k.color}` : "1px solid rgba(0,0,0,0.05)",
+                        }}>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase tracking-tight mb-0.5">
+                          {p.label}
+                        </div>
+                        <div style={{
+                          color: T.ink,
+                          fontFamily: FD,
+                          fontWeight: isLast ? 700 : 600,
+                        }} className="text-[11px] tabular-nums">
+                          {p.value.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
+                        </div>
+                        {p.pctVsPrev !== null && (
+                          <div style={{
+                            color: isUp ? T.ok : isDown ? T.err : T.muted,
+                            fontFamily: FM,
+                            fontWeight: 600,
+                          }} className="text-[9px] tabular-nums mt-0.5">
+                            {isUp ? "↗+" : isDown ? "↘" : "→"}{p.pctVsPrev.toFixed(1)}%
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
