@@ -7212,7 +7212,7 @@ function InventoryView({ profile, isAdmin = false }) {
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("inv_stock").select("product_id, quantity"),
-        supabase.from("inv_receivings").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("inv_receivings").select("*").order("received_at", { ascending: false }).limit(100),
         supabase.from("inv_warehouses").select("id, name, type"),
       ]);
       // Бараа тус бүрийн нийт нөөцийг inv_stock-аас тооцоолох (multi-warehouse)
@@ -7583,14 +7583,14 @@ function InventoryView({ profile, isAdmin = false }) {
           const bulkReceivings = receivings.map((r) => ({
             type: "bulk",
             id: r.id,
-            created_at: r.created_at,
+            created_at: r.received_at, // 🔧 received_at column ашиглах
             receiving_number: r.receiving_number,
             warehouse_id: r.warehouse_id,
             supplier_name: r.supplier_name,
             supplier_phone: r.supplier_phone,
             notes: r.notes,
             total_amount: r.total_amount,
-            item_count: r.item_count,
+            item_count: r.total_items, // 🔧 total_items column ашиглах
           }));
           // Нэг бараатай орлого (receiving_id-гүй "in")
           const singleIns = movements
