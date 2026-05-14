@@ -19147,12 +19147,102 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
     (async () => {
       const L = (await import("leaflet")).default;
 
-      // CSS
+      // Leaflet CSS
       if (!document.querySelector('link[href*="leaflet.css"]')) {
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
         document.head.appendChild(link);
+      }
+
+      // ⭐ Marker Cluster CSS + JS (бөөгнөрөл — олон pin нэг газар)
+      if (!document.querySelector('link[href*="MarkerCluster"]')) {
+        const css1 = document.createElement("link");
+        css1.rel = "stylesheet";
+        css1.href = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css";
+        document.head.appendChild(css1);
+        const css2 = document.createElement("link");
+        css2.rel = "stylesheet";
+        css2.href = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css";
+        document.head.appendChild(css2);
+      }
+      if (!window.L?.markerClusterGroup) {
+        await new Promise((resolve, reject) => {
+          if (document.querySelector('script[src*="leaflet.markercluster"]')) {
+            // Already loading — wait
+            const check = () => window.L?.markerClusterGroup ? resolve() : setTimeout(check, 50);
+            check();
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
+      // ⭐ Custom pin CSS (нэг л удаа нэмнэ)
+      if (!document.getElementById("orders-map-pin-styles")) {
+        const style = document.createElement("style");
+        style.id = "orders-map-pin-styles";
+        style.textContent = `
+          .order-pin {
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease;
+          }
+          .order-pin:hover {
+            transform: scale(1.15) translateY(-2px);
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+            z-index: 1000 !important;
+          }
+          .order-pin-inner {
+            width: 32px;
+            height: 32px;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            border: 3px solid white;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .order-pin-inner > span {
+            transform: rotate(45deg);
+            color: white;
+            font-size: 13px;
+            font-weight: 700;
+          }
+          .order-pin-new {
+            animation: orderPinPulse 2s ease-in-out infinite;
+          }
+          @keyframes orderPinPulse {
+            0%, 100% { box-shadow: 0 3px 10px rgba(0,0,0,0.25), 0 0 0 0 rgba(59,130,246,0.4); }
+            50%      { box-shadow: 0 3px 10px rgba(0,0,0,0.25), 0 0 0 8px rgba(59,130,246,0); }
+          }
+          .cluster-icon-orders {
+            background: linear-gradient(135deg, var(--c1), var(--c2));
+            color: white;
+            font-weight: 700;
+            font-family: system-ui;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 3px solid white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+          }
+          .marker-cluster-orders { background-color: transparent !important; }
+          .marker-cluster-orders div { background: transparent !important; }
+          .order-popup .leaflet-popup-content-wrapper {
+            border-radius: 14px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+            padding: 0;
+          }
+          .order-popup .leaflet-popup-content { margin: 12px 14px; }
+        `;
+        document.head.appendChild(style);
       }
 
       if (cancelled || !containerRef.current || mapRef.current) return;
@@ -19165,17 +19255,11 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
       }).addTo(map);
 
       // Mobile дээр container хэмжээ зөв тооцох — multiple invalidate
-      setTimeout(() => {
-        if (mapRef.current) mapRef.current.invalidateSize();
-      }, 100);
-      setTimeout(() => {
-        if (mapRef.current) mapRef.current.invalidateSize();
-      }, 500);
-      setTimeout(() => {
-        if (mapRef.current) mapRef.current.invalidateSize();
-      }, 1000);
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 100);
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 500);
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 1000);
 
-      setMapReady(true); // ⭐ markers effect-руу мэдэгдэх
+      setMapReady(true);
     })();
 
     return () => {
@@ -19188,7 +19272,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         initialFitDoneRef.current = false;
       }
     };
-  }, [hasPins]); // ⭐ hasPins солигдоход remount/cleanup хийнэ
+  }, [hasPins]);
 
   // Marker-ыг өгөгдөл өөрчлөгдөхөд дахин үүсгэх
   useEffect(() => {
@@ -19200,9 +19284,33 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
 
       const map = mapRef.current;
 
-      // Хуучин marker-уудыг арилгах
-      markersRef.current.forEach((m) => map.removeLayer(m));
+      // Хуучин cluster/marker-уудыг арилгах
+      markersRef.current.forEach((m) => {
+        try { map.removeLayer(m); } catch {}
+      });
       markersRef.current = [];
+
+      // ⭐ Cluster group үүсгэх — ойролцоо pin-үүдийг бөөгнүүлнэ
+      const cluster = L.markerClusterGroup({
+        chunkedLoading: true,         // Олон pin-тэй үед performance
+        maxClusterRadius: 55,         // Px-р ойролцоо pin-үүдийг нэгтгэх
+        spiderfyOnMaxZoom: true,      // Хамгийн zoom хийсэн үед задлах
+        showCoverageOnHover: false,
+        animateAddingMarkers: false,
+        iconCreateFunction: (cluster) => {
+          const count = cluster.getChildCount();
+          let c1, c2, size;
+          if (count >= 50) { c1 = "#ef4444"; c2 = "#dc2626"; size = 56; }
+          else if (count >= 20) { c1 = "#f59e0b"; c2 = "#d97706"; size = 50; }
+          else if (count >= 10) { c1 = "#8b5cf6"; c2 = "#7c3aed"; size = 46; }
+          else { c1 = "#3b82f6"; c2 = "#2563eb"; size = 42; }
+          return L.divIcon({
+            html: `<div class="cluster-icon-orders" style="--c1:${c1};--c2:${c2};width:${size}px;height:${size}px;font-size:${count > 99 ? 12 : 14}px;">${count}</div>`,
+            className: "marker-cluster-orders",
+            iconSize: [size, size],
+          });
+        },
+      });
 
       // Шинэ marker-ууд нэмэх
       const bounds = [];
@@ -19210,45 +19318,66 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         const lat = Number(o.delivery_lat);
         const lng = Number(o.delivery_lng);
 
-        // Status-аас өнгө
+        // Status-аас өнгө + emoji
+        const isNew = o.status === "new";
         const color =
           o.status === "delivered" ? "#10b981" :
           o.status === "cancelled" ? "#ef4444" :
-          o.status === "pending" ? "#f59e0b" : "#3b82f6";
+          o.status === "pending" ? "#f59e0b" :
+          o.is_unknown ? "#f59e0b" : "#3b82f6";
 
         const statusEmoji =
           o.status === "delivered" ? "✓" :
           o.status === "cancelled" ? "✕" :
-          o.status === "pending" ? "⏳" : "🆕";
+          o.status === "pending" ? "⏳" :
+          o.is_unknown ? "❓" : "🆕";
 
+        // ⭐ Сайжруулсан pin (хэвлэхэд илүү тод, hover effect-тэй)
         const customIcon = L.divIcon({
-          html: `<div style="background:${color};width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:11px;font-weight:bold;">${statusEmoji}</span></div>`,
-          className: "",
-          iconSize: [28, 28],
-          iconAnchor: [14, 28],
+          html: `<div class="order-pin-inner${isNew ? " order-pin-new" : ""}" style="background:${color}"><span>${statusEmoji}</span></div>`,
+          className: "order-pin",
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+          popupAnchor: [0, -28],
         });
 
         const driver = drivers.find((d) => d.id === o.driver_id);
+        const statusLabel = {
+          new: "Шинэ", pending: "Хүлээгдэж", delivered: "Хүргэсэн", cancelled: "Цуцалсан"
+        }[o.status] || o.status;
+
+        // ⭐ Сайжруулсан popup
         const popupHtml = `
-          <div style="font-family:system-ui;min-width:180px;">
-            <div style="font-weight:700;font-size:13px;color:#0f172a;margin-bottom:4px;">
+          <div style="font-family:system-ui;min-width:220px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <div style="background:${color};color:white;font-size:10px;padding:3px 8px;border-radius:999px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
+                ${statusEmoji} ${statusLabel}${o.is_unknown ? " · Тодорхойгүй" : ""}
+              </div>
+              ${o.order_number ? `<div style="color:#94a3b8;font-size:10px;font-weight:600;">#${o.order_number}</div>` : ""}
+            </div>
+            <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:2px;">
               ${o.customer_name || "—"}
             </div>
-            <div style="color:#64748b;font-size:11px;margin-bottom:6px;">
-              📞 ${o.customer_phone || "—"}
+            <div style="color:#64748b;font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+              📞 <a href="tel:${o.customer_phone || ''}" style="color:#3b82f6;text-decoration:none;font-weight:600;">${o.customer_phone || "—"}</a>
             </div>
-            <div style="color:#0f172a;font-size:12px;font-weight:600;margin-bottom:4px;">
-              💰 ${Number(o.total_amount || 0).toLocaleString()}₮
+            <div style="background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:8px;">
+              <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Нийт дүн</div>
+              <div style="color:#0f172a;font-size:15px;font-weight:700;">
+                ${Number(o.total_amount || 0).toLocaleString()}₮
+              </div>
             </div>
-            ${driver ? `<div style="color:#64748b;font-size:11px;">🚚 ${driver.name}</div>` : '<div style="color:#ef4444;font-size:11px;">⚠ Хуваарилаагүй</div>'}
-            <button class="map-detail-btn" data-order-id="${o.id}" style="margin-top:8px;width:100%;padding:6px;background:${color};color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">
+            ${driver
+              ? `<div style="display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;margin-bottom:8px;"><span style="background:#3b82f6;color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">${driver.name?.[0] || "?"}</span>🚚 ${driver.name}</div>`
+              : '<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:5px 8px;border-radius:6px;margin-bottom:8px;font-weight:600;">⚠ Хүргэгч хуваарилаагүй</div>'}
+            <button class="map-detail-btn" data-order-id="${o.id}" style="width:100%;padding:8px;background:linear-gradient(135deg,${color},${color}dd);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
               Дэлгэрэнгүй харах →
             </button>
           </div>
         `;
 
-        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
-        marker.bindPopup(popupHtml);
+        const marker = L.marker([lat, lng], { icon: customIcon });
+        marker.bindPopup(popupHtml, { className: "order-popup", closeButton: true });
         marker.on("popupopen", () => {
           setTimeout(() => {
             const btn = document.querySelector(`.map-detail-btn[data-order-id="${o.id}"]`);
@@ -19258,45 +19387,73 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
           }, 50);
         });
 
-        markersRef.current.push(marker);
+        cluster.addLayer(marker);
         bounds.push([lat, lng]);
       });
+
+      map.addLayer(cluster);
+      markersRef.current.push(cluster);
 
       // ⭐ ЭХНИЙ удаа л zoom хийх (давтан хийхгүй)
       if (!initialFitDoneRef.current && bounds.length > 0) {
         try {
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
           initialFitDoneRef.current = true;
         } catch (e) { /* ignore */ }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [mapReady, ordersHash, driversHash]); // ⭐ Хэш ашиглаж жинхэнэ өөрчлөлтөнд reaгать болно
+  }, [mapReady, ordersHash, driversHash]);
+
+  // Status тоологч (легендэд харагдах)
+  const statusCounts = useMemo(() => ({
+    new: ordersWithCoords.filter(o => o.status === "new" && !o.is_unknown).length,
+    unknown: ordersWithCoords.filter(o => o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled").length,
+    pending: ordersWithCoords.filter(o => o.status === "pending").length,
+    delivered: ordersWithCoords.filter(o => o.status === "delivered").length,
+    cancelled: ordersWithCoords.filter(o => o.status === "cancelled").length,
+  }), [ordersWithCoords]);
 
   return (
     <div className="space-y-2">
-      {/* Status легенд */}
-      <div className="glass rounded-xl p-2 flex items-center gap-3 flex-wrap text-[10px]" style={{ fontFamily: FS }}>
-        <div className="flex items-center gap-1">
-          <div style={{ background: "#3b82f6", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
-          <span style={{ color: T.ink }}>🆕 Шинэ</span>
+      {/* Status легенд — counter-тэй */}
+      <div className="glass rounded-xl p-2.5 flex items-center gap-3 flex-wrap text-[10px]" style={{ fontFamily: FS }}>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "#3b82f6", width: 12, height: 12, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}></div>
+          <span style={{ color: T.ink, fontWeight: 600 }}>🆕 Шинэ</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">{statusCounts.new}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div style={{ background: "#f59e0b", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
-          <span style={{ color: T.ink }}>⏳ Хүлээгдэж</span>
+        {statusCounts.unknown > 0 && (
+          <div className="flex items-center gap-1.5">
+            <div style={{ background: "#f59e0b", width: 12, height: 12, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}></div>
+            <span style={{ color: T.ink, fontWeight: 600 }}>❓ Тодорхойгүй</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">{statusCounts.unknown}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "#f59e0b", width: 12, height: 12, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}></div>
+          <span style={{ color: T.ink, fontWeight: 600 }}>⏳ Хүлээгдэж</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">{statusCounts.pending}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div style={{ background: "#10b981", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
-          <span style={{ color: T.ink }}>✓ Хүргэсэн</span>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "#10b981", width: 12, height: 12, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}></div>
+          <span style={{ color: T.ink, fontWeight: 600 }}>✓ Хүргэсэн</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">{statusCounts.delivered}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div style={{ background: "#ef4444", width: 10, height: 10, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)" }}></div>
-          <span style={{ color: T.ink }}>✕ Цуцалсан</span>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "#ef4444", width: 12, height: 12, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}></div>
+          <span style={{ color: T.ink, fontWeight: 600 }}>✕ Цуцалсан</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">{statusCounts.cancelled}</span>
         </div>
-        <span style={{ color: T.muted, marginLeft: "auto" }}>
-          📍 {ordersWithCoords.length} pin
-          {noCoordsCount > 0 && ` · ${noCoordsCount} pin байрлуулаагүй`}
+        <div style={{ flex: 1 }} />
+        <div className="flex items-center gap-1.5" title="Ойролцоох олон pin нэг тоо болж хармагдана">
+          <div style={{ background: "linear-gradient(135deg,#3b82f6,#2563eb)", width: 14, height: 14, borderRadius: "50%", color: "white", fontSize: 7, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, border: "1.5px solid white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}>5</div>
+          <span style={{ color: T.muted, fontFamily: FM }}>Бөөгнөрөл</span>
+        </div>
+        <span style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }}>
+          📍 {ordersWithCoords.length}
+          {noCoordsCount > 0 && <span style={{ color: T.muted, fontWeight: 400 }}> · {noCoordsCount} GPS-гүй</span>}
         </span>
       </div>
 
