@@ -5865,16 +5865,15 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     return m;
   }, [drivers]);
 
-  // Хуваарилагдаагүй захиалгуудыг татах (бүгдийг — 1000 limit-аас халих)
+  // "Шинэ" статустай бүх захиалгуудыг татах (driver-той эсэхэд хамаагүй)
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const data = await fetchAllRows(
           supabase.from("biz_orders")
-            .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-            .is("driver_id", null)
-            .in("status", ["new", "assigned"])
+            .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
+            .eq("status", "new")   // ⭐ Зөвхөн "Шинэ" — assigned/delivered/cancelled орохгүй
             .order("created_at", { ascending: false })
         );
         setUnassignedOrders(data || []);
@@ -5890,16 +5889,28 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     const noGps = [];     // координат байхгүй
     
     unassignedOrders.forEach((o) => {
+      const alreadyAssigned = !!o.driver_id;
+      const currentDriverName = alreadyAssigned ? driverNameById[o.driver_id] : null;
+
       if (!o.delivery_lat || !o.delivery_lng) {
-        noGps.push(o);
+        noGps.push({ ...o, alreadyAssigned, currentDriverName });
         return;
       }
       const point = [Number(o.delivery_lat), Number(o.delivery_lng)];
       const zone = zones.find((z) => isPointInPolygon(point, z.polygon || []));
       if (zone) {
-        matched.push({ ...o, zone, driverName: driverNameById[zone.driver_id] });
+        // 🔄 Шалгах: одоогийн driver_id нь бүсийн driver-тэй адил уу?
+        const isSameDriver = alreadyAssigned && o.driver_id === zone.driver_id;
+        matched.push({
+          ...o,
+          zone,
+          driverName: driverNameById[zone.driver_id],
+          alreadyAssigned,
+          currentDriverName,
+          isSameDriver,
+        });
       } else {
-        unmatched.push(o);
+        unmatched.push({ ...o, alreadyAssigned, currentDriverName });
       }
     });
     
@@ -18922,6 +18933,12 @@ function OrdersView({ profile }) {
       return o.is_unknown === true ||
              (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     });
+  } else if (filter === "new") {
+    // 🆕 Шинэ — driver-гүй захиалгыг л хамруулна (хуваариагсныг хасна)
+    filtered = filtered.filter((o) => o.status === "new" && !o.driver_id);
+  } else if (filter === "assigned") {
+    // 🚚 Хуваарилагдсан — Шинэ статустай боловч driver-той
+    filtered = filtered.filter((o) => o.status === "new" && o.driver_id);
   } else if (filter !== "all") {
     filtered = filtered.filter((o) => o.status === filter);
   }
@@ -18944,7 +18961,8 @@ function OrdersView({ profile }) {
   // Counts
   const counts = {
     all: orders.length,
-    new: orders.filter((o) => o.status === "new").length,
+    new: orders.filter((o) => o.status === "new" && !o.driver_id).length, // 🔧 Зөвхөн driver-гүй
+    assigned: orders.filter((o) => o.status === "new" && o.driver_id).length, // 🆕 Хуваарилагдсан
     unknown: orders.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
@@ -19151,7 +19169,16 @@ function OrdersView({ profile }) {
               color: filter === "new" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            🆕 Шинэ ({orders.filter((o) => o.status === "new").length})
+            🆕 Шинэ ({counts.new})
+          </button>
+          <button onClick={() => setFilter("assigned")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "assigned" ? "#8b5cf6" : T.surfaceAlt,
+              color: filter === "assigned" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            🚚 Хуваарилагдсан ({counts.assigned})
           </button>
           <button onClick={() => setFilter("unknown")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
