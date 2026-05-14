@@ -5865,18 +5865,20 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     return m;
   }, [drivers]);
 
-  // Хуваарилагдаагүй захиалгуудыг татах
+  // Хуваарилагдаагүй захиалгуудыг татах (бүгдийг — 1000 limit-аас халих)
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await supabase.from("biz_orders")
-          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-          .is("driver_id", null)
-          .in("status", ["new", "assigned"])
-          .order("created_at", { ascending: false });
+        const data = await fetchAllRows(
+          supabase.from("biz_orders")
+            .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
+            .is("driver_id", null)
+            .in("status", ["new", "assigned"])
+            .order("created_at", { ascending: false })
+        );
         setUnassignedOrders(data || []);
-      } catch (e) { console.error(e); }
+      } catch (e) { logErr("[unassignedOrders fetch]", e); }
       finally { setLoading(false); }
     })();
   }, []);
@@ -5920,27 +5922,37 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     let failCount = 0;
     
     try {
+      // 🚀 ОПТИМИЗАЦИ: Driver-аар групплэж bulk update хийх
+      // Жнь: 500 захиалга × 5 driver → 500 request биш, 5×3=15 request л явна
+      const groupedByDriver = {};
       for (const o of toAssign) {
-        try {
-          await supabase.from("biz_orders").update({
-            driver_id: o.zone.driver_id,
-            // status хэвээр үлдэнэ (new) — driver харагдах нь чухал
-          }).eq("id", o.id);
-          successCount++;
-        } catch (e) {
-          console.error(`Assign error for ${o.order_number}:`, e);
-          failCount++;
+        const dId = o.zone.driver_id;
+        if (!groupedByDriver[dId]) groupedByDriver[dId] = [];
+        groupedByDriver[dId].push(o.id);
+      }
+
+      for (const [driverId, orderIds] of Object.entries(groupedByDriver)) {
+        const { error } = await updateInChunks("biz_orders", "id", orderIds, {
+          driver_id: driverId,
+        });
+        if (error) {
+          logErr(`[bulk assign ${driverId}]`, error);
+          failCount += orderIds.length;
+        } else {
+          successCount += orderIds.length;
         }
       }
       
       alert(`✅ ${successCount} захиалга хуваарилагдлаа${failCount > 0 ? `\n⚠ ${failCount} алдаа гарсан` : ""}`);
       
-      // Reload
-      const { data } = await supabase.from("biz_orders")
-        .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-        .is("driver_id", null)
-        .in("status", ["new", "assigned"])
-        .order("created_at", { ascending: false });
+      // Reload — мөн fetchAllRows ашиглах (1000 limit-аас халих)
+      const data = await fetchAllRows(
+        supabase.from("biz_orders")
+          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
+          .is("driver_id", null)
+          .in("status", ["new", "assigned"])
+          .order("created_at", { ascending: false })
+      );
       setUnassignedOrders(data || []);
       setSelectedIds(new Set());
     } catch (e) {
