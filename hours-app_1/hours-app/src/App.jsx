@@ -4428,6 +4428,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
         role === "manager" ? "Ахлагч"
         : role === "operator" ? "Оператор"
         : role === "driver" ? "Delivery"
+        : role === "marketing" ? "Маркетинг"
         : "Ажилтан"
       ),
       hourly_rate: parseFloat(rate) || 0,
@@ -4468,7 +4469,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
 
           <div>
             <Label>Эрх</Label>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               <button onClick={() => setRole("employee")}
                 style={{ background: role === "employee" ? T.ink : "transparent",
                          color: role === "employee" ? T.surface : T.ink,
@@ -4497,6 +4498,13 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
                 🚚 Delivery
               </button>
+              <button onClick={() => setRole("marketing")}
+                style={{ background: role === "marketing" ? "#ec4899" : "transparent",
+                         color: role === "marketing" ? "white" : T.ink,
+                         borderColor: role === "marketing" ? "#ec4899" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                📢 Маркетинг
+              </button>
             </div>
             {role === "manager" && (
               <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
@@ -4506,6 +4514,11 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
             {role === "operator" && (
               <p style={{ color: "#9333ea" }} className="text-[11px] mt-1.5">
                 🎧 Оператор: Зөвхөн дуудлага бүртгэж, захиалга авна.
+              </p>
+            )}
+            {role === "marketing" && (
+              <p style={{ color: "#ec4899" }} className="text-[11px] mt-1.5">
+                📢 Маркетинг: Дуудлага, Борлуулалт, FB Pages, Захиалга, Бараа нөөц харна.
               </p>
             )}
             {role === "driver" && (
