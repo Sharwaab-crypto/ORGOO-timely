@@ -3544,9 +3544,11 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
 
     if (groupBy === "role") {
       const groups = {
+        manager: { key: "manager", label: "Ахлагч", icon: "⭐", items: [] },
         employee: { key: "employee", label: "Ажилтан", icon: "👤", items: [] },
         operator: { key: "operator", label: "Оператор", icon: "🎧", items: [] },
         driver: { key: "driver", label: "Delivery", icon: "🚚", items: [] },
+        marketing: { key: "marketing", label: "Маркетинг", icon: "📢", items: [] },
       };
       filtered.forEach((e) => {
         if (groups[e.role]) groups[e.role].items.push(e);
@@ -3594,8 +3596,10 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
           {[
             { id: "all", label: "Бүгд", icon: "👥", count: employees.length },
             { id: "employee", label: "Ажилтан", icon: "👤", count: employees.filter((e) => e.role === "employee").length },
+            { id: "manager", label: "Ахлагч", icon: "⭐", count: employees.filter((e) => e.role === "manager").length },
             { id: "operator", label: "Оператор", icon: "🎧", count: employees.filter((e) => e.role === "operator").length },
             { id: "driver", label: "Delivery", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
+            { id: "marketing", label: "Маркетинг", icon: "📢", count: employees.filter((e) => e.role === "marketing").length },
           ].map((f) => (
             <button key={f.id} onClick={() => setFilterRole(f.id)}
               className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
