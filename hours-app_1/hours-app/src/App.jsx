@@ -1617,6 +1617,13 @@ function AdminDashboard({ profile }) {
       } else {
         const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
         if (error) throw error;
+
+        // 🔄 Manager → бусад role-руу солигдоход manager_employees-аас холбоосыг арилгах
+        if (formData.role !== "manager") {
+          const { error: cleanupErr } = await supabase.from("manager_employees")
+            .delete().eq("manager_id", existingId);
+          if (cleanupErr) logErr("[manager_employees cleanup]", cleanupErr);
+        }
       }
 
       // Save site assignments
