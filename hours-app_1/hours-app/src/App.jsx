@@ -796,7 +796,7 @@ function AppRoot() {
     <>
       {installBanner}
       <NotificationManager profile={profile} />
-      {(profile.role === "admin" || profile.role === "manager") ? <AdminDashboard profile={profile} />
+      {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") ? <AdminDashboard profile={profile} />
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
@@ -1441,10 +1441,19 @@ function LoginScreen() {
 //  ADMIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function AdminDashboard({ profile }) {
+  // 🎯 Marketing role — зөвхөн зарим view-руу хандана
+  const isMarketing = profile.role === "marketing";
+  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory"];
+
   const [view, setView] = useState(() => {
     try {
-      return localStorage.getItem("orgoo-admin-view") || "dashboard";
-    } catch { return "dashboard"; }
+      const saved = localStorage.getItem("orgoo-admin-view") || "dashboard";
+      // Marketing бол зөвшөөрөөгүй view-руу үсрэхгүй
+      if (isMarketing && !marketingAllowedViews.includes(saved)) {
+        return "callcenter"; // marketing-ийн анхдагч view
+      }
+      return saved;
+    } catch { return isMarketing ? "callcenter" : "dashboard"; }
   });
 
   // Save view to localStorage
@@ -2118,6 +2127,7 @@ function AdminDashboard({ profile }) {
 
           {/* Nav */}
           <nav className={`flex-1 overflow-y-auto px-2 py-3 ${sidebarCollapsed ? "sidebar-collapsed-nav" : ""}`}>
+            {!isMarketing && (
             <SidebarSection label="Хяналт" icon={Eye}>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
@@ -2131,46 +2141,65 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "polls"} onClick={() => { setView("polls"); setSidebarOpen(false); }} icon={Vote}>Санал асуулга</SidebarTab>
               <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>HR файл</SidebarTab>
             </SidebarSection>
+            )}
 
             <SidebarSection label="Operator" icon={Headphones}>
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
-              <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
+              {!isMarketing && (
+                <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
+              )}
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Delivery" icon={Truck}>
-              <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
+              {!isMarketing && (
+                <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
+              )}
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
-              <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
-              <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
+              {!isMarketing && (
+                <>
+                  <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
+                  <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
+                </>
+              )}
             </SidebarSection>
 
+            {!isMarketing && (
             <SidebarSection label="Finance" icon={DollarSign}>
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
             </SidebarSection>
+            )}
 
             <SidebarSection label="Агуулах" icon={Warehouse}>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
-              <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
-              <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
-              <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
-              <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
-              <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
+              {!isMarketing && (
+                <>
+                  <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
+                  <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
+                  <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
+                  <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
+                  <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
+                </>
+              )}
             </SidebarSection>
 
+            {!isMarketing && (
             <SidebarSection label="Ажилтнууд" icon={Users}>
               <SidebarTab active={view === "departments"} onClick={() => { setView("departments"); setSidebarOpen(false); }} icon={Users}>Хэлтсүүд</SidebarTab>
               <SidebarTab active={view === "managers"} onClick={() => { setView("managers"); setSidebarOpen(false); }} icon={ShieldCheck}>Ахлагчид</SidebarTab>
               <SidebarTab active={view === "sites"} onClick={() => { setView("sites"); setSidebarOpen(false); }} icon={MapPin}>Байрууд</SidebarTab>
             </SidebarSection>
+            )}
 
+            {!isMarketing && (
             <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>Чөлөө</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
             </SidebarSection>
+            )}
           </nav>
 
           {/* Footer · User card */}
@@ -2186,7 +2215,7 @@ function AdminDashboard({ profile }) {
                       {profile.name}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
-                      {profile.role === "manager" ? "Ахлагч" : "Админ"}
+                      {profile.role === "manager" ? "Ахлагч" : profile.role === "marketing" ? "Маркетинг" : "Админ"}
                     </div>
                   </div>
                   <DarkModeToggle />
