@@ -30750,6 +30750,14 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     chartType={chartType}
                     groupBy={chartGroupBy}
                     anchorDate={deptAnchorDates[dept.id]}
+                    departmentId={dept.id}
+                    initialNote={dept.chart_notes || ""}
+                    canEdit={profile?.role === "admin" || profile?.role === "manager"}
+                    onNoteSaved={(deptId, newNote) => {
+                      setDepartments((prev) => prev.map((d) =>
+                        d.id === deptId ? { ...d, chart_notes: newNote } : d
+                      ));
+                    }}
                   />
                 </>
               ) : (
@@ -31392,8 +31400,139 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI CHART VIEW — Чартаар харах
 // ═══════════════════════════════════════════════════════════════════════════
-function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate }) {
+// ─── 📝 KPI Chart-ийн гар тайлбар хэсэг ──────────────────────────────
+function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNote, saveNote, canEdit, singleDayTotals, multiDayTotals, periodLabel, chartType }) {
+  return (
+    <div className="glass-soft rounded-2xl p-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+          📝 Тайлбар
+        </div>
+        {canEdit && !editingNote && (
+          <button onClick={() => setEditingNote(true)}
+            className="press-btn text-[11px] px-2 py-1 rounded-lg flex items-center gap-1"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            ✏ {note ? "Засах" : "Бичих"}
+          </button>
+        )}
+      </div>
+
+      {/* Тайлбарын текст эсвэл edit mode */}
+      {editingNote ? (
+        <div className="space-y-2">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Энэ хэлтсийн KPI үзүүлэлтийн талаар тайлбар бичих... (жнь: '5-р сарын зорилго 1000 захиалга', 'Шинээр нэмэгдсэн KPI: Засварын тоо')"
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg text-xs resize-y"
+            style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS, minHeight: 60 }}
+            autoFocus
+          />
+          <div className="flex items-center gap-2">
+            <button onClick={saveNote} disabled={savingNote}
+              className="press-btn glow-primary px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
+              style={{ fontFamily: FS, fontWeight: 600 }}>
+              {savingNote ? (
+                <><Loader2 size={12} className="spin" /> Хадгалж байна...</>
+              ) : (
+                <>💾 Хадгалах</>
+              )}
+            </button>
+            <button onClick={() => setEditingNote(false)} disabled={savingNote}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}>
+              ✕ Болих
+            </button>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
+              {note.length} тэмдэгт
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Гарын тайлбар */}
+          {note ? (
+            <div style={{ color: T.ink, fontFamily: FS, lineHeight: 1.5, whiteSpace: "pre-wrap" }} className="text-xs">
+              {note}
+            </div>
+          ) : (
+            <div style={{ color: T.muted, fontFamily: FM, fontStyle: "italic" }} className="text-[11px]">
+              {canEdit ? "Тайлбар бичээгүй байна — ✏ товчийг даргаж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
+            </div>
+          )}
+
+          {/* Доор автомат статистик */}
+          <div style={{ borderTop: `1px dashed ${T.borderSoft}`, color: T.muted, fontFamily: FM }}
+            className="mt-2 pt-2 text-[10px] flex items-center gap-2 flex-wrap">
+            {singleDayTotals && (
+              <>
+                <span>📅 Нэг өдөр</span>
+                <span>·</span>
+                <span>{singleDayTotals.count} үзүүлэлт</span>
+                <span>·</span>
+                <span>Нийт: <b style={{ color: T.ink }}>{singleDayTotals.total.toLocaleString()}</b></span>
+                {singleDayTotals.max?.value > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>🏆 {singleDayTotals.max.name} ({singleDayTotals.max.value.toLocaleString()})</span>
+                  </>
+                )}
+              </>
+            )}
+            {multiDayTotals && (
+              <>
+                <span>📅 {multiDayTotals.periods} {periodLabel}</span>
+                <span>·</span>
+                <span>Нийт: <b style={{ color: T.ink }}>{multiDayTotals.totalSum.toLocaleString()}</b></span>
+                {multiDayTotals.topKpiTotal > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>🏆 {multiDayTotals.topKpiName} ({multiDayTotals.topKpiTotal.toLocaleString()})</span>
+                  </>
+                )}
+                <span>·</span>
+                <span>📈 {chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate, departmentId, initialNote = "", canEdit = false, onNoteSaved }) {
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+  // 📝 Гар тайлбар state
+  const [note, setNote] = useState(initialNote || "");
+  const [editingNote, setEditingNote] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // initialNote prop өөрчлөгдөхөд state шинэчлэх
+  useEffect(() => {
+    setNote(initialNote || "");
+  }, [initialNote, departmentId]);
+
+  const saveNote = async () => {
+    if (!departmentId) return;
+    setSavingNote(true);
+    try {
+      const { error } = await supabase.from("departments")
+        .update({ chart_notes: note.trim() || null })
+        .eq("id", departmentId);
+      if (error) throw error;
+      setEditingNote(false);
+      if (onNoteSaved) onNoteSaved(departmentId, note.trim() || "");
+    } catch (e) {
+      alert("Хадгалахад алдаа: " + e.message);
+      logErr("[saveNote]", e);
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   // 🗓 Anchor огноо: хэрэв хэлтсийн anchor өгөгдсөн бол түүнийг, эс бол period-ийн төгсгөл
   const effectiveAnchor = useMemo(() => {
@@ -31536,24 +31675,17 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
     return (
       <div className="space-y-3">
-        {/* 📊 Chart тайлбар */}
-        <div className="glass-soft rounded-2xl p-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
-                📊 KPI График — Нэг өдөр
-              </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
-                {deptKpis.length} үзүүлэлт · Нийт утга: {totalSingleDay.toLocaleString()} 
-                {maxKpi.value > 0 && ` · 🏆 Хамгийн их: ${maxKpi.name} (${maxKpi.value.toLocaleString()})`}
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted, fontFamily: FM }}>
-              <span style={{ display: "inline-block", width: 10, height: 10, background: COLORS[0], borderRadius: "50%" }}></span>
-              <span>KPI өнгүүд</span>
-            </div>
-          </div>
-        </div>
+        {/* 📝 Гар тайлбар хэсэг */}
+        <ChartNoteSection
+          note={note}
+          setNote={setNote}
+          editingNote={editingNote}
+          setEditingNote={setEditingNote}
+          savingNote={savingNote}
+          saveNote={saveNote}
+          canEdit={canEdit}
+          singleDayTotals={{ total: totalSingleDay, max: maxKpi, count: deptKpis.length }}
+        />
 
         {/* 📈 Chart — Утгуудтай label-тай */}
         <div className="glass-soft rounded-2xl p-4">
@@ -31661,23 +31793,19 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   return (
     <div className="space-y-3">
-      {/* 📊 Chart тайлбар */}
-      <div className="glass-soft rounded-2xl p-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
-              📊 KPI График — {chartSummary?.periods || 0} {periodLabel}
-            </div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
-              {deptKpis.length} үзүүлэлт · Нийт нийлбэр: {(chartSummary?.totalSum || 0).toLocaleString()}
-              {chartSummary?.topKpiTotal > 0 && ` · 🏆 Шилдэг: ${chartSummary.topKpiName} (${chartSummary.topKpiTotal.toLocaleString()})`}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted, fontFamily: FM }}>
-            <span>📈 {chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
-          </div>
-        </div>
-      </div>
+      {/* 📝 Гар тайлбар хэсэг */}
+      <ChartNoteSection
+        note={note}
+        setNote={setNote}
+        editingNote={editingNote}
+        setEditingNote={setEditingNote}
+        savingNote={savingNote}
+        saveNote={saveNote}
+        canEdit={canEdit}
+        multiDayTotals={chartSummary}
+        periodLabel={periodLabel}
+        chartType={chartType}
+      />
 
       {/* Chart */}
       <div className="glass-soft rounded-2xl p-4">
