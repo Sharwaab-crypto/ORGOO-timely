@@ -30752,7 +30752,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     anchorDate={deptAnchorDates[dept.id]}
                     departmentId={dept.id}
                     initialNote={dept.chart_notes || ""}
-                    canEdit={profile?.role === "admin" || profile?.role === "manager"}
+                    canEdit={isAdmin}
                     onNoteSaved={(deptId, newNote) => {
                       setDepartments((prev) => prev.map((d) =>
                         d.id === deptId ? { ...d, chart_notes: newNote } : d
