@@ -14,7 +14,7 @@ import * as XLSX from "xlsx";
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from "recharts";
 import * as Sentry from "@sentry/react";
 import { supabase, isConfigured } from "./supabaseClient";
@@ -31531,21 +31531,49 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       };
     });
 
+    const totalSingleDay = singleDayData.reduce((s, d) => s + d.value, 0);
+    const maxKpi = singleDayData.reduce((m, d) => d.value > m.value ? d : m, singleDayData[0] || { name: "—", value: 0 });
+
     return (
-      <div className="glass-soft rounded-2xl p-4">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={singleDayData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
-            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-              {singleDayData.map((entry, i) => (
-                <Cell key={i} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="space-y-3">
+        {/* 📊 Chart тайлбар */}
+        <div className="glass-soft rounded-2xl p-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+                📊 KPI График — Нэг өдөр
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                {deptKpis.length} үзүүлэлт · Нийт утга: {totalSingleDay.toLocaleString()} 
+                {maxKpi.value > 0 && ` · 🏆 Хамгийн их: ${maxKpi.name} (${maxKpi.value.toLocaleString()})`}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted, fontFamily: FM }}>
+              <span style={{ display: "inline-block", width: 10, height: 10, background: COLORS[0], borderRadius: "50%" }}></span>
+              <span>KPI өнгүүд</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 📈 Chart — Утгуудтай label-тай */}
+        <div className="glass-soft rounded-2xl p-4">
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={singleDayData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {singleDayData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+                <LabelList dataKey="value" position="top"
+                  style={{ fontSize: 12, fontWeight: 700, fill: T.ink }}
+                  formatter={(v) => v > 0 ? v.toLocaleString() : ""} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   }
@@ -31613,12 +31641,48 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   const periodLabel = groupBy === "week" ? "долоо хоног" : groupBy === "month" ? "сар" : "өдөр";
 
+  // 📊 График-ийн тоймийг бэлдэх
+  const chartSummary = useMemo(() => {
+    if (!chartData || chartData.length === 0) return null;
+    const totalsByKpi = {};
+    chartData.forEach((row) => {
+      deptKpis.forEach((kpi) => {
+        totalsByKpi[kpi.name] = (totalsByKpi[kpi.name] || 0) + (Number(row[kpi.name]) || 0);
+      });
+    });
+    const topKpi = Object.entries(totalsByKpi).sort((a, b) => b[1] - a[1])[0];
+    return {
+      periods: chartData.length,
+      topKpiName: topKpi?.[0] || "—",
+      topKpiTotal: topKpi?.[1] || 0,
+      totalSum: Object.values(totalsByKpi).reduce((s, v) => s + v, 0),
+    };
+  }, [chartData, deptKpis]);
+
   return (
     <div className="space-y-3">
+      {/* 📊 Chart тайлбар */}
+      <div className="glass-soft rounded-2xl p-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+              📊 KPI График — {chartSummary?.periods || 0} {periodLabel}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+              {deptKpis.length} үзүүлэлт · Нийт нийлбэр: {(chartSummary?.totalSum || 0).toLocaleString()}
+              {chartSummary?.topKpiTotal > 0 && ` · 🏆 Шилдэг: ${chartSummary.topKpiName} (${chartSummary.topKpiTotal.toLocaleString()})`}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted, fontFamily: FM }}>
+            <span>📈 {chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
+          </div>
+        </div>
+      </div>
+
       {/* Chart */}
       <div className="glass-soft rounded-2xl p-4">
         <ResponsiveContainer width="100%" height={350}>
-          <ChartComponent data={chartData}>
+          <ChartComponent data={chartData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
@@ -31635,7 +31699,17 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
                 radius={chartType === "bar" ? [4, 4, 0, 0] : 0}
                 strokeWidth={chartType === "line" ? 2.5 : 1}
                 dot={chartType === "line" ? { r: 3 } : false}
-              />
+              >
+                {/* 🏷 Тоон утга харуулна — bar/area chart-руу зөвхөн */}
+                {chartType !== "line" && chartData.length <= 10 && (
+                  <LabelList
+                    dataKey={kpi.name}
+                    position="top"
+                    style={{ fontSize: 10, fontWeight: 600, fill: COLORS[i % COLORS.length] }}
+                    formatter={(v) => v > 0 ? (v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString()) : ""}
+                  />
+                )}
+              </DataComponent>
             ))}
           </ChartComponent>
         </ResponsiveContainer>
