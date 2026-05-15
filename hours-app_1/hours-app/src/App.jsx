@@ -30581,7 +30581,45 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
     return kpiEntries.filter((e) => e.entry_date >= periodRange.start && e.entry_date <= periodRange.end);
   }, [kpiEntries, periodRange]);
 
-  const visibleDepts = selectedDept === "all" ? departments : departments.filter(d => d.id === selectedDept);
+  // 🔃 Хэлтсийн дараалал — гар тохиргоо (localStorage)
+  const [deptOrder, setDeptOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem("orgoo-dept-order");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-dept-order", JSON.stringify(deptOrder)); } catch {}
+  }, [deptOrder]);
+
+  // Sorted departments
+  const sortedDepartments = useMemo(() => {
+    if (deptOrder.length === 0) return departments;
+    return [...departments].sort((a, b) => {
+      const ia = deptOrder.indexOf(a.id);
+      const ib = deptOrder.indexOf(b.id);
+      if (ia === -1 && ib === -1) return 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [departments, deptOrder]);
+
+  // Дараалал солих (дээш/доош нэг алхам)
+  const moveDept = (deptId, direction) => {
+    const ordered = sortedDepartments.map((d) => d.id);
+    const idx = ordered.indexOf(deptId);
+    if (idx === -1) return;
+    if (direction === "up" && idx > 0) {
+      [ordered[idx], ordered[idx - 1]] = [ordered[idx - 1], ordered[idx]];
+    } else if (direction === "down" && idx < ordered.length - 1) {
+      [ordered[idx], ordered[idx + 1]] = [ordered[idx + 1], ordered[idx]];
+    }
+    setDeptOrder(ordered);
+  };
+
+  const visibleDepts = selectedDept === "all" ? sortedDepartments : sortedDepartments.filter(d => d.id === selectedDept);
 
   // Department-ийн ахлагч мөн үү?
   const isDeptManager = (deptId) => {
@@ -30752,13 +30790,48 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                   </div>
                   <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl">{dept.name}</h3>
                 </div>
-                {canEnter && (
-                  <button onClick={() => onOpenInputForm(dept.id)}
-                    className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
-                    style={{ fontFamily: FM }}>
-                    <Plus size={11} /> Тоо оруулах
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* 🔃 Дараалал солих товч — зөвхөн admin/manager + "Бүх хэлтэс" үед */}
+                  {isAdmin && selectedDept === "all" && visibleDepts.length > 1 && (
+                    <div className="flex flex-col gap-0.5">
+                      <button onClick={() => moveDept(dept.id, "up")}
+                        disabled={deptIdx === 0}
+                        title="Дээш"
+                        className="press-btn rounded text-xs"
+                        style={{
+                          width: 20, height: 16,
+                          background: deptIdx === 0 ? T.surfaceAlt : T.highlight,
+                          color: deptIdx === 0 ? T.muted : "white",
+                          opacity: deptIdx === 0 ? 0.4 : 1,
+                          cursor: deptIdx === 0 ? "not-allowed" : "pointer",
+                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
+                        }}>
+                        ▲
+                      </button>
+                      <button onClick={() => moveDept(dept.id, "down")}
+                        disabled={deptIdx === visibleDepts.length - 1}
+                        title="Доош"
+                        className="press-btn rounded text-xs"
+                        style={{
+                          width: 20, height: 16,
+                          background: deptIdx === visibleDepts.length - 1 ? T.surfaceAlt : T.highlight,
+                          color: deptIdx === visibleDepts.length - 1 ? T.muted : "white",
+                          opacity: deptIdx === visibleDepts.length - 1 ? 0.4 : 1,
+                          cursor: deptIdx === visibleDepts.length - 1 ? "not-allowed" : "pointer",
+                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
+                        }}>
+                        ▼
+                      </button>
+                    </div>
+                  )}
+                  {canEnter && (
+                    <button onClick={() => onOpenInputForm(dept.id)}
+                      className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+                      style={{ fontFamily: FM }}>
+                      <Plus size={11} /> Тоо оруулах
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* KPI cards or Charts */}
