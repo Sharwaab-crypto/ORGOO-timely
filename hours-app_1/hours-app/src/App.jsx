@@ -31131,21 +31131,37 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                         </div>
                       </div>
 
-                      {/* Target progress (хэрэв байвал) */}
-                      {kpi.target && entries.length > 0 ? (() => {
-                        let targetTotal = Number(kpi.target);
-                        if (kpi.target_period === "daily") {
-                          const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
-                          targetTotal = Number(kpi.target) * days;
-                        } else if (kpi.target_period === "weekly") {
-                          const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
-                          targetTotal = Number(kpi.target) * weeks;
+                      {/* Target progress (статик эсвэл динамик) */}
+                      {((kpi.target) || (kpi.target_source_kpi_id && kpi.target_percent)) && entries.length > 0 ? (() => {
+                        let targetTotal = 0;
+                        // 🎯 Динамик зорилт — эх KPI-ээс
+                        if (kpi.target_source_kpi_id && kpi.target_percent) {
+                          const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id);
+                          if (sourceKpi) {
+                            const sourceEntries = filteredEntries.filter(e => e.kpi_id === sourceKpi.id);
+                            const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+                            targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
+                          }
+                        } else if (kpi.target) {
+                          // Статик зорилт
+                          targetTotal = Number(kpi.target);
+                          if (kpi.target_period === "daily") {
+                            const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
+                            targetTotal = Number(kpi.target) * days;
+                          } else if (kpi.target_period === "weekly") {
+                            const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
+                            targetTotal = Number(kpi.target) * weeks;
+                          }
                         }
+                        if (targetTotal <= 0) return null;
                         const percent = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
+                        const isDynamic = kpi.target_source_kpi_id && kpi.target_percent;
                         return (
                           <div className="mt-1.5">
                             <div className="flex items-center justify-between text-[9px] mb-1">
-                              <span style={{ opacity: 0.85, fontFamily: FM }}>🎯 {targetTotal.toLocaleString()}</span>
+                              <span style={{ opacity: 0.85, fontFamily: FM }}>
+                                {isDynamic ? "🎯⚡" : "🎯"} {Math.round(targetTotal).toLocaleString()}
+                              </span>
                               <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }}>
                                 {percent.toFixed(0)}%
                               </span>
