@@ -585,16 +585,28 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
-  const [globalAlert, setGlobalAlert] = useState(null); // ⭐ Глобал alert popup
+  const [toasts, setToasts] = useState([]); // ⭐ Toast notification stack
+  const toastIdRef = useRef(0);
 
-  // ─── window.alert-ыг тохирох UI popup-аар солих ─────────────────
+  // ─── window.alert-ыг toast notification болгож солих ─────────────────
   useEffect(() => {
     const originalAlert = window.alert.bind(window);
     window.alert = (msg) => {
-      setGlobalAlert(String(msg ?? ""));
+      const id = ++toastIdRef.current;
+      const text = String(msg ?? "");
+      setToasts((prev) => [...prev, { id, text, ts: Date.now() }]);
+      // Auto-dismiss дараа
+      const dismissMs = text.length > 100 ? 6000 : 4000;
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, dismissMs);
     };
     return () => { window.alert = originalAlert; };
   }, []);
+
+  const dismissToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Alert-ийн төрлийг автомат илрүүлэх (icon, color)
   const detectAlertType = (msg) => {
@@ -801,63 +813,92 @@ function AppRoot() {
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
 
-      {/* ─── Global Alert Popup (window.alert override) ───────── */}
-      {globalAlert !== null && createPortal(
-        (() => {
-          const at = detectAlertType(globalAlert);
-          const cleanMsg = globalAlert.replace(/^[✅✕⚠❌ℹ📭🎉]\s*/g, "").trim();
-          const lines = cleanMsg.split("\n").filter((l) => l.trim());
-          const title = lines[0] || "";
-          const body = lines.slice(1).join("\n").trim();
-          
-          return (
-            <div style={{
-              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000,
-              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-              background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
-            }}
-              onClick={() => setGlobalAlert(null)}>
-              <div style={{
-                background: "white", borderRadius: 18, width: "100%", maxWidth: 380,
-                boxShadow: `0 24px 60px ${at.color}40`,
-                border: `2px solid ${at.color}`,
-                overflow: "hidden",
-              }}
-                onClick={(e) => e.stopPropagation()}>
-                <div style={{
-                  background: `linear-gradient(135deg, ${at.color}15, ${at.color}25)`,
-                  padding: "20px 20px 12px", textAlign: "center",
+      {/* ─── 🍞 Toast Notification Stack (window.alert override) ───────── */}
+      {toasts.length > 0 && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 16,
+          right: 16,
+          zIndex: 100000,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          maxWidth: 360,
+          width: "calc(100vw - 32px)",
+          pointerEvents: "none",
+        }}>
+          {toasts.map((toast) => {
+            const at = detectAlertType(toast.text);
+            const cleanMsg = toast.text.replace(/^[✅✕⚠❌ℹ📭🎉]\s*/g, "").trim();
+            const lines = cleanMsg.split("\n").filter((l) => l.trim());
+            const title = lines[0] || "";
+            const body = lines.slice(1).join("\n").trim();
+            return (
+              <div key={toast.id}
+                onClick={() => dismissToast(toast.id)}
+                style={{
+                  background: "white",
+                  borderRadius: 12,
+                  boxShadow: `0 10px 30px rgba(0,0,0,0.12), 0 0 0 1px ${at.color}33`,
+                  borderLeft: `4px solid ${at.color}`,
+                  padding: "12px 14px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                  animation: "toast-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                  fontFamily: "'SF Pro Text', system-ui",
                 }}>
-                  <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 8 }}>{at.icon}</div>
+                <div style={{
+                  fontSize: 20,
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}>{at.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontFamily: "'SF Pro Display', -apple-system, system-ui",
-                    fontWeight: 700, fontSize: 16, color: at.color,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    color: at.color,
+                    lineHeight: 1.4,
+                    marginBottom: body ? 4 : 0,
                   }}>{title}</div>
+                  {body && (
+                    <div style={{
+                      fontSize: 12,
+                      color: "#475569",
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-wrap",
+                      maxHeight: 100,
+                      overflowY: "auto",
+                    }}>{body}</div>
+                  )}
                 </div>
-                {body && (
-                  <div style={{
-                    padding: "12px 20px", color: "#475569",
-                    fontFamily: "'SF Pro Text', system-ui",
-                    fontSize: 13, lineHeight: 1.6,
-                    whiteSpace: "pre-wrap", textAlign: "center",
-                    maxHeight: "40vh", overflowY: "auto",
-                  }}>{body}</div>
-                )}
-                <div style={{ padding: "12px 20px 20px" }}>
-                  <button onClick={() => setGlobalAlert(null)}
-                    style={{
-                      width: "100%", padding: "12px", borderRadius: 12,
-                      background: at.color, color: "white",
-                      fontFamily: "'SF Pro Display', system-ui",
-                      fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
-                    }}>
-                    Ойлголоо
-                  </button>
-                </div>
+                <button onClick={(e) => { e.stopPropagation(); dismissToast(toast.id); }}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    padding: 2,
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                  aria-label="Хаах">
+                  ✕
+                </button>
               </div>
-            </div>
-          );
-        })(),
+            );
+          })}
+          <style>{`
+            @keyframes toast-slide-in {
+              from { transform: translateX(120%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          `}</style>
+        </div>,
         document.body
       )}
     </>
@@ -19299,7 +19340,8 @@ function OrdersView({ profile }) {
     setLoading(true);
     try {
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
-        fetchAllRows(supabase.from("biz_orders").select("*").order("created_at", { ascending: false })),
+        // 📦 Архивлагдсан захиалгуудыг хасах (6 сараас илүү дууссан)
+        fetchAllRows(supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").order("created_at", { ascending: false })),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
