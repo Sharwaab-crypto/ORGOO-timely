@@ -31134,14 +31134,11 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                       {/* Target progress (статик эсвэл динамик) */}
                       {((kpi.target) || (kpi.target_source_kpi_id && kpi.target_percent)) && entries.length > 0 ? (() => {
                         let targetTotal = 0;
-                        // 🎯 Динамик зорилт — эх KPI-ээс
+                        // 🎯 Динамик зорилт — эх KPI-ийн entries-аас шууд тооцох
                         if (kpi.target_source_kpi_id && kpi.target_percent) {
-                          const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id);
-                          if (sourceKpi) {
-                            const sourceEntries = filteredEntries.filter(e => e.kpi_id === sourceKpi.id);
-                            const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
-                            targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
-                          }
+                          const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+                          const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+                          targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
                         } else if (kpi.target) {
                           // Статик зорилт
                           targetTotal = Number(kpi.target);
@@ -31850,12 +31847,9 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   if (isSingleDay) {
     const singleDayData = deptKpis.map((kpi, i) => {
       const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
-      // 🎯 Динамик зорилт — эх KPI байгаа эсэх
+      // 🎯 Динамик зорилт — эх KPI-ийн entry-аас тооцоолох
       let dailyTarget = 0;
       if (kpi.target_source_kpi_id && kpi.target_percent) {
-        // Эх KPI-аас тооцоолох
-        const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id)
-          || (allEntries || []).find(e => e.kpi_id === kpi.target_source_kpi_id);
         const sourceEntry = filteredEntries.find(e => e.kpi_id === kpi.target_source_kpi_id);
         const sourceValue = sourceEntry ? Number(sourceEntry.value) : 0;
         dailyTarget = (sourceValue * Number(kpi.target_percent)) / 100;
@@ -32041,11 +32035,10 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
             {deptKpis.map((kpi, i) => {
               let perPeriodTarget = 0;
               if (kpi.target_source_kpi_id && kpi.target_percent) {
-                // Динамик зорилт — эх KPI-ийн дундаж period-аар тооцох
-                const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id)
-                  || (allEntries || []).find(e => e.kpi_id === kpi.target_source_kpi_id);
-                if (chartData.length > 0) {
-                  const sourceTotal = chartData.reduce((s, row) => s + (Number(row[sourceKpi?.name]) || 0), 0);
+                // Динамик зорилт — эх KPI-ийн entries-аас тооцоолох
+                const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+                const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+                if (chartData.length > 0 && sourceTotal > 0) {
                   const sourceAvg = sourceTotal / chartData.length;
                   perPeriodTarget = Math.round((sourceAvg * Number(kpi.target_percent)) / 100);
                 }
