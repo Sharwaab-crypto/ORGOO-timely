@@ -1501,7 +1501,7 @@ function AdminDashboard({ profile }) {
   const loadAll = async () => {
     try {
       const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
-        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver"]).order("created_at", { ascending: false }),
+        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing"]).order("created_at", { ascending: false }),
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
         supabase.from("approvals").select("*").order("created_at", { ascending: false }),
