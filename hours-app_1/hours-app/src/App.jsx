@@ -1908,7 +1908,7 @@ function AdminDashboard({ profile }) {
         const { error } = await supabase.from("kpi_definitions").update({
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
-          target: data.target, target_period: data.target_period,
+          target: data.target, target_period: data.target_period, target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -1919,7 +1919,7 @@ function AdminDashboard({ profile }) {
           department_id: data.department_id,
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
-          target: data.target, target_period: data.target_period || 'daily',
+          target: data.target, target_period: data.target_period || 'daily', target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -28611,7 +28611,7 @@ function ManagerDashboard({ profile }) {
         const { error } = await supabase.from("kpi_definitions").update({
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
-          target: data.target, target_period: data.target_period,
+          target: data.target, target_period: data.target_period, target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -28622,7 +28622,7 @@ function ManagerDashboard({ profile }) {
           department_id: data.department_id,
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
-          target: data.target, target_period: data.target_period || 'daily',
+          target: data.target, target_period: data.target_period || 'daily', target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -31205,6 +31205,9 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
   const [order, setOrder] = useState(kpi?.display_order || 0);
   const [target, setTarget] = useState(kpi?.target ? String(kpi.target) : "");
   const [targetPeriod, setTargetPeriod] = useState(kpi?.target_period || "daily");
+  // 🎯 Динамик зорилт (өөр KPI-ээс)
+  const [targetSourceKpiId, setTargetSourceKpiId] = useState(kpi?.target_source_kpi_id || "");
+  const [targetPercent, setTargetPercent] = useState(kpi?.target_percent ? String(kpi.target_percent) : "");
   const [kpiType, setKpiType] = useState(kpi?.kpi_type || "input");
   const [numeratorId, setNumeratorId] = useState(
     kpi?.formula?.numerator_id || kpi?.formula?.source_id || ""
@@ -31246,6 +31249,9 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
       display_order: parseInt(order) || 0,
       target: target ? Number(target) : null,
       target_period: targetPeriod,
+      // 🎯 Динамик зорилт
+      target_source_kpi_id: targetSourceKpiId || null,
+      target_percent: targetPercent ? Number(targetPercent) : null,
       kpi_type: kpiType,
       formula: kpiType === "calculated" ? {
         numerator_id: numeratorId,
@@ -31417,6 +31423,45 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
               <option value="monthly">Сар бүр</option>
             </select>
           </Field>
+        </div>
+
+        {/* 🎯 Динамик зорилт — өөр KPI-ээс */}
+        <div className="rounded-xl p-3" style={{ background: "rgba(245,158,11,0.06)", border: `1px solid ${T.warn}33` }}>
+          <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-2 flex items-center gap-1.5">
+            🎯 Динамик зорилт (өөр KPI-ээс)
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+            Зорилтыг өөр KPI-ийн утгаас % хувиар тооцоолно. Жнь: Захиалга = Дуудлагын 30%
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Field label="Эх KPI">
+              <select value={targetSourceKpiId} onChange={(e) => setTargetSourceKpiId(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+                <option value="">— Сонгох —</option>
+                {Object.entries(kpisByDept).map(([deptName, kpis]) => (
+                  <optgroup key={deptName} label={deptName}>
+                    {kpis.map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+            <Field label="Хувь (%)">
+              <Input value={targetPercent} onChange={setTargetPercent} type="number" placeholder="30" />
+            </Field>
+          </div>
+          {targetSourceKpiId && targetPercent && (
+            <div style={{ color: T.ok, fontFamily: FM }} className="text-[11px] mt-2">
+              ✅ Зорилт = {allKpis.find((k) => k.id === targetSourceKpiId)?.name || "?"} × {targetPercent}%
+            </div>
+          )}
+          {targetSourceKpiId && !targetPercent && (
+            <div style={{ color: T.err, fontFamily: FM }} className="text-[11px] mt-2">
+              ⚠ Хувийн утга оруулна уу
+            </div>
+          )}
         </div>
 
         <Field label="Бүлэг (заавал биш)">
@@ -31789,9 +31834,17 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   if (isSingleDay) {
     const singleDayData = deptKpis.map((kpi, i) => {
       const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
-      // 🎯 Зорилт (нэг өдөр) — daily-ийн утга л хэрэглэгдэнэ
+      // 🎯 Динамик зорилт — эх KPI байгаа эсэх
       let dailyTarget = 0;
-      if (kpi.target) {
+      if (kpi.target_source_kpi_id && kpi.target_percent) {
+        // Эх KPI-аас тооцоолох
+        const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id)
+          || (allEntries || []).find(e => e.kpi_id === kpi.target_source_kpi_id);
+        const sourceEntry = filteredEntries.find(e => e.kpi_id === kpi.target_source_kpi_id);
+        const sourceValue = sourceEntry ? Number(sourceEntry.value) : 0;
+        dailyTarget = (sourceValue * Number(kpi.target_percent)) / 100;
+      } else if (kpi.target) {
+        // Статик зорилт
         const t = Number(kpi.target);
         if (kpi.target_period === "daily") dailyTarget = t;
         else if (kpi.target_period === "weekly") dailyTarget = t / 7;
@@ -31968,18 +32021,29 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
             <YAxis tick={{ fontSize: 11 }} />
             <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            {/* 🎯 Зорилтын reference line — KPI бүрд */}
+            {/* 🎯 Зорилтын reference line — KPI бүрд (динамик эсвэл статик) */}
             {deptKpis.map((kpi, i) => {
-              if (!kpi.target) return null;
-              // Period-руу тохирох зорилтын тоо
-              let perPeriodTarget = Number(kpi.target);
-              if (kpi.target_period === "daily" && groupBy === "week") perPeriodTarget *= 7;
-              else if (kpi.target_period === "daily" && groupBy === "month") perPeriodTarget *= 30;
-              else if (kpi.target_period === "weekly" && groupBy === "day") perPeriodTarget /= 7;
-              else if (kpi.target_period === "weekly" && groupBy === "month") perPeriodTarget *= 4;
-              else if (kpi.target_period === "monthly" && groupBy === "day") perPeriodTarget /= 30;
-              else if (kpi.target_period === "monthly" && groupBy === "week") perPeriodTarget /= 4;
-              perPeriodTarget = Math.round(perPeriodTarget);
+              let perPeriodTarget = 0;
+              if (kpi.target_source_kpi_id && kpi.target_percent) {
+                // Динамик зорилт — эх KPI-ийн дундаж period-аар тооцох
+                const sourceKpi = deptKpis.find(k => k.id === kpi.target_source_kpi_id)
+                  || (allEntries || []).find(e => e.kpi_id === kpi.target_source_kpi_id);
+                if (chartData.length > 0) {
+                  const sourceTotal = chartData.reduce((s, row) => s + (Number(row[sourceKpi?.name]) || 0), 0);
+                  const sourceAvg = sourceTotal / chartData.length;
+                  perPeriodTarget = Math.round((sourceAvg * Number(kpi.target_percent)) / 100);
+                }
+              } else if (kpi.target) {
+                // Статик зорилт
+                perPeriodTarget = Number(kpi.target);
+                if (kpi.target_period === "daily" && groupBy === "week") perPeriodTarget *= 7;
+                else if (kpi.target_period === "daily" && groupBy === "month") perPeriodTarget *= 30;
+                else if (kpi.target_period === "weekly" && groupBy === "day") perPeriodTarget /= 7;
+                else if (kpi.target_period === "weekly" && groupBy === "month") perPeriodTarget *= 4;
+                else if (kpi.target_period === "monthly" && groupBy === "day") perPeriodTarget /= 30;
+                else if (kpi.target_period === "monthly" && groupBy === "week") perPeriodTarget /= 4;
+                perPeriodTarget = Math.round(perPeriodTarget);
+              }
               if (perPeriodTarget <= 0) return null;
               return (
                 <ReferenceLine
