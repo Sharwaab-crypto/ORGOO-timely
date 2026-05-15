@@ -2216,7 +2216,7 @@ function AdminDashboard({ profile }) {
             <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
-          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
             {/* Page header */}
             <div className="mb-6 slide-up">
               <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
@@ -25044,7 +25044,7 @@ function OperatorDashboard({ profile }) {
           </div>
         </header>
 
-        <div className="p-4 max-w-6xl mx-auto space-y-3">
+        <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
           {/* ⏱ Цаг бүртгэх */}
           <TimeTracker profile={profile} />
           
@@ -28754,7 +28754,7 @@ function ManagerDashboard({ profile }) {
             <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
-          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
               <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
                 {view === "team" && "Багийн гишүүд"}
