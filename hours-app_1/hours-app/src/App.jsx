@@ -19331,17 +19331,21 @@ function OrdersView({ profile }) {
   const [assignDriverOrder, setAssignDriverOrder] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // list | map
   const [page, setPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false); // 📦 Архивлагдсан үзэх горим
   const PAGE_SIZE = 100;
 
   // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
-  useEffect(() => { setPage(1); }, [filter, driverFilter, search]);
+  useEffect(() => { setPage(1); }, [filter, driverFilter, search, showArchived]);
 
   const loadAll = async () => {
     setLoading(true);
     try {
+      // 📦 showArchived === true бол зөвхөн архивлагдсан, эс бол идэвхтэй
+      const ordersQuery = showArchived 
+        ? supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false })
+        : supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").order("created_at", { ascending: false });
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
-        // 📦 Архивлагдсан захиалгуудыг хасах (6 сараас илүү дууссан)
-        fetchAllRows(supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").order("created_at", { ascending: false })),
+        fetchAllRows(ordersQuery),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
@@ -19373,7 +19377,7 @@ function OrdersView({ profile }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [showArchived]);
 
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
@@ -19630,9 +19634,46 @@ function OrdersView({ profile }) {
         </button>
       </div>
 
+      {/* 📦 Архив горимын банер */}
+      {showArchived && (
+        <div className="rounded-xl px-4 py-3 flex items-center justify-between flex-wrap gap-2"
+          style={{ background: "rgba(146,64,14,0.08)", border: "1px solid rgba(146,64,14,0.3)" }}>
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 18 }}>📦</span>
+            <div>
+              <div style={{ color: "#92400e", fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                Архив горим
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                6 сараас илүү хугацаа өнгөрсөн дууссан/цуцалсан захиалгууд (зөвхөн харах горим)
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setShowArchived(false)}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs"
+            style={{ background: "white", color: "#92400e", fontFamily: FS, fontWeight: 600, border: "1px solid #92400e" }}>
+            🔙 Идэвхтэй захиалга харах
+          </button>
+        </div>
+      )}
+
       {/* Хайлт + active filter pill */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* 📦 Архив toggle — admin/manager only */}
+          {(profile.role === "admin" || profile.role === "manager") && (
+            <button onClick={() => setShowArchived(!showArchived)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1 mr-2"
+              style={{
+                background: showArchived ? "#92400e" : T.surfaceAlt,
+                color: showArchived ? "white" : T.ink,
+                border: showArchived ? "none" : `1px dashed ${T.border}`,
+                fontFamily: FS, fontWeight: 700,
+              }}
+              title={showArchived ? "Идэвхтэй захиалгууд харах" : "Архивлагдсан захиалгуудыг харах"}>
+              {showArchived ? "🔙 Идэвхтэй" : "📦 Архив"}
+            </button>
+          )}
           <button onClick={() => setFilter("all")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
             style={{
