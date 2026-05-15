@@ -14,7 +14,7 @@ import * as XLSX from "xlsx";
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
-  ResponsiveContainer, LabelList,
+  ResponsiveContainer, LabelList, ReferenceLine,
 } from "recharts";
 import * as Sentry from "@sentry/react";
 import { supabase, isConfigured } from "./supabaseClient";
@@ -31789,9 +31789,18 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   if (isSingleDay) {
     const singleDayData = deptKpis.map((kpi, i) => {
       const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+      // 🎯 Зорилт (нэг өдөр) — daily-ийн утга л хэрэглэгдэнэ
+      let dailyTarget = 0;
+      if (kpi.target) {
+        const t = Number(kpi.target);
+        if (kpi.target_period === "daily") dailyTarget = t;
+        else if (kpi.target_period === "weekly") dailyTarget = t / 7;
+        else if (kpi.target_period === "monthly") dailyTarget = t / 30;
+      }
       return {
         name: kpi.name,
         value: entry ? Number(entry.value) : 0,
+        target: Math.round(dailyTarget),
         unit: kpi.unit,
         color: COLORS[i % COLORS.length],
       };
@@ -31814,14 +31823,24 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
           singleDayTotals={{ total: totalSingleDay, max: maxKpi, count: deptKpis.length }}
         />
 
-        {/* 📈 Chart — Утгуудтай label-тай */}
+        {/* 📈 Chart — Утгуудтай label-тай + Зорилт */}
         <div className="glass-soft rounded-2xl p-4">
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={singleDayData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
-              <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
+              <RechartsTooltip 
+                contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }}
+                formatter={(value, name, props) => {
+                  const target = props.payload?.target || 0;
+                  const pct = target > 0 ? Math.round((value / target) * 100) : 0;
+                  return [
+                    `${value.toLocaleString()}${target > 0 ? ` / ${target.toLocaleString()} (${pct}%)` : ""}`,
+                    "Хэмжээ"
+                  ];
+                }}
+              />
               <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                 {singleDayData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
@@ -31829,6 +31848,12 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
                 <LabelList dataKey="value" position="top"
                   style={{ fontSize: 12, fontWeight: 700, fill: T.ink }}
                   formatter={(v) => v > 0 ? v.toLocaleString() : ""} />
+              </Bar>
+              {/* 🎯 Зорилт reference dot/line — KPI бүрд */}
+              <Bar dataKey="target" fill="transparent" stroke="none" radius={[0, 0, 0, 0]}>
+                <LabelList dataKey="target" position="insideTop"
+                  style={{ fontSize: 9, fontWeight: 700, fill: T.warn }}
+                  formatter={(v) => v > 0 ? `🎯 ${v.toLocaleString()}` : ""} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -31943,6 +31968,36 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
             <YAxis tick={{ fontSize: 11 }} />
             <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
+            {/* 🎯 Зорилтын reference line — KPI бүрд */}
+            {deptKpis.map((kpi, i) => {
+              if (!kpi.target) return null;
+              // Period-руу тохирох зорилтын тоо
+              let perPeriodTarget = Number(kpi.target);
+              if (kpi.target_period === "daily" && groupBy === "week") perPeriodTarget *= 7;
+              else if (kpi.target_period === "daily" && groupBy === "month") perPeriodTarget *= 30;
+              else if (kpi.target_period === "weekly" && groupBy === "day") perPeriodTarget /= 7;
+              else if (kpi.target_period === "weekly" && groupBy === "month") perPeriodTarget *= 4;
+              else if (kpi.target_period === "monthly" && groupBy === "day") perPeriodTarget /= 30;
+              else if (kpi.target_period === "monthly" && groupBy === "week") perPeriodTarget /= 4;
+              perPeriodTarget = Math.round(perPeriodTarget);
+              if (perPeriodTarget <= 0) return null;
+              return (
+                <ReferenceLine
+                  key={`target-${kpi.id}`}
+                  y={perPeriodTarget}
+                  stroke={COLORS[i % COLORS.length]}
+                  strokeDasharray="5 5"
+                  strokeWidth={1.5}
+                  label={{
+                    value: `🎯 ${kpi.name} (${perPeriodTarget.toLocaleString()})`,
+                    position: "insideTopRight",
+                    fontSize: 9,
+                    fill: COLORS[i % COLORS.length],
+                    fontWeight: 600,
+                  }}
+                />
+              );
+            })}
             {deptKpis.map((kpi, i) => (
               <DataComponent
                 key={kpi.id}
