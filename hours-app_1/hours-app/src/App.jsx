@@ -27918,9 +27918,7 @@ function DriverDashboard({ profile }) {
         await loadAll();
         return;
       }
-      // 🚚 Хүргэх tab-руу автомат шилжих (UX сайжруулах)
-      setFilter("active");
-      // Optimistic update — UI шууд шинэчлэх
+      // Optimistic update — UI шууд шинэчлэх (одоогийн tab дээр үлдэнэ)
       setOrders((prev) => prev.map((order) =>
         order.id === orderId
           ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
@@ -28347,14 +28345,12 @@ function DriverDashboard({ profile }) {
                             return;
                           }
                           
-                          // Optimistic update
+                          // Optimistic update (одоогийн tab дээр үлдэнэ)
                           setOrders((prev) => prev.map((order) =>
                             order.id === o.id
                               ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
                               : order
                           ));
-                          // 🚚 Хүргэх tab-руу автомат шилжих
-                          setFilter("active");
                           await loadAll();
                         } catch (e) { 
                           console.error("[Өөртөө авах] Error:", e);
