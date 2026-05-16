@@ -13955,6 +13955,7 @@ function SalesDashboardView({ profile }) {
   const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
   // 🔄 Захиалгын FB Page-ийг солих modal
   const [reassignModal, setReassignModal] = useState(null); // { orderId, currentPageId }
+  const [refreshKey, setRefreshKey] = useState(0); // Дахин ачаалах trigger
   const [productsPopup, setProductsPopup] = useState(null); // { page, status, products }
 
   const [period, setPeriod] = useState(() => {
@@ -14016,7 +14017,7 @@ function SalesDashboardView({ profile }) {
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [refreshKey]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
@@ -14699,8 +14700,9 @@ function SalesDashboardView({ profile }) {
                 {/* "Алга" сонголт */}
                 <button onClick={async () => {
                   try {
-                    await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
-                    await loadAll();
+                    const { error } = await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
+                    if (error) throw error;
+                    setRefreshKey((k) => k + 1);
                     setReassignModal(null);
                     setOrdersPopup(null);
                     alert("✅ Захиалгаас FB Page арилгасан");
@@ -14721,8 +14723,9 @@ function SalesDashboardView({ profile }) {
                   <button key={p.id}
                     onClick={async () => {
                       try {
-                        await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
-                        await loadAll();
+                        const { error } = await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
+                        if (error) throw error;
+                        setRefreshKey((k) => k + 1);
                         setReassignModal(null);
                         setOrdersPopup(null);
                         alert(`✅ Захиалгыг "${p.name}" Page-руу шилжүүлсэн`);
