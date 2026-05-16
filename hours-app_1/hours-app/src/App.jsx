@@ -27925,7 +27925,7 @@ function DriverDashboard({ profile }) {
           : order
       ));
       alert("✅ Захиалга 'Хүргэх' хэсэгт орлоо!");
-      await loadAll();
+      // ⚡ loadAll() ажиллуулахгүй — optimistic update хангалттай (scroll position хадгална)
     } catch (e) {
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
     }
@@ -28351,7 +28351,7 @@ function DriverDashboard({ profile }) {
                               ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
                               : order
                           ));
-                          await loadAll();
+                          // ⚡ loadAll() ажиллуулахгүй — optimistic update хангалттай (scroll position хадгална)
                         } catch (e) { 
                           console.error("[Өөртөө авах] Error:", e);
                           alert("Алдаа: " + (e.message || JSON.stringify(e))); 
