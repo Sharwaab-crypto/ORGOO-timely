@@ -28144,6 +28144,16 @@ function DriverDashboard({ profile }) {
             }}>
             ✓ Хүргэсэн ({counts.delivered})
           </button>
+          <button onClick={() => setFilter("cancelled")}
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{
+              background: filter === "cancelled" ? T.err : T.surfaceAlt,
+              color: filter === "cancelled" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
+            }}>
+            ✕ Цуцалсан ({counts.cancelled})
+          </button>
         </div>
 
         {/* Orders list / Map */}
