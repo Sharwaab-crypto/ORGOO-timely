@@ -11316,12 +11316,48 @@ function CallCenterView({ profile }) {
       setCopiedPhone(phone);
       setTimeout(() => setCopiedPhone(""), 1500);
 
+      // 4. 🆕 Шинэ "pending" биз_calls бичлэг үүсгэх — энэ оператор залгасан гэж бүртгэх
+      // (Хэрэв уг утсаар бусад operator-ийн "pending" call байгаа бол ч)
+      let activeCallId = callId; // Default - existing call
+      try {
+        // Уг operator-ийн өмнө залгасан "pending" call байгаа эсэхийг шалгах
+        const { data: myPendingCall } = await supabase
+          .from("biz_calls")
+          .select("id")
+          .eq("phone", phone)
+          .eq("created_by", profile.id)
+          .eq("call_status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (myPendingCall) {
+          // Аль хэдийн нээлттэй call бий — тэр call ашиглана
+          activeCallId = myPendingCall.id;
+        } else {
+          // Шинэ call бүртгэх — энэ оператор залгасан гэж
+          const { data: newCall } = await supabase.from("biz_calls").insert({
+            phone,
+            customer_id: null, // Дараа CallReceiveModal-аас customer link
+            notes: callNotes || null,
+            interested_products: callProducts || [],
+            call_status: "pending",
+            created_by: profile.id,
+            created_at: new Date().toISOString(),
+          }).select("id").single();
+          activeCallId = newCall?.id || callId;
+        }
+      } catch (e) {
+        console.error("Шинэ call бичлэг үүсгэх алдаа:", e);
+        // Алдаа гарвал ч хуучин call-аар үргэлжилнэ
+      }
+
       setOrderForCall({
         phone,
         name: customerName,
         notes: callNotes,
         products: callProducts,
-        callId,
+        callId: activeCallId, // 🆕 Шинэ үүсгэгдсэн call-ийн ID
       });
       await loadAll();
     } catch (e) {
@@ -27631,10 +27667,8 @@ function DriverDashboard({ profile }) {
       updates.delivered_by = profile.id;
     }
     try {
-      // Хүргэгдсэн үед эхлээд агуулахаас бараа хасах
+      // 🚫 Хүргэгдсэн үед заавал агуулахаас бараа хасах — алгасч болохгүй
       if (newStatus === "delivered") {
-        const debugInfo = [];
-
         // 1. Driver-ийн өөрийн агуулахыг олох
         const { data: driverWh, error: whErr } = await supabase
           .from("inv_warehouses")
@@ -27642,63 +27676,77 @@ function DriverDashboard({ profile }) {
           .eq("driver_id", profile.id)
           .maybeSingle();
 
-        debugInfo.push(`1️⃣ Агуулах: ${driverWh ? `✓ ${driverWh.name}` : "✗ ОЛДСОНГҮЙ"}`);
-        if (whErr) debugInfo.push(`   Алдаа: ${whErr.message}`);
+        if (whErr) {
+          alert(`❌ Агуулах хайхад алдаа гарлаа\n${whErr.message}\n\nAdmin-руу хандаарай.`);
+          return;
+        }
 
         if (!driverWh) {
-          alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nАгуулахад driver_id = ${profile.id} тохируулсан агуулах байх ёстой.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
-          if (!confirm("Үргэлжлүүлэх үү?")) return;
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nТанд агуулах оноогдоогүй байна.\nAdmin-аас агуулах тохируулсны дараа дахин оролдоно уу.`);
+          return;
         }
 
-        if (driverWh) {
-          // 2. Захиалгын барааг авах
-          const { data: orderItems, error: itemsErr } = await supabase
-            .from("biz_order_items")
-            .select("product_id, quantity, product_name")
-            .eq("order_id", orderId);
+        // 2. Захиалгын барааг авах
+        const { data: orderItems, error: itemsErr } = await supabase
+          .from("biz_order_items")
+          .select("product_id, quantity, product_name")
+          .eq("order_id", orderId);
 
-          debugInfo.push(`2️⃣ Захиалгын бараа: ${orderItems?.length || 0}ш`);
-          if (itemsErr) debugInfo.push(`   Алдаа: ${itemsErr.message}`);
-
-          const validItems = (orderItems || []).filter((it) => it.product_id);
-          debugInfo.push(`3️⃣ product_id-тай бараа: ${validItems.length}ш`);
-
-          if (validItems.length === 0 && (orderItems?.length || 0) > 0) {
-            alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nЗахиалгын бараанд product_id холбогдоогүй байна (free text). Бараа агуулахаас хасагдахгүй.\n\nҮргэлжлүүлэх үү?`);
-            if (!confirm("Тэгэхээр захиалгыг хүргэгдсэн гэж тэмдэглэх үү?")) return;
-          }
-
-          if (validItems.length > 0) {
-            const movements = validItems.map((it) => ({
-              product_id: it.product_id,
-              warehouse_id: driverWh.id,
-              movement_type: "out",
-              quantity: Number(it.quantity || 0),
-              reason: "delivery",
-              created_by: profile.id,
-              notes: `Захиалга #${orderId.slice(0, 8)} хүргэгдсэн: ${it.product_name || ""}`,
-            }));
-
-            const { data: mvData, error: mvErr } = await supabase
-              .from("inv_movements")
-              .insert(movements)
-              .select();
-
-            debugInfo.push(`4️⃣ Хөдөлгөөн бичсэн: ${mvData?.length || 0}ш`);
-            if (mvErr) {
-              const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
-              if (isShortStock) {
-                setInsufficientStockOrder({ orderId, msg: mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
-                return;
-              }
-              debugInfo.push(`   Алдаа: ${mvErr.message}`);
-              alert(`⚠ Барааны хөдөлгөөн бичигдсэнгүй\n\n${debugInfo.join("\n")}\n\n💡 Шийдэл: SQL editor-д "driver-stock-rls-fix.sql" ажиллуул.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
-              if (!confirm("Үргэлжлүүлэх үү?")) return;
-            } else {
-              logDev("✓ Stock хасагдсан:", debugInfo.join(" | "));
-            }
-          }
+        if (itemsErr) {
+          alert(`❌ Захиалгын бараа уншихад алдаа гарлаа\n${itemsErr.message}`);
+          return;
         }
+
+        if (!orderItems || orderItems.length === 0) {
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nЭнэ захиалгад бараа алга байна.\nАхлагчтай холбогдоорой.`);
+          return;
+        }
+
+        const validItems = orderItems.filter((it) => it.product_id);
+
+        if (validItems.length === 0) {
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nЗахиалгын бараанд product_id холбогдоогүй (${orderItems.length}ш бараа).\nАхлагчид хандан барааг бүртгэлд холбуулна уу.`);
+          return;
+        }
+
+        if (validItems.length < orderItems.length) {
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\n${orderItems.length}ш бараанаас ${orderItems.length - validItems.length}ш нь product_id-гүй (free text).\nАхлагчид хандан бараа бүртгэлд холбуулна уу.`);
+          return;
+        }
+
+        // 3. Stock хөдөлгөөн бичих
+        const movements = validItems.map((it) => ({
+          product_id: it.product_id,
+          warehouse_id: driverWh.id,
+          movement_type: "out",
+          quantity: Number(it.quantity || 0),
+          reason: "delivery",
+          created_by: profile.id,
+          notes: `Захиалга #${orderId.slice(0, 8)} хүргэгдсэн: ${it.product_name || ""}`,
+        }));
+
+        const { data: mvData, error: mvErr } = await supabase
+          .from("inv_movements")
+          .insert(movements)
+          .select();
+
+        if (mvErr) {
+          // Үлдэгдэл хүрэлцэхгүй алдаа → попап-руу зааварчилгаа
+          const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
+          if (isShortStock) {
+            setInsufficientStockOrder({ orderId, msg: mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
+            return;
+          }
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\nAdmin-руу хандаж SQL editor-руу "driver-stock-rls-fix.sql" ажиллуулах хэрэгтэй.`);
+          return;
+        }
+
+        if (!mvData || mvData.length === 0) {
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн хадгалагдсангүй.\nAdmin-руу хандаарай.`);
+          return;
+        }
+
+        logDev("✓ Stock хасагдсан:", mvData.length, "ш бараа");
       }
 
       const { error, data } = await supabase
