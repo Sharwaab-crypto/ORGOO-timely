@@ -6683,9 +6683,10 @@ function SupplierOrdersView({ profile }) {
     return o.status === filterStatus;
   });
 
-  // Stats
-  const totalQty = orders.reduce((s, o) => s + Number(o.quantity || 0), 0);
-  const totalAmount = orders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  // Stats — filter-ээс хамаарч (filterStatus === "all" бол бүгд, эс бол filter-руу)
+  const totalQty = filteredOrders.reduce((s, o) => s + Number(o.quantity || 0), 0);
+  const totalAmount = filteredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  // Эдгээр нь ВСЕГДА бүх захиалгаас (tab-руу хамаарахгүй) — мэдээллийн зорилгоор
   const arrivedCount = orders.filter((o) => o.status === "arrived").length;
   const pendingCount = orders.filter((o) => o.status === "pending" || o.status === "shipping").length;
 
