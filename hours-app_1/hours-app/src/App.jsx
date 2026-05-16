@@ -31925,8 +31925,8 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Зөвхөн input KPI-уудыг харуулах (calculated биш)
-  const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated");
+  // Зөвхөн input KPI-уудыг харуулах (calculated болон copy биш)
+  const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated" && k.kpi_type !== "copy");
 
   // Date солигдох тоолон утгуудыг ачаалах
   useEffect(() => {
