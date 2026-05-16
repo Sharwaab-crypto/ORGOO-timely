@@ -10171,6 +10171,14 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
   const [busy, setBusy] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const fileInputRef = useRef(null);
+  // 🔗 FB Page холболт
+  const [fbPageId, setFbPageId] = useState(product?.fb_page_id || "");
+  const [fbPages, setFbPages] = useState([]);
+
+  useEffect(() => {
+    supabase.from("biz_fb_pages").select("id, page_name, page_id").order("page_name")
+      .then(({ data }) => setFbPages(data || []));
+  }, []);
 
   // File сонгох
   const handleFileSelect = (e) => {
@@ -10405,6 +10413,28 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
             </div>
           </div>
 
+          {/* 🔗 FB Page холбоо */}
+          <div className="rounded-xl p-3" style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)" }}>
+            <label style={{ color: "#1d4ed8", fontFamily: FM, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              🔗 FB Page холбоо (заавал биш)
+            </label>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+              Хэрэв энэ барааг тодорхой FB Page-аас л зарагдуулах бол сонгоно уу
+            </div>
+            <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
+              style={inputStyle} className={inputClass}>
+              <option value="">— Холбохгүй (бүх Page-аас зарагдана) —</option>
+              {fbPages.map((p) => (
+                <option key={p.id} value={p.id}>📘 {p.page_name}</option>
+              ))}
+            </select>
+            {fbPageId && (
+              <div style={{ color: "#1d4ed8", fontFamily: FM }} className="text-[11px] mt-1.5">
+                ✅ Энэ бараа зөвхөн "<b>{fbPages.find(p => p.id === fbPageId)?.page_name}</b>" Page-аас захиалга авна
+              </div>
+            )}
+          </div>
+
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               Тэмдэглэл
@@ -10431,6 +10461,7 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
                   min_stock: Number(minStock) || 0,
                   description: description.trim() || null,
                   image_url: finalImageUrl || null,
+                  fb_page_id: fbPageId || null, // 🔗 FB Page холбоо
                 });
               } catch (e) {
                 alert("Зураг хадгалахад алдаа: " + e.message);
@@ -12345,6 +12376,26 @@ function CallCenterView({ profile }) {
           profile={profile}
           onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
             try {
+              // 🔗 БАРАА → FB PAGE АВТОМАТ ОНОЛТ
+              // Хэрэв сонгосон бараа FB Page-руу холбогдсон бол FB Page-ийг автомат тавина
+              let effectiveFbPageId = fb_page_id;
+              const requiredFbPages = new Set();
+              for (const ip of (interested_products || [])) {
+                const prod = products.find((p) => p.id === ip.id);
+                if (prod?.fb_page_id) requiredFbPages.add(prod.fb_page_id);
+              }
+              // Хэрэв холбогдсон бараа байгаа бол:
+              if (requiredFbPages.size > 1) {
+                alert("⚠ Сонгосон бараанууд өөр FB Page-руу холбогдсон байна. Нэг FB Page-ийн бараа л оруулна уу.");
+                return;
+              }
+              if (requiredFbPages.size === 1) {
+                const requiredId = [...requiredFbPages][0];
+                if (fb_page_id && fb_page_id !== requiredId) {
+                  alert("⚠ Сонгосон бараа өөр FB Page-руу холбогдсон байна. FB Page автомат солигдсон.");
+                }
+                effectiveFbPageId = requiredId;
+              }
               // 0. Эхлээд утсуудаар "Шинэ" статустай захиалга байгаа эсэхийг шалгах
               for (const phoneEntry of phoneList) {
                 const { phone } = phoneEntry;
@@ -12397,7 +12448,7 @@ function CallCenterView({ profile }) {
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
-                  fb_page_id: fb_page_id || null,
+                  fb_page_id: effectiveFbPageId || null, // 🔗 Автомат тавигдсан FB Page
                   interested_products,
                   call_status: "pending",
                   created_by: profile.id,
@@ -33102,7 +33153,122 @@ function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  DEFAULT EXPORT — Sentry ErrorBoundary-аар ороосон App
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔧 MAINTENANCE MODE — Засварын үеэр 502-маягт дэлгэц харуулах
+//
+// ХЭРЭГЛЭХ ЗААВАР:
+//   1. Засвар хийхийн өмнө: MAINTENANCE_MODE_ENABLED = true болгоно
+//   2. Файлыг commit & push → Vercel deploy
+//   3. Засвар дуусаны дараа: MAINTENANCE_MODE_ENABLED = false болгоно
+//   4. Дахин commit & push → буцаагаад нээгдэнэ
+//
+// BYPASS: URL дотор ?bypass=orgooadmin тавихад maintenance дэлгэц алгасах
+//          (Admin засвар хийх явцад өөрөө системд орох боломжтой)
+// ═══════════════════════════════════════════════════════════════════════════
+const MAINTENANCE_MODE_ENABLED = false; // ⚠ ХЭРЭГТЭЙ ҮЕД true БОЛГОНО
+const MAINTENANCE_BYPASS_KEY = "orgooadmin"; // URL: ?bypass=orgooadmin
+
+function MaintenanceScreen() {
+  const [tick, setTick] = useState(0);
+  // Цаг дамжаад refresh товчны label-ийг өөрчилнө
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      background: "#f5f5f5",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      color: "#333",
+    }}>
+      <div style={{
+        maxWidth: 500,
+        width: "100%",
+        textAlign: "center",
+      }}>
+        <div style={{
+          fontSize: 80,
+          fontWeight: 900,
+          color: "#dc2626",
+          lineHeight: 1,
+          marginBottom: 8,
+          fontFamily: "Arial, sans-serif",
+          letterSpacing: -2,
+        }}>
+          502
+        </div>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 600,
+          marginBottom: 24,
+          color: "#1f2937",
+        }}>
+          Bad Gateway
+        </div>
+        <div style={{
+          background: "white",
+          borderRadius: 8,
+          padding: "24px 20px",
+          textAlign: "left",
+          border: "1px solid #e5e7eb",
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: "#4b5563",
+        }}>
+          <div style={{ fontWeight: 600, color: "#1f2937", marginBottom: 8 }}>
+            🔧 Сервер засвар хийгдэж байна
+          </div>
+          <p style={{ margin: "0 0 12px" }}>
+            Системд түр зуурын засвар хийгдэж байна. Удалгүй буцаагаад ажиллана.
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            Хэрэв удсан бол админд хандана уу.
+          </p>
+        </div>
+        <button onClick={() => window.location.reload()}
+          style={{
+            marginTop: 20,
+            padding: "10px 20px",
+            background: "#374151",
+            color: "white",
+            border: "none",
+            borderRadius: 6,
+            fontSize: 14,
+            cursor: "pointer",
+            fontWeight: 500,
+          }}>
+          🔄 Дахин оролдох
+        </button>
+        <div style={{
+          marginTop: 40,
+          fontSize: 11,
+          color: "#9ca3af",
+          fontFamily: "monospace",
+        }}>
+          nginx/1.18.0 · {new Date().toUTCString()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // 🔧 Maintenance Mode шалгалт
+  if (MAINTENANCE_MODE_ENABLED) {
+    // URL bypass шалгах: ?bypass=KEY
+    const urlParams = new URLSearchParams(window.location.search);
+    const bypass = urlParams.get("bypass");
+    if (bypass !== MAINTENANCE_BYPASS_KEY) {
+      return <MaintenanceScreen />;
+    }
+  }
+
   // Хэрэв Sentry тохируулагдсан бол ErrorBoundary-аар ороох, эс бол шууд AppRoot
   if (SENTRY_DSN) {
     return (
