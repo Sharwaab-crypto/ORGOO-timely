@@ -13957,6 +13957,7 @@ function SalesDashboardView({ profile }) {
   const [reassignModal, setReassignModal] = useState(null); // { orderId, currentPageId }
   const [refreshKey, setRefreshKey] = useState(0); // Дахин ачаалах trigger
   const [productsPopup, setProductsPopup] = useState(null); // { page, status, products }
+  const [loadError, setLoadError] = useState(null); // ⚠ Ачаалалт алдаа state
 
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-sales-period") || "month"; } catch { return "month"; }
@@ -14001,6 +14002,7 @@ function SalesDashboardView({ profile }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
           fetchAllRows(supabase.from("biz_calls").select("*")),
@@ -14014,7 +14016,11 @@ function SalesDashboardView({ profile }) {
         setItems(itmData || []);
         setProducts(prodData || []);
         setFbPages(fbData || []);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        setLoadError(e.message || "Тодорхойгүй алдаа");
+        alert(`⚠ Самбар ачаалахад алдаа гарлаа\n${e.message || "Тодорхойгүй алдаа"}\nДахин оролдоно уу.`);
+      }
       finally { setLoading(false); }
     })();
   }, [refreshKey]);
@@ -14238,6 +14244,28 @@ function SalesDashboardView({ profile }) {
           </button>
         </div>
       </div>
+
+      {/* ⚠ Алдааны banner — Sales самбар ачаалал амжилтгүй */}
+      {loadError && !loading && (
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `4px solid ${T.err}`, background: "rgba(239,68,68,0.05)" }}>
+          <div className="flex items-start gap-3">
+            <div style={{ fontSize: 24 }}>⚠</div>
+            <div className="flex-1">
+              <div style={{ color: T.err, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-1">
+                Самбар ачаалахад алдаа гарлаа
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mb-2">
+                {loadError}
+              </div>
+              <button onClick={() => setRefreshKey((k) => k + 1)}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                🔄 Дахин оролдох
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center">
