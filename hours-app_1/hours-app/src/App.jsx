@@ -17165,13 +17165,45 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
     const exists = items.find((it) => it.productId === product.id);
     if (exists) {
       setItems(items.filter((it) => it.productId !== product.id));
-    } else {
-      setItems([...items, {
-        productId: product.id,
-        product,
-        qty: 1,
-      }]);
+      return;
     }
+    // 🔗 БАРАА → FB PAGE ШАЛГАЛТ
+    // Хэрэв шинээр сонгох бараа FB Page-руу холбогдсон бол:
+    //   - Тэр FB Page-руу холбогдоогүй БҮХ барааг хасна
+    if (product.fb_page_id) {
+      const conflictingItems = items.filter((it) => 
+        it.product.fb_page_id !== product.fb_page_id
+      );
+      if (conflictingItems.length > 0) {
+        const removedNames = conflictingItems.map((it) => it.product.name).join(", ");
+        // Хасах баатнуудыг устгаад шинээр оруулна
+        const keptItems = items.filter((it) => it.product.fb_page_id === product.fb_page_id);
+        setItems([...keptItems, {
+          productId: product.id,
+          product,
+          qty: 1,
+        }]);
+        // FB Page автомат тавина
+        if (!fbPageId) setFbPageId(product.fb_page_id);
+        alert(`ℹ ${removedNames} автомат хасагдсан (бусад FB Page-руу холбогдсон)`);
+        return;
+      }
+      // FB Page автомат тавина (анх удаа сонговол)
+      if (!fbPageId) setFbPageId(product.fb_page_id);
+    } else {
+      // 🔗 Хэрэв одоо байгаа items нь FB Page-руу холбогдсон бол:
+      //   - Холбоогүй бараа нэмэх боломжгүй (хязгаар сэргээнэ)
+      const linkedItems = items.filter((it) => it.product.fb_page_id);
+      if (linkedItems.length > 0) {
+        alert("⚠ Энэ захиалга FB Page-руу холбогдсон. Зөвхөн тухайн Page-ийн бараа нэмэх боломжтой.");
+        return;
+      }
+    }
+    setItems([...items, {
+      productId: product.id,
+      product,
+      qty: 1,
+    }]);
   };
 
   const updateItemQty = (productId, qty) => {
