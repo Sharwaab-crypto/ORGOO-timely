@@ -10176,7 +10176,7 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
   const [fbPages, setFbPages] = useState([]);
 
   useEffect(() => {
-    supabase.from("biz_fb_pages").select("id, page_name, page_id").order("page_name")
+    supabase.from("biz_fb_pages").select("id, name").eq("is_active", true).order("display_order")
       .then(({ data }) => setFbPages(data || []));
   }, []);
 
@@ -10425,12 +10425,12 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
               style={inputStyle} className={inputClass}>
               <option value="">— Холбохгүй (бүх Page-аас зарагдана) —</option>
               {fbPages.map((p) => (
-                <option key={p.id} value={p.id}>📘 {p.page_name}</option>
+                <option key={p.id} value={p.id}>📘 {p.name}</option>
               ))}
             </select>
             {fbPageId && (
               <div style={{ color: "#1d4ed8", fontFamily: FM }} className="text-[11px] mt-1.5">
-                ✅ Энэ бараа зөвхөн "<b>{fbPages.find(p => p.id === fbPageId)?.page_name}</b>" Page-аас захиалга авна
+                ✅ Энэ бараа зөвхөн "<b>{fbPages.find(p => p.id === fbPageId)?.name}</b>" Page-аас захиалга авна
               </div>
             )}
           </div>
