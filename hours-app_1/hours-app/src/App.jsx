@@ -25998,6 +25998,7 @@ function DriverWarehouseView({ profile }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showZero, setShowZero] = useState(false); // 📦 Үлдэгдэлгүй бараа харуулах эсэх
 
   const loadAll = async () => {
     setLoading(true);
@@ -26027,12 +26028,17 @@ function DriverWarehouseView({ profile }) {
     .map((s) => ({ ...s, product: products.find((p) => p.id === s.product_id) }))
     .filter((x) => x.product);
 
+  // 🎯 Үлдэгдэлтэй бараа л үзүүлэх (default), эс бол бүгд
+  const stockDataVisible = showZero
+    ? stockData
+    : stockData.filter((x) => Number(x.quantity || 0) > 0);
+
   const filtered = search.trim()
-    ? stockData.filter((s) =>
+    ? stockDataVisible.filter((s) =>
         s.product.name?.toLowerCase().includes(search.toLowerCase()) ||
         s.product.sku?.toLowerCase().includes(search.toLowerCase())
       )
-    : stockData;
+    : stockDataVisible;
 
   if (loading) {
     return (
@@ -26103,6 +26109,25 @@ function DriverWarehouseView({ profile }) {
           placeholder="🔍 Бараа хайх..."
           style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
           className="w-full px-3 py-2 rounded-lg text-sm" />
+      )}
+
+      {/* 🎯 Үлдэгдэлгүй бараа toggle */}
+      {stockData.some((x) => Number(x.quantity || 0) <= 0) && (
+        <button onClick={() => setShowZero(!showZero)}
+          className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between"
+          style={{
+            background: showZero ? T.warnSoft : T.surfaceAlt,
+            border: `1px solid ${showZero ? T.warn : T.border}`,
+            color: T.ink, fontFamily: FS, fontWeight: 600,
+          }}>
+          <span className="flex items-center gap-2">
+            <span>{showZero ? "👁" : "🙈"}</span>
+            <span>{showZero ? "Бүх бараа харуулж байна" : "Үлдэгдэлгүй бараа нуусан"}</span>
+          </span>
+          <span style={{ color: T.muted, fontSize: 10 }}>
+            {showZero ? "Нуух →" : "Харуулах →"}
+          </span>
+        </button>
       )}
 
       {/* Stock list */}
