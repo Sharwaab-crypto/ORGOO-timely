@@ -17116,6 +17116,9 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [activeProduct, setActiveProduct] = useState(null);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
+  // 🔗 FB Page хязгаарлалтын confirm modal
+  const [pageConflictModal, setPageConflictModal] = useState(null);
+  // pageConflictModal: null | { newProduct, removingItems, targetFbPageId, targetPageName }
 
   // FB pages-уудыг ачаалах
   useEffect(() => {
@@ -17167,35 +17170,31 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
       setItems(items.filter((it) => it.productId !== product.id));
       return;
     }
-    // 🔗 БАРАА → FB PAGE ШАЛГАЛТ
+    // 🔗 БАРАА → FB PAGE ХЯЗГААРЛАЛТЫН ШАЛГАЛТ
     // Хэрэв шинээр сонгох бараа FB Page-руу холбогдсон бол:
-    //   - Тэр FB Page-руу холбогдоогүй БҮХ барааг хасна
     if (product.fb_page_id) {
       const conflictingItems = items.filter((it) => 
         it.product.fb_page_id !== product.fb_page_id
       );
       if (conflictingItems.length > 0) {
-        const removedNames = conflictingItems.map((it) => it.product.name).join(", ");
-        // Хасах баатнуудыг устгаад шинээр оруулна
-        const keptItems = items.filter((it) => it.product.fb_page_id === product.fb_page_id);
-        setItems([...keptItems, {
-          productId: product.id,
-          product,
-          qty: 1,
-        }]);
-        // FB Page автомат тавина
-        if (!fbPageId) setFbPageId(product.fb_page_id);
-        alert(`ℹ ${removedNames} автомат хасагдсан (бусад FB Page-руу холбогдсон)`);
+        // 🚨 Confirm modal харуулах
+        const targetPage = fbPages.find((p) => p.id === product.fb_page_id);
+        setPageConflictModal({
+          newProduct: product,
+          removingItems: conflictingItems,
+          targetFbPageId: product.fb_page_id,
+          targetPageName: targetPage?.name || "Тодорхойгүй",
+        });
         return;
       }
       // FB Page автомат тавина (анх удаа сонговол)
       if (!fbPageId) setFbPageId(product.fb_page_id);
     } else {
-      // 🔗 Хэрэв одоо байгаа items нь FB Page-руу холбогдсон бол:
-      //   - Холбоогүй бараа нэмэх боломжгүй (хязгаар сэргээнэ)
+      // Хэрэв одоо байгаа items нь FB Page-руу холбогдсон бол:
       const linkedItems = items.filter((it) => it.product.fb_page_id);
       if (linkedItems.length > 0) {
-        alert("⚠ Энэ захиалга FB Page-руу холбогдсон. Зөвхөн тухайн Page-ийн бараа нэмэх боломжтой.");
+        const linkedPage = fbPages.find((p) => p.id === linkedItems[0].product.fb_page_id);
+        alert(`⚠ Анхааруулга\nЭнэ захиалга "${linkedPage?.name}" FB Page-руу холбогдсон.\nЗөвхөн тухайн Page-ийн бараа нэмэх боломжтой.`);
         return;
       }
     }
@@ -17205,6 +17204,23 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
       qty: 1,
     }]);
   };
+
+  // 🔗 FB Page conflict-ийг шийдвэрлэх (хэрэглэгчийн зөвшөөрөл-тэй)
+  const confirmPageSwitch = () => {
+    if (!pageConflictModal) return;
+    const { newProduct, targetFbPageId } = pageConflictModal;
+    // Зөвхөн target Page-руу холбогдсон item-уудыг үлдээх + шинээр нэмэх
+    const keptItems = items.filter((it) => it.product.fb_page_id === targetFbPageId);
+    setItems([...keptItems, {
+      productId: newProduct.id,
+      product: newProduct,
+      qty: 1,
+    }]);
+    setFbPageId(targetFbPageId);
+    setPageConflictModal(null);
+  };
+
+  const cancelPageSwitch = () => setPageConflictModal(null);
 
   const updateItemQty = (productId, qty) => {
     if (qty <= 0) {
@@ -17651,6 +17667,84 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 🔗 FB Page conflict confirm modal */}
+      {pageConflictModal && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100002,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }}
+          onClick={cancelPageSwitch}>
+          <div style={{
+            background: "white", borderRadius: 18, width: "100%", maxWidth: 440,
+            boxShadow: "0 24px 60px rgba(245,158,11,0.3)",
+            border: `2px solid ${T.warn}`,
+            overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{
+              background: `linear-gradient(135deg, ${T.warn}15, ${T.warn}25)`,
+              padding: "20px 20px 14px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 8 }}>⚠</div>
+              <div style={{
+                fontFamily: FD, fontWeight: 700, fontSize: 17, color: T.warn,
+              }}>FB Page-руу холбогдсон бараа</div>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "16px 20px" }}>
+              <p style={{ color: T.ink, fontFamily: FS, fontSize: 13, lineHeight: 1.6, margin: "0 0 12px" }}>
+                Та <b>"{pageConflictModal.newProduct.name}"</b> барааг сонгож байна, энэ нь{" "}
+                <b style={{ color: T.warn }}>📘 {pageConflictModal.targetPageName}</b> FB Page-руу холбогдсон байна.
+              </p>
+              <div style={{
+                background: T.surfaceAlt, borderRadius: 10, padding: "10px 12px", marginBottom: 12,
+              }}>
+                <div style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }} className="text-[10px] uppercase mb-1">
+                  Дараах бараанууд хасагдана:
+                </div>
+                <div style={{ fontFamily: FS, fontSize: 12, color: T.ink, lineHeight: 1.6 }}>
+                  {pageConflictModal.removingItems.map((it, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: T.err }}>✕</span>
+                      <span>{it.product.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p style={{ color: T.muted, fontFamily: FS, fontSize: 11, lineHeight: 1.5, margin: 0 }}>
+                💡 Нэг захиалгад зөвхөн нэг FB Page-ийн бараа орох ёстой.
+                Та өөр бараагаар тус тусын захиалга үүсгэх боломжтой.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "10px 20px 18px", display: "flex", gap: 8 }}>
+              <button onClick={cancelPageSwitch}
+                style={{
+                  flex: 1, padding: "11px", borderRadius: 10,
+                  background: T.surfaceAlt, color: T.ink,
+                  fontFamily: FS, fontWeight: 600, fontSize: 13,
+                  border: `1px solid ${T.border}`, cursor: "pointer",
+                }}>
+                Болих
+              </button>
+              <button onClick={confirmPageSwitch}
+                style={{
+                  flex: 2, padding: "11px", borderRadius: 10,
+                  background: T.warn, color: "white",
+                  fontFamily: FS, fontWeight: 700, fontSize: 13,
+                  border: "none", cursor: "pointer",
+                }}>
+                ✓ {pageConflictModal.targetPageName}-руу шилжүүлэх
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
