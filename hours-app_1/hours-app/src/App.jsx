@@ -12402,21 +12402,29 @@ function CallCenterView({ profile }) {
                 const { phone } = phoneEntry;
                 const { data: existingNewOrders } = await supabase
                   .from("biz_orders")
-                  .select("id, customer_phone, customer_name, total_amount, status, created_at")
+                  .select("id, customer_phone, customer_name, total_amount, status, created_at, fb_page_id")
                   .eq("customer_phone", phone)
                   .eq("status", "new")
                   .order("created_at", { ascending: false })
                   .limit(1);
                 
                 if (existingNewOrders && existingNewOrders.length > 0) {
-                  // Шинэ захиалгатай — анхааруулга гарга + засварлах руу шилжих
-                  setShowCallModal(false);
-                  setExistingOrderAlert({
-                    phone,
-                    orderId: existingNewOrders[0].id,
-                    orderInfo: existingNewOrders[0],
-                  });
-                  return; // Хадгалахгүй, цаашаа орохгүй
+                  const existingOrder = existingNewOrders[0];
+                  // 🔀 FB Page харьцуулах — ижил Page бол л засуулах
+                  const existingPageId = existingOrder.fb_page_id || null;
+                  const newPageId = effectiveFbPageId || null;
+                  
+                  if (existingPageId === newPageId) {
+                    // Ижил Page → захиалга нийлүүлэхийн тулд засуулах
+                    setShowCallModal(false);
+                    setExistingOrderAlert({
+                      phone,
+                      orderId: existingOrder.id,
+                      orderInfo: existingOrder,
+                    });
+                    return;
+                  }
+                  // Өөр Page → автомат хуваагдана (continue — нийлүүлэхгүй, шинэ үүсгэнэ)
                 }
               }
               
@@ -12662,6 +12670,7 @@ function CallCenterView({ profile }) {
                     balance_due: data.balanceDue,
                     notes: data.notes,
                     taken_by: profile.id,
+                    fb_page_id: data.fb_page_id || null, // 🔗 FB Page холбоо
                   })
                   .select()
                   .single();
