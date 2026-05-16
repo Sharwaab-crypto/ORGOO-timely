@@ -13953,6 +13953,8 @@ function SalesDashboardView({ profile }) {
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
+  // 🔄 Захиалгын FB Page-ийг солих modal
+  const [reassignModal, setReassignModal] = useState(null); // { orderId, currentPageId }
   const [productsPopup, setProductsPopup] = useState(null); // { page, status, products }
 
   const [period, setPeriod] = useState(() => {
@@ -14597,6 +14599,22 @@ function SalesDashboardView({ profile }) {
                             }} className="text-base tabular-nums">
                               {Number(o.total_amount || 0).toLocaleString()}₮
                             </div>
+                            {/* 🔄 FB Page солих товч */}
+                            <button onClick={(e) => {
+                              e.stopPropagation();
+                              setReassignModal({ orderId: o.id, currentPageId: o.fb_page_id });
+                            }}
+                              className="press-btn rounded-full flex items-center justify-center flex-shrink-0"
+                              style={{
+                                width: 28, height: 28,
+                                background: T.surfaceAlt,
+                                color: T.muted,
+                                border: `1px solid ${T.border}`,
+                                cursor: "pointer",
+                              }}
+                              title="FB Page солих">
+                              ⋮
+                            </button>
                           </div>
 
                           {/* Items */}
@@ -14646,6 +14664,93 @@ function SalesDashboardView({ profile }) {
                     })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── 🔄 FB Page солих modal ─── */}
+      {reassignModal && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }} onClick={() => setReassignModal(null)}>
+          <div style={{
+            background: "white", borderRadius: 18, width: "100%", maxWidth: 420,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.2)",
+            overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              background: `linear-gradient(135deg, ${T.highlight}15, ${T.highlight}25)`,
+              padding: "18px 20px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 36, lineHeight: 1, marginBottom: 6 }}>🔄</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, fontSize: 15, color: T.ink }}>
+                Захиалгын FB Page солих
+              </div>
+            </div>
+            <div style={{ padding: "16px 20px" }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] uppercase tracking-wider mb-2">
+                Шинэ FB Page сонгох
+              </div>
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                {/* "Алга" сонголт */}
+                <button onClick={async () => {
+                  try {
+                    await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
+                    await loadAll();
+                    setReassignModal(null);
+                    setOrdersPopup(null);
+                    alert("✅ Захиалгаас FB Page арилгасан");
+                  } catch (e) { alert("Алдаа: " + e.message); }
+                }}
+                  className="press-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-2"
+                  style={{
+                    background: !reassignModal.currentPageId ? T.warnSoft : T.surfaceAlt,
+                    border: `1px solid ${!reassignModal.currentPageId ? T.warn : T.border}`,
+                    color: T.ink, fontFamily: FS, fontSize: 13, fontWeight: 600,
+                  }}>
+                  <span style={{ fontSize: 16 }}>—</span>
+                  <span>FB Page алга (холбохгүй)</span>
+                  {!reassignModal.currentPageId && <span style={{ marginLeft: "auto", color: T.warn }}>✓ Одоогийн</span>}
+                </button>
+                {/* FB Pages жагсаалт */}
+                {fbPages.map((p) => (
+                  <button key={p.id}
+                    onClick={async () => {
+                      try {
+                        await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
+                        await loadAll();
+                        setReassignModal(null);
+                        setOrdersPopup(null);
+                        alert(`✅ Захиалгыг "${p.name}" Page-руу шилжүүлсэн`);
+                      } catch (e) { alert("Алдаа: " + e.message); }
+                    }}
+                    className="press-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-2"
+                    style={{
+                      background: reassignModal.currentPageId === p.id ? T.okSoft : T.surface,
+                      border: `1px solid ${reassignModal.currentPageId === p.id ? T.ok : T.border}`,
+                      color: T.ink, fontFamily: FS, fontSize: 13, fontWeight: 600,
+                    }}>
+                    <span style={{ fontSize: 16 }}>📘</span>
+                    <span>{p.name}</span>
+                    {reassignModal.currentPageId === p.id && <span style={{ marginLeft: "auto", color: T.ok }}>✓ Одоогийн</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: "0 20px 18px" }}>
+              <button onClick={() => setReassignModal(null)}
+                className="w-full press-btn py-2.5 rounded-lg"
+                style={{
+                  background: T.surfaceAlt, color: T.muted,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600, fontSize: 13,
+                }}>
+                Хаах
+              </button>
             </div>
           </div>
         </div>,
