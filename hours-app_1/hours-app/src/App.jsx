@@ -32225,8 +32225,13 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
     return dateList.map((date) => {
       const row = { date: date.slice(5) }; // MM-DD
       deptKpis.forEach((kpi) => {
-        const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
-        row[kpi.name] = entry ? Number(entry.value) : 0;
+        // 🔧 Calculated/copy KPI-руу computeKpiValue ашиглах
+        if (kpi.kpi_type === "calculated" || kpi.kpi_type === "copy") {
+          row[kpi.name] = computeKpiValue(kpi, allEntries || filteredEntries, date, date);
+        } else {
+          const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
+          row[kpi.name] = entry ? Number(entry.value) : 0;
+        }
       });
       return row;
     });
@@ -32261,8 +32266,16 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   // Single day → 1 bar chart with all KPIs as bars
   if (isSingleDay) {
+    const singleDayDate = dateList[0];
     const singleDayData = deptKpis.map((kpi, i) => {
-      const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+      // 🔧 Calculated/copy KPI-руу computeKpiValue ашиглах
+      let kpiValue = 0;
+      if (kpi.kpi_type === "calculated" || kpi.kpi_type === "copy") {
+        kpiValue = computeKpiValue(kpi, allEntries || filteredEntries, singleDayDate, singleDayDate);
+      } else {
+        const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+        kpiValue = entry ? Number(entry.value) : 0;
+      }
       // 🎯 Динамик зорилт — эх KPI-ийн entry-аас тооцоолох
       let dailyTarget = 0;
       if (kpi.target_source_kpi_id && kpi.target_percent) {
@@ -32270,7 +32283,6 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         const sourceValue = sourceEntry ? Number(sourceEntry.value) : 0;
         dailyTarget = (sourceValue * Number(kpi.target_percent)) / 100;
       } else if (kpi.target) {
-        // Статик зорилт
         const t = Number(kpi.target);
         if (kpi.target_period === "daily") dailyTarget = t;
         else if (kpi.target_period === "weekly") dailyTarget = t / 7;
@@ -32278,7 +32290,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       }
       return {
         name: kpi.name,
-        value: entry ? Number(entry.value) : 0,
+        value: kpiValue,
         target: Math.round(dailyTarget),
         unit: kpi.unit,
         color: COLORS[i % COLORS.length],
