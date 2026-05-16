@@ -14140,13 +14140,14 @@ function SalesDashboardView({ profile }) {
   }, [filteredOrders, items, products]);
 
   // Нийт стат
-  const totals = useMemo(() => ({
-    revenue: filteredOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0),
-    delivered: filteredOrders.filter((o) => o.status === "delivered").length,
-    totalOrders: filteredOrders.length,
-    avgOrder: 0,
-  }), [filteredOrders]);
-  totals.avgOrder = totals.delivered > 0 ? totals.revenue / totals.delivered : 0;
+  const totals = useMemo(() => {
+    const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered");
+    const revenue = deliveredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+    const delivered = deliveredOrders.length;
+    const totalOrders = filteredOrders.length;
+    const avgOrder = delivered > 0 ? revenue / delivered : 0;
+    return { revenue, delivered, totalOrders, avgOrder };
+  }, [filteredOrders]);
 
   // Excel export
   const exportExcel = () => {
