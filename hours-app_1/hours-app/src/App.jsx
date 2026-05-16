@@ -14700,8 +14700,17 @@ function SalesDashboardView({ profile }) {
                 {/* "Алга" сонголт */}
                 <button onClick={async () => {
                   try {
-                    const { error } = await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
-                    if (error) throw error;
+                    // Захиалгын мэдээлэл олох
+                    const order = orders.find((o) => o.id === reassignModal.orderId);
+                    // 1. Захиалгын fb_page_id шинэчлэх
+                    const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
+                    if (orderErr) throw orderErr;
+                    // 2. Тухайн утсаар бүртгэгдсэн calls-ийн fb_page_id-ийг бас шинэчлэх
+                    if (order?.customer_phone) {
+                      await supabase.from("biz_calls").update({ fb_page_id: null })
+                        .eq("phone", order.customer_phone)
+                        .eq("fb_page_id", reassignModal.currentPageId);
+                    }
                     setRefreshKey((k) => k + 1);
                     setReassignModal(null);
                     setOrdersPopup(null);
@@ -14723,8 +14732,17 @@ function SalesDashboardView({ profile }) {
                   <button key={p.id}
                     onClick={async () => {
                       try {
-                        const { error } = await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
-                        if (error) throw error;
+                        // Захиалгын мэдээлэл олох
+                        const order = orders.find((o) => o.id === reassignModal.orderId);
+                        // 1. Захиалгын fb_page_id шинэчлэх
+                        const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
+                        if (orderErr) throw orderErr;
+                        // 2. Тухайн утсаар бүртгэгдсэн calls-ийн fb_page_id-ийг бас шинэчлэх
+                        if (order?.customer_phone) {
+                          await supabase.from("biz_calls").update({ fb_page_id: p.id })
+                            .eq("phone", order.customer_phone)
+                            .eq("fb_page_id", reassignModal.currentPageId);
+                        }
                         setRefreshKey((k) => k + 1);
                         setReassignModal(null);
                         setOrdersPopup(null);
