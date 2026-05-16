@@ -14082,16 +14082,17 @@ function SalesDashboardView({ profile }) {
       map[key].totalCalls++;
     });
 
-    // Захиалгууд — fb_page_id call дотор хадгалагдсан, тиймээс утсаар хайх
-    // Эсвэл call_id-аар холбогдсон бол. Энд утсаар тооцно.
+    // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
+    // Хэрэв захиалга өөрөө таглагдаагүй бол утсаар хайх (fallback)
     const phoneToFbPage = {};
     filteredCalls.forEach((c) => {
       if (c.fb_page_id) phoneToFbPage[c.phone] = c.fb_page_id;
     });
 
     filteredOrders.forEach((o) => {
-      const fbPageId = phoneToFbPage[o.customer_phone] || "__null__";
-      const key = fbPageId || "__null__";
+      // 🎯 ЗӨВ ЛОГИК: эхлээд захиалгын өөрийн fb_page_id, дараа нь утсаар
+      const fbPageId = o.fb_page_id || phoneToFbPage[o.customer_phone] || "__null__";
+      const key = fbPageId;
       if (!map[key]) return;
       map[key].totalOrders++;
       if (o.status === "delivered") {
