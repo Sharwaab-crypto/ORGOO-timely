@@ -26385,13 +26385,27 @@ function MerchantCallsView({ allowedPageIds }) {
 function MerchantSalesView({ allowedPageIds, fbPages }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("biz_orders")
-        .select("*").in("fb_page_id", allowedPageIds).eq("status", "delivered");
-      setOrders(data || []);
+      setError(null);
+      try {
+        console.log("[MerchantSales] Loading for pages:", allowedPageIds);
+        const { data, error: err } = await supabase.from("biz_orders")
+          .select("*").in("fb_page_id", allowedPageIds)
+          .order("created_at", { ascending: false });
+        if (err) {
+          console.error("[MerchantSales] Error:", err);
+          setError(err.message);
+        }
+        console.log("[MerchantSales] Loaded:", data?.length || 0, "orders");
+        setOrders(data || []);
+      } catch (e) {
+        console.error("[MerchantSales] Exception:", e);
+        setError(e.message);
+      }
       setLoading(false);
     })();
   }, [allowedPageIds.join(",")]);
@@ -26402,16 +26416,50 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
   const byPage = {};
   orders.forEach((o) => {
     const k = o.fb_page_id || "__none__";
-    if (!byPage[k]) byPage[k] = { count: 0, revenue: 0 };
-    byPage[k].count++;
-    byPage[k].revenue += Number(o.total_amount || 0);
+    if (!byPage[k]) byPage[k] = { all: 0, delivered: 0, cancelled: 0, pending: 0, revenue: 0 };
+    byPage[k].all++;
+    if (o.status === "delivered") {
+      byPage[k].delivered++;
+      byPage[k].revenue += Number(o.total_amount || 0);
+    } else if (o.status === "cancelled") {
+      byPage[k].cancelled++;
+    } else {
+      byPage[k].pending++;
+    }
   });
+
+  const deliveredOrders = orders.filter(o => o.status === "delivered").slice(0, 20);
+  const totalRevenue = orders.filter(o => o.status === "delivered")
+    .reduce((s, o) => s + Number(o.total_amount || 0), 0);
 
   return (
     <div className="space-y-3">
+      {/* Алдааны banner */}
+      {error && (
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
+          <div style={{ color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+            ⚠ Алдаа: {error}
+          </div>
+        </div>
+      )}
+
+      {/* Нийт стат */}
+      <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1">
+          💰 Нийт орлого
+        </div>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-2xl">
+          {Number(totalRevenue).toLocaleString()}₮
+        </div>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1">
+          {orders.filter(o => o.status === "delivered").length} хүргэгдсэн / {orders.length} нийт захиалга
+        </div>
+      </div>
+
+      {/* Page-бүрийн карт */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {fbPages.map((p) => {
-          const stat = byPage[p.id] || { count: 0, revenue: 0 };
+          const stat = byPage[p.id] || { all: 0, delivered: 0, cancelled: 0, pending: 0, revenue: 0 };
           return (
             <div key={p.id} className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
               <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
@@ -26420,13 +26468,81 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-2xl">
                 {Number(stat.revenue).toLocaleString()}₮
               </div>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-1">
-                {stat.count} хүргэгдсэн захиалга
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ✓ {stat.delivered}
+                </span>
+                <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ⏳ {stat.pending}
+                </span>
+                <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ✕ {stat.cancelled}
+                </span>
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">
+                Нийт: {stat.all} захиалга
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Хүргэгдсэн захиалгуудын жагсаалт */}
+      {deliveredOrders.length > 0 && (
+        <div className="glass rounded-2xl p-4">
+          <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }}
+            className="text-[10px] uppercase tracking-wider mb-2">
+            ✅ Сүүлийн хүргэгдсэн захиалгууд
+          </div>
+          <div className="space-y-2">
+            {deliveredOrders.map((o) => {
+              const page = fbPages.find(p => p.id === o.fb_page_id);
+              return (
+                <div key={o.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+                  className="rounded-xl p-2.5 flex items-center gap-2">
+                  <div style={{ fontSize: 18 }}>✅</div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                      #{o.order_number} · {o.customer_phone}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {new Date(o.delivered_at || o.created_at).toLocaleString("mn-MN")}
+                      {page && ` · 🔗 ${page.name}`}
+                    </div>
+                  </div>
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                    {Number(o.total_amount).toLocaleString()}₮
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Хоосон үед debug */}
+      {orders.length === 0 && !error && (
+        <div className="glass rounded-2xl p-6 text-center" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div className="text-4xl mb-2">📭</div>
+          <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+            Захиалга олдсонгүй
+          </div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs space-y-1">
+            <div>Таны FB Page-уудтай холбоотой захиалга байхгүй байна.</div>
+            <div className="pt-2">
+              <strong>Магадлалтай шалтгаан:</strong>
+            </div>
+            <div>• Захиалгууд FB Page-руу тагла<wbr/>гдаагүй (хуучин өгөгдөл)</div>
+            <div>• Admin-руу хандаж <code>backfill-fb-pages.sql</code> ажиллуулах</div>
+            <div className="pt-2">
+              Оноогдсон Page: {fbPages.length} ({fbPages.map(p => p.name).join(", ")})
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
