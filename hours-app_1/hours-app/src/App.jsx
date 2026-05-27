@@ -1575,8 +1575,8 @@ function AdminDashboard({ profile }) {
       }
 
       if (emps.data) {
-        // 🔧 Manager + Marketing-ийг бас оруулах ("Баг" view-руу харагдана)
-        setEmployees(emps.data.filter((p) => ["employee", "operator", "driver", "manager", "marketing"].includes(p.role)));
+        // 🔧 Manager + Marketing + Merchant-ийг бас оруулах ("Баг" view-руу харагдана)
+        setEmployees(emps.data.filter((p) => ["employee", "operator", "driver", "manager", "marketing", "merchant"].includes(p.role)));
         setManagers(emps.data.filter((p) => p.role === "manager"));
       }
       if (sess.data) setSessions(sess.data);
