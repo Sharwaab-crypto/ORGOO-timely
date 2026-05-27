@@ -2520,6 +2520,7 @@ function AdminDashboard({ profile }) {
         {view === "schedule" && (
           <ScheduleView
             employees={employees}
+            departments={departments}
             sites={sites}
             isAdmin={true}
           />
@@ -23772,9 +23773,10 @@ function SkillFormModal({ skill, employees, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SCHEDULE VIEW — Долоо хоногийн ажилтны хуваарь
 // ═══════════════════════════════════════════════════════════════════════════
-function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null }) {
+function ScheduleView({ employees, departments = [], sites, isAdmin = false, currentUserId = null }) {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterDeptId, setFilterDeptId] = useState("all"); // 🆕 Хэлтсээр шүүх
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
     const day = d.getDay() === 0 ? 6 : d.getDay() - 1;
@@ -23801,6 +23803,45 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
   const visibleEmployees = isAdmin
     ? employees
     : employees.filter((e) => e.id === currentUserId);
+
+  // 🏢 Хэлтсээр шүүх
+  const filteredEmployees = filterDeptId === "all" 
+    ? visibleEmployees 
+    : filterDeptId === "none"
+      ? visibleEmployees.filter((e) => !e.department_id)
+      : visibleEmployees.filter((e) => e.department_id === filterDeptId);
+
+  // 🏢 Хэлтсээр групплэх
+  const employeesByDept = useMemo(() => {
+    const map = {};
+    filteredEmployees.forEach((emp) => {
+      const deptId = emp.department_id || "__none__";
+      if (!map[deptId]) map[deptId] = [];
+      map[deptId].push(emp);
+    });
+    // Дотор нь нэрээр эрэмбэлэх
+    Object.keys(map).forEach((k) => {
+      map[k].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    });
+    return map;
+  }, [filteredEmployees]);
+
+  // Хэлтсүүдийн дараалал
+  const sortedDeptIds = useMemo(() => {
+    const ids = Object.keys(employeesByDept);
+    return ids.sort((a, b) => {
+      if (a === "__none__") return 1;
+      if (b === "__none__") return -1;
+      const da = departments.find((d) => d.id === a)?.name || "";
+      const db = departments.find((d) => d.id === b)?.name || "";
+      return da.localeCompare(db);
+    });
+  }, [employeesByDept, departments]);
+
+  const getDeptName = (deptId) => {
+    if (deptId === "__none__") return "Хэлтэс оноогоогүй";
+    return departments.find((d) => d.id === deptId)?.name || "Тодорхойгүй";
+  };
 
   const dayNames = ["Да", "Мя", "Лх", "Пү", "Ба", "Бя", "Ня"];
 
@@ -23871,6 +23912,51 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
         </button>
       </div>
 
+      {/* 🏢 Хэлтсээр шүүх (зөвхөн admin) */}
+      {isAdmin && departments.length > 0 && (
+        <div className="glass rounded-xl p-2 flex items-center gap-2 overflow-x-auto">
+          <span style={{ fontFamily: FS, color: T.muted, fontWeight: 500 }}
+            className="text-[10px] uppercase tracking-wider px-2 flex-shrink-0">
+            🏢 Хэлтэс
+          </span>
+          <button onClick={() => setFilterDeptId("all")}
+            style={{
+              background: filterDeptId === "all" ? T.highlight : T.surfaceAlt,
+              color: filterDeptId === "all" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs flex-shrink-0">
+            Бүгд ({visibleEmployees.length})
+          </button>
+          {departments.map((d) => {
+            const count = visibleEmployees.filter((e) => e.department_id === d.id).length;
+            if (count === 0) return null;
+            return (
+              <button key={d.id} onClick={() => setFilterDeptId(d.id)}
+                style={{
+                  background: filterDeptId === d.id ? T.highlight : T.surfaceAlt,
+                  color: filterDeptId === d.id ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+                {d.name} ({count})
+              </button>
+            );
+          })}
+          {visibleEmployees.some((e) => !e.department_id) && (
+            <button onClick={() => setFilterDeptId("none")}
+              style={{
+                background: filterDeptId === "none" ? T.warn : T.surfaceAlt,
+                color: filterDeptId === "none" ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+              ⚠ Оноогоогүй ({visibleEmployees.filter((e) => !e.department_id).length})
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
           <Loader2 className="spin mx-auto mb-2" size={20} />
@@ -23896,44 +23982,67 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
               </tr>
             </thead>
             <tbody>
-              {visibleEmployees.map((emp) => (
-                <tr key={emp.id}>
-                  <td style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                      className="text-xs py-2 px-1 whitespace-nowrap">
-                    {emp.name}
+              {sortedDeptIds.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ color: T.muted, fontFamily: FS, textAlign: "center", padding: "20px" }}
+                    className="text-xs">
+                    Ажилтан байхгүй
                   </td>
-                  {[1,2,3,4,5,6,7].map((day) => {
-                    const cell = getCell(emp.id, day);
-                    const hasShift = !!cell?.shift_start;
-                    return (
-                      <td key={day} className="px-0.5 py-1 text-center">
-                        <button
-                          onClick={() => isAdmin && setEditing({ employee_id: emp.id, day_of_week: day, ...cell })}
-                          disabled={!isAdmin}
-                          style={{
-                            background: hasShift
-                              ? (cell.status === "absent" ? T.errSoft : cell.status === "leave" ? T.warnSoft : T.highlightSoft)
-                              : T.surfaceAlt,
-                            color: hasShift
-                              ? (cell.status === "absent" ? T.err : cell.status === "leave" ? T.warn : T.highlight)
-                              : T.muted,
-                            fontFamily: FS,
-                            fontWeight: 600,
-                            cursor: isAdmin ? "pointer" : "default",
-                          }}
-                          className={`w-full py-1.5 rounded text-[10px] ${isAdmin ? "hover:opacity-80" : ""}`}>
-                          {hasShift ? `${cell.shift_start.slice(0, 5)}` : "—"}
-                          {hasShift && (
-                            <div className="text-[8px] opacity-75">
-                              {cell.shift_end?.slice(0, 5)}
-                            </div>
-                          )}
+                </tr>
+              ) : (
+                sortedDeptIds.map((deptId) => (
+                  <React.Fragment key={deptId}>
+                    {/* Хэлтсийн гарчиг */}
+                    <tr>
+                      <td colSpan={8} style={{
+                        background: deptId === "__none__" ? T.warnSoft : T.surfaceAlt,
+                        color: deptId === "__none__" ? T.warn : T.ink,
+                        fontFamily: FS, fontWeight: 700,
+                      }} className="text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-md">
+                        🏢 {getDeptName(deptId)} ({employeesByDept[deptId].length})
+                      </td>
+                    </tr>
+                    {employeesByDept[deptId].map((emp) => (
+                      <tr key={emp.id}>
+                        <td style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                            className="text-xs py-2 px-1 whitespace-nowrap">
+                          {emp.name}
+                        </td>
+                        {[1,2,3,4,5,6,7].map((day) => {
+                          const cell = getCell(emp.id, day);
+                          const hasShift = !!cell?.shift_start;
+                          return (
+                            <td key={day} className="px-0.5 py-1 text-center">
+                              <button
+                                onClick={() => isAdmin && setEditing({ employee_id: emp.id, day_of_week: day, ...cell })}
+                                disabled={!isAdmin}
+                                style={{
+                                  background: hasShift
+                                    ? (cell.status === "absent" ? T.errSoft : cell.status === "leave" ? T.warnSoft : T.highlightSoft)
+                                    : T.surfaceAlt,
+                                  color: hasShift
+                                    ? (cell.status === "absent" ? T.err : cell.status === "leave" ? T.warn : T.highlight)
+                                    : T.muted,
+                                  fontFamily: FS,
+                                  fontWeight: 600,
+                                  cursor: isAdmin ? "pointer" : "default",
+                                }}
+                                className={`w-full py-1.5 rounded text-[10px] ${isAdmin ? "hover:opacity-80" : ""}`}>
+                                {hasShift ? `${cell.shift_start.slice(0, 5)}` : "—"}
+                                {hasShift && (
+                                  <div className="text-[8px] opacity-75">
+                                    {cell.shift_end?.slice(0, 5)}
+                                  </div>
+                                )}
                         </button>
                       </td>
                     );
                   })}
                 </tr>
-              ))}
+                    ))}
+                  </React.Fragment>
+                ))
+              )}
             </tbody>
           </table>
         </div>
