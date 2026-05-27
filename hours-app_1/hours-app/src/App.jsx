@@ -1657,6 +1657,7 @@ function AdminDashboard({ profile }) {
         schedule_days: formData.schedule_days,
         schedule_start: formData.schedule_start,
         schedule_end: formData.schedule_end,
+        fb_page_ids: formData.fb_page_ids || [], // 🏪 Merchant FB Page-ууд
         updated_at: new Date().toISOString(),
       };
 
