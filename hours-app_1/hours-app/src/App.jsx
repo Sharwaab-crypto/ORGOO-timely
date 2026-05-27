@@ -24047,9 +24047,14 @@ function ScheduleView({ employees, departments = [], sites, isAdmin = false, cur
                                     {cell.shift_end?.slice(0, 5)}
                                   </div>
                                 )}
-                                {hasShift && cell.fb_page_id && fbPagesMap[cell.fb_page_id] && (
+                                {hasShift && cell.fb_page_ids && cell.fb_page_ids.length > 0 && (
                                   <div style={{ color: "#0284c7", fontWeight: 600 }} className="text-[8px] mt-0.5 truncate">
-                                    🔗 {fbPagesMap[cell.fb_page_id]}
+                                    🔗 {cell.fb_page_ids
+                                      .map((id) => fbPagesMap[id])
+                                      .filter(Boolean)
+                                      .slice(0, 2)
+                                      .join(", ")}
+                                    {cell.fb_page_ids.length > 2 && ` +${cell.fb_page_ids.length - 2}`}
                                   </div>
                                 )}
                         </button>
@@ -24102,7 +24107,8 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
   const [shiftEnd, setShiftEnd] = useState(schedule?.shift_end?.slice(0, 5) || "18:00");
   const [breakMinutes, setBreakMinutes] = useState(schedule?.break_minutes ?? 60);
   const [siteId, setSiteId] = useState(schedule?.site_id || "");
-  const [fbPageId, setFbPageId] = useState(schedule?.fb_page_id || ""); // 🔗 Operator-ийн ажиллах FB Page
+  // 🔗 Operator-ийн ажиллах FB Page-үүд (олон сонгох)
+  const [fbPageIds, setFbPageIds] = useState(schedule?.fb_page_ids || []);
   const [fbPages, setFbPages] = useState([]);
   const [status, setStatus] = useState(schedule?.status || "scheduled");
   const [notes, setNotes] = useState(schedule?.notes || "");
@@ -24119,6 +24125,14 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
       setFbPages(data || []);
     })();
   }, [isOperator]);
+
+  const togglePage = (pageId) => {
+    setFbPageIds((prev) => 
+      prev.includes(pageId) 
+        ? prev.filter((id) => id !== pageId)
+        : [...prev, pageId]
+    );
+  };
 
   const dayNames = ["", "Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
 
@@ -24170,21 +24184,55 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
             </select>
           </div>
 
-          {/* 🔗 FB Page сонголт — зөвхөн operator-руу */}
+          {/* 🔗 FB Page сонголт — зөвхөн operator-руу (ОЛОН СОНГОХ) */}
           {isOperator && (
             <div style={{ background: "rgba(14,165,233,0.05)", border: `1px solid rgba(14,165,233,0.2)`, borderRadius: 12, padding: 10 }}>
-              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-                <span>🔗 FB Page</span>
-                <span style={{ color: T.muted, fontWeight: 400 }}>(operator)</span>
+              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                <span>🔗 FB Page-ууд</span>
+                <span style={{ color: T.muted, fontWeight: 400 }}>(олон сонгох боломжтой)</span>
+                {fbPageIds.length > 0 && (
+                  <span style={{ background: "#0284c7", color: "white", padding: "1px 6px", borderRadius: 8, fontSize: 9 }}>
+                    {fbPageIds.length}
+                  </span>
+                )}
               </label>
-              <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
-                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                className="w-full px-3 py-2 rounded-lg text-sm">
-                <option value="">— Сонгох —</option>
-                {fbPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">
-                Энэ операторт тухайн өдөр ажиллах FB Page
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {fbPages.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs italic">
+                    FB Page алга байна
+                  </div>
+                ) : (
+                  fbPages.map((p) => {
+                    const checked = fbPageIds.includes(p.id);
+                    return (
+                      <button key={p.id} type="button"
+                        onClick={() => togglePage(p.id)}
+                        className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                        style={{
+                          background: checked ? "rgba(14,165,233,0.15)" : T.surface,
+                          border: `1px solid ${checked ? "#0284c7" : T.border}`,
+                          fontFamily: FS,
+                          fontWeight: 500,
+                          color: T.ink,
+                          textAlign: "left",
+                        }}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4,
+                          background: checked ? "#0284c7" : "transparent",
+                          border: `1.5px solid ${checked ? "#0284c7" : T.border}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0,
+                        }}>
+                          {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <span className="text-xs flex-1">{p.name}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">
+                Энэ операторт тухайн өдөр ажиллах FB Page-уудыг сонго
               </div>
             </div>
           )}
@@ -24220,7 +24268,7 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
                   shift_end: shiftEnd,
                   break_minutes: breakMinutes,
                   site_id: siteId || null,
-                  fb_page_id: isOperator ? (fbPageId || null) : null, // 🔗 operator-руу л
+                  fb_page_ids: isOperator ? fbPageIds : [], // 🔗 operator-руу олон сонголт
                   status,
                   notes: notes || null,
                 });
