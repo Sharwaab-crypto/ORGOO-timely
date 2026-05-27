@@ -25470,6 +25470,50 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  OPERATOR DASHBOARD — Зөвхөн дуудлага + захиалга
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR CALENDAR WRAPPER — leaves+employees өгөгдөл татаад CalendarView-руу
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorCalendarView({ profile }) {
+  const [leaves, setLeaves] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [{ data: leavesData }, { data: empData }] = await Promise.all([
+          supabase.from("hrm_leaves").select("*").order("start_date", { ascending: false }),
+          supabase.from("profiles").select("id, name, avatar_url, role, job_title"),
+        ]);
+        setLeaves(leavesData || []);
+        setEmployees(empData || []);
+      } catch (e) {
+        console.error("[OperatorCalendarView] load error:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center">
+        <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <CalendarView
+      leaves={leaves}
+      employees={employees}
+      scope="all"
+      currentUserId={profile.id}
+    />
+  );
+}
+
 function OperatorDashboard({ profile }) {
   const [view, setView] = useState(() => {
     try { return localStorage.getItem("orgoo-operator-view") || "dashboard"; } catch { return "dashboard"; }
@@ -25514,6 +25558,7 @@ function OperatorDashboard({ profile }) {
         <nav className="flex-1 overflow-y-auto py-2">
           <SidebarSection label="Хяналт">
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
+            <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
           </SidebarSection>
           <SidebarSection label="Бизнес">
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
@@ -25554,6 +25599,7 @@ function OperatorDashboard({ profile }) {
           <div className="flex-1">
             <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
               {view === "dashboard" && "📊 Миний KPI"}
+              {view === "calendar" && "📅 Календар"}
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
             </h1>
@@ -25565,6 +25611,7 @@ function OperatorDashboard({ profile }) {
           <TimeTracker profile={profile} />
           
           {view === "dashboard" && <OperatorKPIView profile={profile} />}
+          {view === "calendar" && <OperatorCalendarView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
         </div>
