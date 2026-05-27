@@ -1531,6 +1531,7 @@ function AdminDashboard({ profile }) {
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
   const [leaves, setLeaves] = useState([]);
   const [workSchedules, setWorkSchedules] = useState([]);
+  const [fbPages, setFbPages] = useState([]); // 🔗 FB Pages (Calendar дотор хуваарь дотор харагдах)
   const [kpiDefs, setKpiDefs] = useState([]);
   const [kpiEntries, setKpiEntries] = useState([]);
   const [editingKpi, setEditingKpi] = useState(null); // null | 'add' | kpi obj
@@ -1542,7 +1543,7 @@ function AdminDashboard({ profile }) {
 
   const loadAll = async () => {
     try {
-      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann, wsch] = await Promise.all([
+      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann, wsch, fbp] = await Promise.all([
         supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing"]).order("created_at", { ascending: false }),
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
@@ -1557,6 +1558,7 @@ function AdminDashboard({ profile }) {
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
         supabase.from("work_schedules").select("*"),
+        supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
       ]);
 
       // 🔧 Алдаа гарсан query-уудыг log хийх (silent failure-аас сэргийлэх)
@@ -1589,6 +1591,7 @@ function AdminDashboard({ profile }) {
       if (dept.data) setDepartments(dept.data);
       if (lvs.data) setLeaves(lvs.data);
       if (wsch.data) setWorkSchedules(wsch.data);
+      if (fbp.data) setFbPages(fbp.data);
       if (kpiD.data) setKpiDefs(kpiD.data);
       if (kpiE.data) setKpiEntries(kpiE.data);
       if (tsk.data) setTasks(tsk.data);
@@ -2513,6 +2516,7 @@ function AdminDashboard({ profile }) {
             leaves={leaves}
             employees={employees}
             schedules={workSchedules}
+            fbPages={fbPages}
             scope="all"
           />
         )}
@@ -23308,10 +23312,18 @@ function HRFileFormModal({ hrFile, employee, currentUserId, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CALENDAR VIEW — Чөлөөг календар дээр харах
 // ═══════════════════════════════════════════════════════════════════════════
-function CalendarView({ leaves = [], employees = [], schedules = [], scope = "all", currentUserId = null }) {
+function CalendarView({ leaves = [], employees = [], schedules = [], fbPages = [], scope = "all", currentUserId = null }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+  const [selectedDate, setSelectedDate] = useState(null); // 🆕 Click хийсэн өдөр
+
+  // FB Pages ID → name map
+  const fbPagesMap = useMemo(() => {
+    const map = {};
+    fbPages.forEach((p) => { map[p.id] = p.name; });
+    return map;
+  }, [fbPages]);
 
   const filteredLeaves = useMemo(() => {
     let result = leaves.filter((l) => l.status === "approved");
@@ -23430,11 +23442,14 @@ function CalendarView({ leaves = [], employees = [], schedules = [], scope = "al
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
             return (
-              <div key={i} style={{
-                background: isToday ? T.highlightSoft : "transparent",
-                border: isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`,
-                minHeight: 64,
-              }} className="rounded-lg p-1.5 relative">
+              <div key={i}
+                onClick={() => (daySchedules.length > 0 || dayLeaves.length > 0) && setSelectedDate(dateStr)}
+                style={{
+                  background: isToday ? T.highlightSoft : "transparent",
+                  border: isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`,
+                  minHeight: 64,
+                  cursor: (daySchedules.length > 0 || dayLeaves.length > 0) ? "pointer" : "default",
+                }} className="rounded-lg p-1.5 relative hover:shadow-sm transition-shadow">
                 <div style={{
                   fontFamily: FS, fontWeight: isToday ? 700 : 500,
                   color: isToday ? T.highlight : isWeekend ? T.err : T.ink,
@@ -23446,16 +23461,29 @@ function CalendarView({ leaves = [], employees = [], schedules = [], scope = "al
                   <div className="mt-1 space-y-0.5">
                     {daySchedules.slice(0, 2).map((s, j) => {
                       const emp = empById(s.employee_id);
-                      const timeLabel = s.start_time && s.end_time
-                        ? `${s.start_time.slice(0, 5)}-${s.end_time.slice(0, 5)}`
+                      const timeLabel = s.shift_start && s.shift_end
+                        ? `${s.shift_start.slice(0, 5)}-${s.shift_end.slice(0, 5)}`
                         : "";
+                      const pageNames = (s.fb_page_ids || [])
+                        .map((id) => fbPagesMap[id])
+                        .filter(Boolean);
+                      const titleText = [
+                        emp?.name || "—",
+                        timeLabel,
+                        pageNames.length > 0 ? `🔗 ${pageNames.join(", ")}` : "",
+                      ].filter(Boolean).join(" · ");
                       return (
                         <div key={`s-${j}`} style={{
                           background: "rgba(14,165,233,0.15)",
                           color: "#0284c7",
                         }} className="text-[9px] px-1 py-0.5 rounded truncate"
-                          title={`${emp?.name || "—"} · ${timeLabel}`}>
+                          title={titleText}>
                           🕐 {emp?.name?.split(" ")[0] || "—"}
+                          {timeLabel && (
+                            <span style={{ opacity: 0.7, marginLeft: 2 }}>
+                              {s.shift_start?.slice(0, 5)}
+                            </span>
+                          )}
                         </div>
                       );
                     })}
@@ -23517,6 +23545,152 @@ function CalendarView({ leaves = [], employees = [], schedules = [], scope = "al
         <div className="flex-1" />
         <div style={{ color: T.muted }}>{filteredLeaves.length} нийт чөлөө</div>
       </div>
+
+      {/* 📋 Өдрийн дэлгэрэнгүй modal */}
+      {selectedDate && createPortal(
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedDate(null)}>
+          <div className="modal-content rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                    📅 {new Date(selectedDate).toLocaleDateString("mn-MN", { 
+                      weekday: "long", year: "numeric", month: "long", day: "numeric"
+                    })}
+                  </h3>
+                </div>
+                <button onClick={() => setSelectedDate(null)} style={{ color: T.muted }}><X size={16} /></button>
+              </div>
+
+              {/* Хуваарь жагсаалт */}
+              {(schedulesByDate[selectedDate] || []).length > 0 && (
+                <div className="mb-4">
+                  <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
+                    className="text-[10px] uppercase tracking-wider mb-2">
+                    🕐 Хуваарь ({schedulesByDate[selectedDate].length})
+                  </div>
+                  <div className="space-y-2">
+                    {schedulesByDate[selectedDate].map((s, idx) => {
+                      const emp = empById(s.employee_id);
+                      const pageNames = (s.fb_page_ids || [])
+                        .map((id) => fbPagesMap[id])
+                        .filter(Boolean);
+                      return (
+                        <div key={idx} style={{
+                          background: "rgba(14,165,233,0.05)",
+                          border: "1px solid rgba(14,165,233,0.2)",
+                          borderRadius: 10, padding: 10,
+                        }}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <div style={{
+                              background: "#0284c7", color: "white",
+                              width: 28, height: 28, borderRadius: "50%",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontFamily: FS, fontWeight: 700, fontSize: 11,
+                            }}>
+                              {emp?.name?.charAt(0) || "?"}
+                            </div>
+                            <div className="flex-1">
+                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                                {emp?.name || "Тодорхойгүй"}
+                              </div>
+                              {emp?.job_title && (
+                                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                                  {emp.job_title}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {s.shift_start && s.shift_end && (
+                            <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mb-1">
+                              ⏰ {s.shift_start.slice(0, 5)} — {s.shift_end.slice(0, 5)}
+                              {s.break_minutes ? ` (${s.break_minutes}мин завсар)` : ""}
+                            </div>
+                          )}
+                          {pageNames.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {pageNames.map((name, i) => (
+                                <span key={i} style={{
+                                  background: "#0284c7", color: "white",
+                                  padding: "2px 6px", borderRadius: 6,
+                                  fontSize: 10, fontFamily: FS, fontWeight: 600,
+                                }}>
+                                  🔗 {name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {s.notes && (
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 italic">
+                              💬 {s.notes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Чөлөө жагсаалт */}
+              {(leavesByDate[selectedDate] || []).length > 0 && (
+                <div className="mb-4">
+                  <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                    className="text-[10px] uppercase tracking-wider mb-2">
+                    ⛱ Чөлөө / Өвчтэй ({leavesByDate[selectedDate].length})
+                  </div>
+                  <div className="space-y-2">
+                    {leavesByDate[selectedDate].map((l, idx) => {
+                      const emp = empById(l.employee_id);
+                      const isSick = l.leave_type === "sick";
+                      return (
+                        <div key={idx} style={{
+                          background: isSick ? T.errSoft : T.highlightSoft,
+                          border: `1px solid ${isSick ? T.err : T.highlight}`,
+                          borderRadius: 10, padding: 10,
+                        }}>
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: 16 }}>{isSick ? "🤒" : "⛱"}</span>
+                            <div className="flex-1">
+                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                                {emp?.name || "Тодорхойгүй"}
+                              </div>
+                              <div style={{ color: isSick ? T.err : T.highlight, fontFamily: FS }} className="text-xs">
+                                {isSick ? "Өвчтэй" : "Чөлөө"}
+                              </div>
+                            </div>
+                          </div>
+                          {l.reason && (
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1 italic">
+                              💬 {l.reason}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {(schedulesByDate[selectedDate] || []).length === 0 && 
+               (leavesByDate[selectedDate] || []).length === 0 && (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
+                  Энэ өдөрт хуваарь/чөлөө байхгүй
+                </div>
+              )}
+
+              <button onClick={() => setSelectedDate(null)}
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                className="press-btn w-full py-2.5 rounded-lg text-sm mt-2">
+                Хаах
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -25749,20 +25923,23 @@ function OperatorCalendarView({ profile }) {
   const [leaves, setLeaves] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [{ data: leavesData }, { data: empData }, { data: schedData }] = await Promise.all([
+        const [{ data: leavesData }, { data: empData }, { data: schedData }, { data: fbpData }] = await Promise.all([
           supabase.from("hrm_leaves").select("*").order("start_date", { ascending: false }),
           supabase.from("profiles").select("id, name, avatar_url, role, job_title"),
           supabase.from("work_schedules").select("*"),
+          supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
         ]);
         setLeaves(leavesData || []);
         setEmployees(empData || []);
         setSchedules(schedData || []);
+        setFbPages(fbpData || []);
       } catch (e) {
         console.error("[OperatorCalendarView] load error:", e);
       } finally {
@@ -25784,6 +25961,7 @@ function OperatorCalendarView({ profile }) {
       leaves={leaves}
       employees={employees}
       schedules={schedules}
+      fbPages={fbPages}
       scope="all"
       currentUserId={profile.id}
     />
