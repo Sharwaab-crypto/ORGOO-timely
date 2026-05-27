@@ -23316,7 +23316,11 @@ function CalendarView({ leaves = [], employees = [], schedules = [], fbPages = [
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [selectedDate, setSelectedDate] = useState(null); // 🆕 Click хийсэн өдөр
+  // 🆕 Анх нээхэд өнөөдрийг автомат сонгох
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  });
 
   // FB Pages ID → name map
   const fbPagesMap = useMemo(() => {
@@ -23443,12 +23447,16 @@ function CalendarView({ leaves = [], employees = [], schedules = [], fbPages = [
 
             return (
               <div key={i}
-                onClick={() => (daySchedules.length > 0 || dayLeaves.length > 0) && setSelectedDate(dateStr)}
+                onClick={() => setSelectedDate(dateStr)}
                 style={{
-                  background: isToday ? T.highlightSoft : "transparent",
-                  border: isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`,
+                  background: dateStr === selectedDate 
+                    ? "rgba(14,165,233,0.15)" 
+                    : (isToday ? T.highlightSoft : "transparent"),
+                  border: dateStr === selectedDate
+                    ? "2px solid #0284c7"
+                    : (isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`),
                   minHeight: 64,
-                  cursor: (daySchedules.length > 0 || dayLeaves.length > 0) ? "pointer" : "default",
+                  cursor: "pointer",
                 }} className="rounded-lg p-1.5 relative hover:shadow-sm transition-shadow">
                 <div style={{
                   fontFamily: FS, fontWeight: isToday ? 700 : 500,
@@ -23546,150 +23554,140 @@ function CalendarView({ leaves = [], employees = [], schedules = [], fbPages = [
         <div style={{ color: T.muted }}>{filteredLeaves.length} нийт чөлөө</div>
       </div>
 
-      {/* 📋 Өдрийн дэлгэрэнгүй modal */}
-      {selectedDate && createPortal(
-        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedDate(null)}>
-          <div className="modal-content rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}>
-            <div className="p-5">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                    📅 {new Date(selectedDate).toLocaleDateString("mn-MN", { 
-                      weekday: "long", year: "numeric", month: "long", day: "numeric"
-                    })}
-                  </h3>
-                </div>
-                <button onClick={() => setSelectedDate(null)} style={{ color: T.muted }}><X size={16} /></button>
-              </div>
-
-              {/* Хуваарь жагсаалт */}
-              {(schedulesByDate[selectedDate] || []).length > 0 && (
-                <div className="mb-4">
-                  <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
-                    className="text-[10px] uppercase tracking-wider mb-2">
-                    🕐 Хуваарь ({schedulesByDate[selectedDate].length})
-                  </div>
-                  <div className="space-y-2">
-                    {schedulesByDate[selectedDate].map((s, idx) => {
-                      const emp = empById(s.employee_id);
-                      const pageNames = (s.fb_page_ids || [])
-                        .map((id) => fbPagesMap[id])
-                        .filter(Boolean);
-                      return (
-                        <div key={idx} style={{
-                          background: "rgba(14,165,233,0.05)",
-                          border: "1px solid rgba(14,165,233,0.2)",
-                          borderRadius: 10, padding: 10,
-                        }}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <div style={{
-                              background: "#0284c7", color: "white",
-                              width: 28, height: 28, borderRadius: "50%",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontFamily: FS, fontWeight: 700, fontSize: 11,
-                            }}>
-                              {emp?.name?.charAt(0) || "?"}
-                            </div>
-                            <div className="flex-1">
-                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                                {emp?.name || "Тодорхойгүй"}
-                              </div>
-                              {emp?.job_title && (
-                                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
-                                  {emp.job_title}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          {s.shift_start && s.shift_end && (
-                            <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mb-1">
-                              ⏰ {s.shift_start.slice(0, 5)} — {s.shift_end.slice(0, 5)}
-                              {s.break_minutes ? ` (${s.break_minutes}мин завсар)` : ""}
-                            </div>
-                          )}
-                          {pageNames.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {pageNames.map((name, i) => (
-                                <span key={i} style={{
-                                  background: "#0284c7", color: "white",
-                                  padding: "2px 6px", borderRadius: 6,
-                                  fontSize: 10, fontFamily: FS, fontWeight: 600,
-                                }}>
-                                  🔗 {name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {s.notes && (
-                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 italic">
-                              💬 {s.notes}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Чөлөө жагсаалт */}
-              {(leavesByDate[selectedDate] || []).length > 0 && (
-                <div className="mb-4">
-                  <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
-                    className="text-[10px] uppercase tracking-wider mb-2">
-                    ⛱ Чөлөө / Өвчтэй ({leavesByDate[selectedDate].length})
-                  </div>
-                  <div className="space-y-2">
-                    {leavesByDate[selectedDate].map((l, idx) => {
-                      const emp = empById(l.employee_id);
-                      const isSick = l.leave_type === "sick";
-                      return (
-                        <div key={idx} style={{
-                          background: isSick ? T.errSoft : T.highlightSoft,
-                          border: `1px solid ${isSick ? T.err : T.highlight}`,
-                          borderRadius: 10, padding: 10,
-                        }}>
-                          <div className="flex items-center gap-2">
-                            <span style={{ fontSize: 16 }}>{isSick ? "🤒" : "⛱"}</span>
-                            <div className="flex-1">
-                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                                {emp?.name || "Тодорхойгүй"}
-                              </div>
-                              <div style={{ color: isSick ? T.err : T.highlight, fontFamily: FS }} className="text-xs">
-                                {isSick ? "Өвчтэй" : "Чөлөө"}
-                              </div>
-                            </div>
-                          </div>
-                          {l.reason && (
-                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1 italic">
-                              💬 {l.reason}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {(schedulesByDate[selectedDate] || []).length === 0 && 
-               (leavesByDate[selectedDate] || []).length === 0 && (
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
-                  Энэ өдөрт хуваарь/чөлөө байхгүй
-                </div>
-              )}
-
-              <button onClick={() => setSelectedDate(null)}
-                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
-                className="press-btn w-full py-2.5 rounded-lg text-sm mt-2">
-                Хаах
-              </button>
-            </div>
+      {/* 📋 Өдрийн дэлгэрэнгүй — Календарын доор шууд харагдана */}
+      {selectedDate && (
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+              📅 {new Date(selectedDate).toLocaleDateString("mn-MN", { 
+                weekday: "long", year: "numeric", month: "long", day: "numeric"
+              })}
+            </h3>
+            <button onClick={() => setSelectedDate(null)}
+              style={{ color: T.muted }}
+              className="press-btn p-1 rounded-lg hover:bg-black/5">
+              <X size={14} />
+            </button>
           </div>
-        </div>,
-        document.body
+
+          {/* Хуваарь жагсаалт */}
+          {(schedulesByDate[selectedDate] || []).length > 0 && (
+            <div className="mb-4">
+              <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
+                className="text-[10px] uppercase tracking-wider mb-2">
+                🕐 Хуваарь ({schedulesByDate[selectedDate].length})
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {schedulesByDate[selectedDate].map((s, idx) => {
+                  const emp = empById(s.employee_id);
+                  const pageNames = (s.fb_page_ids || [])
+                    .map((id) => fbPagesMap[id])
+                    .filter(Boolean);
+                  return (
+                    <div key={idx} style={{
+                      background: "rgba(14,165,233,0.05)",
+                      border: "1px solid rgba(14,165,233,0.2)",
+                      borderRadius: 10, padding: 10,
+                    }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div style={{
+                          background: "#0284c7", color: "white",
+                          width: 28, height: 28, borderRadius: "50%",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontFamily: FS, fontWeight: 700, fontSize: 11,
+                          flexShrink: 0,
+                        }}>
+                          {emp?.name?.charAt(0) || "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                            {emp?.name || "Тодорхойгүй"}
+                          </div>
+                          {emp?.job_title && (
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                              {emp.job_title}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {s.shift_start && s.shift_end && (
+                        <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mb-1">
+                          ⏰ {s.shift_start.slice(0, 5)} — {s.shift_end.slice(0, 5)}
+                          {s.break_minutes ? ` (${s.break_minutes}мин завсар)` : ""}
+                        </div>
+                      )}
+                      {pageNames.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {pageNames.map((name, i) => (
+                            <span key={i} style={{
+                              background: "#0284c7", color: "white",
+                              padding: "2px 6px", borderRadius: 6,
+                              fontSize: 10, fontFamily: FS, fontWeight: 600,
+                            }}>
+                              🔗 {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {s.notes && (
+                        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 italic">
+                          💬 {s.notes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Чөлөө жагсаалт */}
+          {(leavesByDate[selectedDate] || []).length > 0 && (
+            <div>
+              <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                className="text-[10px] uppercase tracking-wider mb-2">
+                ⛱ Чөлөө / Өвчтэй ({leavesByDate[selectedDate].length})
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {leavesByDate[selectedDate].map((l, idx) => {
+                  const emp = empById(l.employee_id);
+                  const isSick = l.leave_type === "sick";
+                  return (
+                    <div key={idx} style={{
+                      background: isSick ? T.errSoft : T.highlightSoft,
+                      border: `1px solid ${isSick ? T.err : T.highlight}`,
+                      borderRadius: 10, padding: 10,
+                    }}>
+                      <div className="flex items-center gap-2">
+                        <span style={{ fontSize: 16 }}>{isSick ? "🤒" : "⛱"}</span>
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                            {emp?.name || "Тодорхойгүй"}
+                          </div>
+                          <div style={{ color: isSick ? T.err : T.highlight, fontFamily: FS }} className="text-xs">
+                            {isSick ? "Өвчтэй" : "Чөлөө"}
+                          </div>
+                        </div>
+                      </div>
+                      {l.reason && (
+                        <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1 italic">
+                          💬 {l.reason}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(schedulesByDate[selectedDate] || []).length === 0 && 
+           (leavesByDate[selectedDate] || []).length === 0 && (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-2">
+              Энэ өдөрт хуваарь/чөлөө байхгүй
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
