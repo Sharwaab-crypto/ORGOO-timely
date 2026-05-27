@@ -811,6 +811,7 @@ function AppRoot() {
       {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") ? <AdminDashboard profile={profile} />
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
+        : profile.role === "merchant" ? <MerchantDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
 
       {/* ─── 🍞 Toast Notification Stack (window.alert override) ───────── */}
@@ -1544,7 +1545,7 @@ function AdminDashboard({ profile }) {
   const loadAll = async () => {
     try {
       const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann, wsch, fbp] = await Promise.all([
-        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing"]).order("created_at", { ascending: false }),
+        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing", "merchant"]).order("created_at", { ascending: false }),
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
         supabase.from("approvals").select("*").order("created_at", { ascending: false }),
@@ -4418,6 +4419,89 @@ function PersonalRequests({ approvals, onNew }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE FORM MODAL
 // ═══════════════════════════════════════════════════════════════════════════
+
+// 🏪 MerchantPageSelector — Merchant эрхтэй ажилтанд FB Page оноох
+function MerchantPageSelector({ selectedIds = [], onChange }) {
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name, is_active").order("display_order");
+      setPages(data || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  const toggle = (id) => {
+    if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter((x) => x !== id));
+    } else {
+      onChange([...selectedIds, id]);
+    }
+  };
+
+  return (
+    <div style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 12, padding: 12 }}>
+      <Label>
+        <span style={{ color: "#d97706", fontFamily: FM, fontWeight: 600 }}>
+          🏪 FB Page-ууд ({selectedIds.length})
+        </span>
+      </Label>
+      <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+        Merchant зөвхөн эдгээр Page-ийн өгөгдлийг харна
+      </p>
+      {loading ? (
+        <Loader2 className="spin mx-auto my-3" size={16} />
+      ) : (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {pages.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-xs italic">
+              FB Page алга
+            </div>
+          ) : pages.map((p) => {
+            const checked = selectedIds.includes(p.id);
+            return (
+              <button key={p.id} type="button"
+                onClick={() => toggle(p.id)}
+                className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                style={{
+                  background: checked ? "rgba(245,158,11,0.15)" : "white",
+                  border: `1px solid ${checked ? "#f59e0b" : T.border}`,
+                  fontFamily: FM, fontWeight: 500,
+                  color: T.ink,
+                  textAlign: "left",
+                  opacity: p.is_active ? 1 : 0.5,
+                }}>
+                <div style={{
+                  width: 16, height: 16, borderRadius: 4,
+                  background: checked ? "#f59e0b" : "transparent",
+                  border: `1.5px solid ${checked ? "#f59e0b" : T.border}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                </div>
+                <span className="text-xs flex-1">{p.name}</span>
+                {!p.is_active && (
+                  <span style={{ color: T.muted, fontSize: 9 }}>(идэвхгүй)</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {selectedIds.length === 0 && (
+        <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] mt-2">
+          ⚠ Хамгийн багадаа 1 FB Page сонгох ёстой
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], departments = [], onSave, onClose }) {
   const [name, setName] = useState(employee?.name || "");
   const [email, setEmail] = useState("");
@@ -4426,6 +4510,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
   const [rate, setRate] = useState(employee?.hourly_rate ? String(employee.hourly_rate) : "");
   const [role, setRole] = useState(employee?.role || "employee"); // employee | manager
   const [departmentId, setDepartmentId] = useState(employee?.department_id || "");
+  const [fbPageIds, setFbPageIds] = useState(employee?.fb_page_ids || []); // 🏪 Merchant-руу FB Page-уудын ID
 
   // Multi-site assignment
   const [selectedSiteIds, setSelectedSiteIds] = useState(assignedSiteIds);
@@ -4495,6 +4580,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
         : role === "operator" ? "Оператор"
         : role === "driver" ? "Delivery"
         : role === "marketing" ? "Маркетинг"
+        : role === "merchant" ? "Merchant"
         : "Ажилтан"
       ),
       hourly_rate: parseFloat(rate) || 0,
@@ -4505,6 +4591,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
       schedule_days: hasSchedule ? days : null,
       schedule_start: hasSchedule ? startTime : null,
       schedule_end: hasSchedule ? endTime : null,
+      fb_page_ids: role === "merchant" ? fbPageIds : [], // 🏪 Зөвхөн merchant-руу
     };
 
     await onSave({
@@ -4571,6 +4658,13 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
                 📢 Маркетинг
               </button>
+              <button onClick={() => setRole("merchant")}
+                style={{ background: role === "merchant" ? "#f59e0b" : "transparent",
+                         color: role === "merchant" ? "white" : T.ink,
+                         borderColor: role === "merchant" ? "#f59e0b" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                🏪 Merchant
+              </button>
             </div>
             {role === "manager" && (
               <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
@@ -4592,7 +4686,20 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 🚚 Delivery: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
               </p>
             )}
+            {role === "merchant" && (
+              <p style={{ color: "#f59e0b" }} className="text-[11px] mt-1.5">
+                🏪 Merchant: Зөвхөн оноогдсон FB Page-уудтай холбоотой захиалга, дуудлага, бараа харна.
+              </p>
+            )}
           </div>
+
+          {/* 🏪 Merchant — FB Pages сонгох */}
+          {role === "merchant" && (
+            <MerchantPageSelector
+              selectedIds={fbPageIds}
+              onChange={setFbPageIds}
+            />
+          )}
 
           {departments.length > 0 && (
             <div>
@@ -25963,6 +26070,467 @@ function OperatorCalendarView({ profile }) {
       scope="all"
       currentUserId={profile.id}
     />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  🏪 MERCHANT DASHBOARD — FB Page-аар хязгаарлагдсан хувийн самбар
+// ═══════════════════════════════════════════════════════════════════════════
+function MerchantDashboard({ profile }) {
+  const [view, setView] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [fbPages, setFbPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Merchant-руу оноогдсон FB Page-ийн ID массив
+  const allowedPageIds = profile.fb_page_ids || [];
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        if (allowedPageIds.length === 0) {
+          setFbPages([]);
+        } else {
+          const { data } = await supabase.from("biz_fb_pages")
+            .select("id, name, is_active")
+            .in("id", allowedPageIds);
+          setFbPages(data || []);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.length]);
+
+  // 🚫 Page онооцоогүй бол хариу
+  if (!loading && allowedPageIds.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6"
+        style={{ background: T.bg }}>
+        <div className="glass rounded-3xl p-8 max-w-md w-full text-center">
+          <div className="text-5xl mb-3">🏪</div>
+          <h2 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg mb-2">
+            FB Page оноогдоогүй байна
+          </h2>
+          <p style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-4">
+            Танд харах эрхтэй FB Page оноогдоогүй учир дэлгэц харуулах боломжгүй.
+            <br /><br />
+            Admin-руу хандаж FB Page оноолгоно уу.
+          </p>
+          <SignOutButton />
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: T.bg }}>
+        <Loader2 className="spin" size={24} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex" style={{ background: T.bg }}>
+      {/* ─── Sidebar ─────────────────────────────────────────────────────── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+      <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        style={{ background: T.surface, borderRight: `1px solid ${T.border}` }}>
+        <div className="p-4 border-b" style={{ borderColor: T.border }}>
+          <div className="flex items-center gap-2">
+            <div style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm">
+              🏪
+            </div>
+            <div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">ORGOO</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Merchant</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 space-y-3">
+          {/* Оноогдсон FB Pages — мэдээллийн зорилгоор */}
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+            className="rounded-xl p-2.5">
+            <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }}
+              className="text-[9px] uppercase tracking-wider mb-1.5">
+              🔗 Таны FB Page ({fbPages.length})
+            </div>
+            <div className="space-y-0.5">
+              {fbPages.map((p) => (
+                <div key={p.id} style={{ color: T.ink, fontFamily: FS }} className="text-xs">
+                  • {p.name}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <SidebarSection label="Хяналт">
+            <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
+          </SidebarSection>
+
+          <SidebarSection label="Бизнес">
+            <SidebarTab active={view === "calls"} onClick={() => { setView("calls"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
+            <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалт</SidebarTab>
+            <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+            <SidebarTab active={view === "stock"} onClick={() => { setView("stock"); setSidebarOpen(false); }} icon={Package}>Бараа, нөөц</SidebarTab>
+          </SidebarSection>
+
+          <div className="pt-3 border-t" style={{ borderColor: T.border }}>
+            <SignOutButton />
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── Гол хэсэг ───────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-auto" style={{ background: T.bg }}>
+        <header style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}
+          className="sticky top-0 z-30 p-4">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1">
+              <Menu size={20} style={{ color: T.ink }} />
+            </button>
+            <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
+              {view === "dashboard" && "📊 Хяналтын самбар"}
+              {view === "calls" && "📞 Дуудлага"}
+              {view === "sales" && "📈 Борлуулалт"}
+              {view === "orders" && "🛍 Захиалга"}
+              {view === "stock" && "📦 Бараа, нөөц"}
+            </h1>
+          </div>
+        </header>
+
+        <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
+          {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
+          {view === "calls" && <MerchantCallsView allowedPageIds={allowedPageIds} />}
+          {view === "sales" && <MerchantSalesView allowedPageIds={allowedPageIds} fbPages={fbPages} />}
+          {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} />}
+          {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─── Merchant Overview — нийт стат ─────────────────────────────────────
+function MerchantOverview({ allowedPageIds, fbPages }) {
+  const [stats, setStats] = useState({ orders: 0, delivered: 0, revenue: 0, calls: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [ordRes, callRes] = await Promise.all([
+          supabase.from("biz_orders").select("status, total_amount, fb_page_id").in("fb_page_id", allowedPageIds),
+          supabase.from("biz_calls").select("id, fb_page_id").in("fb_page_id", allowedPageIds),
+        ]);
+        const orders = ordRes.data || [];
+        const calls = callRes.data || [];
+        const delivered = orders.filter(o => o.status === "delivered");
+        setStats({
+          orders: orders.length,
+          delivered: delivered.length,
+          revenue: delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+          calls: calls.length,
+        });
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+          <div className="text-2xl mb-1">💰</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Орлого</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {Number(stats.revenue).toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+          <div className="text-2xl mb-1">✅</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Хүргэгдсэн</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.delivered}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div className="text-2xl mb-1">🛍</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Нийт захиалга</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.orders}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
+          <div className="text-2xl mb-1">📞</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Дуудлага</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.calls}
+          </div>
+        </div>
+      </div>
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+          💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой өгөгдлөөс тооцоологдсон.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Merchant Calls View ─────────────────────────────────────────────────
+function MerchantCallsView({ allowedPageIds }) {
+  const [calls, setCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("biz_calls")
+        .select("*").in("fb_page_id", allowedPageIds)
+        .order("created_at", { ascending: false }).limit(200);
+      setCalls(data || []);
+      setLoading(false);
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+  if (calls.length === 0) return <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Дуудлага алга</div>;
+
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="space-y-2">
+        {calls.map((c) => (
+          <div key={c.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+            className="rounded-xl p-3 flex items-center gap-3">
+            <div style={{ fontSize: 20 }}>📞</div>
+            <div className="flex-1">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">{c.phone}</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                {new Date(c.created_at).toLocaleString("mn-MN")} · {c.call_status || "pending"}
+              </div>
+              {c.notes && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mt-1">💬 {c.notes}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Merchant Sales View ─────────────────────────────────────────────────
+function MerchantSalesView({ allowedPageIds, fbPages }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("biz_orders")
+        .select("*").in("fb_page_id", allowedPageIds).eq("status", "delivered");
+      setOrders(data || []);
+      setLoading(false);
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  // Page-аар групплэх
+  const byPage = {};
+  orders.forEach((o) => {
+    const k = o.fb_page_id || "__none__";
+    if (!byPage[k]) byPage[k] = { count: 0, revenue: 0 };
+    byPage[k].count++;
+    byPage[k].revenue += Number(o.total_amount || 0);
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {fbPages.map((p) => {
+          const stat = byPage[p.id] || { count: 0, revenue: 0 };
+          return (
+            <div key={p.id} className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
+              <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+                🔗 {p.name}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-2xl">
+                {Number(stat.revenue).toLocaleString()}₮
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-1">
+                {stat.count} хүргэгдсэн захиалга
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Merchant Orders View ────────────────────────────────────────────────
+function MerchantOrdersView({ allowedPageIds }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("biz_orders")
+        .select("*").in("fb_page_id", allowedPageIds)
+        .order("created_at", { ascending: false }).limit(300);
+      setOrders(data || []);
+      setLoading(false);
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  const filtered = orders.filter((o) => filter === "all" || o.status === filter);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-2 flex gap-2 overflow-x-auto">
+        {[
+          { id: "all", label: "Бүгд", color: T.highlight },
+          { id: "new", label: "Шинэ", color: "#0ea5e9" },
+          { id: "delivered", label: "Хүргэгдсэн", color: T.ok },
+          { id: "cancelled", label: "Цуцалсан", color: T.err },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setFilter(t.id)}
+            style={{
+              background: filter === t.id ? t.color : T.surfaceAlt,
+              color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
+            }}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap">
+            {t.label} ({orders.filter((o) => t.id === "all" || o.status === t.id).length})
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2">
+        {filtered.length === 0 ? (
+          <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
+        ) : filtered.map((o) => (
+          <div key={o.id} className="glass rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                  #{o.order_number} · {o.customer_phone}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                  {new Date(o.created_at).toLocaleString("mn-MN")}
+                </div>
+                {o.customer_name && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                    👤 {o.customer_name}
+                  </div>
+                )}
+              </div>
+              <div className="text-right">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                  {Number(o.total_amount).toLocaleString()}₮
+                </div>
+                <div style={{
+                  color: o.status === "delivered" ? T.ok : o.status === "cancelled" ? T.err : T.warn,
+                  fontFamily: FS, fontWeight: 600,
+                }} className="text-[10px]">
+                  {o.status === "delivered" ? "✅ Хүргэгдсэн" : 
+                   o.status === "cancelled" ? "✕ Цуцалсан" : 
+                   o.status === "new" ? "🆕 Шинэ" : o.status}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Merchant Stock View ─────────────────────────────────────────────────
+function MerchantStockView({ allowedPageIds }) {
+  const [products, setProducts] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // Page-руу холбогдсон бараа
+        const { data: prodData } = await supabase.from("inv_products")
+          .select("*").in("fb_page_id", allowedPageIds);
+        const products = prodData || [];
+        setProducts(products);
+        
+        if (products.length > 0) {
+          const productIds = products.map(p => p.id);
+          const { data: stockData } = await supabase.from("inv_stock")
+            .select("*").in("product_id", productIds);
+          setStock(stockData || []);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+  if (products.length === 0) return (
+    <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>
+      <div className="text-4xl mb-2">📦</div>
+      Танай FB Page-руу холбогдсон бараа алга
+    </div>
+  );
+
+  // Бараа бүрийн нийт нөөц
+  const productStocks = products.map((p) => {
+    const total = stock.filter(s => s.product_id === p.id).reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    return { ...p, totalStock: total };
+  });
+
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+        {productStocks.map((p) => (
+          <div key={p.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+            className="rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              {p.image_url ? (
+                <img src={p.image_url} alt={p.name}
+                  style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover" }} />
+              ) : (
+                <div style={{ width: 40, height: 40, background: T.surface, borderRadius: 8 }}
+                  className="flex items-center justify-center text-lg">📦</div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">
+                  {p.name}
+                </div>
+                {p.sku && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">{p.sku}</div>
+                )}
+              </div>
+            </div>
+            <div style={{
+              color: p.totalStock <= 5 ? T.err : p.totalStock <= 20 ? T.warn : T.ok,
+              fontFamily: FS, fontWeight: 700,
+            }} className="text-base">
+              {p.totalStock} ширхэг
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
