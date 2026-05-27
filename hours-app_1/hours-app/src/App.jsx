@@ -23784,6 +23784,19 @@ function ScheduleView({ employees, departments = [], sites, isAdmin = false, cur
     return d.toISOString().slice(0, 10);
   });
   const [editing, setEditing] = useState(null);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Page ID → name
+
+  // FB Pages татах (cell дотор тэмдэг харуулах)
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name").eq("is_active", true);
+      const map = {};
+      (data || []).forEach((p) => { map[p.id] = p.name; });
+      setFbPagesMap(map);
+    })();
+  }, [isAdmin]);
 
   const loadSchedules = async () => {
     setLoading(true);
@@ -24034,6 +24047,11 @@ function ScheduleView({ employees, departments = [], sites, isAdmin = false, cur
                                     {cell.shift_end?.slice(0, 5)}
                                   </div>
                                 )}
+                                {hasShift && cell.fb_page_id && fbPagesMap[cell.fb_page_id] && (
+                                  <div style={{ color: "#0284c7", fontWeight: 600 }} className="text-[8px] mt-0.5 truncate">
+                                    🔗 {fbPagesMap[cell.fb_page_id]}
+                                  </div>
+                                )}
                         </button>
                       </td>
                     );
@@ -24084,9 +24102,23 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
   const [shiftEnd, setShiftEnd] = useState(schedule?.shift_end?.slice(0, 5) || "18:00");
   const [breakMinutes, setBreakMinutes] = useState(schedule?.break_minutes ?? 60);
   const [siteId, setSiteId] = useState(schedule?.site_id || "");
+  const [fbPageId, setFbPageId] = useState(schedule?.fb_page_id || ""); // 🔗 Operator-ийн ажиллах FB Page
+  const [fbPages, setFbPages] = useState([]);
   const [status, setStatus] = useState(schedule?.status || "scheduled");
   const [notes, setNotes] = useState(schedule?.notes || "");
   const [busy, setBusy] = useState(false);
+
+  const isOperator = employee?.role === "operator";
+
+  // FB Pages-ийг татах (зөвхөн operator-руу хэрэгтэй)
+  useEffect(() => {
+    if (!isOperator) return;
+    (async () => {
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name").eq("is_active", true).order("display_order");
+      setFbPages(data || []);
+    })();
+  }, [isOperator]);
 
   const dayNames = ["", "Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
 
@@ -24138,6 +24170,25 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
             </select>
           </div>
 
+          {/* 🔗 FB Page сонголт — зөвхөн operator-руу */}
+          {isOperator && (
+            <div style={{ background: "rgba(14,165,233,0.05)", border: `1px solid rgba(14,165,233,0.2)`, borderRadius: 12, padding: 10 }}>
+              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+                <span>🔗 FB Page</span>
+                <span style={{ color: T.muted, fontWeight: 400 }}>(operator)</span>
+              </label>
+              <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm">
+                <option value="">— Сонгох —</option>
+                {fbPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">
+                Энэ операторт тухайн өдөр ажиллах FB Page
+              </div>
+            </div>
+          )}
+
           <div>
             <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Төлөв</label>
             <select value={status} onChange={(e) => setStatus(e.target.value)}
@@ -24169,6 +24220,7 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
                   shift_end: shiftEnd,
                   break_minutes: breakMinutes,
                   site_id: siteId || null,
+                  fb_page_id: isOperator ? (fbPageId || null) : null, // 🔗 operator-руу л
                   status,
                   notes: notes || null,
                 });
