@@ -3605,6 +3605,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
         operator: { key: "operator", label: "Оператор", icon: "🎧", items: [] },
         driver: { key: "driver", label: "Delivery", icon: "🚚", items: [] },
         marketing: { key: "marketing", label: "Маркетинг", icon: "📢", items: [] },
+        merchant: { key: "merchant", label: "Merchant", icon: "🏪", items: [] },
       };
       filtered.forEach((e) => {
         if (groups[e.role]) groups[e.role].items.push(e);
@@ -3656,6 +3657,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
             { id: "operator", label: "Оператор", icon: "🎧", count: employees.filter((e) => e.role === "operator").length },
             { id: "driver", label: "Delivery", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
             { id: "marketing", label: "Маркетинг", icon: "📢", count: employees.filter((e) => e.role === "marketing").length },
+            { id: "merchant", label: "Merchant", icon: "🏪", count: employees.filter((e) => e.role === "merchant").length },
           ].map((f) => (
             <button key={f.id} onClick={() => setFilterRole(f.id)}
               className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -3760,6 +3762,15 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                     <span style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9", fontFamily: FS, fontWeight: 600 }}
                       className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
                       🚚 Delivery
+                    </span>
+                  )}
+                  {emp.role === "merchant" && (
+                    <span style={{ background: "rgba(245,158,11,0.1)", color: "#d97706", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      🏪 Merchant
+                      {emp.fb_page_ids && emp.fb_page_ids.length > 0 && (
+                        <span style={{ marginLeft: 4 }}>({emp.fb_page_ids.length})</span>
+                      )}
                     </span>
                   )}
                 </div>
@@ -26117,7 +26128,11 @@ function MerchantDashboard({ profile }) {
             <br /><br />
             Admin-руу хандаж FB Page оноолгоно уу.
           </p>
-          <SignOutButton />
+          <button onClick={() => supabase.auth.signOut()}
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+            className="press-btn w-full py-2.5 rounded-lg text-sm">
+            Гарах
+          </button>
         </div>
       </div>
     );
@@ -26182,7 +26197,12 @@ function MerchantDashboard({ profile }) {
           </SidebarSection>
 
           <div className="pt-3 border-t" style={{ borderColor: T.border }}>
-            <SignOutButton />
+            <button onClick={() => supabase.auth.signOut()}
+              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}
+              className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-2 hover:bg-black/5">
+              <LogOut size={14} />
+              Гарах
+            </button>
           </div>
         </div>
       </aside>
