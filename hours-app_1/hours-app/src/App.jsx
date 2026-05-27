@@ -26345,6 +26345,26 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
 function MerchantCallsView({ allowedPageIds }) {
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showNewCallModal, setShowNewCallModal] = useState(false);
+  const [orderForCall, setOrderForCall] = useState(null); // { call }
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // FB Pages болон бараа татах
+  const [fbPages, setFbPages] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: pgData }, { data: prodData }] = await Promise.all([
+        supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
+        supabase.from("inv_products").select("id, name, sale_price, image_url, sku")
+          .in("fb_page_id", allowedPageIds),
+      ]);
+      setFbPages(pgData || []);
+      setProducts(prodData || []);
+    })();
+  }, [allowedPageIds.join(",")]);
 
   useEffect(() => {
     (async () => {
@@ -26355,29 +26375,471 @@ function MerchantCallsView({ allowedPageIds }) {
       setCalls(data || []);
       setLoading(false);
     })();
-  }, [allowedPageIds.join(",")]);
+  }, [allowedPageIds.join(","), refreshKey]);
+
+  const filtered = calls.filter((c) => 
+    filterStatus === "all" || (c.call_status || "pending") === filterStatus
+  );
+
+  const counts = {
+    all: calls.length,
+    pending: calls.filter(c => (c.call_status || "pending") === "pending").length,
+    ordered: calls.filter(c => c.call_status === "ordered").length,
+    no_answer: calls.filter(c => c.call_status === "no_answer").length,
+  };
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
-  if (calls.length === 0) return <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Дуудлага алга</div>;
 
   return (
-    <div className="glass rounded-2xl p-4">
-      <div className="space-y-2">
-        {calls.map((c) => (
-          <div key={c.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
-            className="rounded-xl p-3 flex items-center gap-3">
-            <div style={{ fontSize: 20 }}>📞</div>
-            <div className="flex-1">
-              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">{c.phone}</div>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
-                {new Date(c.created_at).toLocaleString("mn-MN")} · {c.call_status || "pending"}
-              </div>
-              {c.notes && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mt-1">💬 {c.notes}</div>}
-            </div>
-          </div>
+    <div className="space-y-3">
+      {/* Шинэ дуудлага товч */}
+      <button onClick={() => setShowNewCallModal(true)}
+        className="press-btn w-full py-3 rounded-xl flex items-center justify-center gap-2"
+        style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}>
+        <Plus size={18} /> Шинэ дуудлага бүртгэх
+      </button>
+
+      {/* Filter tabs */}
+      <div className="glass rounded-xl p-2 flex gap-2 overflow-x-auto">
+        {[
+          { id: "all", label: "Бүгд", color: T.highlight },
+          { id: "pending", label: "Хүлээгдэж", color: T.warn },
+          { id: "ordered", label: "Захиалга өгсөн", color: T.ok },
+          { id: "no_answer", label: "Хариулаагүй", color: T.muted },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setFilterStatus(t.id)}
+            style={{
+              background: filterStatus === t.id ? t.color : T.surfaceAlt,
+              color: filterStatus === t.id ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+            {t.label} ({counts[t.id] || 0})
+          </button>
         ))}
       </div>
+
+      {/* Дуудлагын жагсаалт */}
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>
+          {filterStatus === "all" ? "Дуудлага алга. Дээрх товчоор шинэ дуудлага бүртгэнэ үү." : "Энэ ангилалд дуудлага алга"}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((c) => {
+            const page = fbPages.find(p => p.id === c.fb_page_id);
+            const status = c.call_status || "pending";
+            const products_list = c.interested_products || [];
+            return (
+              <div key={c.id} className="glass rounded-xl p-3">
+                <div className="flex items-center gap-3 mb-2">
+                  <div style={{ fontSize: 20 }}>📞</div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                      {c.phone}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {new Date(c.created_at).toLocaleString("mn-MN")}
+                      {page && ` · 🔗 ${page.name}`}
+                    </div>
+                  </div>
+                  <span style={{
+                    background: status === "ordered" ? T.okSoft : status === "no_answer" ? T.errSoft : T.warnSoft,
+                    color: status === "ordered" ? T.ok : status === "no_answer" ? T.err : T.warn,
+                    fontFamily: FS, fontWeight: 600,
+                  }} className="text-[10px] px-2 py-0.5 rounded">
+                    {status === "ordered" ? "✓ Захиалсан" : 
+                     status === "no_answer" ? "✕ Хариулаагүй" : 
+                     "⏳ Хүлээгдэж"}
+                  </span>
+                </div>
+                {products_list.length > 0 && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">
+                    🛍 {products_list.map(pr => typeof pr === "string" ? pr : pr.name || pr.product_name).join(", ")}
+                  </div>
+                )}
+                {c.notes && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mb-2">
+                    💬 {c.notes}
+                  </div>
+                )}
+                {/* Үйлдэл — pending статусд л */}
+                {status === "pending" && (
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => setOrderForCall(c)}
+                      className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1"
+                      style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      <ShoppingBag size={12} /> Захиалга авах
+                    </button>
+                    <button onClick={async () => {
+                      await supabase.from("biz_calls").update({ call_status: "no_answer" }).eq("id", c.id);
+                      setRefreshKey(k => k + 1);
+                    }}
+                      className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                      style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}>
+                      Хариулаагүй
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Шинэ дуудлага modal */}
+      {showNewCallModal && (
+        <MerchantNewCallModal
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => { setShowNewCallModal(false); setRefreshKey(k => k + 1); }}
+          onClose={() => setShowNewCallModal(false)}
+        />
+      )}
+
+      {/* Захиалга үүсгэх modal */}
+      {orderForCall && (
+        <MerchantOrderModal
+          call={orderForCall}
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => { setOrderForCall(null); setRefreshKey(k => k + 1); }}
+          onClose={() => setOrderForCall(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── 📞 Шинэ дуудлага бүртгэх modal ─────────────────────────────────────
+function MerchantNewCallModal({ fbPages, products, onSaved, onClose }) {
+  const [phone, setPhone] = useState("");
+  const [fbPageId, setFbPageId] = useState(fbPages[0]?.id || "");
+  const [notes, setNotes] = useState("");
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const toggleProduct = (p) => {
+    setSelectedProducts(prev => 
+      prev.find(x => x.product_id === p.id)
+        ? prev.filter(x => x.product_id !== p.id)
+        : [...prev, { product_id: p.id, name: p.name, sale_price: p.sale_price }]
+    );
+  };
+
+  const save = async () => {
+    if (!phone.trim()) { alert("Утасны дугаар оруулна уу"); return; }
+    if (!fbPageId) { alert("FB Page сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const { error } = await supabase.from("biz_calls").insert({
+        phone: cleanPhone,
+        fb_page_id: fbPageId,
+        notes: notes.trim() || null,
+        interested_products: selectedProducts,
+        call_status: "pending",
+        created_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      onSaved();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              📞 Шинэ дуудлага
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          {/* Утас */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Утас *</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)}
+              placeholder="99999999"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* FB Page */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🔗 FB Page *</label>
+            <select value={fbPageId} onChange={e => setFbPageId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              {fbPages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {/* Сонирхсон бараа */}
+          {products.length > 0 && (
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                🛍 Сонирхсон бараа ({selectedProducts.length})
+              </label>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {products.map(p => {
+                  const checked = selectedProducts.some(x => x.product_id === p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => toggleProduct(p)}
+                      className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                      style={{
+                        background: checked ? "rgba(14,165,233,0.15)" : T.surfaceAlt,
+                        border: `1px solid ${checked ? "#0284c7" : T.border}`,
+                        fontFamily: FS, fontWeight: 500, color: T.ink, textAlign: "left",
+                      }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: 4,
+                        background: checked ? "#0284c7" : "transparent",
+                        border: `1.5px solid ${checked ? "#0284c7" : T.border}`,
+                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      }}>
+                        {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <span className="text-xs flex-1">{p.name}</span>
+                      <span style={{ color: T.muted, fontSize: 10 }}>
+                        {Number(p.sale_price || 0).toLocaleString()}₮
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Тэмдэглэл */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Жнь: Үд маргааш залгана"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: busy ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── 🛍 Захиалга үүсгэх modal ────────────────────────────────────────────
+function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
+  const [customerName, setCustomerName] = useState("");
+  const [address, setAddress] = useState("");
+  const [items, setItems] = useState(() => {
+    // Дуудлагаас сонирхсон бараа автомат нэмэх
+    const ip = call.interested_products || [];
+    return ip.map(p => {
+      const product = products.find(x => x.id === (p.product_id || p.id));
+      return {
+        product_id: p.product_id || p.id,
+        name: p.name || product?.name || "—",
+        quantity: 1,
+        unit_price: Number(p.sale_price || product?.sale_price || 0),
+      };
+    });
+  });
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const addItem = (p) => {
+    if (items.find(x => x.product_id === p.id)) return;
+    setItems([...items, {
+      product_id: p.id,
+      name: p.name,
+      quantity: 1,
+      unit_price: Number(p.sale_price || 0),
+    }]);
+  };
+
+  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+
+  const updateQty = (idx, qty) => {
+    setItems(items.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, qty) } : it));
+  };
+
+  const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
+  const totalAmount = subtotal + Number(deliveryFee || 0);
+
+  const save = async () => {
+    if (items.length === 0) { alert("Бараа сонгоно уу"); return; }
+    if (!address.trim()) { alert("Хүргэлтийн хаяг оруулна уу"); return; }
+    setBusy(true);
+    try {
+      // 1. Захиалга үүсгэх
+      const orderNumber = `ORD-${Date.now()}`;
+      const { data: order, error: orderErr } = await supabase.from("biz_orders").insert({
+        order_number: orderNumber,
+        customer_phone: call.phone,
+        customer_name: customerName.trim() || null,
+        delivery_address: address.trim(),
+        source: "phone",
+        status: "new",
+        subtotal,
+        delivery_fee: Number(deliveryFee || 0),
+        total_amount: totalAmount,
+        notes: notes.trim() || null,
+        fb_page_id: call.fb_page_id,
+      }).select().single();
+      if (orderErr) throw orderErr;
+
+      // 2. Захиалгын бараа нэмэх
+      const orderItems = items.map(it => ({
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: it.name,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        total_amount: it.quantity * it.unit_price,
+      }));
+      await supabase.from("biz_order_items").insert(orderItems);
+
+      // 3. Дуудлагыг "ordered" болгох
+      await supabase.from("biz_calls").update({ call_status: "ordered" }).eq("id", call.id);
+
+      alert(`✅ Захиалга үүсгэгдсэн!\n#${orderNumber}\nДүн: ${totalAmount.toLocaleString()}₮`);
+      onSaved();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🛍 Захиалга үүсгэх
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8, padding: 8 }}>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+              📞 {call.phone}
+            </div>
+          </div>
+
+          {/* Үйлчлүүлэгчийн нэр */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Үйлчлүүлэгчийн нэр</label>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Хаяг */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлтийн хаяг *</label>
+            <textarea value={address} onChange={e => setAddress(e.target.value)}
+              rows={2}
+              placeholder="Жнь: СБД, 5-р хороо, ..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Бараа жагсаалт */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🛍 Бараа ({items.length})</label>
+            <div className="space-y-1 mb-2">
+              {items.map((it, i) => (
+                <div key={i} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
+                  className="p-2 flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{it.name}</div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                    </div>
+                  </div>
+                  <input type="number" value={it.quantity} min={1}
+                    onChange={e => updateQty(i, Number(e.target.value))}
+                    style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="px-2 py-1 rounded text-xs" />
+                  <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            {/* Бараа нэмэх */}
+            <details>
+              <summary style={{ color: T.muted, fontFamily: FS, cursor: "pointer" }} className="text-[11px]">
+                ➕ Бараа нэмэх
+              </summary>
+              <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                {products.filter(p => !items.find(x => x.product_id === p.id)).map(p => (
+                  <button key={p.id} type="button" onClick={() => addItem(p)}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="press-btn w-full px-2.5 py-1.5 rounded text-xs flex items-center justify-between">
+                    <span className="truncate">{p.name}</span>
+                    <span style={{ color: T.muted }}>{Number(p.sale_price || 0).toLocaleString()}₮</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+
+          {/* Хүргэлт + нийт */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлт</label>
+              <input type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Нийт</label>
+              <div style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, padding: "8px 12px", borderRadius: 8 }}
+                className="text-sm">
+                {totalAmount.toLocaleString()}₮
+              </div>
+            </div>
+          </div>
+
+          {/* Тэмдэглэл */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy || items.length === 0}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: (busy || items.length === 0) ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Захиалга үүсгэх"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
