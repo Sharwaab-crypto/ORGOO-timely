@@ -26369,23 +26369,113 @@ function MerchantCallsView({ allowedPageIds }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("biz_calls")
-        .select("*").in("fb_page_id", allowedPageIds)
-        .order("created_at", { ascending: false }).limit(200);
-      setCalls(data || []);
+      try {
+        // 1. Merchant-ийн Page-руу холбогдсон захиалгуудыг татах
+        const { data: ordersData } = await supabase.from("biz_orders")
+          .select("id, customer_phone, customer_name, status, total_amount, created_at, fb_page_id")
+          .in("fb_page_id", allowedPageIds)
+          .order("created_at", { ascending: false });
+        const orders = ordersData || [];
+        
+        // 2. Утаснуудыг цуглуулах
+        const phonesFromOrders = [...new Set(orders.map(o => o.customer_phone).filter(Boolean))];
+        console.log("[MerchantCalls] Phones from orders:", phonesFromOrders.length);
+        
+        // 3. Дуудлагуудыг олох — Page-руу таглагдсан + customer утсаар
+        let allCalls = [];
+        
+        const { data: pageCalls } = await supabase.from("biz_calls")
+          .select("*").in("fb_page_id", allowedPageIds);
+        allCalls = pageCalls || [];
+        
+        if (phonesFromOrders.length > 0) {
+          const { data: phoneCalls } = await supabase.from("biz_calls")
+            .select("*").in("phone", phonesFromOrders);
+          const existingIds = new Set(allCalls.map(c => c.id));
+          (phoneCalls || []).forEach(c => {
+            if (!existingIds.has(c.id)) allCalls.push(c);
+          });
+        }
+        console.log("[MerchantCalls] All calls:", allCalls.length);
+        
+        // 4. Утсаар нэгтгэх — бүх "бүртгэгдсэн утас" жагсаалт үүсгэх
+        const phoneMap = new Map();
+        
+        // Захиалгуудаас утас нэмэх
+        orders.forEach(o => {
+          if (!o.customer_phone) return;
+          if (!phoneMap.has(o.customer_phone)) {
+            phoneMap.set(o.customer_phone, {
+              phone: o.customer_phone,
+              customer_name: o.customer_name,
+              orders: [],
+              calls: [],
+              latest_date: o.created_at,
+            });
+          }
+          phoneMap.get(o.customer_phone).orders.push(o);
+        });
+        
+        // Дуудлагуудаас утас нэмэх (захиалгад байхгүй ч байх боломжтой)
+        allCalls.forEach(c => {
+          if (!c.phone) return;
+          if (!phoneMap.has(c.phone)) {
+            phoneMap.set(c.phone, {
+              phone: c.phone,
+              customer_name: null,
+              orders: [],
+              calls: [],
+              latest_date: c.created_at,
+            });
+          }
+          const entry = phoneMap.get(c.phone);
+          entry.calls.push(c);
+          // Хамгийн сүүлийн огноог шинэчлэх
+          if (new Date(c.created_at) > new Date(entry.latest_date)) {
+            entry.latest_date = c.created_at;
+          }
+        });
+        
+        // 5. Огноогоор эрэмбэлж массив болгох
+        const phoneList = Array.from(phoneMap.values())
+          .sort((a, b) => new Date(b.latest_date) - new Date(a.latest_date));
+        
+        console.log("[MerchantCalls] Unique phones registered:", phoneList.length);
+        setCalls(phoneList);
+      } catch (e) {
+        console.error("[MerchantCalls] Error:", e);
+      }
       setLoading(false);
     })();
   }, [allowedPageIds.join(","), refreshKey]);
 
-  const filtered = calls.filter((c) => 
-    filterStatus === "all" || (c.call_status || "pending") === filterStatus
-  );
+  // Filter by status — захиалгын status болон calls-аас аль ч таарах
+  const filtered = calls.filter((entry) => {
+    if (filterStatus === "all") return true;
+    if (filterStatus === "pending") {
+      return entry.orders.some(o => o.status === "new") || 
+             entry.calls.some(c => (c.call_status || "pending") === "pending");
+    }
+    if (filterStatus === "ordered") {
+      return entry.orders.some(o => o.status === "delivered");
+    }
+    if (filterStatus === "no_answer") {
+      return entry.calls.some(c => c.call_status === "no_answer") && 
+             entry.orders.length === 0;
+    }
+    return true;
+  });
 
   const counts = {
     all: calls.length,
-    pending: calls.filter(c => (c.call_status || "pending") === "pending").length,
-    ordered: calls.filter(c => c.call_status === "ordered").length,
-    no_answer: calls.filter(c => c.call_status === "no_answer").length,
+    pending: calls.filter(e => 
+      e.orders.some(o => o.status === "new") || 
+      e.calls.some(c => (c.call_status || "pending") === "pending")
+    ).length,
+    ordered: calls.filter(e => e.orders.some(o => o.status === "delivered")).length,
+    no_answer: calls.filter(e => 
+      e.calls.some(c => c.call_status === "no_answer") && e.orders.length === 0
+    ).length,
   };
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
@@ -26403,9 +26493,9 @@ function MerchantCallsView({ allowedPageIds }) {
       <div className="glass rounded-xl p-2 flex gap-2 overflow-x-auto">
         {[
           { id: "all", label: "Бүгд", color: T.highlight },
-          { id: "pending", label: "Хүлээгдэж", color: T.warn },
-          { id: "ordered", label: "Захиалга өгсөн", color: T.ok },
-          { id: "no_answer", label: "Хариулаагүй", color: T.muted },
+          { id: "pending", label: "⏳ Хүлээгдэж", color: T.warn },
+          { id: "ordered", label: "✓ Захиалсан", color: T.ok },
+          { id: "no_answer", label: "✕ Хариулаагүй", color: T.muted },
         ].map((t) => (
           <button key={t.id} onClick={() => setFilterStatus(t.id)}
             style={{
@@ -26419,68 +26509,119 @@ function MerchantCallsView({ allowedPageIds }) {
         ))}
       </div>
 
-      {/* Дуудлагын жагсаалт */}
+      {/* Үйлчлүүлэгчийн жагсаалт (утсаар групплэсэн) */}
       {filtered.length === 0 ? (
         <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>
-          {filterStatus === "all" ? "Дуудлага алга. Дээрх товчоор шинэ дуудлага бүртгэнэ үү." : "Энэ ангилалд дуудлага алга"}
+          {filterStatus === "all" ? "Утас байхгүй. Дээрх товчоор шинэ дуудлага бүртгэнэ үү." : "Энэ ангилалд утас алга"}
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((c) => {
-            const page = fbPages.find(p => p.id === c.fb_page_id);
-            const status = c.call_status || "pending";
-            const products_list = c.interested_products || [];
+          {filtered.map((entry) => {
+            const latestCall = entry.calls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const latestOrder = entry.orders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const orderCounts = {
+              delivered: entry.orders.filter(o => o.status === "delivered").length,
+              new: entry.orders.filter(o => o.status === "new").length,
+              cancelled: entry.orders.filter(o => o.status === "cancelled").length,
+            };
+            const totalRevenue = entry.orders
+              .filter(o => o.status === "delivered")
+              .reduce((s, o) => s + Number(o.total_amount || 0), 0);
+            const pendingCall = entry.calls.find(c => (c.call_status || "pending") === "pending");
+            
             return (
-              <div key={c.id} className="glass rounded-xl p-3">
+              <div key={entry.phone} className="glass rounded-xl p-3">
+                {/* Header — утас + нэр */}
                 <div className="flex items-center gap-3 mb-2">
                   <div style={{ fontSize: 20 }}>📞</div>
                   <div className="flex-1 min-w-0">
-                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                      {c.phone}
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                      {entry.phone}
+                      {entry.customer_name && (
+                        <span style={{ color: T.muted, fontWeight: 400, marginLeft: 8 }}>
+                          · {entry.customer_name}
+                        </span>
+                      )}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
-                      {new Date(c.created_at).toLocaleString("mn-MN")}
-                      {page && ` · 🔗 ${page.name}`}
+                      Сүүлийн үйл хөдлөл: {new Date(entry.latest_date).toLocaleString("mn-MN")}
                     </div>
                   </div>
-                  <span style={{
-                    background: status === "ordered" ? T.okSoft : status === "no_answer" ? T.errSoft : T.warnSoft,
-                    color: status === "ordered" ? T.ok : status === "no_answer" ? T.err : T.warn,
-                    fontFamily: FS, fontWeight: 600,
-                  }} className="text-[10px] px-2 py-0.5 rounded">
-                    {status === "ordered" ? "✓ Захиалсан" : 
-                     status === "no_answer" ? "✕ Хариулаагүй" : 
-                     "⏳ Хүлээгдэж"}
-                  </span>
                 </div>
-                {products_list.length > 0 && (
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">
-                    🛍 {products_list.map(pr => typeof pr === "string" ? pr : pr.name || pr.product_name).join(", ")}
+
+                {/* Статусын badges */}
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {orderCounts.delivered > 0 && (
+                    <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      ✓ {orderCounts.delivered} хүргэгдсэн
+                    </span>
+                  )}
+                  {orderCounts.new > 0 && (
+                    <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      🆕 {orderCounts.new} шинэ захиалга
+                    </span>
+                  )}
+                  {orderCounts.cancelled > 0 && (
+                    <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      ✕ {orderCounts.cancelled} цуцалсан
+                    </span>
+                  )}
+                  {pendingCall && (
+                    <span style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      📞 Хүлээгдэж буй дуудлага
+                    </span>
+                  )}
+                  {entry.calls.length > 0 && !pendingCall && (
+                    <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      📞 {entry.calls.length} дуудлага
+                    </span>
+                  )}
+                </div>
+
+                {/* Орлогын дүн */}
+                {totalRevenue > 0 && (
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-1">
+                    💰 {totalRevenue.toLocaleString()}₮
                   </div>
                 )}
-                {c.notes && (
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mb-2">
-                    💬 {c.notes}
+
+                {/* Сүүлийн дуудлагын тэмдэглэл */}
+                {latestCall?.notes && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mb-1">
+                    💬 {latestCall.notes}
                   </div>
                 )}
-                {/* Үйлдэл — pending статусд л */}
-                {status === "pending" && (
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={() => setOrderForCall(c)}
+
+                {/* Үйлдэлүүд */}
+                <div className="flex gap-2 mt-2">
+                  {pendingCall && (
+                    <button onClick={() => setOrderForCall(pendingCall)}
                       className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1"
                       style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
-                      <ShoppingBag size={12} /> Захиалга авах
+                      <ShoppingBag size={12} /> Захиалга үүсгэх
                     </button>
+                  )}
+                  {!pendingCall && entry.orders.length === 0 && (
                     <button onClick={async () => {
-                      await supabase.from("biz_calls").update({ call_status: "no_answer" }).eq("id", c.id);
-                      setRefreshKey(k => k + 1);
+                      // Шинэ дуудлага үүсгээд шууд захиалга үүсгэх руу шилжих
+                      const { data: newCall } = await supabase.from("biz_calls").insert({
+                        phone: entry.phone,
+                        fb_page_id: allowedPageIds[0],
+                        call_status: "pending",
+                      }).select().single();
+                      if (newCall) setOrderForCall(newCall);
                     }}
-                      className="press-btn px-3 py-1.5 rounded-lg text-xs"
-                      style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}>
-                      Хариулаагүй
+                      className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1"
+                      style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      <Plus size={12} /> Шинэ захиалга авах
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
