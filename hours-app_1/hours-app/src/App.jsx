@@ -26242,11 +26242,13 @@ function MerchantDashboard({ profile }) {
 function MerchantOverview({ allowedPageIds, fbPages }) {
   const [stats, setStats] = useState({ orders: 0, delivered: 0, revenue: 0, calls: 0 });
   const [loading, setLoading] = useState(true);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
+        console.log("[Merchant] Loading with allowedPageIds:", allowedPageIds);
         const [ordRes, callRes] = await Promise.all([
           supabase.from("biz_orders").select("status, total_amount, fb_page_id").in("fb_page_id", allowedPageIds),
           supabase.from("biz_calls").select("id, fb_page_id").in("fb_page_id", allowedPageIds),
@@ -26254,13 +26256,27 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
         const orders = ordRes.data || [];
         const calls = callRes.data || [];
         const delivered = orders.filter(o => o.status === "delivered");
+        const revenue = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+        
+        console.log("[Merchant] Orders fetched:", orders.length, "Calls:", calls.length);
+        if (ordRes.error) console.error("[Merchant] Orders error:", ordRes.error);
+        if (callRes.error) console.error("[Merchant] Calls error:", callRes.error);
+        
         setStats({
           orders: orders.length,
           delivered: delivered.length,
-          revenue: delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+          revenue,
           calls: calls.length,
         });
-      } catch (e) { console.error(e); }
+        setDebugInfo({
+          ordersErr: ordRes.error?.message,
+          callsErr: callRes.error?.message,
+          pageCount: allowedPageIds.length,
+        });
+      } catch (e) { 
+        console.error("[Merchant] Exception:", e);
+        setDebugInfo({ exception: e.message });
+      }
       finally { setLoading(false); }
     })();
   }, [allowedPageIds.join(",")]);
@@ -26303,6 +26319,23 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
         <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
           💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой өгөгдлөөс тооцоологдсон.
         </div>
+        {/* Debug info — асуудалтай үед харагдана */}
+        {(stats.orders === 0 && stats.calls === 0) && (
+          <div style={{ background: T.warnSoft, border: `1px solid ${T.warn}`, borderRadius: 8, padding: 10, marginTop: 8 }}>
+            <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1">
+              ⚠ Мэдээлэл олдсонгүй
+            </div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] space-y-1">
+              <div>• Оноогдсон Page: {allowedPageIds.length}</div>
+              {debugInfo?.ordersErr && <div style={{ color: T.err }}>• Захиалгын алдаа: {debugInfo.ordersErr}</div>}
+              {debugInfo?.callsErr && <div style={{ color: T.err }}>• Дуудлагын алдаа: {debugInfo.callsErr}</div>}
+              <div className="pt-1">
+                <strong>Шалтгаан:</strong> Хуучин захиалга/дуудлагуудад FB Page тогтоогдоогүй байж магадгүй.
+                Admin-руу хандаж <code>backfill-fb-pages.sql</code> ажиллуулна уу.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
