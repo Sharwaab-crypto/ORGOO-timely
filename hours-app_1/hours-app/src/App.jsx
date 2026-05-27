@@ -1530,6 +1530,7 @@ function AdminDashboard({ profile }) {
   const [departments, setDepartments] = useState([]);
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
   const [leaves, setLeaves] = useState([]);
+  const [workSchedules, setWorkSchedules] = useState([]);
   const [kpiDefs, setKpiDefs] = useState([]);
   const [kpiEntries, setKpiEntries] = useState([]);
   const [editingKpi, setEditingKpi] = useState(null); // null | 'add' | kpi obj
@@ -1541,7 +1542,7 @@ function AdminDashboard({ profile }) {
 
   const loadAll = async () => {
     try {
-      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
+      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann, wsch] = await Promise.all([
         supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing"]).order("created_at", { ascending: false }),
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
@@ -1555,6 +1556,7 @@ function AdminDashboard({ profile }) {
         supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("work_schedules").select("*"),
       ]);
 
       // 🔧 Алдаа гарсан query-уудыг log хийх (silent failure-аас сэргийлэх)
@@ -1586,6 +1588,7 @@ function AdminDashboard({ profile }) {
       if (me.data) setManagerEmployees(me.data);
       if (dept.data) setDepartments(dept.data);
       if (lvs.data) setLeaves(lvs.data);
+      if (wsch.data) setWorkSchedules(wsch.data);
       if (kpiD.data) setKpiDefs(kpiD.data);
       if (kpiE.data) setKpiEntries(kpiE.data);
       if (tsk.data) setTasks(tsk.data);
@@ -2509,6 +2512,7 @@ function AdminDashboard({ profile }) {
           <CalendarView
             leaves={leaves}
             employees={employees}
+            schedules={workSchedules}
             scope="all"
           />
         )}
@@ -2766,6 +2770,7 @@ function EmployeeDashboard({ profile }) {
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
   const [myLeaves, setMyLeaves] = useState([]);
+  const [myWorkSchedules, setMyWorkSchedules] = useState([]);
   const [myTasks, setMyTasks] = useState([]);
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -2786,7 +2791,7 @@ function EmployeeDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues, ann] = await Promise.all([
+    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues, ann, wsch] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
@@ -2798,6 +2803,7 @@ function EmployeeDashboard({ profile }) {
         ? supabase.from("profiles").select("id, name, role, department_id").eq("department_id", profile.department_id)
         : Promise.resolve({ data: [] }),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("work_schedules").select("*").eq("employee_id", profile.id),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
@@ -2806,6 +2812,7 @@ function EmployeeDashboard({ profile }) {
       setMySites(esResult.data.map(es => es.sites).filter(Boolean));
     }
     if (lvs.data) setMyLeaves(lvs.data);
+    if (wsch.data) setMyWorkSchedules(wsch.data);
     if (tsk.data) setMyTasks(tsk.data);
     if (depts.data) setAllDepartments(depts.data);
     if (colleagues.data) setDeptColleagues(colleagues.data);
@@ -3442,6 +3449,7 @@ function EmployeeDashboard({ profile }) {
           <CalendarView
             leaves={myLeaves}
             employees={[profile]}
+            schedules={myWorkSchedules}
             scope="self"
             currentUserId={profile.id}
           />
@@ -23299,7 +23307,7 @@ function HRFileFormModal({ hrFile, employee, currentUserId, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CALENDAR VIEW — Чөлөөг календар дээр харах
 // ═══════════════════════════════════════════════════════════════════════════
-function CalendarView({ leaves = [], employees = [], scope = "all", currentUserId = null }) {
+function CalendarView({ leaves = [], employees = [], schedules = [], scope = "all", currentUserId = null }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -23311,6 +23319,15 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
     }
     return result;
   }, [leaves, scope, currentUserId]);
+
+  // 📅 Хуваарь — scope-аар шүүх
+  const filteredSchedules = useMemo(() => {
+    let result = schedules || [];
+    if (scope === "self" && currentUserId) {
+      result = result.filter((s) => s.employee_id === currentUserId);
+    }
+    return result;
+  }, [schedules, scope, currentUserId]);
 
   // Build calendar grid
   const firstDay = new Date(year, month, 1);
@@ -23328,6 +23345,20 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
     });
     return map;
   }, [filteredLeaves]);
+
+  // 📅 Group schedules by date — week_start + day_of_week-ээс тооцоолох
+  const schedulesByDate = useMemo(() => {
+    const map = {};
+    filteredSchedules.forEach((s) => {
+      if (!s.week_start || s.day_of_week === null || s.day_of_week === undefined) return;
+      const ws = new Date(s.week_start + "T00:00:00");
+      ws.setDate(ws.getDate() + Number(s.day_of_week));
+      const key = ws.toISOString().slice(0, 10);
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    });
+    return map;
+  }, [filteredSchedules]);
 
   const monthNames = ["1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
                       "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар"];
@@ -23392,6 +23423,7 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
             if (d === null) return <div key={i} />;
             const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
             const dayLeaves = leavesByDate[dateStr] || [];
+            const daySchedules = schedulesByDate[dateStr] || [];
             const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
             const dayOfWeek = new Date(year, month, d).getDay();
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -23408,6 +23440,33 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
                 }} className="text-xs">
                   {d}
                 </div>
+                {/* 📅 Хуваарь — цэнхэр тэмдэг */}
+                {daySchedules.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {daySchedules.slice(0, 2).map((s, j) => {
+                      const emp = empById(s.employee_id);
+                      const timeLabel = s.start_time && s.end_time
+                        ? `${s.start_time.slice(0, 5)}-${s.end_time.slice(0, 5)}`
+                        : "";
+                      return (
+                        <div key={`s-${j}`} style={{
+                          background: "rgba(14,165,233,0.15)",
+                          color: "#0284c7",
+                        }} className="text-[9px] px-1 py-0.5 rounded truncate"
+                          title={`${emp?.name || "—"} · ${timeLabel}`}>
+                          🕐 {emp?.name?.split(" ")[0] || "—"}
+                        </div>
+                      );
+                    })}
+                    {daySchedules.length > 2 && (
+                      <div style={{ color: "#0284c7", fontFamily: FS }}
+                        className="text-[9px] px-1">
+                        +{daySchedules.length - 2}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* ⛱ Чөлөө — ягаан/улаан тэмдэг */}
                 {dayLeaves.length > 0 && (
                   <div className="mt-1 space-y-0.5">
                     {dayLeaves.slice(0, 2).map((l, j) => {
@@ -23449,6 +23508,10 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
         <div className="flex items-center gap-1.5">
           <div style={{ background: T.errSoft, color: T.err }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">B</div>
           <span>Өвчтэй</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "rgba(14,165,233,0.15)", color: "#0284c7" }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">🕐</div>
+          <span>Хуваарь</span>
         </div>
         <div className="flex-1" />
         <div style={{ color: T.muted }}>{filteredLeaves.length} нийт чөлөө</div>
@@ -25476,18 +25539,21 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 function OperatorCalendarView({ profile }) {
   const [leaves, setLeaves] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [{ data: leavesData }, { data: empData }] = await Promise.all([
+        const [{ data: leavesData }, { data: empData }, { data: schedData }] = await Promise.all([
           supabase.from("hrm_leaves").select("*").order("start_date", { ascending: false }),
           supabase.from("profiles").select("id, name, avatar_url, role, job_title"),
+          supabase.from("work_schedules").select("*"),
         ]);
         setLeaves(leavesData || []);
         setEmployees(empData || []);
+        setSchedules(schedData || []);
       } catch (e) {
         console.error("[OperatorCalendarView] load error:", e);
       } finally {
@@ -25508,6 +25574,7 @@ function OperatorCalendarView({ profile }) {
     <CalendarView
       leaves={leaves}
       employees={employees}
+      schedules={schedules}
       scope="all"
       currentUserId={profile.id}
     />
