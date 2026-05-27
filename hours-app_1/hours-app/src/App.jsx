@@ -26214,7 +26214,7 @@ function MerchantDashboard({ profile }) {
           className="sticky top-0 z-30 p-4">
           <div className="flex items-center gap-2">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1">
-              <Menu size={20} style={{ color: T.ink }} />
+              <Inbox size={20} style={{ color: T.ink }} />
             </button>
             <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
               {view === "dashboard" && "📊 Хяналтын самбар"}
