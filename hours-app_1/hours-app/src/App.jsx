@@ -19270,7 +19270,7 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
-function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {} }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
     pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
@@ -19458,6 +19458,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         </button>
 
         {/* 3-dot menu */}
+        {!hideMenu && (
         <div className="flex-shrink-0">
           <button
             ref={(el) => { if (el) menuButtonRef.current = el; }}
@@ -19522,6 +19523,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
             document.body
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -27522,6 +27524,7 @@ function MerchantOrdersView({ allowedPageIds }) {
           {filtered.map((o, idx) => (
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
               fbPagesMap={fbPagesMap}
+              hideMenu={true}
               onClick={() => setActiveOrder(o)} />
           ))}
         </div>
