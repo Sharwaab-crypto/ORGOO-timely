@@ -21198,7 +21198,7 @@ function OrderDetailMap({ order }) {
   );
 }
 
-function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim }) {
+function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim, readOnly = false, fbPagesMap = {} }) {
   const status = order.status;
   const isUnassigned = isDriver && !order.driver_id && order.status === "new";
   const [activityProfiles, setActivityProfiles] = useState({});
@@ -21359,6 +21359,17 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               <span style={{ color: T.muted }}>📍</span>
               <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
                 {order.delivery_address}
+              </span>
+            </div>
+          )}
+          {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
+            <div className="flex items-center gap-2">
+              <span style={{ color: T.muted }}>🔗</span>
+              <span style={{
+                background: "rgba(14,165,233,0.1)", color: "#0284c7",
+                fontFamily: FS, fontWeight: 600,
+              }} className="text-xs px-2 py-0.5 rounded">
+                {fbPagesMap[order.fb_page_id]}
               </span>
             </div>
           )}
@@ -21582,7 +21593,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       <OrderDetailMap order={order} />
 
       {/* Actions */}
-      {actions.length > 0 && (
+      {!readOnly && actions.length > 0 && (
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${actions.length}, 1fr)` }}>
           {actions.map((a) => (
             <button key={a.action} onClick={() => {
@@ -27409,6 +27420,19 @@ function MerchantOrdersView({ allowedPageIds }) {
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
 
+  // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only)
+  if (activeOrder) {
+    return (
+      <OrderDetail
+        order={activeOrder}
+        items={items[activeOrder.id] || []}
+        onClose={() => setActiveOrder(null)}
+        readOnly={true}
+        fbPagesMap={fbPagesMap}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       {/* Хайлт */}
@@ -27448,135 +27472,11 @@ function MerchantOrdersView({ allowedPageIds }) {
           ))}
         </div>
       )}
-
-      {/* Захиалгын дэлгэрэнгүй modal */}
-      {activeOrder && (
-        <MerchantOrderDetailModal
-          order={activeOrder}
-          items={items[activeOrder.id] || []}
-          fbPagesMap={fbPagesMap}
-          onClose={() => setActiveOrder(null)}
-        />
-      )}
     </div>
   );
 }
 
 // ─── Merchant Order Detail Modal — read-only дэлгэрэнгүй ──────────────────
-function MerchantOrderDetailModal({ order, items, fbPagesMap, onClose }) {
-  const statusLabel = order.status === "delivered" ? "✓ Хүргэгдсэн" :
-    order.status === "cancelled" ? "✕ Цуцалсан" :
-    order.status === "new" ? "🆕 Шинэ" : order.status;
-  const statusColor = order.status === "delivered" ? T.ok :
-    order.status === "cancelled" ? T.err : T.warn;
-
-  return createPortal(
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-5 space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                #{order.order_number}
-              </h3>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
-                {new Date(order.created_at).toLocaleString("mn-MN")}
-              </div>
-            </div>
-            <button onClick={onClose} style={{ color: T.muted }}><X size={18} /></button>
-          </div>
-
-          {/* Статус + Page */}
-          <div className="flex gap-2 flex-wrap">
-            <span style={{ background: statusColor, color: "white", fontFamily: FS, fontWeight: 600 }}
-              className="text-xs px-2.5 py-1 rounded-lg">
-              {statusLabel}
-            </span>
-            {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
-              <span style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS, fontWeight: 600 }}
-                className="text-xs px-2.5 py-1 rounded-lg">
-                🔗 {fbPagesMap[order.fb_page_id]}
-              </span>
-            )}
-          </div>
-
-          {/* Үйлчлүүлэгч */}
-          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">Үйлчлүүлэгч</div>
-            <div className="space-y-1">
-              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                📱 {order.customer_phone}
-              </div>
-              {order.customer_name && (
-                <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">👤 {order.customer_name}</div>
-              )}
-              {order.delivery_address && (
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">📍 {order.delivery_address}</div>
-              )}
-            </div>
-          </div>
-
-          {/* 📜 Засварын түүх */}
-          <OrderHistorySection orderId={order.id} />
-
-          {/* Бараа */}
-          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
-              Захиалсан бараа ({items.length})
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {items.map((it) => (
-                <div key={it.id} className="rounded-xl p-2 flex flex-col gap-1.5"
-                  style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                  {it.product_image && (
-                    <img src={it.product_image} alt=""
-                      style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8 }} />
-                  )}
-                  <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs leading-tight">
-                    {it.product_name}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-sm tabular-nums">
-                      {Number(it.unit_price).toLocaleString()}₮
-                    </span>
-                    <span style={{
-                      background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700,
-                      minWidth: 22, height: 22, display: "flex", alignItems: "center",
-                      justifyContent: "center", borderRadius: 999, padding: "0 6px",
-                    }} className="text-[11px] tabular-nums">
-                      {Number(it.quantity)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-between pt-3 mt-3" style={{ borderTop: `2px solid ${T.border}` }}>
-              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">Нийт</span>
-              <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
-                {Number(order.total_amount || 0).toLocaleString()}₮
-              </span>
-            </div>
-          </div>
-
-          {order.notes && (
-            <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic">💬 {order.notes}</div>
-            </div>
-          )}
-
-          <button onClick={onClose}
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
-            className="press-btn w-full py-2.5 rounded-lg text-sm">
-            Хаах
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 // ─── Merchant Stock View ─────────────────────────────────────────────────
 function MerchantStockView({ allowedPageIds }) {
   const [products, setProducts] = useState([]);
