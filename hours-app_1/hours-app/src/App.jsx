@@ -27440,7 +27440,17 @@ function MerchantOrdersView({ allowedPageIds }) {
   }, [allowedPageIds.join(","), refreshKey]);
 
   const filtered = orders.filter((o) => {
-    if (filter !== "all" && o.status !== filter) return false;
+    // Status filter
+    if (filter === "assigned") {
+      if (!o.driver_id || o.status === "delivered" || o.status === "cancelled") return false;
+    } else if (filter === "unknown") {
+      if (!o.is_unknown || o.status === "delivered" || o.status === "cancelled") return false;
+    } else if (filter === "new") {
+      if (o.status !== "new" || o.driver_id || o.is_unknown) return false;
+    } else if (filter !== "all" && o.status !== filter) {
+      return false;
+    }
+    // Search filter
     if (search.trim()) {
       const q = search.toLowerCase();
       return o.order_number?.toLowerCase().includes(q) ||
@@ -27502,18 +27512,29 @@ function MerchantOrdersView({ allowedPageIds }) {
         {[
           { id: "all", label: "Бүгд", color: T.highlight },
           { id: "new", label: "🆕 Шинэ", color: "#0ea5e9" },
+          { id: "assigned", label: "🚚 Хуваарилагдсан", color: "#f59e0b" },
+          { id: "unknown", label: "❓ Тодорхойгүй", color: "#9333ea" },
           { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
           { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
-        ].map((t) => (
-          <button key={t.id} onClick={() => setFilter(t.id)}
-            style={{
-              background: filter === t.id ? t.color : T.surfaceAlt,
-              color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
-            }}
-            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
-            {t.label} ({orders.filter((o) => t.id === "all" || o.status === t.id).length})
-          </button>
-        ))}
+        ].map((t) => {
+          const count = orders.filter((o) => {
+            if (t.id === "all") return true;
+            if (t.id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
+            return o.status === t.id;
+          }).length;
+          return (
+            <button key={t.id} onClick={() => setFilter(t.id)}
+              style={{
+                background: filter === t.id ? t.color : T.surfaceAlt,
+                color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
+              }}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+              {t.label} ({count})
+            </button>
+          );
+        })}
       </div>
 
       {/* Захиалгын жагсаалт — үндсэн OrderCard ашиглана */}
