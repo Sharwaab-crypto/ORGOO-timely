@@ -21198,7 +21198,7 @@ function OrderDetailMap({ order }) {
   );
 }
 
-function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim, readOnly = false, fbPagesMap = {} }) {
+function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim, readOnly = false, fbPagesMap = {}, onEdit, onMerchantCancel }) {
   const status = order.status;
   const isUnassigned = isDriver && !order.driver_id && order.status === "new";
   const [activityProfiles, setActivityProfiles] = useState({});
@@ -21621,6 +21621,29 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               <span>{a.label}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 🏪 Merchant үйлдэл — Засах / Цуцлах */}
+      {(onEdit || onMerchantCancel) && order.status !== "cancelled" && order.status !== "delivered" && (
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${(onEdit ? 1 : 0) + (onMerchantCancel ? 1 : 0)}, 1fr)` }}>
+          {onEdit && (
+            <button onClick={onEdit}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS }}>
+              <span>✏</span><span>Засах</span>
+            </button>
+          )}
+          {onMerchantCancel && (
+            <button onClick={() => {
+              if (!confirm("Захиалга цуцлах уу?")) return;
+              onMerchantCancel();
+            }}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+              <span>✕</span><span>Цуцлах</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -27362,6 +27385,8 @@ function MerchantOrdersView({ allowedPageIds }) {
   const [filter, setFilter] = useState("all");
   const [activeOrder, setActiveOrder] = useState(null);
   const [search, setSearch] = useState("");
+  const [editingOrder, setEditingOrder] = useState(null); // 🏪 Засах modal
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -27405,7 +27430,7 @@ function MerchantOrdersView({ allowedPageIds }) {
       } catch (e) { console.error("[MerchantOrders]", e); }
       finally { setLoading(false); }
     })();
-  }, [allowedPageIds.join(",")]);
+  }, [allowedPageIds.join(","), refreshKey]);
 
   const filtered = orders.filter((o) => {
     if (filter !== "all" && o.status !== filter) return false;
@@ -27420,16 +27445,40 @@ function MerchantOrdersView({ allowedPageIds }) {
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
 
-  // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only)
+  // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only + засах/цуцлах)
   if (activeOrder) {
     return (
-      <OrderDetail
-        order={activeOrder}
-        items={items[activeOrder.id] || []}
-        onClose={() => setActiveOrder(null)}
-        readOnly={true}
-        fbPagesMap={fbPagesMap}
-      />
+      <>
+        <OrderDetail
+          order={activeOrder}
+          items={items[activeOrder.id] || []}
+          onClose={() => setActiveOrder(null)}
+          readOnly={true}
+          fbPagesMap={fbPagesMap}
+          onEdit={() => setEditingOrder(activeOrder)}
+          onMerchantCancel={async () => {
+            await supabase.from("biz_orders").update({
+              status: "cancelled",
+              cancelled_at: new Date().toISOString(),
+            }).eq("id", activeOrder.id);
+            setActiveOrder(null);
+            setRefreshKey(k => k + 1);
+          }}
+        />
+        {/* Засах modal */}
+        {editingOrder && (
+          <MerchantOrderEditModal
+            order={editingOrder}
+            items={items[editingOrder.id] || []}
+            onSaved={() => {
+              setEditingOrder(null);
+              setActiveOrder(null);
+              setRefreshKey(k => k + 1);
+            }}
+            onClose={() => setEditingOrder(null)}
+          />
+        )}
+      </>
     );
   }
 
@@ -27477,6 +27526,167 @@ function MerchantOrdersView({ allowedPageIds }) {
 }
 
 // ─── Merchant Order Detail Modal — read-only дэлгэрэнгүй ──────────────────
+// ─── 🏪 Merchant захиалга засах modal ────────────────────────────────────
+function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }) {
+  const [customerName, setCustomerName] = useState(order.customer_name || "");
+  const [phone, setPhone] = useState(order.customer_phone || "");
+  const [address, setAddress] = useState(order.delivery_address || "");
+  const [items, setItems] = useState(() => (initialItems || []).map(it => ({
+    id: it.id,
+    product_id: it.product_id,
+    name: it.product_name,
+    quantity: Number(it.quantity || 1),
+    unit_price: Number(it.unit_price || 0),
+  })));
+  const [deliveryFee, setDeliveryFee] = useState(Number(order.delivery_fee || 0));
+  const [notes, setNotes] = useState(order.notes || "");
+  const [busy, setBusy] = useState(false);
+
+  const updateQty = (idx, qty) => {
+    setItems(items.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, qty) } : it));
+  };
+  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+
+  const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
+  const totalAmount = subtotal + Number(deliveryFee || 0);
+
+  const save = async () => {
+    if (items.length === 0) { alert("Бараа сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      // 1. Захиалгыг шинэчлэх (trigger автомат түүх бичнэ)
+      await supabase.from("biz_orders").update({
+        customer_name: customerName.trim() || null,
+        customer_phone: phone.trim(),
+        delivery_address: address.trim(),
+        subtotal,
+        delivery_fee: Number(deliveryFee || 0),
+        total_amount: totalAmount,
+        notes: notes.trim() || null,
+      }).eq("id", order.id);
+
+      // 2. Барааны тоо/үнэ шинэчлэх (trigger автомат түүх бичнэ)
+      for (const it of items) {
+        if (it.id) {
+          await supabase.from("biz_order_items").update({
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            total_amount: it.quantity * it.unit_price,
+          }).eq("id", it.id);
+        }
+      }
+
+      // 3. Устгасан барааг хасах
+      const keepIds = items.map(it => it.id).filter(Boolean);
+      const removedItems = (initialItems || []).filter(it => !keepIds.includes(it.id));
+      for (const it of removedItems) {
+        await supabase.from("biz_order_items").delete().eq("id", it.id);
+      }
+
+      alert("✅ Захиалга шинэчлэгдсэн");
+      onSaved();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              ✏ Захиалга засах
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Утас</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Үйлчлүүлэгчийн нэр</label>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлтийн хаяг</label>
+            <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Бараа */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🛍 Бараа ({items.length})</label>
+            <div className="space-y-1">
+              {items.map((it, i) => (
+                <div key={i} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
+                  className="p-2 flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{it.name}</div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                    </div>
+                  </div>
+                  <input type="number" value={it.quantity} min={1}
+                    onChange={e => updateQty(i, Number(e.target.value))}
+                    style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="px-2 py-1 rounded text-xs" />
+                  <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Хүргэлт + нийт */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлт</label>
+              <input type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Нийт</label>
+              <div style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, padding: "8px 12px", borderRadius: 8 }}
+                className="text-sm">
+                {totalAmount.toLocaleString()}₮
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: busy ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Merchant Stock View ─────────────────────────────────────────────────
 function MerchantStockView({ allowedPageIds }) {
   const [products, setProducts] = useState([]);
