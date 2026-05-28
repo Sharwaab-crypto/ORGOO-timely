@@ -15822,6 +15822,9 @@ function DriverSettlementView({ profile }) {
                   </div>
                 </div>
 
+                {/* 📜 Захиалгын түүх — collapsible */}
+                <OrderHistorySection orderId={editOrder.order.id} />
+
                 {/* ⭐ ЗАХИАЛГЫН БАРААНУУД */}
                 <div className="mb-3">
                   <div className="flex items-center justify-between mb-2">
@@ -19267,7 +19270,7 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
-function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [] }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {} }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
     pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
@@ -19341,6 +19344,17 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                   {order.customer_phone2}
                 </a>
               </>
+            )}
+            {/* 🔗 FB Page badge */}
+            {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
+              <span style={{
+                background: "rgba(14,165,233,0.1)",
+                color: "#0284c7",
+                fontFamily: FS,
+                fontWeight: 600,
+              }} className="text-[9px] px-1.5 py-0.5 rounded">
+                🔗 {fbPagesMap[order.fb_page_id]}
+              </span>
             )}
           </div>
           {order.delivery_address && (
@@ -19832,6 +19846,7 @@ function OrdersView({ profile }) {
   const [items, setItems] = useState({});
   const [products, setProducts] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Pages ID → name
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("new");
   const [driverFilter, setDriverFilter] = useState("all"); // all | unassigned | <driverId>
@@ -19884,6 +19899,13 @@ function OrdersView({ profile }) {
         });
         setItems(itemMap);
       }
+
+      // 🔗 FB Pages татах
+      const { data: fbpData } = await supabase.from("biz_fb_pages")
+        .select("id, name").eq("is_active", true);
+      const fbMap = {};
+      (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
+      setFbPagesMap(fbMap);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -20352,6 +20374,7 @@ function OrdersView({ profile }) {
           {pagedOrders.map((o, idx) => (
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={(safePage - 1) * PAGE_SIZE + idx}
               drivers={drivers}
+              fbPagesMap={fbPagesMap}
               onClick={() => setActiveOrder(o)}
               onMap={() => setMapOrder(o)}
               onEdit={() => setEditOrder(o)}
@@ -26088,6 +26111,156 @@ function OperatorCalendarView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  🏪 MERCHANT DASHBOARD — FB Page-аар хязгаарлагдсан хувийн самбар
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  📜 ORDER HISTORY SECTION — Захиалгын засварын түүх (collapsible)
+// ═══════════════════════════════════════════════════════════════════════════
+function OrderHistorySection({ orderId }) {
+  const [history, setHistory] = useState([]);
+  const [users, setUsers] = useState({});
+  const [pages, setPages] = useState({});
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!orderId) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: hData } = await supabase.from("biz_order_history")
+          .select("*").eq("order_id", orderId)
+          .order("changed_at", { ascending: false });
+        const histories = hData || [];
+        setHistory(histories);
+
+        // Хэрэглэгч + Page нэрс татах
+        const userIds = [...new Set(histories.map(h => h.changed_by).filter(Boolean))];
+        const pageIds = [...new Set(
+          histories.filter(h => h.field_name === "fb_page_id")
+            .flatMap(h => [h.old_value, h.new_value])
+            .filter(Boolean)
+            .filter(v => v !== "null")
+        )];
+
+        if (userIds.length > 0) {
+          const { data: usersData } = await supabase.from("profiles")
+            .select("id, name").in("id", userIds);
+          const map = {};
+          (usersData || []).forEach(u => { map[u.id] = u.name; });
+          setUsers(map);
+        }
+
+        if (pageIds.length > 0) {
+          const { data: pagesData } = await supabase.from("biz_fb_pages")
+            .select("id, name").in("id", pageIds);
+          const map = {};
+          (pagesData || []).forEach(p => { map[p.id] = p.name; });
+          setPages(map);
+        }
+      } catch (e) { console.error("[OrderHistory]", e); }
+      finally { setLoading(false); }
+    })();
+  }, [orderId]);
+
+  const fieldLabels = {
+    status: "Төлөв",
+    delivery_address: "Хаяг",
+    customer_phone: "Утас",
+    customer_name: "Нэр",
+    total_amount: "Нийт дүн",
+    paid_amount: "Төлсөн",
+    delivery_fee: "Хүргэлт",
+    driver_id: "Жолооч",
+    fb_page_id: "FB Page",
+    notes: "Тэмдэглэл",
+  };
+
+  const formatValue = (fieldName, value) => {
+    if (value === null || value === undefined || value === "null") return "—";
+    if (fieldName === "fb_page_id") return pages[value] || value.substring(0, 8);
+    if (fieldName === "driver_id") return users[value] || value.substring(0, 8);
+    if (fieldName === "status") {
+      const map = {
+        new: "🆕 Шинэ",
+        delivered: "✓ Хүргэгдсэн",
+        cancelled: "✕ Цуцалсан",
+        in_progress: "🚚 Замд",
+      };
+      return map[value] || value;
+    }
+    if (fieldName === "total_amount" || fieldName === "paid_amount" || fieldName === "delivery_fee") {
+      return Number(value).toLocaleString() + "₮";
+    }
+    return value;
+  };
+
+  if (loading || history.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg mb-3" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+      <button onClick={() => setExpanded(!expanded)}
+        className="press-btn w-full p-2.5 flex items-center justify-between"
+        style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+        <span className="flex items-center gap-2 text-xs">
+          📜 Түүх ({history.length} өөрчлөлт)
+        </span>
+        <ChevronDown size={14} style={{ 
+          color: T.muted, 
+          transform: expanded ? "rotate(180deg)" : "rotate(0)",
+          transition: "transform 0.2s",
+        }} />
+      </button>
+
+      {expanded && (
+        <div className="px-2.5 pb-2.5 space-y-1.5">
+          {history.map((h, idx) => {
+            const userName = h.changed_by ? (users[h.changed_by] || "?") : "Систем";
+            const isStatus = h.field_name === "status";
+            return (
+              <div key={h.id || idx} style={{
+                background: T.surface,
+                borderLeft: `2px solid ${
+                  h.action === "created" ? T.highlight :
+                  h.action === "status_changed" ? T.ok :
+                  h.action === "driver_assigned" ? "#0284c7" :
+                  T.warn
+                }`,
+                borderRadius: 6, padding: 8,
+              }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px]">
+                      {h.action === "created" && "🆕 Захиалга үүсгэгдсэн"}
+                      {h.action === "status_changed" && (
+                        <>📊 Төлөв: {formatValue("status", h.old_value)} → {formatValue("status", h.new_value)}</>
+                      )}
+                      {h.action === "driver_assigned" && (
+                        <>🚚 Жолооч {h.old_value && h.old_value !== "null" ? `${formatValue("driver_id", h.old_value)} →` : ""} {formatValue("driver_id", h.new_value)}</>
+                      )}
+                      {h.action === "edited" && (
+                        <>✏ {fieldLabels[h.field_name] || h.field_name}: {formatValue(h.field_name, h.old_value)} → {formatValue(h.field_name, h.new_value)}</>
+                      )}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-0.5">
+                      👤 {userName} · {new Date(h.changed_at).toLocaleString("mn-MN")}
+                    </div>
+                    {h.notes && (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] italic mt-0.5">
+                        💬 {h.notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MerchantDashboard({ profile }) {
   const [view, setView] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -27153,16 +27326,23 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
 // ─── Merchant Orders View ────────────────────────────────────────────────
 function MerchantOrdersView({ allowedPageIds }) {
   const [orders, setOrders] = useState([]);
+  const [fbPagesMap, setFbPagesMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("biz_orders")
-        .select("*").in("fb_page_id", allowedPageIds)
-        .order("created_at", { ascending: false }).limit(300);
-      setOrders(data || []);
+      const [{ data: ordData }, { data: pgData }] = await Promise.all([
+        supabase.from("biz_orders")
+          .select("*").in("fb_page_id", allowedPageIds)
+          .order("created_at", { ascending: false }).limit(300),
+        supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
+      ]);
+      setOrders(ordData || []);
+      const map = {};
+      (pgData || []).forEach(p => { map[p.id] = p.name; });
+      setFbPagesMap(map);
       setLoading(false);
     })();
   }, [allowedPageIds.join(",")]);
@@ -27207,6 +27387,15 @@ function MerchantOrdersView({ allowedPageIds }) {
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
                     👤 {o.customer_name}
                   </div>
+                )}
+                {o.fb_page_id && fbPagesMap[o.fb_page_id] && (
+                  <span style={{
+                    background: "rgba(14,165,233,0.1)",
+                    color: "#0284c7",
+                    fontFamily: FS, fontWeight: 600,
+                  }} className="text-[10px] px-1.5 py-0.5 rounded inline-block mt-1">
+                    🔗 {fbPagesMap[o.fb_page_id]}
+                  </span>
                 )}
               </div>
               <div className="text-right">
@@ -29362,6 +29551,7 @@ function DriverDashboard({ profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
   const [loading, setLoading] = useState(true);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Pages ID → name
   const [activeOrder, setActiveOrder] = useState(null);
   const [cancelOrder, setCancelOrder] = useState(null);
   const [cancelNote, setCancelNote] = useState("");
@@ -29424,6 +29614,13 @@ function DriverDashboard({ profile }) {
       ]);
 
       setDrivers(driversData || []);
+
+      // 🔗 FB Pages татах
+      const { data: fbpData } = await supabase.from("biz_fb_pages")
+        .select("id, name").eq("is_active", true);
+      const fbMap = {};
+      (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
+      setFbPagesMap(fbMap);
 
       // Хослуулах + давхардлаас сэргийлэх
       const all = [...(ownOrders || [])];
@@ -30079,6 +30276,17 @@ function DriverDashboard({ profile }) {
                       {o.customer_name && (
                         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
                           {o.customer_name}
+                        </span>
+                      )}
+                      {/* 🔗 FB Page badge */}
+                      {o.fb_page_id && fbPagesMap[o.fb_page_id] && (
+                        <span style={{
+                          background: "rgba(14,165,233,0.1)",
+                          color: "#0284c7",
+                          fontFamily: FS,
+                          fontWeight: 600,
+                        }} className="text-[9px] px-1.5 py-0.5 rounded">
+                          🔗 {fbPagesMap[o.fb_page_id]}
                         </span>
                       )}
                     </div>
