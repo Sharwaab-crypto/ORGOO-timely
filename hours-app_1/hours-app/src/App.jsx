@@ -19953,8 +19953,8 @@ function OrdersView({ profile }) {
              (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     });
   } else if (filter === "new") {
-    // 🆕 Шинэ — driver-гүй захиалгыг л хамруулна (хуваариагсныг хасна)
-    filtered = filtered.filter((o) => o.status === "new" && !o.driver_id);
+    // 🆕 Шинэ — driver-гүй ЭСВЭЛ is_unknown захиалгыг хасна (Тодорхойгүй tab-руу шилждэг)
+    filtered = filtered.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown);
   } else if (filter === "assigned") {
     // 🚚 Хуваарилагдсан — Шинэ статустай боловч driver-той
     filtered = filtered.filter((o) => o.status === "new" && o.driver_id);
@@ -19980,7 +19980,7 @@ function OrdersView({ profile }) {
   // Counts
   const counts = {
     all: orders.length,
-    new: orders.filter((o) => o.status === "new" && !o.driver_id).length, // 🔧 Зөвхөн driver-гүй
+    new: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length, // 🔧 Зөвхөн driver-гүй + тодорхой
     assigned: orders.filter((o) => o.status === "new" && o.driver_id).length, // 🆕 Хуваарилагдсан
     unknown: orders.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
