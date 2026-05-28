@@ -21488,6 +21488,9 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
         </div>
       </div>
 
+      {/* 📜 Засварын дэлгэрэнгүй түүх (audit) — товчоор нээх */}
+      <OrderHistorySection orderId={order.id} />
+
       {/* Items */}
       <div className="glass rounded-2xl p-4">
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-3">
