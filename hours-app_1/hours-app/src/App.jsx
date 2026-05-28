@@ -26224,6 +26224,10 @@ function OrderHistorySection({ orderId }) {
                   h.action === "created" ? T.highlight :
                   h.action === "status_changed" ? T.ok :
                   h.action === "driver_assigned" ? "#0284c7" :
+                  h.action === "item_added" ? "#16a34a" :
+                  h.action === "item_removed" ? T.err :
+                  h.action === "item_qty_changed" ? "#8b5cf6" :
+                  h.action === "item_price_changed" ? "#8b5cf6" :
                   T.warn
                 }`,
                 borderRadius: 6, padding: 8,
@@ -26240,6 +26244,18 @@ function OrderHistorySection({ orderId }) {
                       )}
                       {h.action === "edited" && (
                         <>✏ {fieldLabels[h.field_name] || h.field_name}: {formatValue(h.field_name, h.old_value)} → {formatValue(h.field_name, h.new_value)}</>
+                      )}
+                      {h.action === "item_added" && (
+                        <>➕ Бараа нэмсэн: {h.new_value}</>
+                      )}
+                      {h.action === "item_removed" && (
+                        <>➖ Бараа хассан: {h.old_value}</>
+                      )}
+                      {h.action === "item_qty_changed" && (
+                        <>🔢 Тоо: {h.notes || `${h.old_value}ш → ${h.new_value}ш`}</>
+                      )}
+                      {h.action === "item_price_changed" && (
+                        <>💲 Үнэ: {h.notes || `${h.old_value}₮ → ${h.new_value}₮`}</>
                       )}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-0.5">
