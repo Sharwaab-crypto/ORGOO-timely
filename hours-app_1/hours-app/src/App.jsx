@@ -27408,8 +27408,13 @@ function MerchantOrdersView({ allowedPageIds }) {
         // Захиалгын бараа татах
         if (orderList.length > 0) {
           const orderIds = orderList.map(o => o.id);
-          const { data: itemData } = await supabase.from("biz_order_items")
+          const { data: itemData, error: itemErr } = await supabase.from("biz_order_items")
             .select("*").in("order_id", orderIds);
+
+          console.log("[MerchantOrders] Orders:", orderList.length, "Items:", itemData?.length || 0);
+          if (itemErr) {
+            console.error("[MerchantOrders] Items error:", itemErr);
+          }
 
           // Бараа зураг
           const productIds = [...new Set((itemData || []).map(it => it.product_id).filter(Boolean))];
