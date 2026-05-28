@@ -27345,96 +27345,235 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
 // ─── Merchant Orders View ────────────────────────────────────────────────
 function MerchantOrdersView({ allowedPageIds }) {
   const [orders, setOrders] = useState([]);
+  const [items, setItems] = useState({});
   const [fbPagesMap, setFbPagesMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [activeOrder, setActiveOrder] = useState(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [{ data: ordData }, { data: pgData }] = await Promise.all([
-        supabase.from("biz_orders")
-          .select("*").in("fb_page_id", allowedPageIds)
-          .order("created_at", { ascending: false }).limit(300),
-        supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
-      ]);
-      setOrders(ordData || []);
-      const map = {};
-      (pgData || []).forEach(p => { map[p.id] = p.name; });
-      setFbPagesMap(map);
-      setLoading(false);
+      try {
+        const [{ data: ordData }, { data: pgData }] = await Promise.all([
+          supabase.from("biz_orders")
+            .select("*").in("fb_page_id", allowedPageIds)
+            .order("created_at", { ascending: false }).limit(300),
+          supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
+        ]);
+        const orderList = ordData || [];
+        setOrders(orderList);
+
+        const map = {};
+        (pgData || []).forEach(p => { map[p.id] = p.name; });
+        setFbPagesMap(map);
+
+        // Захиалгын бараа татах
+        if (orderList.length > 0) {
+          const orderIds = orderList.map(o => o.id);
+          const { data: itemData } = await supabase.from("biz_order_items")
+            .select("*").in("order_id", orderIds);
+
+          // Бараа зураг
+          const productIds = [...new Set((itemData || []).map(it => it.product_id).filter(Boolean))];
+          let prodMap = {};
+          if (productIds.length > 0) {
+            const { data: prods } = await supabase.from("inv_products")
+              .select("id, image_url").in("id", productIds);
+            (prods || []).forEach(p => { prodMap[p.id] = p.image_url; });
+          }
+
+          const itemMap = {};
+          (itemData || []).forEach(it => {
+            if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
+            itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
+          });
+          setItems(itemMap);
+        }
+      } catch (e) { console.error("[MerchantOrders]", e); }
+      finally { setLoading(false); }
     })();
   }, [allowedPageIds.join(",")]);
 
-  const filtered = orders.filter((o) => filter === "all" || o.status === filter);
+  const filtered = orders.filter((o) => {
+    if (filter !== "all" && o.status !== filter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return o.order_number?.toLowerCase().includes(q) ||
+        o.customer_phone?.includes(q) ||
+        o.customer_name?.toLowerCase().includes(q);
+    }
+    return true;
+  });
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
 
   return (
     <div className="space-y-3">
+      {/* Хайлт */}
+      <input value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="🔍 Захиалга, утас, нэрээр хайх..."
+        style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+        className="w-full px-3 py-2 rounded-lg text-sm" />
+
+      {/* Filter tabs */}
       <div className="glass rounded-2xl p-2 flex gap-2 overflow-x-auto">
         {[
           { id: "all", label: "Бүгд", color: T.highlight },
-          { id: "new", label: "Шинэ", color: "#0ea5e9" },
-          { id: "delivered", label: "Хүргэгдсэн", color: T.ok },
-          { id: "cancelled", label: "Цуцалсан", color: T.err },
+          { id: "new", label: "🆕 Шинэ", color: "#0ea5e9" },
+          { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
+          { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
         ].map((t) => (
           <button key={t.id} onClick={() => setFilter(t.id)}
             style={{
               background: filter === t.id ? t.color : T.surfaceAlt,
               color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
             }}
-            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap">
+            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
             {t.label} ({orders.filter((o) => t.id === "all" || o.status === t.id).length})
           </button>
         ))}
       </div>
-      <div className="space-y-2">
-        {filtered.length === 0 ? (
-          <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
-        ) : filtered.map((o) => (
-          <div key={o.id} className="glass rounded-xl p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-                  #{o.order_number} · {o.customer_phone}
-                </div>
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
-                  {new Date(o.created_at).toLocaleString("mn-MN")}
-                </div>
-                {o.customer_name && (
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
-                    👤 {o.customer_name}
-                  </div>
-                )}
-                {o.fb_page_id && fbPagesMap[o.fb_page_id] && (
-                  <span style={{
-                    background: "rgba(14,165,233,0.1)",
-                    color: "#0284c7",
-                    fontFamily: FS, fontWeight: 600,
-                  }} className="text-[10px] px-1.5 py-0.5 rounded inline-block mt-1">
-                    🔗 {fbPagesMap[o.fb_page_id]}
-                  </span>
-                )}
-              </div>
-              <div className="text-right">
-                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
-                  {Number(o.total_amount).toLocaleString()}₮
-                </div>
-                <div style={{
-                  color: o.status === "delivered" ? T.ok : o.status === "cancelled" ? T.err : T.warn,
-                  fontFamily: FS, fontWeight: 600,
-                }} className="text-[10px]">
-                  {o.status === "delivered" ? "✅ Хүргэгдсэн" : 
-                   o.status === "cancelled" ? "✕ Цуцалсан" : 
-                   o.status === "new" ? "🆕 Шинэ" : o.status}
-                </div>
+
+      {/* Захиалгын жагсаалт — үндсэн OrderCard ашиглана */}
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((o, idx) => (
+            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+              fbPagesMap={fbPagesMap}
+              onClick={() => setActiveOrder(o)} />
+          ))}
+        </div>
+      )}
+
+      {/* Захиалгын дэлгэрэнгүй modal */}
+      {activeOrder && (
+        <MerchantOrderDetailModal
+          order={activeOrder}
+          items={items[activeOrder.id] || []}
+          fbPagesMap={fbPagesMap}
+          onClose={() => setActiveOrder(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant Order Detail Modal — read-only дэлгэрэнгүй ──────────────────
+function MerchantOrderDetailModal({ order, items, fbPagesMap, onClose }) {
+  const statusLabel = order.status === "delivered" ? "✓ Хүргэгдсэн" :
+    order.status === "cancelled" ? "✕ Цуцалсан" :
+    order.status === "new" ? "🆕 Шинэ" : order.status;
+  const statusColor = order.status === "delivered" ? T.ok :
+    order.status === "cancelled" ? T.err : T.warn;
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+                #{order.order_number}
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">
+                {new Date(order.created_at).toLocaleString("mn-MN")}
               </div>
             </div>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={18} /></button>
           </div>
-        ))}
+
+          {/* Статус + Page */}
+          <div className="flex gap-2 flex-wrap">
+            <span style={{ background: statusColor, color: "white", fontFamily: FS, fontWeight: 600 }}
+              className="text-xs px-2.5 py-1 rounded-lg">
+              {statusLabel}
+            </span>
+            {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
+              <span style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS, fontWeight: 600 }}
+                className="text-xs px-2.5 py-1 rounded-lg">
+                🔗 {fbPagesMap[order.fb_page_id]}
+              </span>
+            )}
+          </div>
+
+          {/* Үйлчлүүлэгч */}
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">Үйлчлүүлэгч</div>
+            <div className="space-y-1">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+                📱 {order.customer_phone}
+              </div>
+              {order.customer_name && (
+                <div style={{ color: T.ink, fontFamily: FS }} className="text-sm">👤 {order.customer_name}</div>
+              )}
+              {order.delivery_address && (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">📍 {order.delivery_address}</div>
+              )}
+            </div>
+          </div>
+
+          {/* 📜 Засварын түүх */}
+          <OrderHistorySection orderId={order.id} />
+
+          {/* Бараа */}
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-2">
+              Захиалсан бараа ({items.length})
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {items.map((it) => (
+                <div key={it.id} className="rounded-xl p-2 flex flex-col gap-1.5"
+                  style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                  {it.product_image && (
+                    <img src={it.product_image} alt=""
+                      style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8 }} />
+                  )}
+                  <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs leading-tight">
+                    {it.product_name}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-sm tabular-nums">
+                      {Number(it.unit_price).toLocaleString()}₮
+                    </span>
+                    <span style={{
+                      background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700,
+                      minWidth: 22, height: 22, display: "flex", alignItems: "center",
+                      justifyContent: "center", borderRadius: 999, padding: "0 6px",
+                    }} className="text-[11px] tabular-nums">
+                      {Number(it.quantity)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-3 mt-3" style={{ borderTop: `2px solid ${T.border}` }}>
+              <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base">Нийт</span>
+              <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xl tabular-nums">
+                {Number(order.total_amount || 0).toLocaleString()}₮
+              </span>
+            </div>
+          </div>
+
+          {order.notes && (
+            <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 12 }} className="p-3">
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic">💬 {order.notes}</div>
+            </div>
+          )}
+
+          <button onClick={onClose}
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+            className="press-btn w-full py-2.5 rounded-lg text-sm">
+            Хаах
+          </button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
