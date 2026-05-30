@@ -11359,15 +11359,20 @@ function CallCenterView({ profile }) {
       if (isMerchant && allowedPageIds.length > 0 && (ordData || []).length > 0) {
         const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
         if (customerPhones.length > 0) {
-          const { data: phoneCalls } = await fetchAllRows(
-            supabase.from("biz_calls").select("*").in("phone", customerPhones)
-          ).then(d => ({ data: d })).catch(() => ({ data: [] }));
-          const existingIds = new Set(allCalls.map(c => c.id));
-          (phoneCalls || []).forEach(c => {
-            if (!existingIds.has(c.id)) allCalls.push(c);
-          });
-          allCalls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          try {
+            const phoneCalls = await fetchAllRows(
+              supabase.from("biz_calls").select("*").in("phone", customerPhones)
+            );
+            const existingIds = new Set(allCalls.map(c => c.id));
+            (phoneCalls || []).forEach(c => {
+              if (!existingIds.has(c.id)) allCalls.push(c);
+            });
+            allCalls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          } catch (e) {
+            console.error("[Merchant phone calls]", e);
+          }
         }
+        console.log("[Merchant CallCenter] Page calls:", (callData || []).length, "Phone-matched:", allCalls.length - (callData || []).length, "Total:", allCalls.length);
       }
 
       setRecentCalls(allCalls);
@@ -17499,14 +17504,25 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   // FB pages-уудыг ачаалах
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("biz_fb_pages")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-      setFbPages(data || []);
+      // 🏪 Merchant — зөвхөн өөрт оноогдсон Page-уудыг харна
+      const isMerchant = profile?.role === "merchant";
+      const allowedIds = isMerchant ? (profile?.fb_page_ids || []) : null;
+
+      let query = supabase.from("biz_fb_pages").select("*").eq("is_active", true).order("display_order");
+      if (isMerchant && allowedIds.length > 0) {
+        query = query.in("id", allowedIds);
+      }
+
+      const { data } = await query;
+      const pages = data || [];
+      setFbPages(pages);
+
+      // Merchant-руу зөвхөн 1 page бол автомат сонгох
+      if (isMerchant && pages.length === 1) {
+        setFbPageId(pages[0].id);
+      }
     })();
-  }, []);
+  }, [profile?.role, (profile?.fb_page_ids || []).join(",")]);
 
   // Customer auto-search (1-р утсаар)
   useEffect(() => {
