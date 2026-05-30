@@ -27300,10 +27300,10 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
     if (!address.trim()) { alert("Хүргэлтийн хаяг оруулна уу"); return; }
     setBusy(true);
     try {
-      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах (FB Page харгалзахгүй)
+      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах
       const { data: existingNewOrders } = await supabase
         .from("biz_orders")
-        .select("id, order_number, customer_name, total_amount, status, created_at, fb_page_id")
+        .select("id, order_number, customer_name, total_amount, subtotal, delivery_fee, status, created_at, fb_page_id, delivery_address")
         .eq("customer_phone", call.phone)
         .eq("status", "new")
         .order("created_at", { ascending: false })
@@ -27311,17 +27311,73 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
       
       if (existingNewOrders && existingNewOrders.length > 0) {
         const existing = existingNewOrders[0];
+        const existingPageId = existing.fb_page_id || null;
+        const newPageId = call.fb_page_id || null;
+        
+        // Хэрэв ижил page бол → шууд нэмэлт оруулна
+        // Хэрэв өөр page бол → Merchant-ийн page руу солино + нэмэлт оруулна
+        const isSamePage = existingPageId === newPageId;
+        
         setBusy(false);
-        alert(
+        const dateStr = new Date(existing.created_at).toLocaleDateString("mn-MN");
+        const proceed = confirm(
           `⚠ Захиалга шинэ дээр байна!\n\n` +
           `📞 ${call.phone}\n` +
           (existing.customer_name ? `👤 ${existing.customer_name}\n` : "") +
-          `💰 ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
-          `📅 ${new Date(existing.created_at).toLocaleDateString("mn-MN")}\n` +
+          `💰 Хуучин дүн: ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
+          `📅 ${dateStr}\n` +
           `🏷 #${existing.order_number}\n\n` +
-          `Энэ дугаараар хараахан гүйцэтгээгүй захиалга бий.\n\n` +
-          `Шинэ захиалга үүсгэх боломжгүй. Тэр захиалгыг засаж нэмэлт бараа оруулна уу.`
+          (isSamePage 
+            ? `Энэ захиалга-руу ${items.length} бараа нэмэх үү?`
+            : `⚠ Энэ захиалга өөр FB Page-руу холбогдсон байна!\n` +
+              `Та засвал захиалга таны Page (Merchant)-руу шилжинэ.\n\n` +
+              `Үргэлжлүүлэх үү?`)
         );
+        if (!proceed) return;
+        setBusy(true);
+
+        // 🔄 Захиалгад нэмэлт бараа оруулах
+        const newItemsToInsert = items.map(it => ({
+          order_id: existing.id,
+          product_id: it.product_id,
+          product_name: it.name,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          total_amount: it.quantity * it.unit_price,
+        }));
+        const { error: itemsErr } = await supabase.from("biz_order_items").insert(newItemsToInsert);
+        if (itemsErr) throw itemsErr;
+
+        // 📊 Дүн дахин тооцох
+        const newSubtotal = Number(existing.subtotal || 0) + subtotal;
+        const newDeliveryFee = Math.max(Number(existing.delivery_fee || 0), Number(deliveryFee || 0));
+        const newTotal = newSubtotal + newDeliveryFee;
+
+        // 🔄 Захиалгыг шинэчлэх: Merchant-ийн page руу шилжүүлж, дүн + хаяг/нэр шинэчлэх
+        const updatePayload = {
+          subtotal: newSubtotal,
+          delivery_fee: newDeliveryFee,
+          total_amount: newTotal,
+          fb_page_id: newPageId,  // ⚡ Merchant-ийн page-руу солих
+          notes: [existing.notes, notes.trim()].filter(Boolean).join(" | ") || null,
+        };
+        // Нэр/хаяг дутуу бол шинэ оруулсныг ашиглах
+        if (!existing.customer_name && customerName.trim()) updatePayload.customer_name = customerName.trim();
+        if (!existing.delivery_address && address.trim()) updatePayload.delivery_address = address.trim();
+
+        const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", existing.id);
+        if (updErr) throw updErr;
+
+        // Дуудлагыг "ordered" болгох
+        await supabase.from("biz_calls").update({ call_status: "ordered" }).eq("id", call.id);
+
+        alert(
+          `✅ Захиалга #${existing.order_number}-руу нэгтгэгдсэн!\n\n` +
+          `📦 ${items.length} шинэ бараа нэмэгдсэн\n` +
+          `💰 Шинэ дүн: ${newTotal.toLocaleString()}₮\n` +
+          (isSamePage ? `` : `🔗 FB Page → Merchant-руу шилжсэн`)
+        );
+        onSaved();
         return;
       }
 
