@@ -27307,22 +27307,86 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
     if (!address.trim()) { alert("Хүргэлтийн хаяг оруулна уу"); return; }
     setBusy(true);
     try {
-      // 1. Захиалга үүсгэх
-      const orderNumber = `ORD-${Date.now()}`;
-      const { data: order, error: orderErr } = await supabase.from("biz_orders").insert({
-        order_number: orderNumber,
-        customer_phone: call.phone,
-        customer_name: customerName.trim() || null,
-        delivery_address: address.trim(),
-        source: "phone",
-        status: "new",
-        subtotal,
-        delivery_fee: Number(deliveryFee || 0),
-        total_amount: totalAmount,
-        notes: notes.trim() || null,
-        fb_page_id: call.fb_page_id,
-      }).select().single();
-      if (orderErr) throw orderErr;
+      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах
+      const { data: existingNewOrders } = await supabase
+        .from("biz_orders")
+        .select("id, order_number, customer_name, total_amount, status, created_at, fb_page_id")
+        .eq("customer_phone", call.phone)
+        .eq("status", "new")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      
+      if (existingNewOrders && existingNewOrders.length > 0) {
+        const existing = existingNewOrders[0];
+        // 🔀 Ижил FB Page бол л блоклоно
+        const existingPageId = existing.fb_page_id || null;
+        const newPageId = call.fb_page_id || null;
+        
+        if (existingPageId === newPageId) {
+          setBusy(false);
+          const dateStr = new Date(existing.created_at).toLocaleDateString("mn-MN");
+          const proceed = confirm(
+            `⚠ Захиалга шинэ дээр байна!\n\n` +
+            `📞 ${call.phone}\n` +
+            (existing.customer_name ? `👤 ${existing.customer_name}\n` : "") +
+            `💰 ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
+            `📅 ${dateStr}\n` +
+            `🏷 #${existing.order_number}\n\n` +
+            `Энэ дугаараар хараахан гүйцэтгээгүй захиалга бий.\n\n` +
+            `Шинэ захиалга үүсгэх бус, тэр захиалгыг засах нь зөв.\n\n` +
+            `Үргэлжлүүлэх үү?`
+          );
+          if (!proceed) return;
+          setBusy(true);
+        }
+      }
+
+      // 1. Захиалга үүсгэх — retry-тэй (давхар захиалгын дугаараас сэргийлэх)
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      let order = null;
+      let lastError = null;
+      
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const ts = Date.now().toString().slice(-4);
+        const rnd = Math.floor(Math.random() * 9000) + 1000;
+        const orderNumber = `ORD-${dateStr}-${ts}${rnd}`;
+        
+        const { data: newOrder, error: insertErr } = await supabase.from("biz_orders").insert({
+          order_number: orderNumber,
+          customer_phone: call.phone,
+          customer_name: customerName.trim() || null,
+          delivery_address: address.trim(),
+          source: "phone",
+          status: "new",
+          subtotal,
+          delivery_fee: Number(deliveryFee || 0),
+          total_amount: totalAmount,
+          notes: notes.trim() || null,
+          fb_page_id: call.fb_page_id,
+        }).select().single();
+        
+        if (!insertErr) {
+          order = newOrder;
+          break;
+        }
+        
+        lastError = insertErr;
+        
+        // 🛡 DB trigger-аас гарсан давхар захиалгын алдаа
+        if (insertErr.message?.includes("DUPLICATE_PENDING_ORDER")) {
+          alert(`⚠ ${insertErr.message.replace("DUPLICATE_PENDING_ORDER: ", "")}`);
+          return;
+        }
+        
+        // order_number давхарласан → retry
+        if (insertErr.message?.includes("duplicate") || insertErr.code === "23505") {
+          await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
+          continue;
+        }
+        throw insertErr;
+      }
+      
+      if (!order) throw lastError || new Error("Захиалга үүсгэх алдаа");
 
       // 2. Захиалгын бараа нэмэх
       const orderItems = items.map(it => ({
@@ -27338,9 +27402,16 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
       // 3. Дуудлагыг "ordered" болгох
       await supabase.from("biz_calls").update({ call_status: "ordered" }).eq("id", call.id);
 
-      alert(`✅ Захиалга үүсгэгдсэн!\n#${orderNumber}\nДүн: ${totalAmount.toLocaleString()}₮`);
+      alert(`✅ Захиалга үүсгэгдсэн!\n#${order.order_number}\nДүн: ${totalAmount.toLocaleString()}₮`);
       onSaved();
-    } catch (e) { alert("Алдаа: " + e.message); }
+    } catch (e) { 
+      // DB trigger-аас гарсан алдаа
+      if (e.message?.includes("DUPLICATE_PENDING_ORDER")) {
+        alert(`⚠ ${e.message.replace("DUPLICATE_PENDING_ORDER: ", "")}`);
+      } else {
+        alert("Алдаа: " + e.message);
+      }
+    }
     finally { setBusy(false); }
   };
 
