@@ -26711,10 +26711,17 @@ function MerchantCallsView({ allowedPageIds }) {
   return (
     <div className="space-y-3">
       {/* Шинэ дуудлага товч */}
+      {/* 📞 ЗАЛГАХ ДУГААРУУД — Хурдан бүртгэл */}
+      <PhonesToCallSection 
+        fbPages={fbPages} 
+        products={products}
+        onChanged={() => setRefreshKey(k => k + 1)}
+      />
+
       <button onClick={() => setShowNewCallModal(true)}
         className="press-btn w-full py-3 rounded-xl flex items-center justify-center gap-2"
         style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}>
-        <Plus size={18} /> Шинэ дуудлага бүртгэх
+        <Plus size={18} /> Шинэ дуудлага бүртгэх (дэлгэрэнгүй)
       </button>
 
       {/* Filter tabs */}
@@ -26881,6 +26888,181 @@ function MerchantCallsView({ allowedPageIds }) {
 }
 
 // ─── 📞 Шинэ дуудлага бүртгэх modal ─────────────────────────────────────
+// ─── 📞 ЗАЛГАХ ДУГААРУУД — Хурдан бүртгэл секц ────────────────────────────
+function PhonesToCallSection({ fbPages, products, onChanged }) {
+  const [phone, setPhone] = useState("");
+  const [pendingPhones, setPendingPhones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [orderForCall, setOrderForCall] = useState(null);
+  const [selectedPageId, setSelectedPageId] = useState(fbPages[0]?.id || "");
+
+  // Хүлээгдэж буй дуудлагуудыг татах
+  const loadPending = async () => {
+    if (fbPages.length === 0) return;
+    setLoading(true);
+    const pageIds = fbPages.map(p => p.id);
+    const { data } = await supabase.from("biz_calls")
+      .select("*")
+      .in("fb_page_id", pageIds)
+      .eq("call_status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setPendingPhones(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadPending();
+  }, [fbPages.map(p => p.id).join(",")]);
+
+  // FB page-ийн default тохируулах
+  useEffect(() => {
+    if (!selectedPageId && fbPages[0]) setSelectedPageId(fbPages[0].id);
+  }, [fbPages]);
+
+  // Хурдан утас нэмэх
+  const quickAdd = async () => {
+    if (!phone.trim()) return;
+    if (!selectedPageId) { alert("FB Page сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const { error } = await supabase.from("biz_calls").insert({
+        phone: cleanPhone,
+        fb_page_id: selectedPageId,
+        call_status: "pending",
+        created_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setPhone("");
+      await loadPending();
+      if (onChanged) onChanged();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  // Дуудлагыг тэмдэглэх
+  const markCalled = async (call) => {
+    await supabase.from("biz_calls").update({ call_status: "no_answer" }).eq("id", call.id);
+    await loadPending();
+    if (onChanged) onChanged();
+  };
+
+  const removePhone = async (call) => {
+    if (!confirm("Энэ дугаарыг устгах уу?")) return;
+    await supabase.from("biz_calls").delete().eq("id", call.id);
+    await loadPending();
+    if (onChanged) onChanged();
+  };
+
+  return (
+    <div className="glass rounded-2xl p-3 space-y-3"
+      style={{ borderLeft: `3px solid #f59e0b` }}>
+      <div className="flex items-center justify-between">
+        <div style={{ color: "#d97706", fontFamily: FS, fontWeight: 700 }} className="text-sm">
+          📞 ЗАЛГАХ ДУГААРУУД ({pendingPhones.length})
+        </div>
+      </div>
+
+      {/* Хурдан нэмэх форм */}
+      <div className="space-y-2">
+        {/* FB Page сонголт (хэрэв олон бол) */}
+        {fbPages.length > 1 && (
+          <select value={selectedPageId} onChange={e => setSelectedPageId(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2 rounded-lg text-xs">
+            {fbPages.map(p => <option key={p.id} value={p.id}>🔗 {p.name}</option>)}
+          </select>
+        )}
+        <div className="flex gap-2">
+          <input value={phone} onChange={e => setPhone(e.target.value)}
+            placeholder="Утасны дугаар (жнь: 99999999)"
+            onKeyDown={(e) => { if (e.key === "Enter" && !busy) quickAdd(); }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-lg text-sm" />
+          <button onClick={quickAdd} disabled={busy || !phone.trim()}
+            style={{
+              background: T.ok, color: "white", fontFamily: FS, fontWeight: 700,
+              opacity: (busy || !phone.trim()) ? 0.5 : 1,
+            }}
+            className="press-btn px-4 py-2 rounded-lg text-sm whitespace-nowrap">
+            {busy ? "..." : "+ Нэмэх"}
+          </button>
+        </div>
+      </div>
+
+      {/* Хүлээгдэж буй жагсаалт */}
+      {loading ? (
+        <div className="text-center py-2"><Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} /></div>
+      ) : pendingPhones.length === 0 ? (
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-2 italic">
+          Залгах дугаар алга. Дээрх талбараар нэмнэ үү.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {pendingPhones.map((c) => {
+            const page = fbPages.find(p => p.id === c.fb_page_id);
+            return (
+              <div key={c.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
+                className="p-2.5 flex items-center gap-2">
+                <div style={{ fontSize: 16 }}>📞</div>
+                <div className="flex-1 min-w-0">
+                  <a href={`tel:${c.phone}`}
+                    style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                    className="text-sm hover:underline">
+                    {c.phone}
+                  </a>
+                  {page && (
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      🔗 {page.name} · {new Date(c.created_at).toLocaleString("mn-MN", { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setOrderForCall(c)}
+                    title="Захиалга үүсгэх"
+                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2.5 py-1.5 rounded text-[11px] flex items-center gap-1">
+                    🛍 Захиалга
+                  </button>
+                  <button onClick={() => markCalled(c)}
+                    title="Хариулаагүй гэж тэмдэглэх"
+                    style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2 py-1.5 rounded text-[11px]">
+                    ✕
+                  </button>
+                  <button onClick={() => removePhone(c)}
+                    title="Устгах"
+                    style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2 py-1.5 rounded text-[11px]">
+                    🗑
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Захиалга үүсгэх modal */}
+      {orderForCall && (
+        <MerchantOrderModal
+          call={orderForCall}
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => {
+            setOrderForCall(null);
+            loadPending();
+            if (onChanged) onChanged();
+          }}
+          onClose={() => setOrderForCall(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function MerchantNewCallModal({ fbPages, products, onSaved, onClose }) {
   const [phone, setPhone] = useState("");
   const [fbPageId, setFbPageId] = useState(fbPages[0]?.id || "");
