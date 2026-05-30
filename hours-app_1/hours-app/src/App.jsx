@@ -17609,7 +17609,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const removeItem = (productId) => setItems(items.filter((it) => it.productId !== productId));
 
   const validPhones = phones.filter((p) => p.phone.trim());
-  const canSave = validPhones.length > 0;
+  const canSave = validPhones.length > 0 && !!fbPageId; // 🔗 FB Page заавал шаардлагатай
 
   const inputStyle = { background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
 
@@ -17644,6 +17644,11 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               <button
                 disabled={busy || !canSave}
                 onClick={async () => {
+                  // 🔗 FB Page заавал шалгах
+                  if (!fbPageId) {
+                    alert("⚠ FB Page заавал сонгох ёстой!");
+                    return;
+                  }
                   // 8 оронтой шалгах
                   const invalidPhone = validPhones.find((p) => p.phone.trim().length !== 8);
                   if (invalidPhone) {
@@ -17652,7 +17657,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                   }
                   setBusy(true);
                   await onSave({
-                    fb_page_id: fbPageId || null,
+                    fb_page_id: fbPageId,
                     phones: validPhones.map((p) => ({ phone: p.phone.trim(), notes: p.notes.trim() || null })),
                     interested_products: items.length > 0 ? items.map((it) => ({
                       id: it.productId,
@@ -17682,16 +17687,25 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               </h4>
               <div className="flex items-center gap-2">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-xs whitespace-nowrap">
-                  Маркетинг :
+                  Маркетинг <span style={{ color: T.err }}>*</span> :
                 </label>
                 <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
-                  style={inputStyle} className="flex-1 px-3 py-2 rounded-lg text-sm">
-                  <option value="">Маркетинг сонгох</option>
+                  style={{
+                    ...inputStyle,
+                    borderColor: fbPageId ? T.border : T.err,
+                    background: fbPageId ? inputStyle.background : "rgba(239,68,68,0.05)",
+                  }} className="flex-1 px-3 py-2 rounded-lg text-sm">
+                  <option value="">⚠ Маркетинг заавал сонгох</option>
                   {fbPages.map((page) => (
                     <option key={page.id} value={page.id}>{page.name}</option>
                   ))}
                 </select>
               </div>
+              {!fbPageId && fbPages.length > 0 && (
+                <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] mt-2">
+                  ⚠ FB Page заавал сонгох ёстой
+                </div>
+              )}
               {fbPages.length === 0 && (
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 italic">
                   💡 Эхлээд Facebook page нэмнэ үү (Бизнес → Тохиргоо)
