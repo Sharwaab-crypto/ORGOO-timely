@@ -11331,15 +11331,46 @@ function CallCenterView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
+      // 🏪 Merchant горим — зөвхөн өөрийн FB Page-ээр шүүх
+      const isMerchant = profile.role === "merchant";
+      const allowedPageIds = isMerchant ? (profile.fb_page_ids || []) : null;
+
+      const callsQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false })
+        : supabase.from("biz_calls").select("*").order("created_at", { ascending: false });
+      const ordersQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, fb_page_id").in("fb_page_id", allowedPageIds)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at");
+      const productsQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
+        : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
+
       const [callData, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
-        fetchAllRows(supabase.from("biz_calls").select("*").order("created_at", { ascending: false })),
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        fetchAllRows(callsQuery),
+        productsQuery,
         fetchAllRows(supabase.from("biz_customers").select("*")),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
-        fetchAllRows(supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at")),
+        fetchAllRows(ordersQuery),
       ]);
-      setRecentCalls(callData || []);
+
+      // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
+      let allCalls = callData || [];
+      if (isMerchant && allowedPageIds.length > 0 && (ordData || []).length > 0) {
+        const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
+        if (customerPhones.length > 0) {
+          const { data: phoneCalls } = await fetchAllRows(
+            supabase.from("biz_calls").select("*").in("phone", customerPhones)
+          ).then(d => ({ data: d })).catch(() => ({ data: [] }));
+          const existingIds = new Set(allCalls.map(c => c.id));
+          (phoneCalls || []).forEach(c => {
+            if (!existingIds.has(c.id)) allCalls.push(c);
+          });
+          allCalls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        }
+      }
+
+      setRecentCalls(allCalls);
       setOrders(ordData || []);
       setProducts(prodData || []);
       setCustomers(custData || []);
@@ -11351,16 +11382,20 @@ function CallCenterView({ profile }) {
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       setStats({
-        today: (callData || []).filter((c) => new Date(c.created_at) >= today).length,
-        week: (callData || []).filter((c) => new Date(c.created_at) >= weekAgo).length,
-        total: (callData || []).length,
+        today: allCalls.filter((c) => new Date(c.created_at) >= today).length,
+        week: allCalls.filter((c) => new Date(c.created_at) >= weekAgo).length,
+        total: allCalls.length,
       });
 
       // Захиалгын тоо
-      const { count: orderCount } = await supabase
-        .from("biz_orders")
-        .select("*", { count: "exact", head: true });
-      setOrderTotal(orderCount || 0);
+      if (isMerchant && allowedPageIds.length > 0) {
+        setOrderTotal((ordData || []).length);
+      } else {
+        const { count: orderCount } = await supabase
+          .from("biz_orders")
+          .select("*", { count: "exact", head: true });
+        setOrderTotal(orderCount || 0);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -26456,7 +26491,7 @@ function MerchantDashboard({ profile }) {
 
         <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
           {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
-          {view === "calls" && <MerchantCallsView allowedPageIds={allowedPageIds} />}
+          {view === "calls" && <CallCenterView profile={profile} />}
           {view === "sales" && <MerchantSalesView allowedPageIds={allowedPageIds} fbPages={fbPages} />}
           {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} />}
           {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
