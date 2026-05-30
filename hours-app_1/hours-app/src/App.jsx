@@ -12311,15 +12311,19 @@ function CallCenterView({ profile }) {
                         return (
                           <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
                             className="text-[10px] px-2 py-1 rounded-md uppercase tracking-wider">
-                            {fbPage.name}
+                            🔗 {fbPage.name}
                           </span>
                         );
                       })()}
                       <span style={{
-                        background: isActive ? "rgba(168,85,247,0.15)" : "rgba(148,163,184,0.2)",
-                        color: isActive ? "#9333ea" : T.muted,
+                        background: isActive ? "rgba(16,185,129,0.15)" : "rgba(148,163,184,0.2)",
+                        color: isActive ? T.ok : T.muted,
                         fontFamily: FS, fontWeight: 600,
-                      }} className="text-[10px] px-2 py-1 rounded-md">
+                      }} className="text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: isActive ? T.ok : T.muted,
+                        }} />
                         {isActive ? "Идэвхтэй" : "Идэвхгүй"}
                       </span>
                       <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
