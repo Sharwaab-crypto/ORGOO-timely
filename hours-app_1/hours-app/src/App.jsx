@@ -27938,6 +27938,8 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
   // 🆕 Merchant-ийн бараа
   const [merchantProducts, setMerchantProducts] = useState([]);
   const [merchantPages, setMerchantPages] = useState({}); // pageId → name
+  // 🔗 FB Page сонголт — merchant өөрөө өөрчилж болно
+  const [fbPageId, setFbPageId] = useState(order.fb_page_id || null);
 
   // Merchant-ийн бараа болон page нэрс татах
   useEffect(() => {
@@ -27982,6 +27984,10 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
       fb_page_id: p.fb_page_id,
       isNew: true,
     }]);
+    // 🔗 Шинэ merchant бараа нэмэхэд → page-ийг автомат шинэчилнэ
+    if (p.fb_page_id && (profile?.fb_page_ids || []).includes(p.fb_page_id)) {
+      setFbPageId(p.fb_page_id);
+    }
   };
 
   const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
@@ -27992,12 +27998,22 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
     setBusy(true);
     try {
       // 🔗 FB Page-ийг тодорхойлох:
-      // Хамгийн сүүлд нэмэгдсэн merchant-ийн page-ийн бараа байгаа бол → тэр page
+      // 1. Хэрэв merchant шинэ merchant-бараа нэмсэн бол → түүний page
+      // 2. Эс бөгөөс fbPageId state ашиглах (merchant өөрөө сонгосон)
       const merchantPageIds = profile?.fb_page_ids || [];
-      const newItems = items.filter(it => it.isNew && it.fb_page_id && merchantPageIds.includes(it.fb_page_id));
-      const newFbPageId = newItems.length > 0 
-        ? newItems[newItems.length - 1].fb_page_id  // хамгийн сүүлийн merchant бараа
-        : order.fb_page_id;  // өөрчлөхгүй
+      const newMerchantItems = items.filter(it => 
+        it.isNew && it.fb_page_id && merchantPageIds.includes(it.fb_page_id)
+      );
+      
+      let newFbPageId = fbPageId;
+      if (newMerchantItems.length > 0) {
+        // Сүүлийн нэмсэн merchant бараа-аас авна
+        newFbPageId = newMerchantItems[newMerchantItems.length - 1].fb_page_id;
+      }
+
+      console.log("[MerchantEdit] Old page:", order.fb_page_id, "→ New:", newFbPageId, 
+        "isMerchantPage:", merchantPageIds.includes(newFbPageId),
+        "newItems:", newMerchantItems.length);
 
       // 1. Захиалгыг шинэчлэх
       const updatePayload = {
@@ -28008,12 +28024,10 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
         delivery_fee: Number(deliveryFee || 0),
         total_amount: totalAmount,
         notes: notes.trim() || null,
+        fb_page_id: newFbPageId,  // ⚡ Үргэлж шинэчилнэ
       };
-      // FB Page солих хэрэг гарвал л оруулна
-      if (newFbPageId && newFbPageId !== order.fb_page_id) {
-        updatePayload.fb_page_id = newFbPageId;
-      }
-      await supabase.from("biz_orders").update(updatePayload).eq("id", order.id);
+      const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", order.id);
+      if (updErr) throw updErr;
 
       // 2. Хуучин барааны тоо/үнэ шинэчлэх
       for (const it of items) {
@@ -28066,6 +28080,35 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
             </h3>
             <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
           </div>
+
+          {/* 🔗 FB Page сонгох — merchant өөрөө өөрчилж болно */}
+          {Object.keys(merchantPages).length > 0 && (
+            <div style={{ background: "rgba(14,165,233,0.05)", border: `1px solid #0284c7`, borderRadius: 8 }}
+              className="p-2.5">
+              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
+                className="text-[10px] uppercase tracking-wider mb-1 block">
+                🔗 FB Page (Merchant)
+              </label>
+              <select value={fbPageId || ""} onChange={e => setFbPageId(e.target.value || null)}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm">
+                <option value="">— Сонгоогүй —</option>
+                {/* Merchant-ийн pages */}
+                {Object.entries(merchantPages).map(([id, name]) => (
+                  <option key={id} value={id}>🔗 {name}</option>
+                ))}
+                {/* Хуучин page (merchant-ийн биш бол ч харагдана) */}
+                {order.fb_page_id && !merchantPages[order.fb_page_id] && (
+                  <option value={order.fb_page_id}>⚠ Хуучин page (Merchant биш)</option>
+                )}
+              </select>
+              {fbPageId !== order.fb_page_id && (
+                <div style={{ color: "#0284c7", fontFamily: FS }} className="text-[10px] mt-1">
+                  ⚡ Хадгалбал захиалга энэ Page-руу шилжинэ
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Утас</label>
