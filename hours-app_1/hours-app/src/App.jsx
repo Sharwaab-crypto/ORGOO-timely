@@ -26520,7 +26520,7 @@ function MerchantDashboard({ profile }) {
           {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
           {view === "calls" && <CallCenterView profile={profile} />}
           {view === "sales" && <MerchantSalesView allowedPageIds={allowedPageIds} fbPages={fbPages} />}
-          {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} />}
+          {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
           {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
         </div>
       </main>
@@ -27741,7 +27741,7 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
 }
 
 // ─── Merchant Orders View ────────────────────────────────────────────────
-function MerchantOrdersView({ allowedPageIds }) {
+function MerchantOrdersView({ allowedPageIds, profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
   const [fbPagesMap, setFbPagesMap] = useState({});
@@ -27849,6 +27849,7 @@ function MerchantOrdersView({ allowedPageIds }) {
           <MerchantOrderEditModal
             order={editingOrder}
             items={items[editingOrder.id] || []}
+            profile={profile}
             onSaved={() => {
               setEditingOrder(null);
               setActiveOrder(null);
@@ -27918,7 +27919,7 @@ function MerchantOrdersView({ allowedPageIds }) {
 
 // ─── Merchant Order Detail Modal — read-only дэлгэрэнгүй ──────────────────
 // ─── 🏪 Merchant захиалга засах modal ────────────────────────────────────
-function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }) {
+function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, onClose }) {
   const [customerName, setCustomerName] = useState(order.customer_name || "");
   const [phone, setPhone] = useState(order.customer_phone || "");
   const [address, setAddress] = useState(order.delivery_address || "");
@@ -27928,15 +27929,60 @@ function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }
     name: it.product_name,
     quantity: Number(it.quantity || 1),
     unit_price: Number(it.unit_price || 0),
+    fb_page_id: null, // Дараа татах
+    isNew: false,
   })));
   const [deliveryFee, setDeliveryFee] = useState(Number(order.delivery_fee || 0));
   const [notes, setNotes] = useState(order.notes || "");
   const [busy, setBusy] = useState(false);
+  // 🆕 Merchant-ийн бараа
+  const [merchantProducts, setMerchantProducts] = useState([]);
+  const [merchantPages, setMerchantPages] = useState({}); // pageId → name
+
+  // Merchant-ийн бараа болон page нэрс татах
+  useEffect(() => {
+    if (!profile?.fb_page_ids || profile.fb_page_ids.length === 0) return;
+    (async () => {
+      const [{ data: prods }, { data: pgs }] = await Promise.all([
+        supabase.from("inv_products")
+          .select("id, name, sale_price, fb_page_id, image_url, sku")
+          .in("fb_page_id", profile.fb_page_ids)
+          .eq("is_active", true),
+        supabase.from("biz_fb_pages").select("id, name").in("id", profile.fb_page_ids),
+      ]);
+      setMerchantProducts(prods || []);
+      const map = {};
+      (pgs || []).forEach(p => { map[p.id] = p.name; });
+      setMerchantPages(map);
+
+      // Existing items-руу fb_page_id заавал татах
+      const itemProductIds = (initialItems || []).map(it => it.product_id).filter(Boolean);
+      if (itemProductIds.length > 0) {
+        const { data: itemProds } = await supabase.from("inv_products")
+          .select("id, fb_page_id").in("id", itemProductIds);
+        const prodPageMap = {};
+        (itemProds || []).forEach(p => { prodPageMap[p.id] = p.fb_page_id; });
+        setItems(prev => prev.map(it => ({ ...it, fb_page_id: prodPageMap[it.product_id] || null })));
+      }
+    })();
+  }, [profile?.fb_page_ids?.join(",")]);
 
   const updateQty = (idx, qty) => {
     setItems(items.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, qty) } : it));
   };
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+
+  const addMerchantProduct = (p) => {
+    if (items.find(x => x.product_id === p.id)) return;
+    setItems([...items, {
+      product_id: p.id,
+      name: p.name,
+      quantity: 1,
+      unit_price: Number(p.sale_price || 0),
+      fb_page_id: p.fb_page_id,
+      isNew: true,
+    }]);
+  };
 
   const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
   const totalAmount = subtotal + Number(deliveryFee || 0);
@@ -27945,8 +27991,16 @@ function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }
     if (items.length === 0) { alert("Бараа сонгоно уу"); return; }
     setBusy(true);
     try {
-      // 1. Захиалгыг шинэчлэх (trigger автомат түүх бичнэ)
-      await supabase.from("biz_orders").update({
+      // 🔗 FB Page-ийг тодорхойлох:
+      // Хамгийн сүүлд нэмэгдсэн merchant-ийн page-ийн бараа байгаа бол → тэр page
+      const merchantPageIds = profile?.fb_page_ids || [];
+      const newItems = items.filter(it => it.isNew && it.fb_page_id && merchantPageIds.includes(it.fb_page_id));
+      const newFbPageId = newItems.length > 0 
+        ? newItems[newItems.length - 1].fb_page_id  // хамгийн сүүлийн merchant бараа
+        : order.fb_page_id;  // өөрчлөхгүй
+
+      // 1. Захиалгыг шинэчлэх
+      const updatePayload = {
         customer_name: customerName.trim() || null,
         customer_phone: phone.trim(),
         delivery_address: address.trim(),
@@ -27954,9 +28008,14 @@ function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }
         delivery_fee: Number(deliveryFee || 0),
         total_amount: totalAmount,
         notes: notes.trim() || null,
-      }).eq("id", order.id);
+      };
+      // FB Page солих хэрэг гарвал л оруулна
+      if (newFbPageId && newFbPageId !== order.fb_page_id) {
+        updatePayload.fb_page_id = newFbPageId;
+      }
+      await supabase.from("biz_orders").update(updatePayload).eq("id", order.id);
 
-      // 2. Барааны тоо/үнэ шинэчлэх (trigger автомат түүх бичнэ)
+      // 2. Хуучин барааны тоо/үнэ шинэчлэх
       for (const it of items) {
         if (it.id) {
           await supabase.from("biz_order_items").update({
@@ -27967,14 +28026,31 @@ function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }
         }
       }
 
-      // 3. Устгасан барааг хасах
+      // 3. Шинэ бараа нэмэх
+      const newItemsToInsert = items.filter(it => !it.id).map(it => ({
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: it.name,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        total_amount: it.quantity * it.unit_price,
+      }));
+      if (newItemsToInsert.length > 0) {
+        await supabase.from("biz_order_items").insert(newItemsToInsert);
+      }
+
+      // 4. Устгасан барааг хасах
       const keepIds = items.map(it => it.id).filter(Boolean);
       const removedItems = (initialItems || []).filter(it => !keepIds.includes(it.id));
       for (const it of removedItems) {
         await supabase.from("biz_order_items").delete().eq("id", it.id);
       }
 
-      alert("✅ Захиалга шинэчлэгдсэн");
+      const pageChanged = newFbPageId && newFbPageId !== order.fb_page_id;
+      alert(
+        "✅ Захиалга шинэчлэгдсэн" +
+        (pageChanged ? `\n\n🔗 FB Page → ${merchantPages[newFbPageId] || "Merchant"}-руу шилжсэн` : "")
+      );
       onSaved();
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setBusy(false); }
@@ -28016,23 +28092,65 @@ function MerchantOrderEditModal({ order, items: initialItems, onSaved, onClose }
           <div>
             <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🛍 Бараа ({items.length})</label>
             <div className="space-y-1">
-              {items.map((it, i) => (
-                <div key={i} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
-                  className="p-2 flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{it.name}</div>
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
-                      {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+              {items.map((it, i) => {
+                const isMerchantProduct = it.fb_page_id && (profile?.fb_page_ids || []).includes(it.fb_page_id);
+                return (
+                  <div key={i} style={{ 
+                      background: it.isNew ? "rgba(16,185,129,0.08)" : T.surfaceAlt, 
+                      border: `1px solid ${it.isNew ? T.ok : T.border}`, 
+                      borderRadius: 8 
+                    }}
+                    className="p-2 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate flex items-center gap-1">
+                        {it.isNew && <span style={{ color: T.ok }}>🆕</span>}
+                        {it.name}
+                        {isMerchantProduct && merchantPages[it.fb_page_id] && (
+                          <span style={{ 
+                            background: "rgba(14,165,233,0.1)", color: "#0284c7", 
+                            fontFamily: FS, fontWeight: 600 
+                          }} className="text-[8px] px-1 py-0.5 rounded">
+                            🔗 {merchantPages[it.fb_page_id]}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                        {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                      </div>
                     </div>
+                    <input type="number" value={it.quantity} min={1}
+                      onChange={e => updateQty(i, Number(e.target.value))}
+                      style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="px-2 py-1 rounded text-xs" />
+                    <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
                   </div>
-                  <input type="number" value={it.quantity} min={1}
-                    onChange={e => updateQty(i, Number(e.target.value))}
-                    style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-                    className="px-2 py-1 rounded text-xs" />
-                  <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
-                </div>
-              ))}
+                );
+              })}
             </div>
+
+            {/* ➕ Merchant бараа нэмэх */}
+            {merchantProducts.length > 0 && (
+              <details className="mt-2">
+                <summary style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, cursor: "pointer" }} className="text-[11px]">
+                  ➕ Merchant бараа нэмэх
+                </summary>
+                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {merchantProducts.filter(p => !items.find(x => x.product_id === p.id)).map(p => (
+                    <button key={p.id} type="button" onClick={() => addMerchantProduct(p)}
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="press-btn w-full px-2.5 py-1.5 rounded text-xs flex items-center justify-between gap-2">
+                      <span className="truncate flex-1 text-left">{p.name}</span>
+                      {p.fb_page_id && merchantPages[p.fb_page_id] && (
+                        <span style={{ color: "#0284c7", fontWeight: 600 }} className="text-[9px]">
+                          🔗 {merchantPages[p.fb_page_id]}
+                        </span>
+                      )}
+                      <span style={{ color: T.muted }}>{Number(p.sale_price || 0).toLocaleString()}₮</span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Хүргэлт + нийт */}
