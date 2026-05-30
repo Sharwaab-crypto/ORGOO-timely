@@ -12622,21 +12622,14 @@ function CallCenterView({ profile }) {
                 
                 if (existingNewOrders && existingNewOrders.length > 0) {
                   const existingOrder = existingNewOrders[0];
-                  // 🔀 FB Page харьцуулах — ижил Page бол л засуулах
-                  const existingPageId = existingOrder.fb_page_id || null;
-                  const newPageId = effectiveFbPageId || null;
-                  
-                  if (existingPageId === newPageId) {
-                    // Ижил Page → захиалга нийлүүлэхийн тулд засуулах
-                    setShowCallModal(false);
-                    setExistingOrderAlert({
-                      phone,
-                      orderId: existingOrder.id,
-                      orderInfo: existingOrder,
-                    });
-                    return;
-                  }
-                  // Өөр Page → автомат хуваагдана (continue — нийлүүлэхгүй, шинэ үүсгэнэ)
+                  // ⚡ ХАТУУ ШАЛГАЛТ — FB Page харгалзахгүй, бүх давхар захиалгыг засуулах
+                  setShowCallModal(false);
+                  setExistingOrderAlert({
+                    phone,
+                    orderId: existingOrder.id,
+                    orderInfo: existingOrder,
+                  });
+                  return;
                 }
               }
               
@@ -27307,7 +27300,7 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
     if (!address.trim()) { alert("Хүргэлтийн хаяг оруулна уу"); return; }
     setBusy(true);
     try {
-      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах
+      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах (FB Page харгалзахгүй)
       const { data: existingNewOrders } = await supabase
         .from("biz_orders")
         .select("id, order_number, customer_name, total_amount, status, created_at, fb_page_id")
@@ -27318,27 +27311,18 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
       
       if (existingNewOrders && existingNewOrders.length > 0) {
         const existing = existingNewOrders[0];
-        // 🔀 Ижил FB Page бол л блоклоно
-        const existingPageId = existing.fb_page_id || null;
-        const newPageId = call.fb_page_id || null;
-        
-        if (existingPageId === newPageId) {
-          setBusy(false);
-          const dateStr = new Date(existing.created_at).toLocaleDateString("mn-MN");
-          const proceed = confirm(
-            `⚠ Захиалга шинэ дээр байна!\n\n` +
-            `📞 ${call.phone}\n` +
-            (existing.customer_name ? `👤 ${existing.customer_name}\n` : "") +
-            `💰 ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
-            `📅 ${dateStr}\n` +
-            `🏷 #${existing.order_number}\n\n` +
-            `Энэ дугаараар хараахан гүйцэтгээгүй захиалга бий.\n\n` +
-            `Шинэ захиалга үүсгэх бус, тэр захиалгыг засах нь зөв.\n\n` +
-            `Үргэлжлүүлэх үү?`
-          );
-          if (!proceed) return;
-          setBusy(true);
-        }
+        setBusy(false);
+        alert(
+          `⚠ Захиалга шинэ дээр байна!\n\n` +
+          `📞 ${call.phone}\n` +
+          (existing.customer_name ? `👤 ${existing.customer_name}\n` : "") +
+          `💰 ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
+          `📅 ${new Date(existing.created_at).toLocaleDateString("mn-MN")}\n` +
+          `🏷 #${existing.order_number}\n\n` +
+          `Энэ дугаараар хараахан гүйцэтгээгүй захиалга бий.\n\n` +
+          `Шинэ захиалга үүсгэх боломжгүй. Тэр захиалгыг засаж нэмэлт бараа оруулна уу.`
+        );
+        return;
       }
 
       // 1. Захиалга үүсгэх — retry-тэй (давхар захиалгын дугаараас сэргийлэх)
