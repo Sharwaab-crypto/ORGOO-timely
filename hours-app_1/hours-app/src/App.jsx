@@ -19439,11 +19439,15 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           })()}
         </div>
 
-        {/* 🛍 Бүх бараа эгнүүлсэн харагдалт */}
+        {/* 🛍 Бүх бараа эгнүүлсэн харагдалт (5+ үед scroll) */}
         {items.length > 0 && (
-          <div className="flex-shrink-0 flex items-start gap-1.5">
-            {items.slice(0, 4).map((it, idx) => (
-              <div key={it.id || idx} className="relative">
+          <div className="flex-shrink-0 flex items-start gap-1.5 overflow-x-auto pb-1"
+            style={{ 
+              maxWidth: items.length > 4 ? 220 : "none",  // 4+ үед хязгаарлаж scroll-ыг идэвхжүүлнэ
+              scrollbarWidth: "thin",
+            }}>
+            {items.map((it, idx) => (
+              <div key={it.id || idx} className="relative flex-shrink-0">
                 {it.product_image ? (
                   <img src={it.product_image} alt=""
                     style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
@@ -19475,18 +19479,6 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                 </div>
               </div>
             ))}
-            {/* 5+ бараа бол "+N" */}
-            {items.length > 4 && (
-              <div style={{
-                width: 40, height: 60, borderRadius: 6,
-                background: "rgba(59,130,246,0.1)",
-                border: `1px solid rgba(59,130,246,0.2)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#3b82f6", fontFamily: FD, fontWeight: 700,
-              }} className="text-sm">
-                +{items.length - 4}
-              </div>
-            )}
           </div>
         )}
 
