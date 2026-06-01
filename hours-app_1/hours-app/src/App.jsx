@@ -13235,6 +13235,9 @@ function OperatorKPIReportView({ profile }) {
             .in("role", ["admin", "manager", "operator", "merchant"])
             .order("name"),
         ]);
+        console.log("[KPI Report] Calls:", callData?.length, "Orders:", ordData?.length, "Users:", opData?.length);
+        const merchantCalls = (callData || []).filter(c => (opData || []).find(u => u.id === c.created_by && u.role === "merchant"));
+        console.log("[KPI Report] Merchant calls (matched):", merchantCalls.length);
         setCalls(callData || []);
         setOrders(ordData || []);
         setOperators(opData || []);
