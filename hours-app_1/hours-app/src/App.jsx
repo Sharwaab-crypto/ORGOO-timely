@@ -11447,25 +11447,6 @@ function CallCenterView({ profile }) {
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
-      // 0. ⚡ Шинэ дээр захиалга байгаа эсэхийг шалгах
-      const { data: existingNewOrders } = await supabase
-        .from("biz_orders")
-        .select("id, customer_phone, customer_name, total_amount, status, created_at, fb_page_id")
-        .eq("customer_phone", phone)
-        .eq("status", "new")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      
-      if (existingNewOrders && existingNewOrders.length > 0) {
-        const existingOrder = existingNewOrders[0];
-        setExistingOrderAlert({
-          phone,
-          orderId: existingOrder.id,
-          orderInfo: existingOrder,
-        });
-        return;
-      }
-
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
         .from("biz_call_locks")
@@ -12765,6 +12746,10 @@ function CallCenterView({ profile }) {
             // Захиалга modal-аас status popup-руу шилжих
             setOrderForCall(null);
             setStatusPopupCall({ phone, callId: orderForCall.callId });
+          }}
+          onExistingOrderFound={({ phone, orderId, orderInfo }) => {
+            setOrderForCall(null);
+            setExistingOrderAlert({ phone, orderId, orderInfo });
           }}
           onSave={async (data) => {
             try {
@@ -18147,7 +18132,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound }) {
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
@@ -18924,6 +18909,29 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               if (!address.trim()) {
                 alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                 return;
+              }
+
+              // ⚡ ШИНЭ ДЭЭР ЗАХИАЛГА ШАЛГАХ — Хэрэв шинэ статустай захиалга бий бол
+              if (!isEditMode) {
+                try {
+                  const { data: existingNew } = await supabase
+                    .from("biz_orders")
+                    .select("id, order_number, customer_name, total_amount, created_at, fb_page_id")
+                    .eq("customer_phone", phone.trim())
+                    .eq("status", "new")
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+                  
+                  if (existingNew && existingNew.length > 0) {
+                    const ex = existingNew[0];
+                    if (onExistingOrderFound) {
+                      onExistingOrderFound({ phone: phone.trim(), orderId: ex.id, orderInfo: ex });
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  console.error("Existing order check error:", e);
+                }
               }
               
               // 🔴 ДАВТАН ЗАХИАЛГА ШАЛГАХ — Сүүлийн 1 цагт тус утсаар захиалга бий эсэх
