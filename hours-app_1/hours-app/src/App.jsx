@@ -18195,9 +18195,27 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
     if (!initialProducts || !Array.isArray(initialProducts) || initialProducts.length === 0) return [];
+    console.log("[CallReceiveModal] initialProducts:", initialProducts);
     return initialProducts.map((ip) => {
       const product = products.find((p) => p.id === ip.id);
-      if (!product) return null;
+      if (!product) {
+        // ⚡ Бараа олдсонгүй — interested_products-ийн өгөгдлөөс үүсгэх
+        console.warn("[CallReceiveModal] Product not found in catalog:", ip);
+        return {
+          productId: ip.id,
+          product: {
+            id: ip.id,
+            name: ip.name || "(Бараа олдсонгүй)",
+            sale_price: ip.price || 0,
+            sku: ip.sku || "",
+            image_url: ip.image_url || null,
+            description: "",
+          },
+          quantity: ip.qty || 1,
+          unitPrice: Number(ip.price || 0),
+          itemNotes: "",
+        };
+      }
       return {
         productId: product.id,
         product,
