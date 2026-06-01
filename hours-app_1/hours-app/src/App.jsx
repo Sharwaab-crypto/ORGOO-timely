@@ -11447,6 +11447,25 @@ function CallCenterView({ profile }) {
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
+      // 0. ⚡ Шинэ дээр захиалга байгаа эсэхийг шалгах
+      const { data: existingNewOrders } = await supabase
+        .from("biz_orders")
+        .select("id, customer_phone, customer_name, total_amount, status, created_at, fb_page_id")
+        .eq("customer_phone", phone)
+        .eq("status", "new")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      
+      if (existingNewOrders && existingNewOrders.length > 0) {
+        const existingOrder = existingNewOrders[0];
+        setExistingOrderAlert({
+          phone,
+          orderId: existingOrder.id,
+          orderInfo: existingOrder,
+        });
+        return;
+      }
+
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
         .from("biz_call_locks")
@@ -12609,29 +12628,7 @@ function CallCenterView({ profile }) {
                 }
                 effectiveFbPageId = requiredId;
               }
-              // 0. Эхлээд утсуудаар "Шинэ" статустай захиалга байгаа эсэхийг шалгах
-              for (const phoneEntry of phoneList) {
-                const { phone } = phoneEntry;
-                const { data: existingNewOrders } = await supabase
-                  .from("biz_orders")
-                  .select("id, customer_phone, customer_name, total_amount, status, created_at, fb_page_id")
-                  .eq("customer_phone", phone)
-                  .eq("status", "new")
-                  .order("created_at", { ascending: false })
-                  .limit(1);
-                
-                if (existingNewOrders && existingNewOrders.length > 0) {
-                  const existingOrder = existingNewOrders[0];
-                  // ⚡ ХАТУУ ШАЛГАЛТ — FB Page харгалзахгүй, бүх давхар захиалгыг засуулах
-                  setShowCallModal(false);
-                  setExistingOrderAlert({
-                    phone,
-                    orderId: existingOrder.id,
-                    orderInfo: existingOrder,
-                  });
-                  return;
-                }
-              }
+              // ⚡ Дуудлага бүртгэх үед давхар шалгахгүй (Дуудаад авлаа товч даргахад л шалгана)
               
               // Тус утсаар customer + call бичих
               for (const phoneEntry of phoneList) {
