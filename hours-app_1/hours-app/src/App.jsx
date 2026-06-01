@@ -19407,17 +19407,26 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                 </a>
               </>
             )}
-            {/* 🔗 FB Page badge */}
-            {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
-              <span style={{
-                background: "rgba(14,165,233,0.1)",
-                color: "#0284c7",
-                fontFamily: FS,
-                fontWeight: 600,
-              }} className="text-[9px] px-1.5 py-0.5 rounded">
-                🔗 {fbPagesMap[order.fb_page_id]}
-              </span>
-            )}
+            {/* 🔗 FB Page badges — Бүх pages (order + items) */}
+            {(() => {
+              const itemPages = items.map(it => it.fb_page_id).filter(Boolean);
+              const allPageIds = [...new Set([order.fb_page_id, ...itemPages].filter(Boolean))];
+              return allPageIds.map(pageId => {
+                if (!fbPagesMap[pageId]) return null;
+                const isMerchant = merchantPageIds.includes(pageId);
+                return (
+                  <span key={pageId} style={{
+                    background: isMerchant ? "rgba(14,165,233,0.15)" : "rgba(168,85,247,0.1)",
+                    color: isMerchant ? "#0284c7" : "#9333ea",
+                    fontFamily: FS,
+                    fontWeight: 600,
+                    border: isMerchant ? "1px solid rgba(14,165,233,0.3)" : "none",
+                  }} className="text-[9px] px-1.5 py-0.5 rounded">
+                    🔗 {fbPagesMap[pageId]}
+                  </span>
+                );
+              });
+            })()}
           </div>
           {order.delivery_address && (
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5 flex items-start gap-1">
