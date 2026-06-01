@@ -26956,10 +26956,12 @@ function MerchantCallsView({ allowedPageIds }) {
                   {!pendingCall && entry.orders.length === 0 && (
                     <button onClick={async () => {
                       // Шинэ дуудлага үүсгээд шууд захиалга үүсгэх руу шилжих
+                      const { data: { user } } = await supabase.auth.getUser();
                       const { data: newCall } = await supabase.from("biz_calls").insert({
                         phone: entry.phone,
                         fb_page_id: allowedPageIds[0],
                         call_status: "pending",
+                        created_by: user?.id || null,
                       }).select().single();
                       if (newCall) setOrderForCall(newCall);
                     }}
@@ -27040,11 +27042,13 @@ function PhonesToCallSection({ fbPages, products, onChanged }) {
     setBusy(true);
     try {
       const cleanPhone = phone.replace(/\D/g, "");
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("biz_calls").insert({
         phone: cleanPhone,
         fb_page_id: selectedPageId,
         call_status: "pending",
         created_at: new Date().toISOString(),
+        created_by: user?.id || null,  // 👤 Merchant хэрэглэгчийн id
       });
       if (error) throw error;
       setPhone("");
@@ -27196,6 +27200,7 @@ function MerchantNewCallModal({ fbPages, products, onSaved, onClose }) {
     setBusy(true);
     try {
       const cleanPhone = phone.replace(/\D/g, "");
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("biz_calls").insert({
         phone: cleanPhone,
         fb_page_id: fbPageId,
@@ -27203,6 +27208,7 @@ function MerchantNewCallModal({ fbPages, products, onSaved, onClose }) {
         interested_products: selectedProducts,
         call_status: "pending",
         created_at: new Date().toISOString(),
+        created_by: user?.id || null,  // 👤 Merchant хэрэглэгчийн id
       });
       if (error) throw error;
       onSaved();
