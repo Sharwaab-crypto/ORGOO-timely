@@ -19332,7 +19332,7 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
-function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
     pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
@@ -19446,39 +19446,53 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               maxWidth: items.length > 4 ? 220 : "none",  // 4+ үед хязгаарлаж scroll-ыг идэвхжүүлнэ
               scrollbarWidth: "thin",
             }}>
-            {items.map((it, idx) => (
-              <div key={it.id || idx} className="relative flex-shrink-0">
-                {it.product_image ? (
-                  <img src={it.product_image} alt=""
-                    style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
-                ) : (
+            {items.map((it, idx) => {
+              const isMerchantItem = it.fb_page_id && merchantPageIds.includes(it.fb_page_id);
+              return (
+                <div key={it.id || idx} className="relative flex-shrink-0">
+                  {it.product_image ? (
+                    <img src={it.product_image} alt=""
+                      style={{ 
+                        width: 40, height: 60, objectFit: "cover", borderRadius: 6,
+                        border: isMerchantItem ? `2px solid #0284c7` : "none",  // Merchant зураг хүрээтэй
+                      }} />
+                  ) : (
+                    <div style={{ 
+                      width: 40, height: 60, borderRadius: 6, 
+                      background: T.surfaceAlt, 
+                      border: `1px dashed ${T.border}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 16,
+                    }}>📦</div>
+                  )}
+                  {/* Захиалсан тоо badge — Merchant бараа бол өөр өнгө */}
+                  {Number(it.quantity) > 0 && (
+                    <div style={{
+                      position: "absolute", top: -6, right: -6,
+                      background: isMerchantItem 
+                        ? "linear-gradient(135deg, #0ea5e9, #0284c7)"  // 🔵 Merchant — Цэнхэр
+                        : "linear-gradient(135deg, #ec4899, #db2777)",  // 🌸 Бусад — Ягаан
+                      color: "white",
+                      minWidth: 20, height: 20, borderRadius: 999,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: "0 4px",
+                      fontSize: 10, fontWeight: 700,
+                      boxShadow: isMerchantItem 
+                        ? "0 2px 6px rgba(14,165,233,0.4)" 
+                        : "0 2px 6px rgba(236,72,153,0.4)",
+                      border: "1.5px solid white",
+                    }}>×{Number(it.quantity)}</div>
+                  )}
                   <div style={{ 
-                    width: 40, height: 60, borderRadius: 6, 
-                    background: T.surfaceAlt, 
-                    border: `1px dashed ${T.border}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 16,
-                  }}>📦</div>
-                )}
-                {/* Захиалсан тоо badge */}
-                {Number(it.quantity) > 0 && (
-                  <div style={{
-                    position: "absolute", top: -6, right: -6,
-                    background: "linear-gradient(135deg, #ec4899, #db2777)",
-                    color: "white",
-                    minWidth: 20, height: 20, borderRadius: 999,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    padding: "0 4px",
-                    fontSize: 10, fontWeight: 700,
-                    boxShadow: "0 2px 6px rgba(236,72,153,0.4)",
-                    border: "1.5px solid white",
-                  }}>×{Number(it.quantity)}</div>
-                )}
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
-                  {Number(it.unit_price || 0).toLocaleString()}₮
+                    color: isMerchantItem ? "#0284c7" : T.muted, 
+                    fontFamily: FM,
+                    fontWeight: isMerchantItem ? 700 : 400,
+                  }} className="text-[9px] text-center mt-1 tabular-nums">
+                    {Number(it.unit_price || 0).toLocaleString()}₮
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -27786,19 +27800,24 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
             console.error("[MerchantOrders] Items error:", itemErr);
           }
 
-          // Бараа зураг
+          // Бараа зураг + page ID
           const productIds = [...new Set((itemData || []).map(it => it.product_id).filter(Boolean))];
           let prodMap = {};
           if (productIds.length > 0) {
             const { data: prods } = await supabase.from("inv_products")
-              .select("id, image_url").in("id", productIds);
-            (prods || []).forEach(p => { prodMap[p.id] = p.image_url; });
+              .select("id, image_url, fb_page_id").in("id", productIds);
+            (prods || []).forEach(p => { prodMap[p.id] = { image: p.image_url, fb_page_id: p.fb_page_id }; });
           }
 
           const itemMap = {};
           (itemData || []).forEach(it => {
             if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
-            itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
+            const prodInfo = prodMap[it.product_id] || {};
+            itemMap[it.order_id].push({ 
+              ...it, 
+              product_image: prodInfo.image || null,
+              fb_page_id: prodInfo.fb_page_id || null,
+            });
           });
           setItems(itemMap);
         }
@@ -27915,6 +27934,7 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
               fbPagesMap={fbPagesMap}
               hideMenu={true}
+              merchantPageIds={allowedPageIds}
               onClick={() => setActiveOrder(o)} />
           ))}
         </div>
