@@ -13328,7 +13328,7 @@ function OperatorKPIReportView({ profile }) {
           "№": idx + 1,
           "Ажилтны нэр": op.name,
           "Албан тушаал": op.title,
-          "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : "Оператор",
+          "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : op.role === "merchant" ? "Merchant" : "Оператор",
           "Бүртгэсэн дугаар": op.uniquePhones,
           "Нийт залгалт": op.totalCalls,
           "Бүртгэсэн захиалга": op.totalOrders,
@@ -13492,9 +13492,11 @@ function OperatorKPIReportView({ profile }) {
 
             const roleColor = op.role === "admin" ? "#9333ea"
               : op.role === "manager" ? "#3b82f6"
+              : op.role === "merchant" ? "#0284c7"
               : "#ec4899";
             const roleLabel = op.role === "admin" ? "Админ"
               : op.role === "manager" ? "Ахлагч"
+              : op.role === "merchant" ? "Merchant"
               : "Оператор";
 
             return (
