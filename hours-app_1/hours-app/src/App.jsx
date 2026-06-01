@@ -19441,9 +19441,9 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
 
         {/* 🛍 Бүх бараа эгнүүлсэн харагдалт (5+ үед scroll) */}
         {items.length > 0 && (
-          <div className="flex-shrink-0 flex items-start gap-1.5 overflow-x-auto pb-1"
+          <div className={`flex-shrink-0 flex items-start gap-1.5 ${items.length > 4 ? "overflow-x-auto pb-1" : ""}`}
             style={{ 
-              maxWidth: items.length > 4 ? 220 : "none",  // 4+ үед хязгаарлаж scroll-ыг идэвхжүүлнэ
+              maxWidth: items.length > 4 ? 220 : "none",
               scrollbarWidth: "thin",
             }}>
             {items.map((it, idx) => {
