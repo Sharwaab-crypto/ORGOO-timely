@@ -19931,6 +19931,7 @@ function OrdersView({ profile }) {
   const [products, setProducts] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Pages ID → name
+  const [merchantPageIds, setMerchantPageIds] = useState([]); // 🏪 Merchant page-ууд
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("new");
   const [driverFilter, setDriverFilter] = useState("all"); // all | unassigned | <driverId>
@@ -19974,12 +19975,17 @@ function OrdersView({ profile }) {
         });
 
         const prodMap = {};
-        (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
+        (prodData || []).forEach((p) => { prodMap[p.id] = { image: p.image_url, fb_page_id: p.fb_page_id }; });
 
         const itemMap = {};
         (itemData || []).forEach((it) => {
           if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
-          itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
+          const prodInfo = prodMap[it.product_id] || {};
+          itemMap[it.order_id].push({ 
+            ...it, 
+            product_image: prodInfo.image || null,
+            fb_page_id: prodInfo.fb_page_id || null,
+          });
         });
         setItems(itemMap);
       }
@@ -19990,6 +19996,15 @@ function OrdersView({ profile }) {
       const fbMap = {};
       (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
       setFbPagesMap(fbMap);
+
+      // 🏪 Merchant page-уудыг олох (merchant хэрэглэгчдэд оноогдсон бүх page)
+      const { data: merchants } = await supabase.from("profiles")
+        .select("fb_page_ids").eq("role", "merchant");
+      const mPageIds = new Set();
+      (merchants || []).forEach(m => {
+        (m.fb_page_ids || []).forEach(id => mPageIds.add(id));
+      });
+      setMerchantPageIds([...mPageIds]);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -20459,6 +20474,7 @@ function OrdersView({ profile }) {
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={(safePage - 1) * PAGE_SIZE + idx}
               drivers={drivers}
               fbPagesMap={fbPagesMap}
+              merchantPageIds={merchantPageIds}
               onClick={() => setActiveOrder(o)}
               onMap={() => setMapOrder(o)}
               onEdit={() => setEditOrder(o)}
