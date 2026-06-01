@@ -19439,40 +19439,54 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           })()}
         </div>
 
-        {/* Image + qty badge */}
-        {firstImage && (
-          <div className="relative flex-shrink-0">
-            <img src={firstImage} alt=""
-              style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
-            {/* Захиалсан тоо badge — зургийн дээгүүр */}
-            {firstItem && Number(firstItem.quantity) > 0 && (
+        {/* 🛍 Бүх бараа эгнүүлсэн харагдалт */}
+        {items.length > 0 && (
+          <div className="flex-shrink-0 flex items-start gap-1.5">
+            {items.slice(0, 4).map((it, idx) => (
+              <div key={it.id || idx} className="relative">
+                {it.product_image ? (
+                  <img src={it.product_image} alt=""
+                    style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
+                ) : (
+                  <div style={{ 
+                    width: 40, height: 60, borderRadius: 6, 
+                    background: T.surfaceAlt, 
+                    border: `1px dashed ${T.border}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 16,
+                  }}>📦</div>
+                )}
+                {/* Захиалсан тоо badge */}
+                {Number(it.quantity) > 0 && (
+                  <div style={{
+                    position: "absolute", top: -6, right: -6,
+                    background: "linear-gradient(135deg, #ec4899, #db2777)",
+                    color: "white",
+                    minWidth: 20, height: 20, borderRadius: 999,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0 4px",
+                    fontSize: 10, fontWeight: 700,
+                    boxShadow: "0 2px 6px rgba(236,72,153,0.4)",
+                    border: "1.5px solid white",
+                  }}>×{Number(it.quantity)}</div>
+                )}
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
+                  {Number(it.unit_price || 0).toLocaleString()}₮
+                </div>
+              </div>
+            ))}
+            {/* 5+ бараа бол "+N" */}
+            {items.length > 4 && (
               <div style={{
-                position: "absolute", top: -6, right: -6,
-                background: "linear-gradient(135deg, #ec4899, #db2777)",
-                color: "white",
-                minWidth: 20, height: 20, borderRadius: 999,
+                width: 40, height: 60, borderRadius: 6,
+                background: "rgba(59,130,246,0.1)",
+                border: `1px solid rgba(59,130,246,0.2)`,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                padding: "0 4px",
-                fontSize: 10, fontWeight: 700,
-                boxShadow: "0 2px 6px rgba(236,72,153,0.4)",
-                border: "1.5px solid white",
-              }}>×{Number(firstItem.quantity)}</div>
+                color: "#3b82f6", fontFamily: FD, fontWeight: 700,
+              }} className="text-sm">
+                +{items.length - 4}
+              </div>
             )}
-            {/* Олон төрлийн бараа byne индикатор */}
-            {items.length > 1 && (
-              <div style={{
-                position: "absolute", bottom: -6, right: -6,
-                background: "#3b82f6", color: "white",
-                width: 18, height: 18, borderRadius: "50%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, fontWeight: 700,
-                border: "1.5px solid white",
-                boxShadow: "0 2px 6px rgba(59,130,246,0.4)",
-              }}>+{items.length - 1}</div>
-            )}
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
-              {firstItem ? Number(firstItem.unit_price || 0).toLocaleString() + "₮" : ""}
-            </div>
           </div>
         )}
 
@@ -27943,15 +27957,26 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
 
   // Merchant-ийн бараа болон page нэрс татах
   useEffect(() => {
-    if (!profile?.fb_page_ids || profile.fb_page_ids.length === 0) return;
+    console.log("[MerchantEdit] 🔍 INIT — profile:", profile);
+    console.log("[MerchantEdit] 🔍 profile.fb_page_ids:", profile?.fb_page_ids);
+    console.log("[MerchantEdit] 🔍 order.fb_page_id:", order.fb_page_id);
+    
+    if (!profile?.fb_page_ids || profile.fb_page_ids.length === 0) {
+      console.warn("[MerchantEdit] ⚠ profile.fb_page_ids алга байна!");
+      return;
+    }
     (async () => {
-      const [{ data: prods }, { data: pgs }] = await Promise.all([
+      const [{ data: prods, error: prodsErr }, { data: pgs, error: pgsErr }] = await Promise.all([
         supabase.from("inv_products")
           .select("id, name, sale_price, fb_page_id, image_url, sku")
           .in("fb_page_id", profile.fb_page_ids)
           .eq("is_active", true),
         supabase.from("biz_fb_pages").select("id, name").in("id", profile.fb_page_ids),
       ]);
+      
+      console.log("[MerchantEdit] 📦 Merchant products:", prods?.length || 0, prodsErr || "OK");
+      console.log("[MerchantEdit] 🏷 Merchant pages:", pgs?.length || 0, pgsErr || "OK", pgs);
+      
       setMerchantProducts(prods || []);
       const map = {};
       (pgs || []).forEach(p => { map[p.id] = p.name; });
@@ -27975,6 +28000,7 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
 
   const addMerchantProduct = (p) => {
+    console.log("[MerchantEdit] ➕ Adding product:", p.name, "fb_page_id:", p.fb_page_id);
     if (items.find(x => x.product_id === p.id)) return;
     setItems([...items, {
       product_id: p.id,
@@ -27986,6 +28012,7 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
     }]);
     // 🔗 Шинэ merchant бараа нэмэхэд → page-ийг автомат шинэчилнэ
     if (p.fb_page_id && (profile?.fb_page_ids || []).includes(p.fb_page_id)) {
+      console.log("[MerchantEdit] 🔗 Setting fbPageId to:", p.fb_page_id);
       setFbPageId(p.fb_page_id);
     }
   };
@@ -28011,6 +28038,12 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
         newFbPageId = newMerchantItems[newMerchantItems.length - 1].fb_page_id;
       }
 
+      console.log("[MerchantEdit] 💾 SAVE START");
+      console.log("[MerchantEdit] 📋 fbPageId state:", fbPageId);
+      console.log("[MerchantEdit] 📋 order.fb_page_id:", order.fb_page_id);
+      console.log("[MerchantEdit] 📋 merchantPageIds:", merchantPageIds);
+      console.log("[MerchantEdit] 📋 All items:", items);
+      console.log("[MerchantEdit] 📋 New merchant items:", newMerchantItems);
       console.log("[MerchantEdit] Old page:", order.fb_page_id, "→ New:", newFbPageId, 
         "isMerchantPage:", merchantPageIds.includes(newFbPageId),
         "newItems:", newMerchantItems.length);
@@ -28027,7 +28060,11 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
         fb_page_id: newFbPageId,  // ⚡ Үргэлж шинэчилнэ
       };
       const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", order.id);
-      if (updErr) throw updErr;
+      if (updErr) {
+        console.error("[MerchantEdit] ❌ UPDATE ERROR:", updErr);
+        throw updErr;
+      }
+      console.log("[MerchantEdit] ✅ Order updated, fb_page_id =", newFbPageId);
 
       // 2. Хуучин барааны тоо/үнэ шинэчлэх
       for (const it of items) {
