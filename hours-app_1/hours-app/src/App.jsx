@@ -13250,7 +13250,7 @@ function OperatorKPIReportView({ profile }) {
           fetchAllRows(supabase.from("biz_orders").select("*")),
           supabase.from("profiles")
             .select("id, name, role, job_title")
-            .in("role", ["admin", "manager", "operator"])
+            .in("role", ["admin", "manager", "operator", "merchant"])
             .order("name"),
         ]);
         setCalls(callData || []);
