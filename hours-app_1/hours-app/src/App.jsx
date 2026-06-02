@@ -12034,8 +12034,8 @@ function CallCenterView({ profile }) {
           c.call_status === "cancelled"
         );
 
-        // 📞 Нийт дугаар = Анхдагч бүртгэгдсэн дугаарын тоо
-        const uniquePhones = allCallsForStats.length;
+        // 📞 Нийт дугаар = Давхардаагүй (unique) бүртгэгдсэн дугаарын тоо
+        const uniquePhones = new Set(allCallsForStats.map((c) => c.phone)).size;
         
         // ☎ Нийт залгалт = "Залгалт" хийсэн дуудлага
         // (no_answer, unreachable, callback, ordered, cancelled — operator залгасан)
@@ -12047,13 +12047,15 @@ function CallCenterView({ profile }) {
           c.call_status === "cancelled"
         ).length;
         
-        // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
-        let orderedPhones = 0;
-        let cancelledPhones = 0;
+        // ✅ Захиалга / 🗑 Цуцалсан — давхардаагүй утсаар тоолно
+        const orderedSet = new Set();
+        const cancelledSet = new Set();
         allCallsForStats.forEach((c) => {
-          if (c.call_status === "ordered") orderedPhones++;
-          else if (c.call_status === "cancelled") cancelledPhones++;
+          if (c.call_status === "ordered") orderedSet.add(c.phone);
+          else if (c.call_status === "cancelled") cancelledSet.add(c.phone);
         });
+        const orderedPhones = orderedSet.size;
+        const cancelledPhones = cancelledSet.size;
 
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
