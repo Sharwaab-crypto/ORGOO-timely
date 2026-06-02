@@ -2248,7 +2248,7 @@ function AdminDashboard({ profile }) {
           {/* Nav */}
           <nav className={`flex-1 overflow-y-auto px-2 py-3 ${sidebarCollapsed ? "sidebar-collapsed-nav" : ""}`}>
             {!isMarketing && (
-            <SidebarSection label="Хяналт" icon={Eye}>
+            <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
@@ -3210,7 +3210,7 @@ function EmployeeDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Үндсэн">
+            <SidebarSection label="Үндсэн" defaultOpen>
               <SidebarTab active={view === "home"} onClick={() => { setView("home"); setSidebarOpen(false); }} icon={Clock}>Цаг бүртгэл</SidebarTab>
               <SidebarTab active={view === "salary"} onClick={() => { setView("salary"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Цалин</SidebarTab>
               <SidebarTab active={view === "history"} onClick={() => { setView("history"); setSidebarOpen(false); }} icon={Calendar}>Түүх</SidebarTab>
@@ -5235,7 +5235,16 @@ function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
   );
 }
 
-function SidebarSection({ label, icon: Icon, children, defaultOpen = true }) {
+function SidebarSection({ label, icon: Icon, children, defaultOpen = false }) {
+  // Accordion руу шилжих үед хуучин "бүгд нээлттэй" төлөвийг нэг удаа цэвэрлэх
+  if (typeof window !== "undefined" && !window.__sidebarAccordionMigrated) {
+    window.__sidebarAccordionMigrated = true;
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("orgoo-sidebar-") && k !== "orgoo-sidebar-collapsed")
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {}
+  }
   // localStorage-аас сэргээх (label-ыг key болгож)
   const storageKey = label ? `orgoo-sidebar-${label}` : null;
   const [open, setOpen] = useState(() => {
@@ -5250,11 +5259,31 @@ function SidebarSection({ label, icon: Icon, children, defaultOpen = true }) {
     }
   }, [open, storageKey]);
 
+  // Accordion: өөр section нээгдэхэд энэ section хаагдана
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail !== label) setOpen(false);
+    };
+    window.addEventListener("sidebar-section-open", handler);
+    return () => window.removeEventListener("sidebar-section-open", handler);
+  }, [label]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      // Нээж байгаа бол бусдад "хаагдаач" гэж дохио өг
+      if (next) {
+        window.dispatchEvent(new CustomEvent("sidebar-section-open", { detail: label }));
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="mb-4">
       {label && (
         <button
-          onClick={() => setOpen(!open)}
+          onClick={toggle}
           className="press-btn w-full flex items-center justify-between px-3 mb-1.5 hover:opacity-70 transition-opacity group"
           style={{ fontFamily: FS, color: T.mutedSoft }}>
           <span className="flex items-center gap-1.5">
@@ -26612,7 +26641,7 @@ function MerchantDashboard({ profile }) {
             </div>
           </div>
 
-          <SidebarSection label="Хяналт">
+          <SidebarSection label="Хяналт" defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
           </SidebarSection>
 
@@ -28529,7 +28558,7 @@ function OperatorDashboard({ profile }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
-          <SidebarSection label="Хяналт">
+          <SidebarSection label="Хяналт" defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
             <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
           </SidebarSection>
@@ -32303,7 +32332,7 @@ function ManagerDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Хяналт">
+            <SidebarSection label="Хяналт" defaultOpen>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
