@@ -10245,6 +10245,12 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
 
       for (const item of countedItems) {
+        // Барааны бодит үлдэгдлийг тоолсон тоонд тааруулж ШУУД шинэчлэх
+        await supabase.from("inv_products")
+          .update({ stock_quantity: Number(item.actual_qty), updated_at: new Date().toISOString() })
+          .eq("id", item.product_id);
+
+        // Зөрүүтэй бол adjustment movement бичлэг үүсгэх (түүх хадгалах)
         if (Number(item.diff_qty) !== 0) {
           await supabase.from("inv_movements").insert({
             product_id: item.product_id,
