@@ -15812,7 +15812,7 @@ function DriverSettlementView({ profile }) {
               alert("⚠ Тооцоо нээх захиалга алга");
               return;
             }
-            if (!confirm(`Тооцоо нээх үү?\n\nХүргэгч: ${driver.name}\nЗахиалга: ${driver.delivered}ш\nТушаах ёстой: ${driver.owed.toLocaleString()}₮\n\nЗахиалгууд "Тооцоонд орсон" болно. Дараа нь "Тооцоо хаах" даргаж дуусгана.`)) return;
+            if (!confirm(`Тооцоо нээх үү?\n\nХүргэгч: ${driver.name}\nЗахиалга: ${driver.delivered}ш\nТушаах ёстой: ${driver.owed.toLocaleString()}₮\n\nЗахиалгууд "Тооцоонд орсон" болно. Дараа нь "Тооцоо хаах" дарж дуусгана.`)) return;
 
             setOpeningSettlement(true);
             try {
@@ -35444,7 +35444,7 @@ function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNo
             </div>
           ) : (
             <div style={{ color: T.muted, fontFamily: FM, fontStyle: "italic" }} className="text-[11px]">
-              {canEdit ? "Тайлбар бичээгүй байна — ✏ товчийг даргаж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
+              {canEdit ? "Тайлбар бичээгүй байна — ✏ товчийг дарж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
             </div>
           )}
 
