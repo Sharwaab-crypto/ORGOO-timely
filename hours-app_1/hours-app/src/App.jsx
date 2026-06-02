@@ -468,34 +468,34 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — Soft gradient (peach → pink → violet)
-  bg: "linear-gradient(135deg, #fef3ec 0%, #ffe5e5 50%, #e8e3f8 100%)",
-  bgSolid: "#fef3ec",
+  // Background — Soft gradient (mint → aqua tint → deep teal tint)
+  bg: "linear-gradient(135deg, #f0faf7 0%, #ddf3ee 50%, #e2eff0 100%)",
+  bgSolid: "#f0faf7",
   // Surfaces — frosted glass
   surface: "rgba(255, 255, 255, 0.7)",
   surfaceStrong: "rgba(255, 255, 255, 0.85)",
   surfaceAlt: "rgba(255, 255, 255, 0.45)",
   surfaceGlass: "rgba(255, 255, 255, 0.55)",
-  // Text — warm slate
-  ink: "#44403c", inkSoft: "#57534e",
-  muted: "#78716c", mutedSoft: "#a8a29e",
+  // Text — deep teal slate
+  ink: "#0C2A30", inkSoft: "#1f4248",
+  muted: "#5b7c7e", mutedSoft: "#8fabac",
   // Borders — translucent white
   border: "rgba(255, 255, 255, 0.7)",
   borderSoft: "rgba(255, 255, 255, 0.5)",
-  borderStrong: "rgba(244, 114, 182, 0.25)",
-  // Accent — Pink → Orange gradient
-  highlight: "#ec4899",
-  highlightDark: "#db2777",
-  highlightSoft: "rgba(244, 114, 182, 0.12)",
-  highlightGlow: "0 8px 24px rgba(244, 114, 182, 0.25)",
+  borderStrong: "rgba(14, 156, 142, 0.25)",
+  // Accent — Aqua → Deep teal gradient
+  highlight: "#0E9C8E",
+  highlightDark: "#0B7D72",
+  highlightSoft: "rgba(63, 224, 198, 0.14)",
+  highlightGlow: "0 8px 24px rgba(14, 156, 142, 0.25)",
   // Statuses
   ok: "#10b981", okSoft: "rgba(16,185,129,0.12)",
   err: "#ef4444", errSoft: "rgba(239,68,68,0.12)",
   warn: "#f59e0b", warnSoft: "rgba(245,158,11,0.12)",
   // Helpers
   blur: "blur(20px) saturate(180%)",
-  cardShadow: "0 8px 24px rgba(244, 114, 182, 0.08)",
-  cardShadowHover: "0 12px 32px rgba(244, 114, 182, 0.15)",
+  cardShadow: "0 8px 24px rgba(14, 156, 142, 0.08)",
+  cardShadowHover: "0 12px 32px rgba(14, 156, 142, 0.15)",
 };
 const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
 const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
@@ -549,7 +549,7 @@ function ErrorFallback({ error, resetError }) {
             style={{
               flex: 1,
               padding: "0.75rem 1rem",
-              background: "linear-gradient(135deg, #f97316, #ec4899)",
+              background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
               color: "white",
               border: "none",
               borderRadius: "10px",
@@ -1335,7 +1335,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "#ec4899",
+              background: "#0E9C8E",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1369,7 +1369,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "#ec4899",
+              background: "#0E9C8E",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -2310,7 +2310,7 @@ function AdminDashboard({ profile }) {
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className={`flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors ${sidebarCollapsed ? "flex-col" : ""}`}>
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0">
                 {profile.name?.[0]}
               </div>
               {!sidebarCollapsed && (
@@ -3175,7 +3175,7 @@ function EmployeeDashboard({ profile }) {
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
               <div style={{
-                background: isActive ? "#10b981" : "#ec4899",
+                background: isActive ? "#10b981" : "#0E9C8E",
                 color: "white",
               }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
                 <UserIcon size={14} />
@@ -3219,7 +3219,7 @@ function EmployeeDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -4712,9 +4712,9 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 🚚 Delivery
               </button>
               <button onClick={() => setRole("marketing")}
-                style={{ background: role === "marketing" ? "#ec4899" : "transparent",
+                style={{ background: role === "marketing" ? "#0E9C8E" : "transparent",
                          color: role === "marketing" ? "white" : T.ink,
-                         borderColor: role === "marketing" ? "#ec4899" : T.border, fontFamily: FM }}
+                         borderColor: role === "marketing" ? "#0E9C8E" : T.border, fontFamily: FM }}
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
                 📢 Маркетинг
               </button>
@@ -4737,7 +4737,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
               </p>
             )}
             {role === "marketing" && (
-              <p style={{ color: "#ec4899" }} className="text-[11px] mt-1.5">
+              <p style={{ color: "#0E9C8E" }} className="text-[11px] mt-1.5">
                 📢 Маркетинг: Дуудлага, Борлуулалт, FB Pages, Захиалга, Бараа нөөц харна.
               </p>
             )}
@@ -5964,8 +5964,8 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
       if (!z.polygon || z.polygon.length < 3) return;
       
       const poly = L.polygon(z.polygon, {
-        color: z.color || "#ec4899",
-        fillColor: z.color || "#ec4899",
+        color: z.color || "#0E9C8E",
+        fillColor: z.color || "#0E9C8E",
         fillOpacity: 0.25,
         weight: 2,
       }).addTo(map);
@@ -5985,7 +5985,7 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
       
       const label = L.marker(center, {
         icon: L.divIcon({
-          html: `<div style="background: ${z.color || '#ec4899'}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid white;">${z.name}</div>`,
+          html: `<div style="background: ${z.color || '#0E9C8E'}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid white;">${z.name}</div>`,
           iconSize: [120, 24],
           iconAnchor: [60, 12],
           className: "zone-label",
@@ -6476,7 +6476,7 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
 // ─── Бүс editor modal — газрын зураг дээр polygon үүсгэх ─────────────────
 function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
   const [name, setName] = useState(zone?.name || "");
-  const [color, setColor] = useState(zone?.color || "#ec4899");
+  const [color, setColor] = useState(zone?.color || "#0E9C8E");
   const [driverId, setDriverId] = useState(zone?.driver_id || "");
   const [notes, setNotes] = useState(zone?.notes || "");
   const [polygon, setPolygon] = useState(zone?.polygon || []);
@@ -11935,7 +11935,7 @@ function CallCenterView({ profile }) {
       {/* Big call button */}
       <button onClick={() => setShowCallModal(true)}
         style={{
-          background: "linear-gradient(135deg, #ec4899, #f97316)",
+          background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
           color: "white",
           fontFamily: FS,
           boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
@@ -13541,7 +13541,7 @@ function OperatorKPIReportView({ profile }) {
             const roleColor = op.role === "admin" ? "#9333ea"
               : op.role === "manager" ? "#3b82f6"
               : op.role === "merchant" ? "#0284c7"
-              : "#ec4899";
+              : "#0E9C8E";
             const roleLabel = op.role === "admin" ? "Админ"
               : op.role === "manager" ? "Ахлагч"
               : op.role === "merchant" ? "Merchant"
@@ -19182,7 +19182,7 @@ function PinMapModal({ initialLat, initialLng, onSelect, onClose }) {
 
       // 📍 Эхний pin
       const customIcon = L.divIcon({
-        html: `<div style="background:#ec4899;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:14px;">📍</span></div>`,
+        html: `<div style="background:#0E9C8E;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:14px;">📍</span></div>`,
         className: "",
         iconSize: [32, 32],
         iconAnchor: [16, 32],
@@ -19556,7 +19556,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                       position: "absolute", top: -6, right: -6,
                       background: isMerchantItem 
                         ? "linear-gradient(135deg, #0ea5e9, #0284c7)"  // 🔵 Merchant — Цэнхэр
-                        : "linear-gradient(135deg, #ec4899, #db2777)",  // 🌸 Бусад — Ягаан
+                        : "linear-gradient(135deg, #0E9C8E, #0B7D72)",  // 🌸 Бусад — Ягаан
                       color: "white",
                       minWidth: 20, height: 20, borderRadius: 999,
                       display: "flex", alignItems: "center", justifyContent: "center",
@@ -19729,7 +19729,7 @@ function MapPickerModal({ order, onSave, onClose }) {
     }).addTo(map);
 
     const customIcon = L.divIcon({
-      html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+      html: `<div style="background: #0E9C8E; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 24],
       className: "custom-pin-marker",
@@ -19911,7 +19911,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
           alignItems: "flex-start",
           justifyContent: "center",
           padding: "5rem 0.5rem 0.5rem 0.5rem",
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
         }}
@@ -19921,7 +19921,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
               backdropFilter: "blur(24px) saturate(180%)",
               WebkitBackdropFilter: "blur(24px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.8)",
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
               borderRadius: 16,
               width: "100%",
               maxWidth: 480,
@@ -21265,7 +21265,7 @@ function OrderDetailMap({ order }) {
 
       // Marker
       const customIcon = L.divIcon({
-        html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+        html: `<div style="background: #0E9C8E; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
         className: "",
         iconSize: [24, 24],
         iconAnchor: [12, 24],
@@ -23066,7 +23066,7 @@ function PollsView({ profile, isAdmin = false }) {
             return (
               <div key={poll.id} className="glass rounded-2xl p-4">
                 <div className="flex items-start gap-2 mb-2">
-                  <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                  <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }}
                     className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0">
                     🗳
                   </div>
@@ -23396,7 +23396,7 @@ function HRPersonalFileView({ employees, profile, isAdmin = false, currentUserId
           <div className="glass-strong rounded-2xl p-5">
             <div className="flex items-start gap-4">
               <div style={{
-                background: "linear-gradient(135deg, #f97316, #ec4899)",
+                background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
                 color: "white",
               }} className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold">
                 {selectedEmp?.name?.[0]}
@@ -24928,7 +24928,7 @@ function BestEmployeeView({ employees, sessions, kpiEntries, leaves }) {
                 <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }} className="text-sm w-6">
                   {i + 4}
                 </div>
-                <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold">
                   {stat.employee.name?.[0]}
                 </div>
@@ -25105,8 +25105,8 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
       const lat = Number(s.lat), lng = Number(s.lng);
       const circle = LRef.circle([lat, lng], {
         radius: s.radius_m || 200,
-        color: "#ec4899",
-        fillColor: "#ec4899",
+        color: "#0E9C8E",
+        fillColor: "#0E9C8E",
         fillOpacity: 0.06,
         weight: 1.5,
         dashArray: "4 4",
@@ -25116,7 +25116,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
 
       const siteIcon = LRef.divIcon({
         className: "site-marker",
-        html: `<div style="background: linear-gradient(135deg, #f97316, #ec4899); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(244,114,182,0.4); border: 2px solid white;">🏢</div>`,
+        html: `<div style="background: linear-gradient(135deg, #3FE0C6, #0E9C8E); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(14, 156, 142,0.4); border: 2px solid white;">🏢</div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
       });
@@ -25415,7 +25415,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
             </div>
           )}
           <div className="flex items-center gap-1">
-            <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)" }} className="w-2.5 h-2.5 rounded-full" />
+            <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)" }} className="w-2.5 h-2.5 rounded-full" />
             <span style={{ color: T.inkSoft }}>Байр ({filteredSites.length})</span>
           </div>
         </div>
@@ -25480,12 +25480,12 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
 
 function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" }) {
   const iconBg = {
-    pink: "linear-gradient(135deg, #f97316, #ec4899)",
+    pink: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
     success: "linear-gradient(135deg, #10b981, #14b8a6)",
     warn: "linear-gradient(135deg, #f59e0b, #f97316)",
     info: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
     purple: "linear-gradient(135deg, #8b5cf6, #ec4899)",
-  }[iconColor] || "linear-gradient(135deg, #f97316, #ec4899)";
+  }[iconColor] || "linear-gradient(135deg, #3FE0C6, #0E9C8E)";
 
   return (
     <div className="glass lift rounded-2xl px-5 py-4">
@@ -25495,7 +25495,7 @@ function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" 
           <div style={{
             background: iconBg,
             color: "white",
-            boxShadow: "0 4px 12px rgba(244,114,182,0.25)",
+            boxShadow: "0 4px 12px rgba(14, 156, 142,0.25)",
           }} className="w-9 h-9 rounded-xl flex items-center justify-center">
             <Icon size={16} strokeWidth={2.2} />
           </div>
@@ -29888,12 +29888,12 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   return createPortal(
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
-      background: "rgba(244, 114, 182, 0.15)", backdropFilter: "blur(8px)",
+      background: "rgba(14, 156, 142, 0.15)", backdropFilter: "blur(8px)",
     }} onClick={onClose}>
       <div style={{
         background: "rgba(255, 255, 255, 0.98)", backdropFilter: "blur(24px)",
         border: "1px solid rgba(255, 255, 255, 0.8)",
-        boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+        boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
         borderRadius: 16,
         position: "absolute", top: 8, left: 8, right: 8, bottom: 8,
         display: "flex", flexDirection: "column",
@@ -31498,7 +31498,7 @@ function DriverDashboard({ profile }) {
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998,
           display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12,
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
           overflowY: "auto",
         }}
@@ -31507,7 +31507,7 @@ function DriverDashboard({ profile }) {
               background: T.bg,
               borderRadius: 16, width: "100%", maxWidth: 600,
               padding: 12, marginTop: 12, marginBottom: 12,
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
             }}
             onClick={(e) => e.stopPropagation()}>
             <OrderDetail
@@ -31929,7 +31929,7 @@ function DriverDashboard({ profile }) {
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
           display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
         }}
           onClick={() => setCancelOrder(null)}>
@@ -31937,7 +31937,7 @@ function DriverDashboard({ profile }) {
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(24px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.8)",
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
               borderRadius: 16, width: "100%", maxWidth: 400,
             }}
             onClick={(e) => e.stopPropagation()}>
@@ -32270,7 +32270,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
@@ -32303,7 +32303,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -35868,7 +35868,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "#ec4899",
+                              background: "#0E9C8E",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -36205,7 +36205,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "#ec4899",
+                                background: "#0E9C8E",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
