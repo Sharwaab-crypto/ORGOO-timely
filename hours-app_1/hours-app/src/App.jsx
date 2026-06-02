@@ -626,6 +626,8 @@ function AppRoot() {
 
   // ─── Mobile UX системт сайжруулалт CSS ──────────────────────────
   useEffect(() => {
+    // Browser tab гарчиг
+    document.title = "CoreLink · Цаг бүртгэл";
     const styleId = "orgoo-mobile-improvements";
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
