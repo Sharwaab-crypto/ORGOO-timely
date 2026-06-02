@@ -13336,8 +13336,20 @@ function CallCenterView({ profile }) {
                 }
               }
 
-              // 🔗 Захиалгын FB Page-ийг сонгосон бараануудаас автоматаар тодорхойлох
+              // 🔗 Захиалгын FB Page — дуудлагаас (эсвэл бараанаас) автомат тодорхойлох
               let orderFbPageId = data.fb_page_id || null;
+              // 1) Дуудлагын page-ээс авах (хамгийн найдвартай)
+              if (!orderFbPageId && data.phone) {
+                const { data: callRows } = await supabase
+                  .from("biz_calls")
+                  .select("fb_page_id, created_at")
+                  .eq("phone", data.phone)
+                  .not("fb_page_id", "is", null)
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+                if (callRows && callRows.length > 0) orderFbPageId = callRows[0].fb_page_id;
+              }
+              // 2) Дуудлагад байхгүй бол бараануудаас авах
               if (!orderFbPageId && data.items && data.items.length > 0) {
                 const productIds = data.items.map((it) => it.product_id).filter(Boolean);
                 if (productIds.length > 0) {
@@ -13345,7 +13357,6 @@ function CallCenterView({ profile }) {
                     .from("inv_products")
                     .select("id, fb_page_id")
                     .in("id", productIds);
-                  // Хамгийн их давтагдсан page-ийг сонгох
                   const pageCounts = {};
                   (prods || []).forEach((p) => {
                     if (p.fb_page_id) pageCounts[p.fb_page_id] = (pageCounts[p.fb_page_id] || 0) + 1;
