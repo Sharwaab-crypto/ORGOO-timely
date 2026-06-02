@@ -9877,6 +9877,8 @@ function StockCountView({ profile }) {
   const [counts, setCounts] = useState([]);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [allStock, setAllStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCount, setActiveCount] = useState(null); // open detail
   const [showNewModal, setShowNewModal] = useState(false);
@@ -9893,7 +9895,7 @@ function StockCountView({ profile }) {
       ]);
       // Төв агуулах
       const mainWh = (whData || []).find((w) => w.type === "main");
-      // Бараа тус бүрийн ТӨВ агуулах дахь үлдэгдэл
+      // Бараа тус бүрийн ТӨВ агуулах дахь үлдэгдэл (default харагдац)
       const stockByProduct = {};
       (stkData || []).forEach((s) => {
         if (mainWh && s.warehouse_id === mainWh.id) {
@@ -9907,15 +9909,29 @@ function StockCountView({ profile }) {
       setCounts(countsData || []);
       setProducts(productsWithStock);
       setCategories(catData || []);
+      setWarehouses(whData || []);
+      setAllStock(stkData || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadAll(); }, []);
 
-  // Шинэ тооллого нээх (категориор шүүх боломжтой)
-  const handleStartNew = async ({ notes, categoryId }) => {
+  // Шинэ тооллого нээх (категори + агуулах сонгох боломжтой)
+  const handleStartNew = async ({ notes, categoryId, warehouseId }) => {
     try {
+      // Сонгосон агуулах (байхгүй бол Төв агуулах)
+      const wh = warehouseId
+        ? warehouses.find((w) => w.id === warehouseId)
+        : warehouses.find((w) => w.type === "main");
+      if (!wh) { alert("⚠ Агуулах олдсонгүй"); return; }
+
+      // Тухайн агуулах дахь барааны үлдэгдэл
+      const stockInWh = {};
+      allStock.forEach((s) => {
+        if (s.warehouse_id === wh.id) stockInWh[s.product_id] = Number(s.quantity || 0);
+      });
+
       // Категориор шүүж бараа авах
       const filteredProducts = categoryId
         ? products.filter((p) => p.category_id === categoryId)
@@ -9935,19 +9951,20 @@ function StockCountView({ profile }) {
         .insert({
           count_number: countNumber,
           status: "in_progress",
-          notes: cat ? `[${cat.name}] ${notes || ""}`.trim() : notes,
+          notes: `[${wh.name}] ${cat ? `[${cat.name}] ` : ""}${notes || ""}`.trim(),
           total_products: filteredProducts.length,
+          warehouse_id: wh.id,
           created_by: profile.id,
         })
         .select()
         .single();
       if (error) throw error;
 
-      // Шүүгдсэн барааг snapshot хийх
+      // Шүүгдсэн барааг snapshot хийх (тухайн агуулахын тоогоор)
       const items = filteredProducts.map((p) => ({
         count_id: newCount.id,
         product_id: p.id,
-        system_qty: p.stock,
+        system_qty: stockInWh[p.id] || 0,
       }));
       const { error: itemErr } = await supabase.from("inv_stock_count_items").insert(items);
       if (itemErr) throw itemErr;
@@ -10048,6 +10065,7 @@ function StockCountView({ profile }) {
         <NewStockCountModal
           products={products}
           categories={categories}
+          warehouses={warehouses}
           onSave={handleStartNew}
           onClose={() => setShowNewModal(false)}
         />
@@ -10056,9 +10074,11 @@ function StockCountView({ profile }) {
   );
 }
 
-function NewStockCountModal({ products, categories, onSave, onClose }) {
+function NewStockCountModal({ products, categories, warehouses = [], onSave, onClose }) {
   const [notes, setNotes] = useState("");
   const [categoryId, setCategoryId] = useState(""); // "" = бүх
+  const mainWh = warehouses.find((w) => w.type === "main");
+  const [warehouseId, setWarehouseId] = useState(mainWh?.id || (warehouses[0]?.id || ""));
   const [busy, setBusy] = useState(false);
 
   // Сонгосон категорийн бараа тоо
@@ -10090,6 +10110,22 @@ function NewStockCountModal({ products, categories, onSave, onClose }) {
         </div>
 
         <div className="space-y-3">
+          {/* Агуулах сонгох */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block">
+              Аль агуулахыг тоолох вэ?
+            </label>
+            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2.5 rounded-xl text-sm">
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.type === "main" ? "🏢" : "🚚"} {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Категори сонгох */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block">
@@ -10191,6 +10227,7 @@ function NewStockCountModal({ products, categories, onSave, onClose }) {
               await onSave({
                 notes: notes.trim() || null,
                 categoryId: categoryId || null,
+                warehouseId: warehouseId || null,
               });
               setBusy(false);
             }}
@@ -10259,11 +10296,15 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       const totalDiff = items.reduce((sum, i) => sum + (Number(i.diff_amount) || 0), 0);
       const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
 
-      // Төв агуулахыг олох (тооллого зөвхөн Төв агуулахад хамаарна)
-      const { data: mainWh } = await supabase.from("inv_warehouses")
-        .select("id").eq("type", "main").limit(1).maybeSingle();
-      if (!mainWh) {
-        alert("⚠ Төв агуулах олдсонгүй. Эхлээд Төв агуулах (main) тохируулна уу.");
+      // Тооллогын агуулах (count.warehouse_id) — байхгүй бол Төв агуулах
+      let targetWhId = count.warehouse_id;
+      if (!targetWhId) {
+        const { data: mainWh } = await supabase.from("inv_warehouses")
+          .select("id").eq("type", "main").limit(1).maybeSingle();
+        targetWhId = mainWh?.id;
+      }
+      if (!targetWhId) {
+        alert("⚠ Агуулах олдсонгүй.");
         setBusy(false);
         return;
       }
@@ -10271,11 +10312,11 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       for (const item of countedItems) {
         const actualQty = Number(item.actual_qty);
 
-        // Зөвхөн ТӨВ агуулахын inv_stock мөрийг шинэчлэх
+        // Зөвхөн тухайн агуулахын inv_stock мөрийг шинэчлэх
         const { data: stockRow } = await supabase.from("inv_stock")
           .select("id")
           .eq("product_id", item.product_id)
-          .eq("warehouse_id", mainWh.id)
+          .eq("warehouse_id", targetWhId)
           .maybeSingle();
 
         if (stockRow) {
@@ -10283,10 +10324,9 @@ function StockCountDetail({ countId, products, profile, onClose }) {
             .update({ quantity: actualQty })
             .eq("id", stockRow.id);
         } else {
-          // Төв агуулахад тухайн барааны мөр байхгүй бол үүсгэх
           await supabase.from("inv_stock").insert({
             product_id: item.product_id,
-            warehouse_id: mainWh.id,
+            warehouse_id: targetWhId,
             quantity: actualQty,
           });
         }
@@ -10303,7 +10343,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
             notes: `Тооллого ${count.count_number}`,
             reference_number: count.count_number,
             created_by: profile.id,
-            warehouse_id: mainWh.id,
+            warehouse_id: targetWhId,
           });
         }
       }
