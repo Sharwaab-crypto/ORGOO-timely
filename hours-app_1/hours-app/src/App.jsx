@@ -11524,6 +11524,32 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
       editOrder={order}
       onSave={async (data) => {
         try {
+          // 🔗 FB Page тодорхойлох — захиалга page-гүй бол дуудлага/бараанаас нөхөх
+          let editFbPageId = order.fb_page_id || null;
+          if (!editFbPageId) {
+            // 1) Дуудлагаас
+            const { data: callRows } = await supabase
+              .from("biz_calls")
+              .select("fb_page_id")
+              .eq("phone", order.customer_phone)
+              .not("fb_page_id", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(1);
+            if (callRows && callRows.length > 0) editFbPageId = callRows[0].fb_page_id;
+            // 2) Бараануудаас
+            if (!editFbPageId && data.items && data.items.length > 0) {
+              const pids = data.items.map((it) => it.product_id).filter(Boolean);
+              if (pids.length > 0) {
+                const { data: prods } = await supabase
+                  .from("inv_products").select("id, fb_page_id").in("id", pids);
+                const pc = {};
+                (prods || []).forEach((p) => { if (p.fb_page_id) pc[p.fb_page_id] = (pc[p.fb_page_id] || 0) + 1; });
+                const top = Object.entries(pc).sort((a, b) => b[1] - a[1])[0];
+                if (top) editFbPageId = top[0];
+              }
+            }
+          }
+
           // Order шинэчлэх
           await supabase.from("biz_orders").update({
             customer_name: data.name,
@@ -11532,6 +11558,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             notes: data.notes,
             total_amount: data.totalAmount,
             paid_amount: data.paidAmount,
+            fb_page_id: editFbPageId,  // 🔗 FB Page (нөхөж тавьсан)
           }).eq("id", orderId);
 
           // Order items — бүгдийг устгаад дахин insert
