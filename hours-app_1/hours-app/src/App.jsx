@@ -14368,7 +14368,9 @@ function DeliveryDashboardView({ profile }) {
 }
 
 
-function SalesDashboardView({ profile }) {
+function SalesDashboardView({ profile, allowedPageIds = null }) {
+  // allowedPageIds: null = бүх page (admin), массив = зөвхөн тэр page-ууд (merchant)
+  const isMerchant = Array.isArray(allowedPageIds);
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState([]);
@@ -14427,12 +14429,27 @@ function SalesDashboardView({ profile }) {
       setLoading(true);
       setLoadError(null);
       try {
+        // Merchant бол зөвхөн өөрийн page-уудын өгөгдөл; admin бол бүгд
+        let callQ = supabase.from("biz_calls").select("*");
+        let ordQ = supabase.from("biz_orders").select("*");
+        let fbQ = supabase.from("biz_fb_pages").select("*");
+        if (isMerchant) {
+          if (allowedPageIds.length === 0) {
+            // Page оноогоогүй merchant → хоосон
+            setCalls([]); setOrders([]); setItems([]); setProducts([]); setFbPages([]);
+            setLoading(false);
+            return;
+          }
+          callQ = supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds);
+          ordQ = supabase.from("biz_orders").select("*").in("fb_page_id", allowedPageIds);
+          fbQ = supabase.from("biz_fb_pages").select("*").in("id", allowedPageIds);
+        }
         const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
-          fetchAllRows(supabase.from("biz_calls").select("*")),
-          fetchAllRows(supabase.from("biz_orders").select("*")),
+          fetchAllRows(callQ),
+          fetchAllRows(ordQ),
           fetchAllRows(supabase.from("biz_order_items").select("*")),
           supabase.from("inv_products").select("id, name, image_url, sku"),
-          supabase.from("biz_fb_pages").select("*"),
+          fbQ,
         ]);
         setCalls(callData || []);
         setOrders(ordData || []);
@@ -14446,7 +14463,7 @@ function SalesDashboardView({ profile }) {
       }
       finally { setLoading(false); }
     })();
-  }, [refreshKey]);
+  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : "all"]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
@@ -15053,7 +15070,8 @@ function SalesDashboardView({ profile }) {
                             }} className="text-base tabular-nums">
                               {Number(o.total_amount || 0).toLocaleString()}₮
                             </div>
-                            {/* 🔄 FB Page солих товч */}
+                            {/* 🔄 FB Page солих товч — зөвхөн admin */}
+                            {!isMerchant && (
                             <button onClick={(e) => {
                               e.stopPropagation();
                               setReassignModal({ orderId: o.id, currentPageId: o.fb_page_id });
@@ -15069,6 +15087,7 @@ function SalesDashboardView({ profile }) {
                               title="FB Page солих">
                               ⋮
                             </button>
+                            )}
                           </div>
 
                           {/* Items */}
@@ -26813,7 +26832,7 @@ function MerchantDashboard({ profile }) {
         <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
           {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
           {view === "calls" && <CallCenterView profile={profile} />}
-          {view === "sales" && <MerchantSalesView allowedPageIds={allowedPageIds} fbPages={fbPages} />}
+          {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
           {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
           {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
         </div>
