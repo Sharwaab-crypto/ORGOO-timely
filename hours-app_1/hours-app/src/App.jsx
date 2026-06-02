@@ -10247,13 +10247,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       for (const item of countedItems) {
         const actualQty = Number(item.actual_qty);
 
-        // 1. Барааны үндсэн үлдэгдэл (inv_products.stock_quantity)
-        await supabase.from("inv_products")
-          .update({ stock_quantity: actualQty, updated_at: new Date().toISOString() })
-          .eq("id", item.product_id);
-
-        // 2. inv_stock хүснэгтийг шинэчлэх (Бараа нөөц хэсэг эндээс уншдаг)
-        //    Тухайн барааны stock мөрүүдийг авах
+        // inv_stock хүснэгтийг шинэчлэх (Бараа нөөц эндээс уншдаг)
         const { data: stockRows } = await supabase.from("inv_stock")
           .select("id, warehouse_id, quantity")
           .eq("product_id", item.product_id);
@@ -10267,7 +10261,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
               .eq("id", stockRows[idx].id);
           }
         } else {
-          // stock мөр байхгүй бол шинээр үүсгэх (үндсэн агуулахтай бол)
+          // stock мөр байхгүй бол шинээр үүсгэх
           const { data: mainWh } = await supabase.from("inv_warehouses")
             .select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
           if (mainWh) {
@@ -10279,7 +10273,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
           }
         }
 
-        // 3. Зөрүүтэй бол adjustment movement бичлэг (түүх)
+        // Зөрүүтэй бол adjustment movement бичлэг (түүх)
         if (Number(item.diff_qty) !== 0) {
           await supabase.from("inv_movements").insert({
             product_id: item.product_id,
