@@ -3210,13 +3210,13 @@ function EmployeeDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Үндсэн" defaultOpen>
+            <SidebarSection label="Үндсэн" icon={Clock} defaultOpen>
               <SidebarTab active={view === "home"} onClick={() => { setView("home"); setSidebarOpen(false); }} icon={Clock}>Цаг бүртгэл</SidebarTab>
               <SidebarTab active={view === "salary"} onClick={() => { setView("salary"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Цалин</SidebarTab>
               <SidebarTab active={view === "history"} onClick={() => { setView("history"); setSidebarOpen(false); }} icon={Calendar}>Түүх</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Ажил">
+            <SidebarSection label="Ажил" icon={Briefcase}>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
@@ -3226,7 +3226,7 @@ function EmployeeDashboard({ profile }) {
               <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>Миний файл</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Хүсэлтүүд">
+            <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar}>Чөлөө</SidebarTab>
               <SidebarTab active={view === "requests"} onClick={() => { setView("requests"); setSidebarOpen(false); }} icon={ClipboardCheck} badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</SidebarTab>
             </SidebarSection>
@@ -5210,6 +5210,27 @@ function Tab({ active, onClick, icon: Icon, badge, children }) {
   );
 }
 
+// Section гарчгийн градиент өнгөний map (label → [from, to])
+const SECTION_GRADIENTS = {
+  "Хяналт":      ["#3FE0C6", "#0E9C8E"],
+  "Operator":    ["#85B7EB", "#185FA5"],
+  "Оператор":    ["#85B7EB", "#185FA5"],
+  "Delivery":    ["#FAC775", "#BA7517"],
+  "Finance":     ["#AFA9EC", "#534AB7"],
+  "Санхүү":      ["#AFA9EC", "#534AB7"],
+  "Агуулах":     ["#F0997B", "#D85A30"],
+  "Ажилтнууд":   ["#5DCAA5", "#0F6E56"],
+  "Ажилтан":     ["#5DCAA5", "#0F6E56"],
+  "Хүсэлтүүд":   ["#ED93B1", "#D4537E"],
+  "Бизнес":      ["#97C459", "#639922"],
+  "Үндсэн":      ["#3FE0C6", "#0E9C8E"],
+  "Ажил":        ["#85B7EB", "#185FA5"],
+};
+function sectionGradient(label) {
+  const g = SECTION_GRADIENTS[label] || ["#5DCAA5", "#0F6E56"];
+  return `linear-gradient(135deg, ${g[0]}, ${g[1]})`;
+}
+
 function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
   return (
     <button onClick={onClick}
@@ -5286,8 +5307,17 @@ function SidebarSection({ label, icon: Icon, children, defaultOpen = false }) {
           onClick={toggle}
           className="press-btn w-full flex items-center justify-between px-3 mb-1.5 hover:opacity-70 transition-opacity group"
           style={{ fontFamily: FS, color: T.mutedSoft }}>
-          <span className="flex items-center gap-1.5">
-            {Icon && <Icon size={12} style={{ color: T.mutedSoft }} />}
+          <span className="flex items-center gap-2">
+            {Icon && (
+              <span style={{
+                background: sectionGradient(label),
+                width: 24, height: 24, borderRadius: 7,
+                display: "grid", placeItems: "center", flexShrink: 0,
+                boxShadow: "0 2px 6px -2px rgba(0,0,0,0.25)",
+              }}>
+                <Icon size={13} strokeWidth={2.2} style={{ color: "#fff" }} />
+              </span>
+            )}
             <span className="text-[10px] uppercase tracking-[0.15em] font-medium">
               {label}
             </span>
@@ -26641,11 +26671,11 @@ function MerchantDashboard({ profile }) {
             </div>
           </div>
 
-          <SidebarSection label="Хяналт" defaultOpen>
+          <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
           </SidebarSection>
 
-          <SidebarSection label="Бизнес">
+          <SidebarSection label="Бизнес" icon={ShoppingBag}>
             <SidebarTab active={view === "calls"} onClick={() => { setView("calls"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалт</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
@@ -28558,11 +28588,11 @@ function OperatorDashboard({ profile }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
-          <SidebarSection label="Хяналт" defaultOpen>
+          <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
             <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
           </SidebarSection>
-          <SidebarSection label="Бизнес">
+          <SidebarSection label="Бизнес" icon={ShoppingBag}>
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
           </SidebarSection>
@@ -32332,14 +32362,14 @@ function ManagerDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Хяналт" defaultOpen>
+            <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Хүсэлтүүд">
+            <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
             </SidebarSection>
