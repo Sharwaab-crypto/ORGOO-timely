@@ -3934,7 +3934,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   <FileText size={14} />
                 </button>
                 <button onClick={() => onEdit(emp)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><Edit3 size={14} /></button>
-                <button onClick={() => onDelete(emp.id)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><X size={15} /></button>
+                <button onClick={() => onDelete(emp.id)} style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10" title="Ажилтан устгах"><Trash2 size={15} /></button>
               </div>
             </div>
 
