@@ -627,7 +627,20 @@ function AppRoot() {
   // ─── Mobile UX системт сайжруулалт CSS ──────────────────────────
   useEffect(() => {
     // Browser tab гарчиг
-    document.title = "CoreLink · Цаг бүртгэл";
+    document.title = "CoreLink";
+    // Favicon — Ripple лого (aqua gradient SVG)
+    (function setFavicon() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 200 200"><defs><linearGradient id="rip" x1="46" y1="46" x2="154" y2="154" gradientUnits="userSpaceOnUse"><stop stop-color="#3FE0C6"/><stop offset="1" stop-color="#0E9C8E"/></linearGradient></defs><circle cx="100" cy="100" r="78" stroke="url(#rip)" stroke-width="5" opacity="0.30" fill="none"/><circle cx="100" cy="100" r="58" stroke="url(#rip)" stroke-width="8" opacity="0.62" fill="none"/><circle cx="100" cy="100" r="36" stroke="url(#rip)" stroke-width="12" fill="none"/><circle cx="100" cy="100" r="13" fill="url(#rip)"/></svg>`;
+      const href = "data:image/svg+xml," + encodeURIComponent(svg);
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.type = "image/svg+xml";
+      link.href = href;
+    })();
     const styleId = "orgoo-mobile-improvements";
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
