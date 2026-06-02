@@ -1811,11 +1811,36 @@ function AdminDashboard({ profile }) {
   };
 
   const removeEmployee = async (id) => {
-    const { error } = await supabase.from("profiles").delete().eq("id", id);
-    if (error) { setFeedback({ type: "error", msg: error.message }); return; }
-    setConfirmDel(null);
-    setFeedback({ type: "success", msg: "Профайл устгагдлаа" });
-    await loadAll();
+    // Edge Function-аар Auth + profiles бүрэн устгах
+    setFeedback({ type: "info", msg: "Устгаж байна..." });
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-employee", {
+        body: { employee_id: id },
+      });
+      if (error) {
+        // Edge Function алдаа эсвэл deploy хийгээгүй бол fallback
+        let detail = error.message || "";
+        try {
+          const ctx = await error.context?.json?.();
+          if (ctx?.error) detail = ctx.error;
+        } catch {}
+        setFeedback({ type: "error", msg: "Устгахад алдаа: " + detail });
+        return;
+      }
+      if (data?.error) {
+        setFeedback({ type: "error", msg: data.error });
+        return;
+      }
+      setConfirmDel(null);
+      if (data?.partial) {
+        setFeedback({ type: "warn", msg: data.warning || "Хэсэгчлэн устгагдлаа" });
+      } else {
+        setFeedback({ type: "success", msg: "Ажилтан бүрэн устгагдлаа" });
+      }
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: "Сүлжээний алдаа: " + (e?.message || e) });
+    }
   };
 
   // Helper: get sites assigned to an employee (multi-site mode)
