@@ -717,6 +717,55 @@ function AppRoot() {
       .sidebar-collapsed-nav button > svg {
         flex-shrink: 0;
       }
+
+      /* ═══════════ DARK MODE ═══════════ */
+      html.dark-mode body { background: #07211f; }
+      html.dark-mode .min-h-screen { background: #07211f !important; color: #d6ede8 !important; }
+      /* Цайвар surface (rgba цагаан) → бараан teal */
+      html.dark-mode [style*="rgba(255, 255, 255, 0.7)"],
+      html.dark-mode [style*="rgba(255, 255, 255, 0.85)"],
+      html.dark-mode [style*="rgba(255, 255, 255, 0.55)"],
+      html.dark-mode [style*="rgba(255,255,255,0.7)"],
+      html.dark-mode [style*="rgba(255,255,255,0.85)"] {
+        background: rgba(18, 48, 46, 0.85) !important;
+      }
+      html.dark-mode [style*="rgba(255, 255, 255, 0.45)"],
+      html.dark-mode [style*="rgba(255,255,255,0.45)"] {
+        background: rgba(255, 255, 255, 0.04) !important;
+      }
+      /* Текст өнгө */
+      html.dark-mode h1, html.dark-mode h2, html.dark-mode h3,
+      html.dark-mode p, html.dark-mode span, html.dark-mode div,
+      html.dark-mode td, html.dark-mode th, html.dark-mode label,
+      html.dark-mode button, html.dark-mode a {
+        color: inherit;
+      }
+      html.dark-mode [style*="color: rgb(12, 42, 48)"],
+      html.dark-mode [style*="color:#0C2A30"],
+      html.dark-mode [style*="color: #0C2A30"] { color: #e3f3ef !important; }
+      html.dark-mode [style*="color: rgb(31, 66, 72)"],
+      html.dark-mode [style*="#1f4248"] { color: #cfe6e1 !important; }
+      html.dark-mode [style*="#5b7c7e"],
+      html.dark-mode [style*="rgb(91, 124, 126)"] { color: #8fb3ae !important; }
+      html.dark-mode [style*="#8fabac"] { color: #6e928e !important; }
+      /* Border */
+      html.dark-mode [style*="rgba(255, 255, 255, 0.7)"][style*="border"],
+      html.dark-mode [style*="borderColor"] { border-color: rgba(255,255,255,0.08) !important; }
+      /* Card border-той surface */
+      html.dark-mode .glass { background: rgba(18, 48, 46, 0.85) !important; border-color: rgba(255,255,255,0.08) !important; }
+      /* Input талбар */
+      html.dark-mode input, html.dark-mode select, html.dark-mode textarea {
+        background: rgba(255,255,255,0.05) !important;
+        color: #e3f3ef !important;
+        border-color: rgba(255,255,255,0.12) !important;
+      }
+      html.dark-mode input::placeholder, html.dark-mode textarea::placeholder { color: #6e928e !important; }
+      /* hover саарал → бараан */
+      html.dark-mode .hover\\:bg-gray-50:hover,
+      html.dark-mode .hover\\:bg-gray-100:hover { background: rgba(255,255,255,0.06) !important; }
+      /* Border utility классууд */
+      html.dark-mode .border-b, html.dark-mode .border-t,
+      html.dark-mode .border { border-color: rgba(255,255,255,0.08) !important; }
     `;
     document.head.appendChild(style);
     return () => {
