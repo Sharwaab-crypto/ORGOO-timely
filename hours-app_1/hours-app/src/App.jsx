@@ -12508,6 +12508,19 @@ function CallCenterView({ profile }) {
                         const lock = callLocks.find((l) => l.phone === phone);
                         const isLockedByOther = lock && lock.locked_by !== profile.id;
                         const isLockedByMe = lock && lock.locked_by === profile.id;
+                        // ⭐ Зөвхөн "Залгах дугаар" таб дээр захиалга үүсгэх боломжтой.
+                        // Захиалга болсон/Устгагдсан/Амжилттай таб дээр зөвхөн дугаар харуулна.
+                        const canCreateOrder = activeTab === "calling";
+
+                        if (!canCreateOrder) {
+                          return (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-md"
+                              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+                              <Phone size={11} style={{ color: T.muted }} />
+                              <span className="text-xs">{phone}</span>
+                            </div>
+                          );
+                        }
 
                         return (
                           <>
