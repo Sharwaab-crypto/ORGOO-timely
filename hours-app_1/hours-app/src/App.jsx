@@ -6393,6 +6393,7 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
       for (const [driverId, orderIds] of Object.entries(groupedByDriver)) {
         const { error } = await updateInChunks("biz_orders", "id", orderIds, {
           driver_id: driverId,
+          status: "assigned",  // ⭐ Хуваарилсан → "Шинэ" жагсаалтаас гарна
         });
         if (error) {
           logErr(`[bulk assign ${driverId}]`, error);
@@ -6407,9 +6408,8 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
       // Reload — мөн fetchAllRows ашиглах (1000 limit-аас халих)
       const data = await fetchAllRows(
         supabase.from("biz_orders")
-          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-          .is("driver_id", null)
-          .in("status", ["new", "assigned"])
+          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
+          .eq("status", "new")   // ⭐ Зөвхөн "Шинэ" — хуваарилсны дараа ч зөвхөн шинэ үлдэнэ
           .order("created_at", { ascending: false })
       );
       setUnassignedOrders(data || []);
