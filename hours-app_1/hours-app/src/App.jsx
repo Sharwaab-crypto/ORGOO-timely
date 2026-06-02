@@ -8,7 +8,7 @@ import {
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
-  Truck, DollarSign, Headphones, Warehouse,
+  Truck, DollarSign, Headphones, Warehouse, Menu,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -2360,8 +2360,9 @@ function AdminDashboard({ profile }) {
           {/* Mobile top bar */}
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
+            <RippleMark size={22} variant="grad" />
             <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
@@ -3263,8 +3264,9 @@ function EmployeeDashboard({ profile }) {
         <main className="flex-1 min-w-0">
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
+            <RippleMark size={22} variant="grad" />
             <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
             {isActive && (
               <div className="ml-auto flex items-center gap-1.5">
@@ -32406,8 +32408,9 @@ function ManagerDashboard({ profile }) {
         <main className="flex-1 min-w-0">
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
+            <RippleMark size={22} variant="grad" />
             <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
