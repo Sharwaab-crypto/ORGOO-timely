@@ -840,6 +840,49 @@ function AppRoot() {
     })();
   }, [session]);
 
+  // ─── SINGLE SESSION: давхар нэвтрэхээс сэргийлэх ───────────────────
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const userId = session.user.id;
+
+    // Таб бүрийн өвөрмөц token (sessionStorage — таб бүрд тусдаа)
+    let myToken = sessionStorage.getItem("session-token");
+    if (!myToken) {
+      myToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem("session-token", myToken);
+    }
+
+    let active = true;
+
+    // 1. Нэвтрэх үед token-оо DB-д бичих (хуучин session-уудыг дарна)
+    (async () => {
+      await supabase.from("user_sessions").upsert({
+        user_id: userId,
+        session_token: myToken,
+        device_info: navigator.userAgent?.slice(0, 120) || "",
+        updated_at: new Date().toISOString(),
+      });
+    })();
+
+    // 2. Realtime: DB token өөрчлөгдвөл (өөр газар нэвтэрсэн) → энэ таб гарна
+    const ch = supabase
+      .channel(`user-session-${userId}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "user_sessions",
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        const dbToken = payload.new?.session_token;
+        if (active && dbToken && dbToken !== myToken) {
+          // Өөр төхөөрөмж/таб дээр нэвтэрсэн → энэ session-ийг гаргах
+          alert("Таны бүртгэлд өөр төхөөрөмжөөс нэвтэрлээ. Энэ цонх гарлаа.");
+          supabase.auth.signOut();
+        }
+      })
+      .subscribe();
+
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [session?.user?.id]);
+
   if (!isConfigured) return <ConfigError />;
   if (loading) return <Loading />;
 
