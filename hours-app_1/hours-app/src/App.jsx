@@ -1746,18 +1746,46 @@ function AdminDashboard({ profile }) {
 
   const upsertEmployee = async ({ formData, password, isNew, existingId, siteIds }) => {
     try {
-      let userId = existingId;
       if (isNew) {
-        const { data: signup, error: signupErr } = await supabase.auth.signUp({
-          email: formData.email,
-          password: password,
-          options: { data: { full_name: formData.name } },
+        // ⚠️ signUp нь админы session-ийг шинэ хэрэглэгчээр сольдог тул
+        // Edge Function (admin API)-аар session солихгүйгээр үүсгэнэ
+        const { data, error } = await supabase.functions.invoke("create-employee", {
+          body: {
+            email: formData.email,
+            password: password,
+            profile: {
+              role: formData.role || "employee",
+              name: formData.name,
+              job_title: formData.job_title,
+              hourly_rate: formData.hourly_rate,
+              department_id: formData.department_id || null,
+              site_lat: formData.site_lat,
+              site_lng: formData.site_lng,
+              site_radius: formData.site_radius,
+              site_label: formData.site_label,
+              schedule_days: formData.schedule_days,
+              schedule_start: formData.schedule_start,
+              schedule_end: formData.schedule_end,
+              fb_page_ids: formData.fb_page_ids || [],
+              site_ids: Array.isArray(siteIds) ? siteIds : [],
+            },
+          },
         });
-        if (signupErr) throw signupErr;
-        if (!signup.user) throw new Error("Хэрэглэгч үүсгэгдсэнгүй");
-        userId = signup.user.id;
+        if (error) {
+          let detail = error.message || "";
+          try { const ctx = await error.context?.json?.(); if (ctx?.error) detail = ctx.error; } catch {}
+          throw new Error(detail);
+        }
+        if (data?.error) throw new Error(data.error);
+
+        setFormMode(null); setFormEmp(null);
+        setFeedback({ type: "success", msg: "Ажилтан нэмэгдлээ" });
+        await loadAll();
+        return;
       }
 
+      // ─── Засах (update) — session-д нөлөөлөхгүй тул frontend-ээс шууд ───
+      const userId = existingId;
       const profileData = {
         id: userId,
         role: formData.role || "employee",
@@ -1776,19 +1804,14 @@ function AdminDashboard({ profile }) {
         updated_at: new Date().toISOString(),
       };
 
-      if (isNew) {
-        const { error } = await supabase.from("profiles").insert(profileData);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
-        if (error) throw error;
+      const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
+      if (error) throw error;
 
-        // 🔄 Manager → бусад role-руу солигдоход manager_employees-аас холбоосыг арилгах
-        if (formData.role !== "manager") {
-          const { error: cleanupErr } = await supabase.from("manager_employees")
-            .delete().eq("manager_id", existingId);
-          if (cleanupErr) logErr("[manager_employees cleanup]", cleanupErr);
-        }
+      // 🔄 Manager → бусад role-руу солигдоход manager_employees-аас холбоосыг арилгах
+      if (formData.role !== "manager") {
+        const { error: cleanupErr } = await supabase.from("manager_employees")
+          .delete().eq("manager_id", existingId);
+        if (cleanupErr) logErr("[manager_employees cleanup]", cleanupErr);
       }
 
       // Save site assignments
@@ -1803,7 +1826,7 @@ function AdminDashboard({ profile }) {
       }
 
       setFormMode(null); setFormEmp(null);
-      setFeedback({ type: "success", msg: isNew ? "Ажилтан нэмэгдлээ" : "Хадгаллаа" });
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
       await loadAll();
     } catch (e) {
       setFeedback({ type: "error", msg: e.message });
