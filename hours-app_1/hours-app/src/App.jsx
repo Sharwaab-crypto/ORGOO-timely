@@ -12156,13 +12156,31 @@ function CallCenterView({ profile }) {
           // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
           
-          // "Захиалга болсон" — biz_orders ширээгээс шууд (OrdersView-тэй ижил)
-          counts.ordered = orders.filter((o) => 
-            o.status !== "delivered" && o.status !== "cancelled"
-          ).length;
-          
-          // "Цуцалсан" — biz_orders.status='cancelled'
-          counts.cancelled = orders.filter((o) => o.status === "cancelled").length;
+          // "Захиалга болсон" — захиалга үүссэн БА дуудлага цуцлагдаагүй
+          // Утсаар сүүлийн дуудлага "ordered" + захиалга нь delivered/cancelled биш
+          {
+            const seenOrd = new Set();
+            const seenCan = new Set();
+            let ordC = 0, canC = 0;
+            // Утас бүрийн сүүлийн дуудлагын статус
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              const latestStatus = sorted[0]?.call_status;
+              const ord = orders
+                .filter((o) => o.customer_phone === phone)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+              // Захиалга болсон: сүүлийн дуудлага ordered + захиалга идэвхтэй
+              if (latestStatus === "ordered" && ord && ord.status !== "delivered" && ord.status !== "cancelled") {
+                if (!seenOrd.has(phone)) { seenOrd.add(phone); ordC++; }
+              }
+              // Цуцалсан: сүүлийн дуудлага cancelled ЭСВЭЛ захиалга cancelled
+              if (latestStatus === "cancelled" || (ord && ord.status === "cancelled")) {
+                if (!seenCan.has(phone)) { seenCan.add(phone); canC++; }
+              }
+            });
+            counts.ordered = ordC;
+            counts.cancelled = canC;
+          }
 
           return (
             <>
@@ -12342,9 +12360,13 @@ function CallCenterView({ profile }) {
                   
                   let matches = false;
                   if (activeTab === "ordered") {
-                    matches = order && order.status !== "delivered" && order.status !== "cancelled";
+                    // ⭐ Дуудлага цуцлагдсан cycle бол "Захиалга болсон"-д ОРОХГҮЙ
+                    // (cycle.status === "cancelled" → Устгагдсан таб руу)
+                    matches = cy.status === "ordered"
+                      && order && order.status !== "delivered" && order.status !== "cancelled";
                   } else if (activeTab === "cancelled") {
-                    matches = order && order.status === "cancelled";
+                    // Дуудлага цуцлагдсан ЭСВЭЛ захиалга цуцлагдсан
+                    matches = cy.status === "cancelled" || (order && order.status === "cancelled");
                   } else if (activeTab === "delivered") {
                     matches = order && order.status === "delivered";
                   }
