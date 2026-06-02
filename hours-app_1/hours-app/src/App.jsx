@@ -6313,7 +6313,7 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     return m;
   }, [drivers]);
 
-  // "Шинэ" статустай бүх захиалгуудыг татах (driver-той эсэхэд хамаагүй)
+  // Зөвхөн "Шинэ" + driver оноогоогүй захиалгуудыг татах
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -6321,7 +6321,8 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
         const data = await fetchAllRows(
           supabase.from("biz_orders")
             .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
-            .eq("status", "new")   // ⭐ Зөвхөн "Шинэ" — assigned/delivered/cancelled орохгүй
+            .eq("status", "new")        // ⭐ Зөвхөн "Шинэ"
+            .is("driver_id", null)      // ⭐ Driver оноогоогүй (хуваарилагдаагүй) захиалга л
             .order("created_at", { ascending: false })
         );
         setUnassignedOrders(data || []);
@@ -6409,7 +6410,8 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
       const data = await fetchAllRows(
         supabase.from("biz_orders")
           .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
-          .eq("status", "new")   // ⭐ Зөвхөн "Шинэ" — хуваарилсны дараа ч зөвхөн шинэ үлдэнэ
+          .eq("status", "new")
+          .is("driver_id", null)   // ⭐ Driver оноогоогүй захиалга л
           .order("created_at", { ascending: false })
       );
       setUnassignedOrders(data || []);
