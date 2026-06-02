@@ -13336,6 +13336,25 @@ function CallCenterView({ profile }) {
                 }
               }
 
+              // 🔗 Захиалгын FB Page-ийг сонгосон бараануудаас автоматаар тодорхойлох
+              let orderFbPageId = data.fb_page_id || null;
+              if (!orderFbPageId && data.items && data.items.length > 0) {
+                const productIds = data.items.map((it) => it.product_id).filter(Boolean);
+                if (productIds.length > 0) {
+                  const { data: prods } = await supabase
+                    .from("inv_products")
+                    .select("id, fb_page_id")
+                    .in("id", productIds);
+                  // Хамгийн их давтагдсан page-ийг сонгох
+                  const pageCounts = {};
+                  (prods || []).forEach((p) => {
+                    if (p.fb_page_id) pageCounts[p.fb_page_id] = (pageCounts[p.fb_page_id] || 0) + 1;
+                  });
+                  const topPage = Object.entries(pageCounts).sort((a, b) => b[1] - a[1])[0];
+                  if (topPage) orderFbPageId = topPage[0];
+                }
+              }
+
               // 2. Order create — давхардсан тохиолдолд retry хийнэ
               let order = null;
               let lastError = null;
@@ -13367,7 +13386,7 @@ function CallCenterView({ profile }) {
                     balance_due: data.balanceDue,
                     notes: data.notes,
                     taken_by: profile.id,
-                    fb_page_id: data.fb_page_id || null, // 🔗 FB Page холбоо
+                    fb_page_id: orderFbPageId, // 🔗 FB Page (бараанаас автомат тодорхойлсон)
                   })
                   .select()
                   .single();
