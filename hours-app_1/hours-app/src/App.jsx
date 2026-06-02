@@ -5903,6 +5903,40 @@ function ZonesView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // 🔄 Хүлээгдэж байгаа (хуваарилагдсан) бүх захиалгыг "Шинэ" рүү буцаах
+  const [resetting, setResetting] = useState(false);
+  const resetAllToNew = async () => {
+    try {
+      // Хүлээгдэж байгаа = driver оноосон ЭСВЭЛ assigned статустай,
+      // гэхдээ хүргэгдсэн/цуцлагдаагүй захиалгууд
+      const { data: pending, error: fetchErr } = await supabase
+        .from("biz_orders")
+        .select("id")
+        .not("status", "in", "(delivered,cancelled)")
+        .not("driver_id", "is", null);
+      if (fetchErr) { alert("Алдаа: " + fetchErr.message); return; }
+
+      const ids = (pending || []).map((o) => o.id);
+      if (ids.length === 0) {
+        alert("Хүлээгдэж байгаа хуваарилагдсан захиалга алга.");
+        return;
+      }
+      if (!confirm(`🔄 ${ids.length} захиалгыг "Шинэ" рүү буцаах уу?\n\n• Хүргэгчийн хуваарилалт цуцлагдана\n• Дахин хуваарилах боломжтой болно`)) return;
+
+      setResetting(true);
+      const { error: updErr } = await updateInChunks("biz_orders", "id", ids, {
+        status: "new",
+        driver_id: null,
+      });
+      if (updErr) { alert("Алдаа: " + updErr.message); }
+      else { alert(`✅ ${ids.length} захиалга "Шинэ" рүү буцлаа.`); }
+    } catch (e) {
+      alert("Алдаа: " + (e?.message || e));
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const driversWithZones = useMemo(() => {
     return drivers.map((d) => {
       const driverZones = zones.filter((z) => z.driver_id === d.id && z.is_active);
@@ -5931,6 +5965,11 @@ function ZonesView({ profile }) {
                 className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
                 🚚 Захиалга хуваарилах
+              </button>
+              <button onClick={resetAllToNew} disabled={resetting}
+                className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.warn}`, opacity: resetting ? 0.6 : 1 }}>
+                {resetting ? "Буцааж байна..." : "🔄 Бүгдийг шинэ рүү"}
               </button>
               <button onClick={() => setShowAllMap(true)}
                 className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
