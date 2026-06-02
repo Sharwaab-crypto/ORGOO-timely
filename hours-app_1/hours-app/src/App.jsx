@@ -1506,7 +1506,7 @@ function LoginScreen() {
             Цаг бүртгэл
           </div>
           <h1 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.04em", lineHeight: 0.95 }} className="text-6xl">
-            ORGOO<span style={{ color: T.highlight }}>.</span>
+            CoreLink<span style={{ color: T.highlight }}>.</span>
           </h1>
         </div>
 
@@ -2210,7 +2210,7 @@ function AdminDashboard({ profile }) {
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
                   <div style={{ fontFamily: FS, fontWeight: 700, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                    ORGOO<span style={{ color: T.highlight }}>.</span>
+                    CoreLink<span style={{ color: T.highlight }}>.</span>
                   </div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
                     Admin
@@ -2347,7 +2347,7 @@ function AdminDashboard({ profile }) {
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -3182,7 +3182,7 @@ function EmployeeDashboard({ profile }) {
               </div>
               <div className="flex-1">
                 <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                  CoreLink<span style={{ color: T.highlight }}>.</span>
                 </div>
                 <div style={{ color: isActive ? T.ok : T.muted, fontFamily: FS, fontWeight: 500 }} className="text-[10px] uppercase tracking-wider mt-0.5">
                   {isActive ? "● Ажиллаж байна" : "Ажилтан"}
@@ -3250,7 +3250,7 @@ function EmployeeDashboard({ profile }) {
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
             {isActive && (
               <div className="ml-auto flex items-center gap-1.5">
                 <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
@@ -10060,7 +10060,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       // Header
       pdf.setFontSize(20);
       pdf.setTextColor(236, 72, 153);
-      pdf.text("ORGOO", 20, 20);
+      pdf.text("CoreLink", 20, 20);
       pdf.setFontSize(11);
       pdf.setTextColor(60, 60, 60);
       pdf.text("Toollogiin tailan", 20, 27);
@@ -10133,9 +10133,9 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       pdf.setFontSize(8);
       pdf.setTextColor(150, 150, 150);
       pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
-      pdf.text("ORGOO", 180, 285);
+      pdf.text("CoreLink", 180, 285);
 
-      pdf.save(`ORGOO-${count.count_number}.pdf`);
+      pdf.save(`CoreLink-${count.count_number}.pdf`);
     } catch (e) {
       alert("PDF алдаа: " + e.message);
     }
@@ -25279,7 +25279,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
       // Since html2canvas not installed, ашиглах backup arga
       const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       pdf.setFontSize(16);
-      pdf.text("ORGOO Live Map Report", 20, 20);
+      pdf.text("CoreLink Live Map Report", 20, 20);
       pdf.setFontSize(10);
       pdf.text(`Огноо: ${new Date().toLocaleString("mn-MN")}`, 20, 30);
       pdf.text(`Идэвхтэй: ${Object.keys(activeSessions).length} ажилтан`, 20, 40);
@@ -25297,7 +25297,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
         if (y > 190) { pdf.addPage(); y = 20; }
       });
 
-      pdf.save(`ORGOO-livemap-${new Date().toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`CoreLink-livemap-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (e) {
       alert("PDF тайлан үүсгэхэд алдаа гарлаа: " + e.message);
     }
@@ -26574,7 +26574,7 @@ function MerchantDashboard({ profile }) {
               🏪
             </div>
             <div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">ORGOO</div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">CoreLink</div>
               <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Merchant</div>
             </div>
           </div>
@@ -28505,7 +28505,7 @@ function OperatorDashboard({ profile }) {
       }} className="lg:!transform-none lg:!relative lg:!w-64 flex flex-col">
         <div className="px-4 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
           <span style={{ fontFamily: FD, fontWeight: 700, fontSize: 18, color: T.ink }}>
-            ORGOO
+            CoreLink
           </span>
           <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
             className="text-[10px] px-2 py-0.5 rounded-full uppercase">
@@ -32275,7 +32275,7 @@ function ManagerDashboard({ profile }) {
               </div>
               <div className="flex-1">
                 <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                  CoreLink<span style={{ color: T.highlight }}>.</span>
                 </div>
                 <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
                   Ахлагч
@@ -32334,7 +32334,7 @@ function ManagerDashboard({ profile }) {
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
               <Inbox size={18} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -33562,14 +33562,14 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  // ── Header — ORGOO brand
+  // ── Header — CoreLink brand
   doc.setFillColor(99, 102, 241); // indigo
   doc.rect(0, 0, pageW, 32, "F");
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(28);
   doc.setFont("helvetica", "bold");
-  doc.text("ORGOO", 14, 18);
+  doc.text("CoreLink", 14, 18);
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
@@ -33724,7 +33724,7 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
   // ── Footer
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
-  doc.text(`ORGOO Time Tracking · ${today}`, pageW / 2, pageH - 8, { align: "center" });
+  doc.text(`CoreLink Time Tracking · ${today}`, pageW / 2, pageH - 8, { align: "center" });
 
   // Save
   const filename = `salary_${employee.name?.replace(/\s+/g, "_") || "report"}_${periodLabel.replace(/\s+/g, "_")}.pdf`;
@@ -33814,7 +33814,7 @@ async function exportSalaryPdf(employee, sessions, leaves, year, month) {
   // Header
   pdf.setFontSize(20);
   pdf.setTextColor(236, 72, 153);
-  pdf.text("ORGOO", 20, 20);
+  pdf.text("CoreLink", 20, 20);
   pdf.setFontSize(10);
   pdf.setTextColor(100, 100, 100);
   pdf.text("Tsalingiin tailan", 20, 28);
@@ -33870,9 +33870,9 @@ async function exportSalaryPdf(employee, sessions, leaves, year, month) {
   pdf.setFontSize(8);
   pdf.setTextColor(150, 150, 150);
   pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
-  pdf.text("ORGOO automatic tailan", 150, 285);
+  pdf.text("CoreLink automatic tailan", 150, 285);
 
-  pdf.save(`ORGOO-${employee.name}-${year}-${String(month).padStart(2, "0")}.pdf`);
+  pdf.save(`CoreLink-${employee.name}-${year}-${String(month).padStart(2, "0")}.pdf`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -33942,7 +33942,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
 
   // ============== Хуудас 1: ХУРААНГУЙ ==============
   const summaryRows = [
-    ["ORGOO · KPI Хураангуй тайлан"],
+    ["CoreLink · KPI Хураангуй тайлан"],
     [`Хугацаа: ${periodRange.label}`],
     [`Огноо: ${periodRange.start} → ${periodRange.end}`],
     [],
@@ -33999,7 +33999,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   }
 
   const detailRows = [
-    ["ORGOO · KPI Өдрийн дэлгэрэнгүй"],
+    ["CoreLink · KPI Өдрийн дэлгэрэнгүй"],
     [`Хугацаа: ${periodRange.label}`],
     [],
   ];
@@ -34041,7 +34041,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   XLSX.utils.book_append_sheet(wb, ws2, "Өдрийн дэлгэрэнгүй");
 
   // Файл татах
-  const fileName = `ORGOO-KPI-${periodRange.start}-${periodRange.end}.xlsx`;
+  const fileName = `CoreLink-KPI-${periodRange.start}-${periodRange.end}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
 
