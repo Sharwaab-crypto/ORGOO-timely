@@ -1431,6 +1431,54 @@ function ConfigError() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  RIPPLE BRAND MARK (inline SVG — концентрик долгио)
+// ═══════════════════════════════════════════════════════════════════════════
+function RippleMark({ size = 40, variant = "grad", className = "", style = {} }) {
+  // variant: "grad" (aqua→deep gradient) | "white" (цагаан, dark дэвсгэр дээр)
+  const gid = "rip-" + variant;
+  const isWhite = variant === "white";
+  const col = isWhite ? "#F4FBF9" : `url(#${gid})`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 200" fill="none"
+      className={className} style={{ flexShrink: 0, ...style }}
+      xmlns="http://www.w3.org/2000/svg">
+      {!isWhite && (
+        <defs>
+          <linearGradient id={gid} x1="46" y1="46" x2="154" y2="154" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#3FE0C6" />
+            <stop offset="1" stopColor="#0E9C8E" />
+          </linearGradient>
+        </defs>
+      )}
+      <circle cx="100" cy="100" r="78" stroke={col} strokeWidth="5" opacity="0.30" />
+      <circle cx="100" cy="100" r="58" stroke={col} strokeWidth="8" opacity="0.62" />
+      <circle cx="100" cy="100" r="36" stroke={col} strokeWidth="12" />
+      <circle cx="100" cy="100" r="13" fill={col} />
+    </svg>
+  );
+}
+
+// App icon хувилбар (дугуй булантай дөрвөлжин, градиент дэвсгэр)
+function RippleAppIcon({ size = 40, radius, className = "", style = {} }) {
+  const r = radius != null ? radius : size * 0.23;
+  return (
+    <div className={className} style={{
+      width: size, height: size, borderRadius: r, flexShrink: 0,
+      background: "linear-gradient(140deg,#13B4A2,#06464A)",
+      boxShadow: "0 8px 20px -10px rgba(6,70,74,.7)",
+      display: "grid", placeItems: "center", position: "relative", overflow: "hidden",
+      ...style,
+    }}>
+      <div style={{
+        position: "absolute", inset: 0, borderRadius: "inherit",
+        background: "radial-gradient(60% 50% at 30% 18%,rgba(255,255,255,.30),transparent)",
+      }} />
+      <RippleMark size={size * 0.62} variant="white" style={{ position: "relative" }} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  LOGIN
 // ═══════════════════════════════════════════════════════════════════════════
 function LoginScreen() {
@@ -1451,6 +1499,9 @@ function LoginScreen() {
     <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
       <div className="w-full max-w-md scale-up">
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <RippleMark size={72} variant="grad" className="scale-up" />
+          </div>
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.3em] mb-3">
             Цаг бүртгэл
           </div>
@@ -2155,10 +2206,7 @@ function AdminDashboard({ profile }) {
           {/* Logo header */}
           <div className="px-3 py-3 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2">
-              <img src="/orgoo-logo.png" alt="ORGOO" 
-                className="w-10 h-10 rounded-md object-contain flex-shrink-0"
-                style={{ background: "white" }}
-                onError={(e) => { e.target.style.display = "none"; }} />
+              <RippleAppIcon size={40} radius={8} />
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
                   <div style={{ fontFamily: FS, fontWeight: 700, letterSpacing: "-0.02em" }} className="text-base leading-none">
