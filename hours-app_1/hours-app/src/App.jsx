@@ -9884,13 +9884,28 @@ function StockCountView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: countsData }, { data: prodData }, { data: catData }] = await Promise.all([
+      const [{ data: countsData }, { data: prodData }, { data: catData }, { data: whData }, { data: stkData }] = await Promise.all([
         supabase.from("inv_stock_counts").select("*").order("started_at", { ascending: false }),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
+        supabase.from("inv_warehouses").select("id, name, type"),
+        supabase.from("inv_stock").select("product_id, warehouse_id, quantity"),
       ]);
+      // Төв агуулах
+      const mainWh = (whData || []).find((w) => w.type === "main");
+      // Бараа тус бүрийн ТӨВ агуулах дахь үлдэгдэл
+      const stockByProduct = {};
+      (stkData || []).forEach((s) => {
+        if (mainWh && s.warehouse_id === mainWh.id) {
+          stockByProduct[s.product_id] = Number(s.quantity || 0);
+        }
+      });
+      const productsWithStock = (prodData || []).map((p) => ({
+        ...p,
+        stock: stockByProduct[p.id] || 0,  // Төв агуулахын үлдэгдэл
+      }));
       setCounts(countsData || []);
-      setProducts(prodData || []);
+      setProducts(productsWithStock);
       setCategories(catData || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -10244,33 +10259,36 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       const totalDiff = items.reduce((sum, i) => sum + (Number(i.diff_amount) || 0), 0);
       const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
 
+      // Төв агуулахыг олох (тооллого зөвхөн Төв агуулахад хамаарна)
+      const { data: mainWh } = await supabase.from("inv_warehouses")
+        .select("id").eq("type", "main").limit(1).maybeSingle();
+      if (!mainWh) {
+        alert("⚠ Төв агуулах олдсонгүй. Эхлээд Төв агуулах (main) тохируулна уу.");
+        setBusy(false);
+        return;
+      }
+
       for (const item of countedItems) {
         const actualQty = Number(item.actual_qty);
 
-        // inv_stock хүснэгтийг шинэчлэх (Бараа нөөц эндээс уншдаг)
-        const { data: stockRows } = await supabase.from("inv_stock")
-          .select("id, warehouse_id, quantity")
-          .eq("product_id", item.product_id);
+        // Зөвхөн ТӨВ агуулахын inv_stock мөрийг шинэчлэх
+        const { data: stockRow } = await supabase.from("inv_stock")
+          .select("id")
+          .eq("product_id", item.product_id)
+          .eq("warehouse_id", mainWh.id)
+          .maybeSingle();
 
-        if (stockRows && stockRows.length > 0) {
-          // Эхний (үндсэн) агуулахад бүх тоог тавьж, бусдыг 0 болгох
-          for (let idx = 0; idx < stockRows.length; idx++) {
-            const newQty = idx === 0 ? actualQty : 0;
-            await supabase.from("inv_stock")
-              .update({ quantity: newQty })
-              .eq("id", stockRows[idx].id);
-          }
+        if (stockRow) {
+          await supabase.from("inv_stock")
+            .update({ quantity: actualQty })
+            .eq("id", stockRow.id);
         } else {
-          // stock мөр байхгүй бол шинээр үүсгэх
-          const { data: mainWh } = await supabase.from("inv_warehouses")
-            .select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
-          if (mainWh) {
-            await supabase.from("inv_stock").insert({
-              product_id: item.product_id,
-              warehouse_id: mainWh.id,
-              quantity: actualQty,
-            });
-          }
+          // Төв агуулахад тухайн барааны мөр байхгүй бол үүсгэх
+          await supabase.from("inv_stock").insert({
+            product_id: item.product_id,
+            warehouse_id: mainWh.id,
+            quantity: actualQty,
+          });
         }
 
         // Зөрүүтэй бол adjustment movement бичлэг (түүх)
@@ -10285,6 +10303,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
             notes: `Тооллого ${count.count_number}`,
             reference_number: count.count_number,
             created_by: profile.id,
+            warehouse_id: mainWh.id,
           });
         }
       }
