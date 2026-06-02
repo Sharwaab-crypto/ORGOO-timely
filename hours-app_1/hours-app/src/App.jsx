@@ -7678,6 +7678,7 @@ function InventoryView({ profile, isAdmin = false }) {
   const [editing, setEditing] = useState(null);
   const [movementFor, setMovementFor] = useState(null); // { product, type: "in"|"out" }
   const [showBulkReceive, setShowBulkReceive] = useState(false);
+  const [showCatManager, setShowCatManager] = useState(false);
   const [filterCat, setFilterCat] = useState("all");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("products"); // products | history | low
@@ -7837,6 +7838,11 @@ function InventoryView({ profile, isAdmin = false }) {
                 fontFamily: FS,
               }}>
               📥 Бөөн орлого
+            </button>
+            <button onClick={() => setShowCatManager(true)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              🏷 Категори
             </button>
             <button onClick={() => setEditing({})}
               className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -8247,6 +8253,29 @@ function InventoryView({ profile, isAdmin = false }) {
             </div>
           );
         })()
+      )}
+
+      {showCatManager && createPortal(
+        <CategoryManagerModal
+          categories={categories}
+          products={products}
+          onAdd={async (name) => {
+            try {
+              await supabase.from("inv_categories").insert({ name });
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onDelete={async (cat) => {
+            try {
+              await supabase.from("inv_products").update({ category_id: null }).eq("category_id", cat.id);
+              const { error } = await supabase.from("inv_categories").delete().eq("id", cat.id);
+              if (error) { alert("Устгахад алдаа: " + error.message); return; }
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setShowCatManager(false)}
+        />,
+        document.body
       )}
 
       {editing && (
@@ -10545,6 +10574,100 @@ function StockCountDetail({ countId, products, profile, onClose }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function CategoryManagerModal({ categories, products, onAdd, onDelete, onClose }) {
+  const [newName, setNewName] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const productCount = (catId) => (products || []).filter((p) => p.category_id === catId).length;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}>
+      <div className="glass rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+        style={{ background: T.surfaceStrong, border: `1px solid ${T.border}` }}
+        onClick={(e) => e.stopPropagation()}>
+
+        <div className="flex items-center justify-between p-5 pb-3">
+          <h2 style={{ fontFamily: FD, color: T.ink }} className="text-lg font-semibold">
+            🏷 Категори удирдах
+          </h2>
+          <button onClick={onClose} style={{ color: T.muted }} className="p-1 rounded-lg hover:bg-black/5">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Шинэ категори нэмэх */}
+        <div className="px-5 pb-3 flex gap-2">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)}
+            placeholder="Шинэ категори нэр..."
+            onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) { onAdd(newName.trim()); setNewName(""); } }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-lg text-sm" />
+          <button onClick={() => { if (newName.trim()) { onAdd(newName.trim()); setNewName(""); } }}
+            disabled={!newName.trim()}
+            className="press-btn px-3 py-2 rounded-lg text-sm font-semibold"
+            style={{ background: T.highlight, color: "white", fontFamily: FS, opacity: newName.trim() ? 1 : 0.5 }}>
+            <Plus size={15} />
+          </button>
+        </div>
+
+        {/* Категори жагсаалт */}
+        <div className="px-5 pb-5 overflow-y-auto scrollbar-thin flex-1">
+          {(!categories || categories.length === 0) ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-6">
+              Категори алга
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {categories.map((cat) => {
+                const cnt = productCount(cat.id);
+                const isConfirming = confirmDel === cat.id;
+                return (
+                  <div key={cat.id}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg"
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}>
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
+                      {cat.name}
+                      {cnt > 0 && (
+                        <span style={{ color: T.muted }} className="text-xs ml-2">({cnt} бараа)</span>
+                      )}
+                    </span>
+                    {isConfirming ? (
+                      <span className="flex items-center gap-1.5">
+                        <span style={{ color: T.err, fontFamily: FS }} className="text-xs">Устгах уу?</span>
+                        <button onClick={() => { onDelete(cat); setConfirmDel(null); }}
+                          className="press-btn px-2 py-1 rounded-md text-xs font-semibold"
+                          style={{ background: T.err, color: "white", fontFamily: FS }}>
+                          Тийм
+                        </button>
+                        <button onClick={() => setConfirmDel(null)}
+                          className="press-btn px-2 py-1 rounded-md text-xs"
+                          style={{ background: T.surface, color: T.muted, fontFamily: FS }}>
+                          Үгүй
+                        </button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setConfirmDel(cat.id)}
+                        style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10"
+                        title="Категори устгах">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p style={{ color: T.mutedSoft, fontFamily: FS }} className="text-[11px] mt-3 leading-relaxed">
+            ⚠ Категори устгахад түүнд хамаарах бараанууд "категоригүй" болно (бараа устахгүй).
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
