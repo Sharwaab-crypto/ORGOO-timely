@@ -20558,7 +20558,7 @@ function OrdersView({ profile }) {
 
       // 🔗 FB Pages татах
       const { data: fbpData } = await supabase.from("biz_fb_pages")
-        .select("id, name").eq("is_active", true);
+        .select("id, name");
       const fbMap = {};
       (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
       setFbPagesMap(fbMap);
@@ -24808,7 +24808,7 @@ function ScheduleView({ employees, departments = [], sites, isAdmin = false, cur
     if (!isAdmin) return;
     (async () => {
       const { data } = await supabase.from("biz_fb_pages")
-        .select("id, name").eq("is_active", true);
+        .select("id, name");
       const map = {};
       (data || []).forEach((p) => { map[p.id] = p.name; });
       setFbPagesMap(map);
@@ -31074,7 +31074,7 @@ function DriverDashboard({ profile }) {
 
       // 🔗 FB Pages татах
       const { data: fbpData } = await supabase.from("biz_fb_pages")
-        .select("id, name").eq("is_active", true);
+        .select("id, name");
       const fbMap = {};
       (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
       setFbPagesMap(fbMap);
