@@ -10245,17 +10245,46 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
 
       for (const item of countedItems) {
-        // Барааны бодит үлдэгдлийг тоолсон тоонд тааруулж ШУУД шинэчлэх
+        const actualQty = Number(item.actual_qty);
+
+        // 1. Барааны үндсэн үлдэгдэл (inv_products.stock_quantity)
         await supabase.from("inv_products")
-          .update({ stock_quantity: Number(item.actual_qty), updated_at: new Date().toISOString() })
+          .update({ stock_quantity: actualQty, updated_at: new Date().toISOString() })
           .eq("id", item.product_id);
 
-        // Зөрүүтэй бол adjustment movement бичлэг үүсгэх (түүх хадгалах)
+        // 2. inv_stock хүснэгтийг шинэчлэх (Бараа нөөц хэсэг эндээс уншдаг)
+        //    Тухайн барааны stock мөрүүдийг авах
+        const { data: stockRows } = await supabase.from("inv_stock")
+          .select("id, warehouse_id, quantity")
+          .eq("product_id", item.product_id);
+
+        if (stockRows && stockRows.length > 0) {
+          // Эхний (үндсэн) агуулахад бүх тоог тавьж, бусдыг 0 болгох
+          for (let idx = 0; idx < stockRows.length; idx++) {
+            const newQty = idx === 0 ? actualQty : 0;
+            await supabase.from("inv_stock")
+              .update({ quantity: newQty })
+              .eq("id", stockRows[idx].id);
+          }
+        } else {
+          // stock мөр байхгүй бол шинээр үүсгэх (үндсэн агуулахтай бол)
+          const { data: mainWh } = await supabase.from("inv_warehouses")
+            .select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
+          if (mainWh) {
+            await supabase.from("inv_stock").insert({
+              product_id: item.product_id,
+              warehouse_id: mainWh.id,
+              quantity: actualQty,
+            });
+          }
+        }
+
+        // 3. Зөрүүтэй бол adjustment movement бичлэг (түүх)
         if (Number(item.diff_qty) !== 0) {
           await supabase.from("inv_movements").insert({
             product_id: item.product_id,
             movement_type: "adjust",
-            quantity: Number(item.actual_qty), // adjust set нөөц to actual
+            quantity: actualQty,
             unit_price: 0,
             total_amount: Number(item.diff_amount) || 0,
             reason: "manual",
