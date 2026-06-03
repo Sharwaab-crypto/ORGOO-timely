@@ -2386,6 +2386,7 @@ function AdminDashboard({ profile }) {
             <SidebarSection label="Finance" icon={DollarSign}>
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
+              <SidebarTab active={view === "sales-report"} onClick={() => { setView("sales-report"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалтын тайлан</SidebarTab>
             </SidebarSection>
             )}
 
@@ -2492,6 +2493,7 @@ function AdminDashboard({ profile }) {
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
                 {view === "settlement-reports" && "Тооцооний тайлан"}
+                {view === "sales-report" && "Борлуулалтын тайлан"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -2528,6 +2530,7 @@ function AdminDashboard({ profile }) {
                 {view === "delivery-dashboard" && "Хүргэгч тус бүрийн ажлын хяналт"}
                 {view === "settlement" && "Хүргэгч тус бүрийн тооцоо нэгтгэл"}
                 {view === "settlement-reports" && "Хаагдсан тооцооны түүх"}
+                {view === "sales-report" && "Хүргэгдсэн барааны борлуулалт, ашгийн тооцоо"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -2769,6 +2772,10 @@ function AdminDashboard({ profile }) {
 
         {view === "settlement-reports" && (
           <SettlementReportsView profile={profile} />
+        )}
+
+        {view === "sales-report" && (
+          <SalesReportView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -17269,6 +17276,203 @@ function DriverSettlementView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SETTLEMENT REPORTS — Тооцооний тайлан (хаагдсан тооцооны түүх)
 // ═══════════════════════════════════════════════════════════════════════════
+function SalesReportView({ profile }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]); // нэгтгэсэн бараа
+  const [period, setPeriod] = useState("month"); // today|yesterday|week|month|custom
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Огнооны хүрээ тооцох
+  const range = useMemo(() => {
+    const now = new Date();
+    const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+    const endOfDay = (d) => { const x = new Date(d); x.setHours(23,59,59,999); return x; };
+    if (period === "today") return { start: startOfDay(now), end: endOfDay(now), label: "Өнөөдөр" };
+    if (period === "yesterday") { const y = new Date(now); y.setDate(y.getDate()-1); return { start: startOfDay(y), end: endOfDay(y), label: "Өчигдөр" }; }
+    if (period === "week") { const w = new Date(now); w.setDate(w.getDate()-7); return { start: startOfDay(w), end: endOfDay(now), label: "Сүүлийн 7 хоног" }; }
+    if (period === "custom" && customStart && customEnd) {
+      return { start: startOfDay(new Date(customStart)), end: endOfDay(new Date(customEnd)), label: `${customStart} – ${customEnd}` };
+    }
+    const m = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: startOfDay(m), end: endOfDay(now), label: "Энэ сар" };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // Хүргэгдсэн захиалгуудыг огнооны хүрээгээр
+        const orders = await fetchAllRows(
+          supabase.from("biz_orders")
+            .select("id, delivered_at, created_at, status")
+            .eq("status", "delivered")
+            .gte("delivered_at", range.start.toISOString())
+            .lte("delivered_at", range.end.toISOString())
+        );
+        const orderIds = (orders || []).map((o) => o.id);
+        if (orderIds.length === 0) { setRows([]); setLoading(false); return; }
+
+        // Тэдгээрийн бараанууд + барааны үнэ
+        const [items, { data: products }] = await Promise.all([
+          fetchAllRows(supabase.from("biz_order_items").select("product_id, product_name, quantity, unit_price, total_amount, order_id")),
+          supabase.from("inv_products").select("id, name, sku, cost_price, sale_price"),
+        ]);
+        const prodMap = {};
+        (products || []).forEach((p) => { prodMap[p.id] = p; });
+        const orderIdSet = new Set(orderIds);
+
+        // Бараагаар нэгтгэх
+        const agg = {};
+        (items || []).forEach((it) => {
+          if (!orderIdSet.has(it.order_id)) return; // зөвхөн хүрээний захиалга
+          const key = it.product_id || it.product_name;
+          if (!agg[key]) {
+            const prod = prodMap[it.product_id] || {};
+            agg[key] = {
+              name: it.product_name || prod.name || "—",
+              sku: prod.sku || "",
+              cost_price: Number(prod.cost_price || 0),
+              sale_price: Number(prod.sale_price || it.unit_price || 0),
+              qty: 0,
+              revenue: 0, // зарсан нийт (бодит)
+            };
+          }
+          agg[key].qty += Number(it.quantity || 0);
+          agg[key].revenue += Number(it.total_amount || 0);
+        });
+
+        const list = Object.values(agg).map((r) => {
+          const costTotal = r.cost_price * r.qty;       // авсан үнийн нийт
+          const saleTotal = r.sale_price * r.qty;       // зарах үнийн нийт (каталог)
+          const profit = r.revenue - costTotal;          // ашиг (бодит зарсан − авсан)
+          return { ...r, costTotal, saleTotal, profit };
+        }).sort((a, b) => b.revenue - a.revenue);
+
+        setRows(list);
+      } catch (e) { console.error(e); setRows([]); }
+      finally { setLoading(false); }
+    })();
+  }, [range.start.getTime(), range.end.getTime()]);
+
+  const filtered = rows.filter((r) =>
+    !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.sku.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totals = useMemo(() => ({
+    qty: filtered.reduce((s, r) => s + r.qty, 0),
+    cost: filtered.reduce((s, r) => s + r.costTotal, 0),
+    revenue: filtered.reduce((s, r) => s + r.revenue, 0),
+    profit: filtered.reduce((s, r) => s + r.profit, 0),
+  }), [filtered]);
+
+  const periods = [
+    { id: "today", label: "Өнөөдөр" },
+    { id: "yesterday", label: "Өчигдөр" },
+    { id: "week", label: "7 хоног" },
+    { id: "month", label: "Энэ сар" },
+    { id: "custom", label: "Хугацаа сонгох" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Огноо сонгох */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex flex-wrap gap-2 items-center">
+          {periods.map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, border: `1px solid ${period === p.id ? T.highlight : T.border}`,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex gap-2 items-center">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="px-2 py-1 rounded-lg text-xs" />
+              <span style={{ color: T.muted }}>–</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="px-2 py-1 rounded-lg text-xs" />
+            </div>
+          )}
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Бараа хайх..."
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="px-3 py-1.5 rounded-lg text-xs ml-auto w-40" />
+        </div>
+      </div>
+
+      {/* Нийлбэр картууд */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">📦 Зарагдсан тоо</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-2xl tabular-nums">{totals.qty}</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">🛒 Авсан үнэ (нийт)</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">{totals.cost.toLocaleString()}₮</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">💰 Зарсан (борлуулалт)</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xl tabular-nums">{totals.revenue.toLocaleString()}₮</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">📈 Ашиг</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: totals.profit >= 0 ? T.ok : T.err }} className="text-xl tabular-nums">{totals.profit.toLocaleString()}₮</div>
+        </div>
+      </div>
+
+      {/* Барааны хүснэгт */}
+      <div className="glass rounded-2xl p-3 overflow-x-auto">
+        {loading ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-8">Ачааллаж байна...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-8">
+            {range.label} хугацаанд хүргэгдсэн бараа алга
+          </div>
+        ) : (
+          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "left" }} className="text-[10px] uppercase">Бараа</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Тоо</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Авсан үнэ</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Зарах үнэ</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Авсан нийт</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Зарсан нийт</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Ашиг</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                  <td style={{ padding: "8px", fontFamily: FS, color: T.ink }}>
+                    {r.name}
+                    {r.sku && <span style={{ color: T.muted }} className="text-[10px] ml-1">({r.sku})</span>}
+                  </td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.ink }} className="tabular-nums">{r.qty}</td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.cost_price.toLocaleString()}₮</td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.sale_price.toLocaleString()}₮</td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.warn }} className="tabular-nums">{r.costTotal.toLocaleString()}₮</td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: T.ink }} className="tabular-nums">{r.revenue.toLocaleString()}₮</td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: r.profit >= 0 ? T.ok : T.err }} className="tabular-nums">{r.profit.toLocaleString()}₮</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SettlementReportsView({ profile }) {
   const [reports, setReports] = useState([]);
   const [drivers, setDrivers] = useState({});
