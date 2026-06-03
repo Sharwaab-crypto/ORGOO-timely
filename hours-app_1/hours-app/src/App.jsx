@@ -19205,9 +19205,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             </button>
                           </div>
                           <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }}
-                            className="text-sm mb-2 line-clamp-2">
+                            className="text-sm mb-1 line-clamp-2">
                             {p.name}
                           </div>
+                          {(p.description || it.itemNotes) && (
+                            <div style={{ fontFamily: FS, color: T.muted }}
+                              className="text-[11px] mb-2 line-clamp-2 leading-snug">
+                              {p.description || it.itemNotes}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2">
                             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
                               className="text-sm tabular-nums">
