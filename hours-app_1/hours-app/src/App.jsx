@@ -14028,10 +14028,10 @@ function OperatorKPIReportView({ profile }) {
         </div>
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
-            💰 Нийт орлого
+            💰 Нийт цалин
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
-            {totals.revenue.toLocaleString()}₮
+            {((totals.uniquePhones * 300) + (totals.delivered * 600)).toLocaleString()}₮
           </div>
         </div>
       </div>
@@ -14097,10 +14097,10 @@ function OperatorKPIReportView({ profile }) {
                   </div>
                   <div className="text-right">
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
-                      {op.revenue.toLocaleString()}₮
+                      {((op.uniquePhones * 300) + (op.delivered * 600)).toLocaleString()}₮
                     </div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                      Амжилт {successRate}%
+                      Цалин ({op.uniquePhones}×300 + {op.delivered}×600)
                     </div>
                   </div>
                 </div>
