@@ -18820,6 +18820,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [searching, setSearching] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [activeProductDetail, setActiveProductDetail] = useState(null); // popup-ийн бараа
+  const [expandedNotes, setExpandedNotes] = useState(new Set()); // тайлбар нээсэн item-ууд
 
   // Customer auto-search
   useEffect(() => {
@@ -19209,10 +19210,24 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             {p.name}
                           </div>
                           {(p.description || it.itemNotes) && (
-                            <div style={{ fontFamily: FS, color: T.muted }}
-                              className="text-[11px] mb-2 line-clamp-2 leading-snug">
-                              {p.description || it.itemNotes}
-                            </div>
+                            <>
+                              <button
+                                onClick={() => setExpandedNotes((prev) => {
+                                  const next = new Set(prev);
+                                  next.has(it.productId) ? next.delete(it.productId) : next.add(it.productId);
+                                  return next;
+                                })}
+                                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
+                                className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
+                                📝 Тайлбар {expandedNotes.has(it.productId) ? "▲" : "▼"}
+                              </button>
+                              {expandedNotes.has(it.productId) && (
+                                <div style={{ fontFamily: FS, color: T.muted, background: T.surface, border: `1px solid ${T.borderSoft}` }}
+                                  className="text-[11px] mb-2 p-2 rounded-lg leading-snug">
+                                  {p.description || it.itemNotes}
+                                </div>
+                              )}
+                            </>
                           )}
                           <div className="flex items-center gap-2">
                             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
