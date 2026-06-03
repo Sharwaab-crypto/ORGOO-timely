@@ -17367,6 +17367,36 @@ function SalesReportView({ profile }) {
     profit: filtered.reduce((s, r) => s + r.profit, 0),
   }), [filtered]);
 
+  const exportExcel = () => {
+    if (filtered.length === 0) { alert("Татах өгөгдөл алга"); return; }
+    const data = filtered.map((r) => ({
+      "Бараа": r.name,
+      "SKU": r.sku || "",
+      "Зарагдсан тоо": r.qty,
+      "Авсан үнэ (нэгж)": r.cost_price,
+      "Зарах үнэ (нэгж)": r.sale_price,
+      "Авсан нийт": r.costTotal,
+      "Зарсан нийт": r.revenue,
+      "Ашиг": r.profit,
+    }));
+    // Нийлбэр мөр
+    data.push({
+      "Бараа": "НИЙТ",
+      "SKU": "",
+      "Зарагдсан тоо": totals.qty,
+      "Авсан үнэ (нэгж)": "",
+      "Зарах үнэ (нэгж)": "",
+      "Авсан нийт": totals.cost,
+      "Зарсан нийт": totals.revenue,
+      "Ашиг": totals.profit,
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Борлуулалт");
+    const fname = `Борлуулалт_${range.label.replace(/[ –]/g, "_")}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  };
+
   const periods = [
     { id: "today", label: "Өнөөдөр" },
     { id: "yesterday", label: "Өчигдөр" },
@@ -17406,6 +17436,11 @@ function SalesReportView({ profile }) {
             placeholder="🔍 Бараа хайх..."
             style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
             className="px-3 py-1.5 rounded-lg text-xs ml-auto w-40" />
+          <button onClick={exportExcel}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+            style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+            📊 Excel татах
+          </button>
         </div>
       </div>
 
