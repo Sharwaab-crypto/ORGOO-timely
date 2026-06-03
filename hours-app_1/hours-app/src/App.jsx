@@ -17283,6 +17283,7 @@ function SalesReportView({ profile }) {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [search, setSearch] = useState("");
+  const [groupBy, setGroupBy] = useState("none"); // none | page | category
 
   // Огнооны хүрээ тооцох
   const range = useMemo(() => {
@@ -17306,7 +17307,7 @@ function SalesReportView({ profile }) {
         // Хүргэгдсэн захиалгуудыг огнооны хүрээгээр
         const orders = await fetchAllRows(
           supabase.from("biz_orders")
-            .select("id, delivered_at, created_at, status")
+            .select("id, delivered_at, created_at, status, fb_page_id")
             .eq("status", "delivered")
             .gte("delivered_at", range.start.toISOString())
             .lte("delivered_at", range.end.toISOString())
@@ -17314,29 +17315,44 @@ function SalesReportView({ profile }) {
         const orderIds = (orders || []).map((o) => o.id);
         if (orderIds.length === 0) { setRows([]); setLoading(false); return; }
 
-        // Тэдгээрийн бараанууд + барааны үнэ
-        const [items, { data: products }] = await Promise.all([
+        // Захиалгын fb_page_id map
+        const orderPageMap = {};
+        (orders || []).forEach((o) => { orderPageMap[o.id] = o.fb_page_id || null; });
+
+        // Тэдгээрийн бараанууд + барааны үнэ + категори + FB pages
+        const [items, { data: products }, { data: categories }, { data: pages }] = await Promise.all([
           fetchAllRows(supabase.from("biz_order_items").select("product_id, product_name, quantity, unit_price, total_amount, order_id")),
-          supabase.from("inv_products").select("id, name, sku, cost_price, sale_price"),
+          supabase.from("inv_products").select("id, name, sku, cost_price, sale_price, category_id"),
+          supabase.from("inv_categories").select("id, name"),
+          supabase.from("biz_fb_pages").select("id, name"),
         ]);
         const prodMap = {};
         (products || []).forEach((p) => { prodMap[p.id] = p; });
+        const catMap = {};
+        (categories || []).forEach((c) => { catMap[c.id] = c.name; });
+        const pageMap = {};
+        (pages || []).forEach((p) => { pageMap[p.id] = p.name; });
         const orderIdSet = new Set(orderIds);
 
-        // Бараагаар нэгтгэх
+        // Бараагаар нэгтгэх (page бүрээр тусад нь — нэг бараа өөр page-аар зарагдсан бол салгана)
         const agg = {};
         (items || []).forEach((it) => {
           if (!orderIdSet.has(it.order_id)) return; // зөвхөн хүрээний захиалга
-          const key = it.product_id || it.product_name;
+          const prod = prodMap[it.product_id] || {};
+          const pageId = orderPageMap[it.order_id] || null;
+          const pageName = pageId ? (pageMap[pageId] || "—") : "Page-гүй";
+          const catName = prod.category_id ? (catMap[prod.category_id] || "—") : "Ангилалгүй";
+          // Бараа + page хослолоор key (group хийхэд тус тусдаа гарна)
+          const key = `${it.product_id || it.product_name}__${pageId || "none"}`;
           if (!agg[key]) {
-            const prod = prodMap[it.product_id] || {};
             agg[key] = {
               name: it.product_name || prod.name || "—",
               sku: prod.sku || "",
               cost_price: Number(prod.cost_price || 0),
               sale_price: Number(prod.sale_price || it.unit_price || 0),
+              pageName, categoryName: catName,
               qty: 0,
-              revenue: 0, // зарсан нийт (бодит)
+              revenue: 0,
             };
           }
           agg[key].qty += Number(it.quantity || 0);
@@ -17344,9 +17360,9 @@ function SalesReportView({ profile }) {
         });
 
         const list = Object.values(agg).map((r) => {
-          const costTotal = r.cost_price * r.qty;       // авсан үнийн нийт
-          const saleTotal = r.sale_price * r.qty;       // зарах үнийн нийт (каталог)
-          const profit = r.revenue - costTotal;          // ашиг (бодит зарсан − авсан)
+          const costTotal = r.cost_price * r.qty;
+          const saleTotal = r.sale_price * r.qty;
+          const profit = r.revenue - costTotal;
           return { ...r, costTotal, saleTotal, profit };
         }).sort((a, b) => b.revenue - a.revenue);
 
@@ -17367,11 +17383,36 @@ function SalesReportView({ profile }) {
     profit: filtered.reduce((s, r) => s + r.profit, 0),
   }), [filtered]);
 
+  // Бүлэглэсэн бүтэц (groupBy: none|page|category)
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return [{ key: null, label: null, rows: filtered }];
+    const map = {};
+    filtered.forEach((r) => {
+      const label = groupBy === "page" ? r.pageName : r.categoryName;
+      if (!map[label]) map[label] = [];
+      map[label].push(r);
+    });
+    return Object.entries(map)
+      .map(([label, rs]) => ({
+        key: label, label,
+        rows: rs,
+        subtotal: {
+          qty: rs.reduce((s, r) => s + r.qty, 0),
+          cost: rs.reduce((s, r) => s + r.costTotal, 0),
+          revenue: rs.reduce((s, r) => s + r.revenue, 0),
+          profit: rs.reduce((s, r) => s + r.profit, 0),
+        },
+      }))
+      .sort((a, b) => b.subtotal.revenue - a.subtotal.revenue);
+  }, [filtered, groupBy]);
+
   const exportExcel = () => {
     if (filtered.length === 0) { alert("Татах өгөгдөл алга"); return; }
     const data = filtered.map((r) => ({
       "Бараа": r.name,
       "SKU": r.sku || "",
+      "FB Page": r.pageName,
+      "Ангилал": r.categoryName,
       "Зарагдсан тоо": r.qty,
       "Авсан үнэ (нэгж)": r.cost_price,
       "Зарах үнэ (нэгж)": r.sale_price,
@@ -17383,6 +17424,8 @@ function SalesReportView({ profile }) {
     data.push({
       "Бараа": "НИЙТ",
       "SKU": "",
+      "FB Page": "",
+      "Ангилал": "",
       "Зарагдсан тоо": totals.qty,
       "Авсан үнэ (нэгж)": "",
       "Зарах үнэ (нэгж)": "",
@@ -17436,6 +17479,23 @@ function SalesReportView({ profile }) {
             placeholder="🔍 Бараа хайх..."
             style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
             className="px-3 py-1.5 rounded-lg text-xs ml-auto w-40" />
+          <div className="flex gap-1 items-center">
+            {[
+              { id: "none", label: "Бараагаар" },
+              { id: "page", label: "Page-ээр" },
+              { id: "category", label: "Ангиллаар" },
+            ].map((g) => (
+              <button key={g.id} onClick={() => setGroupBy(g.id)}
+                className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                style={{
+                  background: groupBy === g.id ? T.highlight : T.surfaceAlt,
+                  color: groupBy === g.id ? "white" : T.ink,
+                  fontFamily: FS, border: `1px solid ${groupBy === g.id ? T.highlight : T.border}`,
+                }}>
+                {g.label}
+              </button>
+            ))}
+          </div>
           <button onClick={exportExcel}
             className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
             style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
@@ -17486,19 +17546,34 @@ function SalesReportView({ profile }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r, i) => (
-                <tr key={i} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-                  <td style={{ padding: "8px", fontFamily: FS, color: T.ink }}>
-                    {r.name}
-                    {r.sku && <span style={{ color: T.muted }} className="text-[10px] ml-1">({r.sku})</span>}
-                  </td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.ink }} className="tabular-nums">{r.qty}</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.cost_price.toLocaleString()}₮</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.sale_price.toLocaleString()}₮</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.warn }} className="tabular-nums">{r.costTotal.toLocaleString()}₮</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: T.ink }} className="tabular-nums">{r.revenue.toLocaleString()}₮</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: r.profit >= 0 ? T.ok : T.err }} className="tabular-nums">{r.profit.toLocaleString()}₮</td>
-                </tr>
+              {grouped.map((g) => (
+                <React.Fragment key={g.key || "all"}>
+                  {g.label && (
+                    <tr style={{ background: T.surfaceAlt }}>
+                      <td colSpan={7} style={{ padding: "8px", fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xs">
+                        {groupBy === "page" ? "🔗 " : "🏷 "}{g.label}
+                        <span style={{ color: T.muted, fontWeight: 400 }} className="text-[10px] ml-2">
+                          ({g.rows.length} бараа · {g.subtotal.revenue.toLocaleString()}₮ · Ашиг {g.subtotal.profit.toLocaleString()}₮)
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  {g.rows.map((r, i) => (
+                    <tr key={(g.key || "") + i} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                      <td style={{ padding: "8px", fontFamily: FS, color: T.ink }}>
+                        {g.label && <span style={{ color: T.muted }}>· </span>}
+                        {r.name}
+                        {r.sku && <span style={{ color: T.muted }} className="text-[10px] ml-1">({r.sku})</span>}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.ink }} className="tabular-nums">{r.qty}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.cost_price.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.sale_price.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.warn }} className="tabular-nums">{r.costTotal.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: T.ink }} className="tabular-nums">{r.revenue.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: r.profit >= 0 ? T.ok : T.err }} className="tabular-nums">{r.profit.toLocaleString()}₮</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
