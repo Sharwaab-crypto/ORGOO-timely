@@ -18820,7 +18820,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [searching, setSearching] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [activeProductDetail, setActiveProductDetail] = useState(null); // popup-ийн бараа
-  const [expandedNotes, setExpandedNotes] = useState(new Set()); // тайлбар нээсэн item-ууд
+  const [notesPopup, setNotesPopup] = useState(null); // 📝 тайлбар popup { name, text }
 
   // Customer auto-search
   useEffect(() => {
@@ -19210,24 +19210,12 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             {p.name}
                           </div>
                           {(p.description || it.itemNotes) && (
-                            <>
-                              <button
-                                onClick={() => setExpandedNotes((prev) => {
-                                  const next = new Set(prev);
-                                  next.has(it.productId) ? next.delete(it.productId) : next.add(it.productId);
-                                  return next;
-                                })}
-                                style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
-                                className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
-                                📝 Тайлбар {expandedNotes.has(it.productId) ? "▲" : "▼"}
-                              </button>
-                              {expandedNotes.has(it.productId) && (
-                                <div style={{ fontFamily: FS, color: T.muted, background: T.surface, border: `1px solid ${T.borderSoft}` }}
-                                  className="text-[11px] mb-2 p-2 rounded-lg leading-snug">
-                                  {p.description || it.itemNotes}
-                                </div>
-                              )}
-                            </>
+                            <button
+                              onClick={() => setNotesPopup({ name: p.name, text: p.description || it.itemNotes })}
+                              style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
+                              className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
+                              📝 Тайлбар харах
+                            </button>
                           )}
                           <div className="flex items-center gap-2">
                             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
@@ -19359,6 +19347,39 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             </div>
           </div>
         </div>
+
+        {/* 📝 Сонгогдсон барааны тайлбар popup */}
+        {notesPopup && (
+          <div onClick={() => setNotesPopup(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 70, backdropFilter: "blur(4px)" }}
+            className="flex items-center justify-center p-4">
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, maxWidth: 420, width: "100%" }}
+              className="glass rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-base flex items-center gap-2">
+                  📝 Барааны тайлбар
+                </h3>
+                <button onClick={() => setNotesPopup(null)} style={{ color: T.muted }}
+                  className="p-1 rounded-lg hover:bg-black/5">
+                  <X size={18} />
+                </button>
+              </div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-2">
+                {notesPopup.name}
+              </div>
+              <div style={{ fontFamily: FS, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}
+                className="text-sm p-3 rounded-xl leading-relaxed whitespace-pre-wrap">
+                {notesPopup.text}
+              </div>
+              <button onClick={() => setNotesPopup(null)}
+                style={{ background: T.highlight, color: "white", fontFamily: FS }}
+                className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold press-btn">
+                Хаах
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Барааны тайлбар popup */}
         {activeProductDetail && (
