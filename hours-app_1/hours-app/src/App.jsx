@@ -11563,6 +11563,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             notes: data.notes,
             total_amount: data.totalAmount,
             paid_amount: data.paidAmount,
+            balance_due: Math.max(0, Number(data.totalAmount || 0) - Number(data.paidAmount || 0)), // 💰 Үлдэгдэл дахин тооцох
             fb_page_id: editFbPageId,  // 🔗 FB Page (нөхөж тавьсан)
           }).eq("id", orderId);
 
@@ -31825,12 +31826,16 @@ function DriverDashboard({ profile }) {
                           💰 Урьдчилж: {Number(o.paid_amount).toLocaleString()}₮
                         </span>
                       )}
-                      {Number(o.balance_due || 0) > 0 && (
-                        <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
-                          className="text-[10px] px-1.5 py-0.5 rounded-full">
-                          ⚠ Үлдэгдэл: {Number(o.balance_due).toLocaleString()}₮
-                        </span>
-                      )}
+                      {(() => {
+                        // Үлдэгдэл = нийт дүн − төлсөн (статик balance_due биш, бодит тооцоо)
+                        const remaining = Number(o.total_amount || 0) - Number(o.paid_amount || 0);
+                        return remaining > 0 ? (
+                          <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                            className="text-[10px] px-1.5 py-0.5 rounded-full">
+                            ⚠ Үлдэгдэл: {remaining.toLocaleString()}₮
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                   {o.delivery_lat && o.delivery_lng && (
