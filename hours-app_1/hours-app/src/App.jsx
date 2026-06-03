@@ -17386,6 +17386,24 @@ function SalesReportView({ profile }) {
     return true;
   });
 
+  // Бараагаар нэгтгэх туслах (Page хослолыг нэгтгэнэ)
+  const mergeByProduct = (list) => {
+    const m = {};
+    list.forEach((r) => {
+      const key = `${r.name}__${r.sku}`;
+      if (!m[key]) {
+        m[key] = { ...r };
+      } else {
+        m[key].qty += r.qty;
+        m[key].revenue += r.revenue;
+        m[key].costTotal += r.costTotal;
+        m[key].saleTotal += r.saleTotal;
+        m[key].profit += r.profit;
+      }
+    });
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue);
+  };
+
   const totals = useMemo(() => ({
     qty: filtered.reduce((s, r) => s + r.qty, 0),
     cost: filtered.reduce((s, r) => s + r.costTotal, 0),
@@ -17395,7 +17413,8 @@ function SalesReportView({ profile }) {
 
   // Бүлэглэсэн бүтэц (groupBy: none|page|category)
   const grouped = useMemo(() => {
-    if (groupBy === "none") return [{ key: null, label: null, rows: filtered }];
+    // "Бараагаар" — бараагаар нэгтгэж нэг мөр болгоно (давхардахгүй)
+    if (groupBy === "none") return [{ key: null, label: null, rows: mergeByProduct(filtered) }];
     const map = {};
     filtered.forEach((r) => {
       const label = groupBy === "page" ? r.pageName : r.categoryName;
@@ -17403,22 +17422,27 @@ function SalesReportView({ profile }) {
       map[label].push(r);
     });
     return Object.entries(map)
-      .map(([label, rs]) => ({
-        key: label, label,
-        rows: rs,
-        subtotal: {
-          qty: rs.reduce((s, r) => s + r.qty, 0),
-          cost: rs.reduce((s, r) => s + r.costTotal, 0),
-          revenue: rs.reduce((s, r) => s + r.revenue, 0),
-          profit: rs.reduce((s, r) => s + r.profit, 0),
-        },
-      }))
+      .map(([label, rs]) => {
+        // Page-ээр бол хослол хэвээр, Ангиллаар бол бараагаар нэгтгэнэ
+        const displayRows = groupBy === "category" ? mergeByProduct(rs) : rs;
+        return {
+          key: label, label,
+          rows: displayRows,
+          subtotal: {
+            qty: rs.reduce((s, r) => s + r.qty, 0),
+            cost: rs.reduce((s, r) => s + r.costTotal, 0),
+            revenue: rs.reduce((s, r) => s + r.revenue, 0),
+            profit: rs.reduce((s, r) => s + r.profit, 0),
+          },
+        };
+      })
       .sort((a, b) => b.subtotal.revenue - a.subtotal.revenue);
   }, [filtered, groupBy]);
 
   const exportExcel = () => {
     if (filtered.length === 0) { alert("Татах өгөгдөл алга"); return; }
-    const data = filtered.map((r) => ({
+    const src = groupBy === "page" ? filtered : mergeByProduct(filtered);
+    const data = src.map((r) => ({
       "Бараа": r.name,
       "SKU": r.sku || "",
       "FB Page": r.pageName,
