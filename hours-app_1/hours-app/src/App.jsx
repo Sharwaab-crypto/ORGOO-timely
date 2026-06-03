@@ -17284,6 +17284,9 @@ function SalesReportView({ profile }) {
   const [customEnd, setCustomEnd] = useState("");
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState("none"); // none | page | category
+  const [selPages, setSelPages] = useState([]);   // сонгосон Page нэрс ([] = бүгд)
+  const [selCats, setSelCats] = useState([]);     // сонгосон ангилал нэрс ([] = бүгд)
+  const [filterOpen, setFilterOpen] = useState(null); // 'page' | 'category' | null
 
   // Огнооны хүрээ тооцох
   const range = useMemo(() => {
@@ -17372,9 +17375,16 @@ function SalesReportView({ profile }) {
     })();
   }, [range.start.getTime(), range.end.getTime()]);
 
-  const filtered = rows.filter((r) =>
-    !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.sku.toLowerCase().includes(search.toLowerCase())
-  );
+  // Боломжит Page / ангилал нэрс (rows-аас)
+  const allPageNames = useMemo(() => [...new Set(rows.map((r) => r.pageName))].sort(), [rows]);
+  const allCatNames = useMemo(() => [...new Set(rows.map((r) => r.categoryName))].sort(), [rows]);
+
+  const filtered = rows.filter((r) => {
+    if (search && !(r.name.toLowerCase().includes(search.toLowerCase()) || r.sku.toLowerCase().includes(search.toLowerCase()))) return false;
+    if (selPages.length > 0 && !selPages.includes(r.pageName)) return false;
+    if (selCats.length > 0 && !selCats.includes(r.categoryName)) return false;
+    return true;
+  });
 
   const totals = useMemo(() => ({
     qty: filtered.reduce((s, r) => s + r.qty, 0),
@@ -17479,6 +17489,61 @@ function SalesReportView({ profile }) {
             placeholder="🔍 Бараа хайх..."
             style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
             className="px-3 py-1.5 rounded-lg text-xs ml-auto w-40" />
+
+          {/* Page checklist */}
+          <div className="relative">
+            <button onClick={() => setFilterOpen(filterOpen === "page" ? null : "page")}
+              className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: selPages.length > 0 ? T.highlight : T.surfaceAlt, color: selPages.length > 0 ? "white" : T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+              🔗 Page {selPages.length > 0 ? `(${selPages.length})` : ""} ▾
+            </button>
+            {filterOpen === "page" && (
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 50 }}
+                className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
+                <div className="flex justify-between items-center mb-1 px-1">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">FB Page сонгох</span>
+                  {selPages.length > 0 && (
+                    <button onClick={() => setSelPages([])} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">Цэвэрлэх</button>
+                  )}
+                </div>
+                {allPageNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-black/5 cursor-pointer">
+                    <input type="checkbox" checked={selPages.includes(name)}
+                      onChange={() => setSelPages((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name])} />
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-xs">{name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Ангилал checklist */}
+          <div className="relative">
+            <button onClick={() => setFilterOpen(filterOpen === "category" ? null : "category")}
+              className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: selCats.length > 0 ? T.highlight : T.surfaceAlt, color: selCats.length > 0 ? "white" : T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+              🏷 Ангилал {selCats.length > 0 ? `(${selCats.length})` : ""} ▾
+            </button>
+            {filterOpen === "category" && (
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 50 }}
+                className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
+                <div className="flex justify-between items-center mb-1 px-1">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ангилал сонгох</span>
+                  {selCats.length > 0 && (
+                    <button onClick={() => setSelCats([])} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">Цэвэрлэх</button>
+                  )}
+                </div>
+                {allCatNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-black/5 cursor-pointer">
+                    <input type="checkbox" checked={selCats.includes(name)}
+                      onChange={() => setSelCats((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name])} />
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-xs">{name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-1 items-center">
             {[
               { id: "none", label: "Бараагаар" },
