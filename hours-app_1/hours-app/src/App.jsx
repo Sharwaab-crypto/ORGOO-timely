@@ -17461,7 +17461,7 @@ function SalesReportView({ profile }) {
   return (
     <div className="space-y-4">
       {/* Огноо сонгох */}
-      <div className="glass rounded-2xl p-3">
+      <div className="glass rounded-2xl p-3 relative" style={{ zIndex: 30 }}>
         <div className="flex flex-wrap gap-2 items-center">
           {periods.map((p) => (
             <button key={p.id} onClick={() => setPeriod(p.id)}
@@ -17498,7 +17498,7 @@ function SalesReportView({ profile }) {
               🔗 Page {selPages.length > 0 ? `(${selPages.length})` : ""} ▾
             </button>
             {filterOpen === "page" && (
-              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 50 }}
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 100 }}
                 className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
                 <div className="flex justify-between items-center mb-1 px-1">
                   <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">FB Page сонгох</span>
@@ -17525,7 +17525,7 @@ function SalesReportView({ profile }) {
               🏷 Ангилал {selCats.length > 0 ? `(${selCats.length})` : ""} ▾
             </button>
             {filterOpen === "category" && (
-              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 50 }}
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 100 }}
                 className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
                 <div className="flex justify-between items-center mb-1 px-1">
                   <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ангилал сонгох</span>
