@@ -7958,19 +7958,14 @@ function InventoryView({ profile, isAdmin = false }) {
                     <span>Зарсан: {Number(p.sale_price || 0).toLocaleString()}₮</span>
                   </div>
 
-                  <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
-                    <button onClick={() => setMovementFor({ product: p, type: "in" })}
-                      className="press-btn flex-1 py-1 rounded text-[10px]"
-                      style={{ background: T.successSoft || "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}>
-                      📥 Орлого
-                    </button>
-                    {isAdmin && (
+                  {isAdmin && (
+                    <div className="flex gap-1 mt-2 pt-2 border-t justify-end" style={{ borderColor: T.borderSoft }}>
                       <button onClick={() => setEditing(p)} style={{ color: T.muted }}
                         className="press-btn p-1 rounded">
                         <Edit3 size={11} />
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -12811,7 +12806,7 @@ function CallCenterView({ profile }) {
 
                         return (
                           <>
-                            <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, latestCall.interested_products, latestCall.id)}
+                            <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, allProducts.map((p) => ({ ...p, qty: p.totalQty || p.qty || 1 })), latestCall.id)}
                               disabled={isLockedByOther}
                               className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
                               style={{
