@@ -29732,8 +29732,8 @@ function OperatorKPIView({ profile }) {
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
 
-  // Stats
-  const uniquePhones = new Set(filteredCalls.map((c) => c.phone)).size;
+  // Stats — "Бүртгэсэн дугаар" зөвхөн анхны бүртгэл (pending)
+  const uniquePhones = new Set(filteredCalls.filter((c) => c.call_status === "pending").map((c) => c.phone)).size;
   const totalOrders = filteredOrders.length;
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
   const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
