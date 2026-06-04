@@ -8,7 +8,7 @@ import {
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
-  Truck, DollarSign, Headphones, Warehouse, Menu,
+  Truck, DollarSign, Headphones, Warehouse, Menu, Search,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
