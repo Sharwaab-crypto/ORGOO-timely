@@ -12567,6 +12567,22 @@ function CallCenterView({ profile }) {
               </div>
 
               <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
+              <button onClick={() => setActiveTab("all")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "all" ? T.ink : T.surfaceAlt,
+                  color: activeTab === "all" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>📋</span>
+                <span>Бүгд</span>
+                <span style={{
+                  background: activeTab === "all" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "all" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {(counts.calling || 0) + (counts.ordered || 0) + (counts.cancelled || 0) + (counts.delivered || 0)}
+                </span>
+              </button>
               <button onClick={() => setActiveTab("calling")}
                 className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
                 style={{
@@ -12719,7 +12735,14 @@ function CallCenterView({ profile }) {
               const seenPhones = new Set();
               let filteredCycles = sortedCycleList.filter((cy) => {
                 const order = orderStatusByPhone[cy.phone];
-                
+
+                if (activeTab === "all") {
+                  // Бүгд — утас бүрийн хамгийн сүүлчийн cycle л харуулна
+                  if (seenPhones.has(cy.phone)) return false;
+                  seenPhones.add(cy.phone);
+                  return true;
+                }
+
                 if (activeTab === "calling") {
                   // Аль хэдийн идэвхтэй захиалгатай (ordered/delivered) дугаарыг "Шинэ"-д харуулахгүй
                   if (order && (order.status === "delivered" || order.status === "new" || order.status === "pending" || order.status === "assigned")) {
