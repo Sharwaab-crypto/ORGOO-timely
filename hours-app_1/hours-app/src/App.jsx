@@ -12239,7 +12239,8 @@ function CallCenterView({ profile }) {
                   filteredCalls.forEach((c) => {
                     if (!c.created_by) return;
                     if (!opMap[c.created_by]) return;
-                    opMap[c.created_by].uniquePhones.add(c.phone);
+                    // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
+                    if (c.call_status === "pending") opMap[c.created_by].uniquePhones.add(c.phone);
                     opMap[c.created_by].totalCalls++;
                   });
 
@@ -13943,7 +13944,8 @@ function OperatorKPIReportView({ profile }) {
 
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      if (c.phone) opMap[c.created_by].uniquePhonesSet.add(c.phone); // 🆕 Уникаль утас
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
+      if (c.phone && c.call_status === "pending") opMap[c.created_by].uniquePhonesSet.add(c.phone);
       opMap[c.created_by].totalCalls++;
     });
 
@@ -14966,12 +14968,13 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       cancelledOrders: [],
     };
 
-    // Дуудлагууд — Дуудлагын самбартай ижил logic (бүх дуудлагыг тоолно)
+    // Дуудлагууд — "Дугаар" = зөвхөн анх бүртгэсэн (pending), "Залгалт" = бүх дуудлага
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      if (c.phone) map[key].phoneSet.add(c.phone); // өвөрмөц утас
-      map[key].totalCalls++;                        // нийт залгалт
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)-ийн өвөрмөц утас
+      if (c.phone && c.call_status === "pending") map[key].phoneSet.add(c.phone);
+      map[key].totalCalls++; // нийт залгалт (бүх төрөл)
     });
 
     // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
