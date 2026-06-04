@@ -12371,7 +12371,8 @@ function CallCenterView({ profile }) {
                   filteredOrders.forEach((o) => {
                     if (!o.taken_by) return;
                     if (!opMap[o.taken_by]) return;
-                    opMap[o.taken_by].totalOrders++;
+                    // "Захиалга" = цуцлагдаагүй (идэвхтэй + хүргэсэн), цуцлагдсаныг тусад нь
+                    if (o.status !== "cancelled") opMap[o.taken_by].totalOrders++;
                     if (o.status === "delivered") {
                       opMap[o.taken_by].delivered++;
                       opMap[o.taken_by].revenue += Number(o.total_amount || 0);
@@ -12983,9 +12984,10 @@ function CallCenterView({ profile }) {
                   
                   {pageCycles.map((cycle, cycleIdx) => {
                 const phone = cycle.phone;
-                // 📋 Дуудлагын түүх — тухайн утасны БҮХ дуудлагыг цагаар (хуучин→шинэ) харуулна
-                //    (зөвхөн cycle биш — анхны "Дугаар бүртгэсэн" мөр ч харагдана)
-                const calls = [...(phoneGrouped[phone] || cycle.calls)].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                // 📋 Дуудлагын түүх — ЭНЭ cycle-ийн дуудлагууд (цагаар: хуучин→шинэ)
+                //    Cancelled/delivered cycle тусдаа card, шинэ cycle тусдаа card болж харагдана.
+                //    (нэг cycle дотор "Дугаар бүртгэсэн" + "Захиалга болсон" 2 мөр харагдана)
+                const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
                 const customer = customers.find((cu) => cu.phone === phone);
                 
@@ -14232,8 +14234,12 @@ function OperatorKPIReportView({ profile }) {
 
     filteredOrders.forEach((o) => {
       if (!o.taken_by || !opMap[o.taken_by]) return;
-      opMap[o.taken_by].totalOrders++;
-      if (o.customer_phone) opMap[o.taken_by].orderedPhones.push(o.customer_phone);
+      // ⚠ "Захиалга" (totalOrders) = цуцлагдаагүй захиалга (идэвхтэй + хүргэсэн).
+      //    Цуцлагдсаныг "Цуцалсан" баганад тусад нь тоолно (давхар мэт харагдахгүй).
+      if (o.status !== "cancelled") {
+        opMap[o.taken_by].totalOrders++;
+        if (o.customer_phone) opMap[o.taken_by].orderedPhones.push(o.customer_phone);
+      }
       if (o.status === "delivered") {
         opMap[o.taken_by].delivered++;
         opMap[o.taken_by].revenue += Number(o.total_amount || 0);
@@ -15392,7 +15398,8 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       const fbPageId = o.fb_page_id || phoneToFbPage[o.customer_phone] || "__null__";
       const key = fbPageId;
       if (!map[key]) return;
-      map[key].totalOrders++;
+      // "Захиалга" = цуцлагдаагүй (идэвхтэй + хүргэсэн), цуцлагдсаныг тусад нь
+      if (o.status !== "cancelled") map[key].totalOrders++;
       if (o.status === "delivered") {
         map[key].delivered++;
         map[key].revenue += Number(o.total_amount || 0);
