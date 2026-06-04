@@ -21644,17 +21644,15 @@ function OrdersView({ profile }) {
   let filtered = orders;
   if (filter === "unknown") {
     // ❓ Тодорхойгүй — is_unknown=true ЭСВЭЛ GPS байхгүй шинэ захиалга
-    // ❗ Цуцлагдсан / Хүргэгдсэн захиалга энд харагдахгүй (аль хэдийн шийдэгдсэн)
     filtered = filtered.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             ((o.status === "new" || o.status === "assigned") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     });
   } else if (filter === "new") {
-    // 🆕 Шинэ — захиалга идэвхтэй (new/assigned), driver-гүй, тодорхой (is_unknown биш)
-    // ⚠ status="assigned" атлаа driver_id NULL захиалга мөн энд багтана (хуваарилалт цуцлагдсан)
+    // 🆕 Шинэ — идэвхтэй (new/assigned/pending), driver-гүй, тодорхой
     filtered = filtered.filter((o) =>
-      (o.status === "new" || o.status === "assigned") && !o.driver_id && !o.is_unknown);
+      (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown);
   } else if (filter === "assigned") {
     // 🚚 Хуваарилагдсан — driver оноогдсон, идэвхтэй захиалга
     filtered = filtered.filter((o) =>
@@ -21687,14 +21685,13 @@ function OrdersView({ profile }) {
         : orders.filter((o) => o.driver_id === driverFilter));
   const counts = {
     all: countBase.length,
-    new: countBase.filter((o) => (o.status === "new" || o.status === "assigned") && !o.driver_id && !o.is_unknown).length, // 🔧 driver-гүй идэвхтэй
+    new: countBase.filter((o) => (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown).length, // 🔧 driver-гүй идэвхтэй
     assigned: countBase.filter((o) => o.driver_id && o.status !== "delivered" && o.status !== "cancelled").length, // 🆕 Хуваарилагдсан = driver-той
     unknown: countBase.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             ((o.status === "new" || o.status === "assigned") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     }).length,
-    pending: countBase.filter((o) => o.status === "pending").length,
     delivered: countBase.filter((o) => o.status === "delivered").length,
     cancelled: countBase.filter((o) => o.status === "cancelled").length,
   };
@@ -21952,15 +21949,6 @@ function OrdersView({ profile }) {
               fontFamily: FS, fontWeight: 600,
             }}>
             ❓ Тодорхойгүй ({counts.unknown})
-          </button>
-          <button onClick={() => setFilter("pending")}
-            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
-            style={{
-              background: filter === "pending" ? T.warn : T.surfaceAlt,
-              color: filter === "pending" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            ⏳ Хүлээгдэж ({orders.filter((o) => o.status === "pending").length})
           </button>
           <button onClick={() => setFilter("delivered")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
