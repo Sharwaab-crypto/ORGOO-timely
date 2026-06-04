@@ -13872,6 +13872,7 @@ function OperatorKPIReportView({ profile }) {
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-kpi-report-period") || "today"; } catch { return "today"; }
   });
+  const [phonePopup, setPhonePopup] = useState(null); // 🆕 {title, phones[], color}
   const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
 
@@ -13953,6 +13954,12 @@ function OperatorKPIReportView({ profile }) {
         role: op.role,
         title: op.job_title || "",
         uniquePhonesSet: new Set(), // 🆕 Set ашиглан давхардаагүй утсыг тоологдох
+        registeredPhones: [], // 🆕 Бүртгэсэн дугаарын жагсаалт
+        calledPhones: [], // 🆕 Залгасан дугаарын жагсаалт
+        orderedPhones: [], // 🆕 Захиалгын дугаарын жагсаалт
+        deliveredPhones: [], // 🆕 Хүргэсэн
+        pendingPhones: [], // 🆕 Хүлээгдэж
+        cancelledPhones: [], // 🆕 Цуцалсан
         totalCalls: 0,
         totalOrders: 0,
         delivered: 0,
@@ -13976,20 +13983,28 @@ function OperatorKPIReportView({ profile }) {
       // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн оператор тоолно
       if (c.phone && phoneFirstOp[c.phone] === c.created_by) {
         opMap[c.created_by].uniquePhonesSet.add(c.phone);
+        if (!opMap[c.created_by].registeredPhones.includes(c.phone)) {
+          opMap[c.created_by].registeredPhones.push(c.phone);
+        }
       }
       opMap[c.created_by].totalCalls++;
+      if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
     });
 
     filteredOrders.forEach((o) => {
       if (!o.taken_by || !opMap[o.taken_by]) return;
       opMap[o.taken_by].totalOrders++;
+      if (o.customer_phone) opMap[o.taken_by].orderedPhones.push(o.customer_phone);
       if (o.status === "delivered") {
         opMap[o.taken_by].delivered++;
         opMap[o.taken_by].revenue += Number(o.total_amount || 0);
+        if (o.customer_phone) opMap[o.taken_by].deliveredPhones.push(o.customer_phone);
       } else if (o.status === "cancelled") {
         opMap[o.taken_by].cancelled++;
+        if (o.customer_phone) opMap[o.taken_by].cancelledPhones.push(o.customer_phone);
       } else {
         opMap[o.taken_by].pending++;
+        if (o.customer_phone) opMap[o.taken_by].pendingPhones.push(o.customer_phone);
       }
     });
 
@@ -14235,56 +14250,62 @@ function OperatorKPIReportView({ profile }) {
                   </div>
                 </div>
 
-                {/* Stats grid */}
+                {/* Stats grid — дарахад дугаарын жагсаалт popup нээнэ */}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Бүртгэсэн дугаар`, phones: op.registeredPhones || [], color: T.highlight })}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Бүртгэсэн дугаар
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
                       {op.uniquePhones}
                     </div>
-                  </div>
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Нийт залгалт`, phones: op.calledPhones || [], color: "#3b82f6" })}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Нийт залгалт
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-lg tabular-nums">
                       {op.totalCalls}
                     </div>
-                  </div>
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Захиалга`, phones: op.orderedPhones || [], color: "#9333ea" })}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Захиалга
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-lg tabular-nums">
                       {op.totalOrders}
                     </div>
-                  </div>
-                  <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Хүргэсэн`, phones: op.deliveredPhones || [], color: T.ok })}
+                    style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ✓ Хүргэсэн
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
                       {op.delivered}
                     </div>
-                  </div>
-                  <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Хүлээгдэж`, phones: op.pendingPhones || [], color: T.warn })}
+                    style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ⏳ Хүлээгдэж
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-lg tabular-nums">
                       {op.pending}
                     </div>
-                  </div>
-                  <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => setPhonePopup({ title: `${op.name} — Цуцалсан`, phones: op.cancelledPhones || [], color: T.err })}
+                    style={{ background: T.errSoft }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ✕ Цуцалсан
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-lg tabular-nums">
                       {op.cancelled}
                     </div>
-                  </div>
+                  </button>
                 </div>
 
                 {/* Conversion progress */}
@@ -14309,12 +14330,63 @@ function OperatorKPIReportView({ profile }) {
           })}
         </div>
       )}
+
+      {/* 🆕 Дугаарын жагсаалт popup */}
+      {phonePopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setPhonePopup(null)}>
+          <div className="rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+            style={{ background: T.surface }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: T.borderSoft }}>
+              <div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                  {phonePopup.title}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                  {phonePopup.phones.length} дугаар
+                </div>
+              </div>
+              <button onClick={() => setPhonePopup(null)}
+                style={{ background: T.surfaceAlt, color: T.ink }}
+                className="w-8 h-8 rounded-full flex items-center justify-center press-btn">
+                <X size={16} />
+              </button>
+            </div>
+            {/* Phone list */}
+            <div className="overflow-y-auto p-3 flex-1">
+              {phonePopup.phones.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-center text-sm py-8">
+                  Дугаар алга
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {phonePopup.phones.map((ph, i) => (
+                    <div key={`${ph}-${i}`}
+                      style={{ background: T.surfaceAlt }}
+                      className="flex items-center gap-2 rounded-lg px-3 py-2">
+                      <span style={{ background: phonePopup.color + "20", color: phonePopup.color, fontFamily: FD, fontWeight: 700 }}
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      <a href={`tel:${ph}`}
+                        style={{ fontFamily: FD, fontWeight: 600, color: phonePopup.color }}
+                        className="text-sm tabular-nums hover:underline">
+                        {ph}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  SALES DASHBOARD — Борлуулалтын самбар (FB page-аар KPI)
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
 //  🚚 DELIVERY DASHBOARD — Хүргэлтийн самбар (admin/manager-руу)
