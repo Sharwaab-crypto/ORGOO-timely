@@ -14889,6 +14889,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
         is_active: p.is_active,
         uniquePhones: 0, // Бүх дуудлагын тоо
         totalCalls: 0,
+        phoneSet: new Set(), // өвөрмөц утас тоолох
         totalOrders: 0,
         delivered: 0,
         cancelled: 0,
@@ -14909,6 +14910,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       is_active: true,
       uniquePhones: 0,
       totalCalls: 0,
+      phoneSet: new Set(),
       totalOrders: 0,
       delivered: 0,
       cancelled: 0,
@@ -14924,8 +14926,8 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      map[key].uniquePhones++; // Тус дуудлагыг тоолно (давхардсан ч)
-      map[key].totalCalls++;
+      if (c.phone) map[key].phoneSet.add(c.phone); // өвөрмөц утас
+      map[key].totalCalls++;                        // нийт залгалт
     });
 
     // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
@@ -14956,6 +14958,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
     });
 
     return Object.values(map)
+      .map((p) => ({ ...p, uniquePhones: p.phoneSet ? p.phoneSet.size : p.uniquePhones }))
       .filter((p) => p.totalCalls > 0 || p.totalOrders > 0)
       .sort((a, b) => b.revenue - a.revenue);
   }, [filteredCalls, filteredOrders, fbPages]);
