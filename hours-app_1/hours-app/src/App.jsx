@@ -13745,10 +13745,27 @@ function CallCenterView({ profile }) {
 
               // Захиалга үүссэний дараа lock release + дуудлагын status шинэчлэх
               await releaseLock(data.phone);
+              // 🆕 Дуудлагыг "ordered" болгох — callId байвал түүгээр, эс бөгөөс утасны
+              //    хамгийн сүүлийн pending дуудлагыг ordered болгоно (дата гажихаас сэргийлнэ).
               if (orderForCall.callId) {
                 await supabase.from("biz_calls").update({
                   call_status: "ordered",
                 }).eq("id", orderForCall.callId);
+              } else if (data.phone) {
+                // callId алга — утасны сүүлийн pending дуудлагыг олж ordered болгоно
+                const { data: lastPending } = await supabase
+                  .from("biz_calls")
+                  .select("id")
+                  .eq("phone", data.phone)
+                  .eq("call_status", "pending")
+                  .order("created_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (lastPending) {
+                  await supabase.from("biz_calls").update({
+                    call_status: "ordered",
+                  }).eq("id", lastPending.id);
+                }
               }
 
               setOrderForCall(null);
