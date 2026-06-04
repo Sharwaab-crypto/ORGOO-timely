@@ -12341,7 +12341,12 @@ function CallCenterView({ profile }) {
                     if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
                       opMap[c.created_by].uniquePhones.add(c.phone);
                     }
-                    opMap[c.created_by].totalCalls++;
+                    // ☎ "Нийт залгалт" — бодит залгалт (pending хасна)
+                    if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+                        c.call_status === "callback" || c.call_status === "ordered" ||
+                        c.call_status === "cancelled") {
+                      opMap[c.created_by].totalCalls++;
+                    }
                   });
 
                   // Захиалгуудыг тоолох
@@ -14198,8 +14203,13 @@ function OperatorKPIReportView({ profile }) {
           opMap[c.created_by].registeredPhones.push(c.phone);
         }
       }
-      opMap[c.created_by].totalCalls++;
-      if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
+      // ☎ "Нийт залгалт" — оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна)
+      if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+          c.call_status === "callback" || c.call_status === "ordered" ||
+          c.call_status === "cancelled") {
+        opMap[c.created_by].totalCalls++;
+        if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
+      }
     });
 
     filteredOrders.forEach((o) => {
@@ -15335,7 +15345,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
         if (!phoneFirstPage[c.phone]) phoneFirstPage[c.phone] = k;
       });
 
-    // Дуудлагууд — "Дугаар" = анх бүртгэсэн page, "Залгалт" = бүх дуудлага
+    // Дуудлагууд — "Дугаар" = анх бүртгэсэн page, "Залгалт" = бодит залгалт
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
@@ -15343,7 +15353,13 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       if (c.phone && phoneFirstPage[c.phone] === key) {
         map[key].phoneSet.add(c.phone);
       }
-      map[key].totalCalls++; // нийт залгалт (бүх төрөл)
+      // ☎ "Нийт залгалт" — оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна)
+      //    (Дуудлагын самбартай ижил логик)
+      if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+          c.call_status === "callback" || c.call_status === "ordered" ||
+          c.call_status === "cancelled") {
+        map[key].totalCalls++;
+      }
     });
 
     // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
