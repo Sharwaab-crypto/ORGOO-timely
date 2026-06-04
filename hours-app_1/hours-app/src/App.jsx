@@ -15411,8 +15411,12 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
     const delivered = deliveredOrders.length;
     const totalOrders = filteredOrders.length;
     const avgOrder = delivered > 0 ? revenue / delivered : 0;
-    return { revenue, delivered, totalOrders, avgOrder };
-  }, [filteredOrders]);
+    // 🆕 Бүх page-ээс нийт: дугаар бүртгэсэн, залгалт, захиалга бүртгэсэн
+    const totalPhones = fbReport.reduce((s, p) => s + (p.uniquePhones || 0), 0);
+    const totalCalls = fbReport.reduce((s, p) => s + (p.totalCalls || 0), 0);
+    const totalRegOrders = fbReport.reduce((s, p) => s + (p.totalOrders || 0), 0);
+    return { revenue, delivered, totalOrders, avgOrder, totalPhones, totalCalls, totalRegOrders };
+  }, [filteredOrders, fbReport]);
 
   // Excel export
   const exportExcel = () => {
@@ -15580,6 +15584,42 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
               </div>
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
                 Идэвхтэй FB Page
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0ea5e9` }}>
+              <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Phone size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#0ea5e9" }} className="text-2xl tabular-nums">
+                {totals.totalPhones}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Бүртгэсэн дугаар
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #f59e0b` }}>
+              <div style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Headphones size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#f59e0b" }} className="text-2xl tabular-nums">
+                {totals.totalCalls}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Нийт залгалт
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #14b8a6` }}>
+              <div style={{ background: "rgba(20,184,166,0.1)", color: "#14b8a6" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <ShoppingBag size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#14b8a6" }} className="text-2xl tabular-nums">
+                {totals.totalRegOrders}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Бүртгэсэн захиалга
               </div>
             </div>
           </div>
