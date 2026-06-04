@@ -13942,10 +13942,22 @@ function OperatorKPIReportView({ profile }) {
       };
     });
 
+    // 🔗 Утас бүрийн АНХ бүртгэсэн (хамгийн эхний pending) операторыг тодорхойлох
+    //    → нэг дугаар зөвхөн нэг операторт тоологдоно (давхар тооллого арилна)
+    const phoneFirstOp = {};
+    filteredCalls
+      .filter((c) => c.call_status === "pending" && c.phone && c.created_by)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        if (!phoneFirstOp[c.phone]) phoneFirstOp[c.phone] = c.created_by;
+      });
+
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
-      if (c.phone && c.call_status === "pending") opMap[c.created_by].uniquePhonesSet.add(c.phone);
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анх бүртгэсэн оператор тоолно
+      if (c.phone && c.call_status === "pending" && phoneFirstOp[c.phone] === c.created_by) {
+        opMap[c.created_by].uniquePhonesSet.add(c.phone);
+      }
       opMap[c.created_by].totalCalls++;
     });
 
@@ -14968,12 +14980,24 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       cancelledOrders: [],
     };
 
-    // Дуудлагууд — "Дугаар" = зөвхөн анх бүртгэсэн (pending), "Залгалт" = бүх дуудлага
+    // 🔗 Утас бүрийн АНХ бүртгэсэн page-ийг тодорхойлох (давхар тооллого арилгах)
+    const phoneFirstPage = {};
+    filteredCalls
+      .filter((c) => c.call_status === "pending" && c.phone)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        const k = c.fb_page_id || "__null__";
+        if (!phoneFirstPage[c.phone]) phoneFirstPage[c.phone] = k;
+      });
+
+    // Дуудлагууд — "Дугаар" = зөвхөн анх бүртгэсэн page-д, "Залгалт" = бүх дуудлага
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)-ийн өвөрмөц утас
-      if (c.phone && c.call_status === "pending") map[key].phoneSet.add(c.phone);
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анх бүртгэсэн page-ийн өвөрмөц утас
+      if (c.phone && c.call_status === "pending" && phoneFirstPage[c.phone] === key) {
+        map[key].phoneSet.add(c.phone);
+      }
       map[key].totalCalls++; // нийт залгалт (бүх төрөл)
     });
 
