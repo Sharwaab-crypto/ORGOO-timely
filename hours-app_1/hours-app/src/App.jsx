@@ -12591,13 +12591,17 @@ function CallCenterView({ profile }) {
           // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
           const orderInfoByPhone = {};
           Object.keys(phoneGroupedAll).forEach((phone) => {
-            const hasOrderedCall = phoneGroupedAll[phone].some((c) => c.call_status === "ordered");
+            const callsArr = phoneGroupedAll[phone];
+            const hasOrderedCall = callsArr.some((c) => c.call_status === "ordered");
+            const sortedC = [...callsArr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestCallStatus = sortedC[0]?.call_status;
             const ord = orders
               .filter((o) => o.customer_phone === phone)
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
             const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
-            const cancelledOrder = ord && ord.status === "cancelled";
-            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder };
+            // Цуцалсан: захиалга cancelled ЭСВЭЛ (захиалгагүй атлаа сүүлийн дуудлага cancelled)
+            const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
+            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder, latestCallStatus };
           });
 
           // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
@@ -12619,8 +12623,14 @@ function CallCenterView({ profile }) {
             });
           }
           
-          // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
-          counts.delivered = orders.filter((o) => o.status === "delivered").length;
+          // Delivered (амжилттай) — delivered захиалгатай ӨВӨРМӨЦ утас (жагсаалттай тааруулах)
+          {
+            const delivPhones = new Set();
+            orders.forEach((o) => {
+              if (o.status === "delivered" && o.customer_phone) delivPhones.add(o.customer_phone);
+            });
+            counts.delivered = delivPhones.size;
+          }
           
           // "Захиалга болсон" — ordered дуудлага байсан БА захиалга идэвхтэй (delivered/cancelled биш)
           // ⚠ Захиалга авсны дараа дахин дуудлага бүртгэсэн ч (сүүлийн статус pending) захиалгатай хэвээр → энд.
@@ -12832,10 +12842,12 @@ function CallCenterView({ profile }) {
               const orderInfoByPhone = {};
               Object.entries(phoneGrouped).forEach(([phone, calls]) => {
                 const hasOrderedCall = calls.some((c) => c.call_status === "ordered");
+                const sortedC = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                const latestCallStatus = sortedC[0]?.call_status;
                 const ord = orderStatusByPhone[phone];
                 const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
-                const cancelledOrder = ord && ord.status === "cancelled";
-                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder };
+                const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
+                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder, latestCallStatus };
               });
 
               // Cycles-ыг сүүлд бүртгэсэн цагаар sort (шинэ нь эхэнд)
