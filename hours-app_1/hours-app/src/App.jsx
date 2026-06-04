@@ -21711,6 +21711,29 @@ function OrdersView({ profile }) {
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
     await supabase.from("biz_orders").update(updates).eq("id", orderId);
+    // 🆕 Захиалга цуцлагдахад biz_calls-д "cancelled" дуудлага нэмэх →
+    //    дуудлагын cycle хаагдаж, шинэ захиалга тусдаа card болж салагдана.
+    if (newStatus === "cancelled") {
+      try {
+        const ord = orders.find((o) => o.id === orderId)
+          || (await supabase.from("biz_orders").select("customer_phone, fb_page_id, customer_name").eq("id", orderId).maybeSingle()).data;
+        if (ord?.customer_phone) {
+          // Сүүлийн дуудлага аль хэдийн cancelled биш бол л нэмэх (давхар хамгаалалт)
+          const { data: lastC } = await supabase.from("biz_calls")
+            .select("call_status").eq("phone", ord.customer_phone)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (lastC?.call_status !== "cancelled") {
+            await supabase.from("biz_calls").insert({
+              phone: ord.customer_phone,
+              customer_name: ord.customer_name || null,
+              call_status: "cancelled",
+              fb_page_id: ord.fb_page_id || null,
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (e) { console.error("[cancel call insert]", e); }
+    }
     await loadAll();
     if (activeOrder?.id === orderId) {
       const updated = (await supabase.from("biz_orders").select("*").eq("id", orderId).single()).data;
@@ -22095,6 +22118,21 @@ function OrdersView({ profile }) {
                     status: "cancelled",
                     cancelled_at: new Date().toISOString(),
                   }).eq("id", o.id);
+                  // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                  if (o.customer_phone) {
+                    const { data: lastC } = await supabase.from("biz_calls")
+                      .select("call_status").eq("phone", o.customer_phone)
+                      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                    if (lastC?.call_status !== "cancelled") {
+                      await supabase.from("biz_calls").insert({
+                        phone: o.customer_phone,
+                        customer_name: o.customer_name || null,
+                        call_status: "cancelled",
+                        fb_page_id: o.fb_page_id || null,
+                        created_at: new Date().toISOString(),
+                      });
+                    }
+                  }
                   await loadAll();
                 } catch (e) { alert("Алдаа: " + e.message); }
               }}
@@ -29545,6 +29583,21 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
               status: "cancelled",
               cancelled_at: new Date().toISOString(),
             }).eq("id", activeOrder.id);
+            // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+            if (activeOrder.customer_phone) {
+              const { data: lastC } = await supabase.from("biz_calls")
+                .select("call_status").eq("phone", activeOrder.customer_phone)
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              if (lastC?.call_status !== "cancelled") {
+                await supabase.from("biz_calls").insert({
+                  phone: activeOrder.customer_phone,
+                  customer_name: activeOrder.customer_name || null,
+                  call_status: "cancelled",
+                  fb_page_id: activeOrder.fb_page_id || null,
+                  created_at: new Date().toISOString(),
+                });
+              }
+            }
             setActiveOrder(null);
             setRefreshKey(k => k + 1);
           }}
@@ -33281,6 +33334,21 @@ function DriverDashboard({ profile }) {
                         status: "cancelled",
                         notes: fullNote,
                       }).eq("id", ratingOrder.order.id);
+                      // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                      if (ratingOrder.order.customer_phone) {
+                        const { data: lastC } = await supabase.from("biz_calls")
+                          .select("call_status").eq("phone", ratingOrder.order.customer_phone)
+                          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                        if (lastC?.call_status !== "cancelled") {
+                          await supabase.from("biz_calls").insert({
+                            phone: ratingOrder.order.customer_phone,
+                            customer_name: ratingOrder.order.customer_name || null,
+                            call_status: "cancelled",
+                            fb_page_id: ratingOrder.order.fb_page_id || null,
+                            created_at: new Date().toISOString(),
+                          });
+                        }
+                      }
                       await loadAll();
                     }
                     
@@ -33568,6 +33636,21 @@ function DriverDashboard({ profile }) {
                       cancelled_by: profile.id,
                       notes: existingNotes + `[Хүргэгч цуцалсан]: ${cancelNote.trim()}`,
                     }).eq("id", cancelOrder.id);
+                    // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                    if (cancelOrder.customer_phone) {
+                      const { data: lastC } = await supabase.from("biz_calls")
+                        .select("call_status").eq("phone", cancelOrder.customer_phone)
+                        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                      if (lastC?.call_status !== "cancelled") {
+                        await supabase.from("biz_calls").insert({
+                          phone: cancelOrder.customer_phone,
+                          customer_name: cancelOrder.customer_name || null,
+                          call_status: "cancelled",
+                          fb_page_id: cancelOrder.fb_page_id || null,
+                          created_at: new Date().toISOString(),
+                        });
+                      }
+                    }
                     setCancelOrder(null);
                     setCancelNote("");
                     await loadAll();
