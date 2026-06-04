@@ -12588,16 +12588,30 @@ function CallCenterView({ profile }) {
 
           const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
 
-          // Calling — БҮХ дугаарыг тоолно (өмнө захиалга өгсөн ч, шинэ дуудлага байвал залгах ёстой)
-          // Зөвхөн сүүлийн дуудлага нь "ordered" эсвэл "cancelled" биш бол → "calling" tab-руу нэмэгдэнэ
-          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const latestStatus = sorted[0]?.call_status;
-            // Сүүлийн status нь pending бол → calling-руу
-            if (latestStatus !== "ordered" && latestStatus !== "cancelled") {
+          // Calling — жагсаалттай ИЖИЛ логик ашиглана:
+          // 1) сүүлийн дуудлага ordered/cancelled биш
+          // 2) тухайн утсанд идэвхтэй захиалга (new/pending/assigned/delivered) БАЙХГҮЙ
+          // (жагсаалтад харагдах тоотой тааруулах)
+          {
+            // biz_orders-аас утас бүрийн хамгийн сүүлчийн захиалгыг авах
+            const latestOrderByPhone = {};
+            orders.forEach((o) => {
+              const ex = latestOrderByPhone[o.customer_phone];
+              if (!ex || new Date(o.created_at) > new Date(ex.created_at)) {
+                latestOrderByPhone[o.customer_phone] = o;
+              }
+            });
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              const latestStatus = sorted[0]?.call_status;
+              // Сүүлийн status нь ordered/cancelled бол → calling-д ОРОХГҮЙ
+              if (latestStatus === "ordered" || latestStatus === "cancelled") return;
+              // Идэвхтэй захиалгатай дугаарыг → calling-д ОРОХГҮЙ
+              const order = latestOrderByPhone[phone];
+              if (order && (order.status === "delivered" || order.status === "new" || order.status === "pending" || order.status === "assigned")) return;
               counts.calling++;
-            }
-          });
+            });
+          }
           
           // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
