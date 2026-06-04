@@ -14357,7 +14357,7 @@ function OperatorKPIReportView({ profile }) {
       </div>
 
       {/* Нийт стат самбар */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
             👥 Идэвхтэй ажилтан
@@ -14372,6 +14372,14 @@ function OperatorKPIReportView({ profile }) {
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-3xl tabular-nums">
             {totals.uniquePhones}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            🛒 Бүртгэсэн захиалга
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#8b5cf6" }} className="text-3xl tabular-nums">
+            {totals.totalOrders}
           </div>
         </div>
         <div className="glass rounded-2xl p-3">
