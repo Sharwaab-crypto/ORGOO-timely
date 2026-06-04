@@ -12616,25 +12616,26 @@ function CallCenterView({ profile }) {
           // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
           
-          // "Захиалга болсон" — захиалга үүссэн БА дуудлага цуцлагдаагүй
-          // Утсаар сүүлийн дуудлага "ordered" + захиалга нь delivered/cancelled биш
+          // "Захиалга болсон" — тухайн утсанд ИДЭВХТЭЙ захиалга байгаа (delivered/cancelled биш)
+          // ⭐ Захиалга заавал дугаар бүртгэснээр үүсдэг тул "идэвхтэй захиалгатай дугаар" = захиалга болсон.
+          //    Дуудлагын сүүлийн статусаас үл хамаарна (callback/no_answer тавьсан ч захиалга идэвхтэй бол ordered).
           {
             const seenOrd = new Set();
             const seenCan = new Set();
             let ordC = 0, canC = 0;
-            // Утас бүрийн сүүлийн дуудлагын статус
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
               const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
               const latestStatus = sorted[0]?.call_status;
+              // Тухайн утсаар хамгийн сүүлийн захиалга
               const ord = orders
                 .filter((o) => o.customer_phone === phone)
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-              // Захиалга болсон: сүүлийн дуудлага ordered + захиалга идэвхтэй
-              if (latestStatus === "ordered" && ord && ord.status !== "delivered" && ord.status !== "cancelled") {
+              // Захиалга болсон: идэвхтэй захиалга байгаа (delivered/cancelled биш)
+              if (ord && ord.status !== "delivered" && ord.status !== "cancelled") {
                 if (!seenOrd.has(phone)) { seenOrd.add(phone); ordC++; }
               }
-              // Цуцалсан: сүүлийн дуудлага cancelled ЭСВЭЛ захиалга cancelled
-              if (latestStatus === "cancelled" || (ord && ord.status === "cancelled")) {
+              // Цуцалсан: захиалга cancelled ЭСВЭЛ захиалгагүй атлаа сүүлийн дуудлага cancelled
+              if ((ord && ord.status === "cancelled") || (!ord && latestStatus === "cancelled")) {
                 if (!seenCan.has(phone)) { seenCan.add(phone); canC++; }
               }
             });
@@ -12853,13 +12854,12 @@ function CallCenterView({ profile }) {
                   
                   let matches = false;
                   if (activeTab === "ordered") {
-                    // ⭐ Дуудлага цуцлагдсан cycle бол "Захиалга болсон"-д ОРОХГҮЙ
-                    // (cycle.status === "cancelled" → Устгагдсан таб руу)
-                    matches = cy.status === "ordered"
-                      && order && order.status !== "delivered" && order.status !== "cancelled";
+                    // ⭐ Идэвхтэй захиалгатай дугаар → "Захиалга болсон"
+                    //    (дуудлагын cycle статусаас үл хамаарна — захиалга л идэвхтэй бол энд)
+                    matches = order && order.status !== "delivered" && order.status !== "cancelled";
                   } else if (activeTab === "cancelled") {
-                    // Дуудлага цуцлагдсан ЭСВЭЛ захиалга цуцлагдсан
-                    matches = cy.status === "cancelled" || (order && order.status === "cancelled");
+                    // Захиалга цуцлагдсан ЭСВЭЛ захиалгагүй атлаа дуудлага цуцлагдсан
+                    matches = (order && order.status === "cancelled") || (!order && cy.status === "cancelled");
                   } else if (activeTab === "delivered") {
                     matches = order && order.status === "delivered";
                   }
