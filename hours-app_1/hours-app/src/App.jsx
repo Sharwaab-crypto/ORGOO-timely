@@ -11745,7 +11745,7 @@ function CallCenterView({ profile }) {
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product info
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
   const [page, setPage] = useState(1); // Дугаарын pagination
-  const PAGE_SIZE = 30;
+  const PAGE_SIZE = 100; // Дуудлагын pagination — нэг хуудсанд 100 дугаар
 
   // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
@@ -12640,6 +12640,7 @@ function CallCenterView({ profile }) {
                       calls: currentCycle,
                       status: call.call_status,
                       latestDate: call.created_at,
+                      firstDate: currentCycle[0].created_at, // анх бүртгэсэн цаг
                       cycleIndex: cycleIdx++,
                     });
                     currentCycle = [];
@@ -12653,6 +12654,7 @@ function CallCenterView({ profile }) {
                     calls: currentCycle,
                     status: "calling", // open
                     latestDate: currentCycle[currentCycle.length - 1].created_at,
+                    firstDate: currentCycle[0].created_at, // анх бүртгэсэн цаг
                     cycleIndex: cycleIdx,
                   });
                 }
@@ -12668,9 +12670,9 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // Cycles-ыг сүүлчийн өдрөөр sort (шинэ нь эхэнд)
+              // Cycles-ыг анх бүртгэсэн цагаар sort (эртний нь эхэнд)
               const sortedCycleList = [...cycleList].sort((a, b) =>
-                new Date(b.latestDate) - new Date(a.latestDate)
+                new Date(a.firstDate) - new Date(b.firstDate)
               );
 
               // Tab-ийн дагуу filter
@@ -12716,9 +12718,9 @@ function CallCenterView({ profile }) {
                 );
               }
 
-              // Хамгийн сүүлчээр болсон цикл нь дээр гарна
+              // Анх бүртгэсэн цагаар (эхэнд бүртгэснийг дээр)
               const sortedCycles = filteredCycles.sort((a, b) =>
-                new Date(b.latestDate) - new Date(a.latestDate)
+                new Date(a.firstDate) - new Date(b.firstDate)
               );
 
               if (sortedCycles.length === 0) {
