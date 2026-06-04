@@ -11590,6 +11590,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             customer_id: order.customer_id || null,
             notes: "[Захиалга засварласан]",
             call_status: "ordered",
+            fb_page_id: editFbPageId || order.fb_page_id || null, // 🔗 Захиалгын FB Page
             created_by: profile.id,
             created_at: new Date().toISOString(),
             interested_products: data.items.map((it) => ({
@@ -13364,6 +13365,7 @@ function CallCenterView({ profile }) {
                   customer_id: null,
                   notes: `[ЦУЦАЛСАН] ${data.notes}`,
                   call_status: "cancelled",
+                  fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
                 });
