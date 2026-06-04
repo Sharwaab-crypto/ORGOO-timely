@@ -12784,18 +12784,14 @@ function CallCenterView({ profile }) {
                     </div>
                   </div>
                   
-                  {pageCycles.map((cycle) => {
+                  {pageCycles.map((cycle, cycleIdx) => {
                 const phone = cycle.phone;
                 const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
                 const latestCall = calls[0];
                 const customer = customers.find((cu) => cu.phone === phone);
                 
-                // Card-ийн # тоо = тэр cycle-ийн сүүлийн дуудлагын глобал дугаар
-                // recentCalls нь date desc-аар sort хийгдсэн (хамгийн шинэ нь эхэнд)
-                // Бид ascending дугаарыг хүснэ → length - index гэж тооцоолно
-                const callIndex = latestCall 
-                  ? recentCalls.length - recentCalls.findIndex((c) => c.id === latestCall.id)
-                  : null;
+                // Card-ийн # тоо = жагсаалтын дараалсан дугаар (дээрээс доош 1, 2, 3...)
+                const callIndex = startIdx + cycleIdx + 1;
 
                 // Сонирхсон бараа нэгтгэх
                 const productMap = new Map();
