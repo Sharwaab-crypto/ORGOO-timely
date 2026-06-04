@@ -7769,6 +7769,59 @@ function InventoryView({ profile, isAdmin = false }) {
     await loadAll();
   };
 
+  // 📊 Бараа нөөцийг Excel-ээр татах (одоогийн шүүлтүүрийг тооцно)
+  const exportInventoryExcel = () => {
+    const list = filtered;
+    if (list.length === 0) { alert("Татах бараа алга"); return; }
+    const rows = list.map((p, i) => {
+      const cat = catById(p.category_id);
+      const stock = Number(p.stock || 0);
+      const cost = Number(p.cost_price || 0);
+      const sale = Number(p.sale_price || 0);
+      return {
+        "№": i + 1,
+        "Барааны нэр": p.name || "",
+        "SKU": p.sku || "",
+        "Баркод": p.barcode || "",
+        "Категори": cat?.name || "",
+        "Нэгж": p.unit || "",
+        "Үлдэгдэл": stock,
+        "Мин. нөөц": Number(p.min_stock || 0),
+        "Авсан үнэ": cost,
+        "Зарах үнэ": sale,
+        "Нөөцийн өртөг": stock * cost,
+        "Нөөцийн үнэ": stock * sale,
+        "Төлөв": stock <= 0 ? "Дууссан" : (p.min_stock > 0 && stock <= p.min_stock ? "Нөөц багатай" : "Хэвийн"),
+      };
+    });
+    // Нийт мөр
+    rows.push({
+      "№": "",
+      "Барааны нэр": "НИЙТ",
+      "SKU": "",
+      "Баркод": "",
+      "Категори": "",
+      "Нэгж": "",
+      "Үлдэгдэл": list.reduce((s, p) => s + Number(p.stock || 0), 0),
+      "Мин. нөөц": "",
+      "Авсан үнэ": "",
+      "Зарах үнэ": "",
+      "Нөөцийн өртөг": list.reduce((s, p) => s + Number(p.stock || 0) * Number(p.cost_price || 0), 0),
+      "Нөөцийн үнэ": list.reduce((s, p) => s + Number(p.stock || 0) * Number(p.sale_price || 0), 0),
+      "Төлөв": "",
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 5 }, { wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 16 },
+      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+      { wch: 14 }, { wch: 14 }, { wch: 13 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Бараа нөөц");
+    const fname = `Бараа_нооц_${new Date().toLocaleDateString("en-CA")}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  };
+
   return (
     <div className="space-y-3">
       {/* Stats */}
@@ -7850,6 +7903,16 @@ function InventoryView({ profile, isAdmin = false }) {
               className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1"
               style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
               🏷 Категори
+            </button>
+            <button onClick={exportInventoryExcel}
+              disabled={filtered.length === 0}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1"
+              style={{
+                background: filtered.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #0ea5e9, #14b8a6)",
+                color: filtered.length === 0 ? T.mutedSoft : "white",
+                fontFamily: FS,
+              }}>
+              <FileSpreadsheet size={12} /> Excel татах
             </button>
             <button onClick={() => setEditing({})}
               className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
