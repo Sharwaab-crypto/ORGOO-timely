@@ -12682,9 +12682,9 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // Cycles-ыг анх бүртгэсэн цагаар sort (эртний нь эхэнд)
+              // Cycles-ыг сүүлд бүртгэсэн цагаар sort (шинэ нь эхэнд)
               const sortedCycleList = [...cycleList].sort((a, b) =>
-                new Date(a.firstDate) - new Date(b.firstDate)
+                new Date(b.firstDate) - new Date(a.firstDate)
               );
 
               // Tab-ийн дагуу filter
@@ -12730,9 +12730,9 @@ function CallCenterView({ profile }) {
                 );
               }
 
-              // Анх бүртгэсэн цагаар (эхэнд бүртгэснийг дээр)
+              // Хамгийн сүүлд бүртгэсэн дугаар дээр (firstDate буурахаар)
               const sortedCycles = filteredCycles.sort((a, b) =>
-                new Date(a.firstDate) - new Date(b.firstDate)
+                new Date(b.firstDate) - new Date(a.firstDate)
               );
 
               if (sortedCycles.length === 0) {
