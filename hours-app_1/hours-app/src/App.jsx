@@ -32917,7 +32917,7 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                   </div>
-                ) : (o.status === "new" || o.status === "pending") && (
+                ) : (o.status === "new" || o.status === "pending" || o.status === "assigned") && (
                   <div className="space-y-2 mt-2">
                     {/* "Тодорхойгүй" tab дотор → "Өөртөө авах" товч (БҮХ unknown захиалгад) */}
                     {filter === "unknown" && (
