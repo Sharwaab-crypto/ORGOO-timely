@@ -30301,17 +30301,21 @@ function OperatorKPIView({ profile }) {
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
 
-  // Stats — "Бүртгэсэн дугаар" анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
+  // Stats — "Бүртгэсэн дугаар" = өөрийн АНХ бүртгэсэн (pending) дуудлагын unique утас.
+  //   Дугаар бүртгэх үйлдэл = pending үүсгэх. ordered/cancelled нь "залгах" (бусдын
+  //   бүртгэсэн дугаар руу ч байж болзошгүй) тул "бүртгэсэн дугаар"-т тооцохгүй.
   const uniquePhones = new Set(
-    filteredCalls.filter((c) => c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status).map((c) => c.phone)
+    filteredCalls.filter((c) => c.call_status === "pending" || !c.call_status).map((c) => c.phone)
   ).size;
-  const totalOrders = filteredOrders.length;
+  const totalOrders = filteredOrders.filter((o) => o.status !== "cancelled").length; // Захиалга = цуцлагдаагүй (Admin-тай ижил)
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
   const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
   const cancelledOrders = filteredOrders.filter((o) => o.status === "cancelled").length;
-  const successRate = totalOrders > 0 ? Math.round((deliveredOrders / totalOrders) * 100) : 0;
-  const cancelRate = totalOrders > 0 ? Math.round((cancelledOrders / totalOrders) * 100) : 0;
-  const pendingRate = totalOrders > 0 ? Math.round((pendingOrders / totalOrders) * 100) : 0;
+  // Хувь тооцоход нийт захиалга (цуцлагдсаныг ОРУУЛНА) ашиглана
+  const allOrdersCount = filteredOrders.length;
+  const successRate = allOrdersCount > 0 ? Math.round((deliveredOrders / allOrdersCount) * 100) : 0;
+  const cancelRate = allOrdersCount > 0 ? Math.round((cancelledOrders / allOrdersCount) * 100) : 0;
+  const pendingRate = allOrdersCount > 0 ? Math.round((pendingOrders / allOrdersCount) * 100) : 0;
   const totalRevenue = filteredOrders
     .filter((o) => o.status === "delivered")
     .reduce((s, o) => s + Number(o.total_amount || 0), 0);
