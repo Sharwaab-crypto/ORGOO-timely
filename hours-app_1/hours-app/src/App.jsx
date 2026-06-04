@@ -22997,6 +22997,10 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
         { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
       ],
+      assigned: [
+        { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
+      ],
       delivered: [],
       cancelled: [],
     }
@@ -23007,6 +23011,11 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
     pending: [
+      { label: "Хүргэлт өөрчлөх", action: "assign", color: "#0ea5e9", icon: "🚚" },
+      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
+    ],
+    assigned: [
       { label: "Хүргэлт өөрчлөх", action: "assign", color: "#0ea5e9", icon: "🚚" },
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
