@@ -999,10 +999,15 @@ function TimeTracker({ profile }) {
       startOfDay.setHours(0, 0, 0, 0);
       const { data: sess } = await supabase
         .from("sessions")
-        .select("duration_ms")
+        .select("start_time, end_time")
         .eq("employee_id", profile.id)
         .gte("start_time", startOfDay.toISOString());
-      const totalMs = (sess || []).reduce((s, x) => s + (x.duration_ms || 0), 0);
+      // ⚠ sessions хүснэгтэд duration_ms багана БАЙХГҮЙ — start_time/end_time-аас тооцно
+      const totalMs = (sess || []).reduce((s, x) => {
+        if (!x.start_time) return s;
+        const end = x.end_time ? new Date(x.end_time) : new Date(); // дуусаагүй бол одоо хүртэл
+        return s + Math.max(0, end - new Date(x.start_time));
+      }, 0);
       setTodayHrs(totalMs / 3600000);
     } catch (e) { console.error(e); }
   };
@@ -1069,13 +1074,11 @@ function TimeTracker({ profile }) {
         const photoUrl = photoBlob ? await uploadClockPhoto(profile.id, photoBlob, "out") : null;
         const startTime = new Date(photoCapture.active.start_time);
         const endTime = new Date();
-        const durMs = endTime - startTime;
-        
+
         await supabase.from("sessions").insert({
           employee_id: profile.id,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
-          duration_ms: durMs,
           start_lat: photoCapture.active.start_lat,
           start_lng: photoCapture.active.start_lng,
           end_lat: photoCapture.loc?.lat,
