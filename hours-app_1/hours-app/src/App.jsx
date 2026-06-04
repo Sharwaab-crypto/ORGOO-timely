@@ -11851,8 +11851,8 @@ function CallCenterView({ profile }) {
         ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false })
         : supabase.from("biz_calls").select("*").order("created_at", { ascending: false });
       const ordersQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, fb_page_id").in("fb_page_id", allowedPageIds)
-        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at");
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, taken_by");
       const productsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
