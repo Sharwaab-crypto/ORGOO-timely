@@ -12020,13 +12020,22 @@ function CallCenterView({ profile }) {
           activeCallId = myPendingCall.id;
         } else {
           // Шинэ call бүртгэх — энэ оператор залгасан гэж
+          // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page → бараанаас
+          let callPage = activeFbPageId || null;
+          if (!callPage) {
+            const { data: prevCall } = await supabase
+              .from("biz_calls").select("fb_page_id")
+              .eq("phone", phone).not("fb_page_id", "is", null)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (prevCall) callPage = prevCall.fb_page_id;
+          }
           const { data: newCall } = await supabase.from("biz_calls").insert({
             phone,
             customer_id: null, // Дараа CallReceiveModal-аас customer link
             notes: callNotes || null,
             interested_products: callProducts || [],
             call_status: "pending",
-            fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
+            fb_page_id: callPage, // 🔗 Resolved page
             created_by: profile.id,
             created_at: new Date().toISOString(),
           }).select("id").single();
@@ -12086,12 +12095,21 @@ function CallCenterView({ profile }) {
   const handleStatusSelect = async (status, statusLabel) => {
     if (!statusPopupCall) return;
     try {
+      // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page
+      let stPage = activeFbPageId || null;
+      if (!stPage) {
+        const { data: prevCall } = await supabase
+          .from("biz_calls").select("fb_page_id")
+          .eq("phone", statusPopupCall.phone).not("fb_page_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (prevCall) stPage = prevCall.fb_page_id;
+      }
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
         notes: `[${statusLabel}]`,
         call_status: status,
-        fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
+        fb_page_id: stPage, // 🔗 Resolved page
         created_by: profile.id,
         created_at: new Date().toISOString(),
       });
@@ -13355,13 +13373,22 @@ function CallCenterView({ profile }) {
 
               // ─── ACTION: cancelled (цуцлах + дугаар устгах) ──────
               if (data.action === "cancelled") {
+                // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page
+                let cnPage = activeFbPageId || null;
+                if (!cnPage) {
+                  const { data: prevCall } = await supabase
+                    .from("biz_calls").select("fb_page_id")
+                    .eq("phone", data.phone).not("fb_page_id", "is", null)
+                    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                  if (prevCall) cnPage = prevCall.fb_page_id;
+                }
                 // Шинэ дуудлагын бүртгэл — cancelled status
                 await supabase.from("biz_calls").insert({
                   phone: data.phone,
                   customer_id: null,
                   notes: `[ЦУЦАЛСАН] ${data.notes}`,
                   call_status: "cancelled",
-                  fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
+                  fb_page_id: cnPage, // 🔗 Resolved page
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
                 });
