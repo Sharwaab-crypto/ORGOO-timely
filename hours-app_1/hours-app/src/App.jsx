@@ -30307,6 +30307,12 @@ function OperatorKPIView({ profile }) {
   const uniquePhones = new Set(
     filteredCalls.filter((c) => c.call_status === "pending" || !c.call_status).map((c) => c.phone)
   ).size;
+  // ☎ "Нийт залгалт" = оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна) — Admin-тай ижил
+  const totalCalls = filteredCalls.filter((c) =>
+    c.call_status === "no_answer" || c.call_status === "unreachable" ||
+    c.call_status === "callback" || c.call_status === "ordered" ||
+    c.call_status === "cancelled"
+  ).length;
   const totalOrders = filteredOrders.filter((o) => o.status !== "cancelled").length; // Захиалга = цуцлагдаагүй (Admin-тай ижил)
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
   const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
@@ -30509,7 +30515,7 @@ function OperatorKPIView({ profile }) {
             <div className="glass rounded-xl p-3 text-center">
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Нийт залгалт</div>
               <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-xl tabular-nums">
-                {filteredCalls.length}
+                {totalCalls}
               </div>
             </div>
             <div className="glass rounded-xl p-3 text-center">
