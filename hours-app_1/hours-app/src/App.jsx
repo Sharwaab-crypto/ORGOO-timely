@@ -27948,7 +27948,12 @@ function OrderHistorySection({ orderId }) {
 }
 
 function MerchantDashboard({ profile }) {
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("orgoo-merchant-view") || "dashboard"; } catch { return "dashboard"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-merchant-view", view); } catch {}
+  }, [view]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32015,7 +32020,12 @@ function DriverDashboard({ profile }) {
   const [activeOrder, setActiveOrder] = useState(null);
   const [cancelOrder, setCancelOrder] = useState(null);
   const [cancelNote, setCancelNote] = useState("");
-  const [view, setView] = useState("orders"); // orders | warehouse | requests | settlements
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("orgoo-driver-view") || "orders"; } catch { return "orders"; }
+  }); // orders | warehouse | requests | settlements
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-driver-view", view); } catch {}
+  }, [view]);
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
