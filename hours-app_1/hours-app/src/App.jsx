@@ -12019,6 +12019,21 @@ function CallCenterView({ profile }) {
           // Аль хэдийн нээлттэй call бий — тэр call ашиглана
           activeCallId = myPendingCall.id;
         } else {
+          // 🔗 Тэр утсаар ӨӨР хүн аль хэдийн pending бүртгэсэн эсэхийг шалгах
+          // Хэрэв байвал ШИНЭ pending үүсгэхгүй — анх бүртгэсэн хүнд л үлдэнэ
+          const { data: anyPending } = await supabase
+            .from("biz_calls")
+            .select("id")
+            .eq("phone", phone)
+            .eq("call_status", "pending")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (anyPending) {
+            // Өөр операторын бүртгэсэн дугаар — тэр дуудлагыг ашиглана, шинэ үүсгэхгүй
+            activeCallId = anyPending.id;
+          } else {
           // Шинэ call бүртгэх — энэ оператор залгасан гэж
           // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page → бараанаас
           let callPage = activeFbPageId || null;
@@ -12040,6 +12055,7 @@ function CallCenterView({ profile }) {
             created_at: new Date().toISOString(),
           }).select("id").single();
           activeCallId = newCall?.id || callId;
+          }
         }
       } catch (e) {
         console.error("Шинэ call бичлэг үүсгэх алдаа:", e);
