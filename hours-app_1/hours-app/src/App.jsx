@@ -12948,7 +12948,9 @@ function CallCenterView({ profile }) {
                   
                   {pageCycles.map((cycle, cycleIdx) => {
                 const phone = cycle.phone;
-                const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Хуучин→шинэ (бүртгэл эхэнд)
+                // 📋 Дуудлагын түүх — тухайн утасны БҮХ дуудлагыг цагаар (хуучин→шинэ) харуулна
+                //    (зөвхөн cycle биш — анхны "Дугаар бүртгэсэн" мөр ч харагдана)
+                const calls = [...(phoneGrouped[phone] || cycle.calls)].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
                 const customer = customers.find((cu) => cu.phone === phone);
                 
