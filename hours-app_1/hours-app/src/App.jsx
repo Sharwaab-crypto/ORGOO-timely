@@ -13038,7 +13038,15 @@ function CallCenterView({ profile }) {
                         ) : (
                           <div className="space-y-1.5">
                           {calls.slice(0, 10).map((c) => {
-                            const operator = profiles.find((p) => p.id === c.created_by);
+                            let operator = profiles.find((p) => p.id === c.created_by);
+                            // 🔧 "ordered" дуудлага — бодит захиалга авсан хүн (taken_by) харуулах
+                            if (c.call_status === "ordered") {
+                              const ord = orderStatusByPhone[phone];
+                              if (ord && ord.taken_by) {
+                                const taker = profiles.find((p) => p.id === ord.taken_by);
+                                if (taker) operator = taker;
+                              }
+                            }
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
                             const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
 
@@ -21417,18 +21425,24 @@ function OrdersView({ profile }) {
   }
 
   // Counts
+  // Counts — driver шүүлтийг тооцох (tab тоо ба жагсаалт таарна)
+  const countBase = driverFilter === "all"
+    ? orders
+    : (driverFilter === "unassigned"
+        ? orders.filter((o) => !o.driver_id)
+        : orders.filter((o) => o.driver_id === driverFilter));
   const counts = {
-    all: orders.length,
-    new: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length, // 🔧 Зөвхөн driver-гүй + тодорхой
-    assigned: orders.filter((o) => o.status === "new" && o.driver_id).length, // 🆕 Хуваарилагдсан
-    unknown: orders.filter((o) => {
+    all: countBase.length,
+    new: countBase.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length, // 🔧 Зөвхөн driver-гүй + тодорхой
+    assigned: countBase.filter((o) => o.status === "new" && o.driver_id).length, // 🆕 Хуваарилагдсан
+    unknown: countBase.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
              (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     }).length,
-    pending: orders.filter((o) => o.status === "pending").length,
-    delivered: orders.filter((o) => o.status === "delivered").length,
-    cancelled: orders.filter((o) => o.status === "cancelled").length,
+    pending: countBase.filter((o) => o.status === "pending").length,
+    delivered: countBase.filter((o) => o.status === "delivered").length,
+    cancelled: countBase.filter((o) => o.status === "cancelled").length,
   };
 
   const updateStatus = async (orderId, newStatus) => {
