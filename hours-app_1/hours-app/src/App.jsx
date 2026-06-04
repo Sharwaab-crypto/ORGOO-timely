@@ -12702,7 +12702,13 @@ function CallCenterView({ profile }) {
               let filteredCycles = sortedCycleList.filter((cy) => {
                 const order = orderStatusByPhone[cy.phone];
                 
-                if (activeTab === "calling") return cy.status === "calling";
+                if (activeTab === "calling") {
+                  // Аль хэдийн идэвхтэй захиалгатай (ordered/delivered) дугаарыг "Шинэ"-д харуулахгүй
+                  if (order && (order.status === "delivered" || order.status === "new" || order.status === "pending" || order.status === "assigned")) {
+                    return false;
+                  }
+                  return cy.status === "calling";
+                }
                 
                 // Тус утсаар нэг л card харах (хамгийн сүүлчийн cycle)
                 if (activeTab === "ordered" || activeTab === "cancelled" || activeTab === "delivered") {
