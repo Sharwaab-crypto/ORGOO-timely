@@ -12127,6 +12127,25 @@ function CallCenterView({ profile }) {
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (ord) stPage = ord.fb_page_id;
       }
+
+      // 🔧 ЗААВАЛ: статус тавихаас өмнө "Дугаар бүртгэл" (pending) байх ёстой
+      // Хэрэв тэр утсаар pending огт байхгүй бол эхлээд pending үүсгэнэ
+      const { data: existingPending } = await supabase
+        .from("biz_calls").select("id")
+        .eq("phone", statusPopupCall.phone).eq("call_status", "pending")
+        .limit(1).maybeSingle();
+      if (!existingPending) {
+        await supabase.from("biz_calls").insert({
+          phone: statusPopupCall.phone,
+          customer_id: statusPopupCall.customerId || null,
+          notes: null,
+          call_status: "pending",
+          fb_page_id: stPage,
+          created_by: profile.id,
+          created_at: new Date(Date.now() - 1000).toISOString(), // статусаас 1 сек өмнө
+        });
+      }
+
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
@@ -12833,8 +12852,8 @@ function CallCenterView({ profile }) {
                   
                   {pageCycles.map((cycle, cycleIdx) => {
                 const phone = cycle.phone;
-                const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
-                const latestCall = calls[0];
+                const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Хуучин→шинэ (бүртгэл эхэнд)
+                const latestCall = calls[calls.length - 1];
                 const customer = customers.find((cu) => cu.phone === phone);
                 
                 // Card-ийн # тоо = жагсаалтын дараалсан дугаар (дээрээс доош 1, 2, 3...)
