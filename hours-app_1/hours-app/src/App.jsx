@@ -12607,7 +12607,7 @@ function CallCenterView({ profile }) {
           <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
             <Loader2 className="spin mx-auto mb-2" size={20} />
           </div>
-        ) : pageFilteredCalls.length === 0 ? (
+        ) : (activeFbPageId ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId) : recentCalls).length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📞</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
@@ -12617,8 +12617,10 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-1.5">
             {(() => {
-              // Бүх дуудлагуудыг ашиглана (period filter байхгүй)
-              const filteredByPeriod = pageFilteredCalls;
+              // Бүх дуудлагуудыг ашиглана (period filter байхгүй), page-аар шүүсэн
+              const filteredByPeriod = activeFbPageId
+                ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
+                : recentCalls;
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
