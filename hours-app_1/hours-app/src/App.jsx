@@ -11958,12 +11958,6 @@ function CallCenterView({ profile }) {
 
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
-    // 🔗 Page заавал сонгосон байх ёстой
-    const activePages = fbPages.filter((p) => p.is_active !== false);
-    if (!activeFbPageId && activePages.length > 0) {
-      alert("⚠ Эхлээд дээд талаас 'Ажиллаж буй FB Page'-ээ сонгоно уу");
-      return;
-    }
     try {
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
@@ -12410,16 +12404,16 @@ function CallCenterView({ profile }) {
       {fbPages.filter((p) => p.is_active !== false).length > 0 && (
         <div className="glass rounded-2xl p-3 flex items-center gap-3">
           <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider whitespace-nowrap">
-            🔗 Ажиллаж буй Page
+            🔗 Page шүүх
           </span>
           <select value={activeFbPageId}
             onChange={(e) => {
               setActiveFbPageId(e.target.value);
               try { localStorage.setItem("orgoo-active-fbpage", e.target.value); } catch {}
             }}
-            style={{ background: T.surfaceAlt, border: `1px solid ${activeFbPageId ? T.highlight : T.warn}`, color: T.ink, fontFamily: FS }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${activeFbPageId ? T.highlight : T.border}`, color: T.ink, fontFamily: FS }}
             className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold">
-            <option value="">⚠ Page сонгоогүй</option>
+            <option value="">📋 Бүх page</option>
             {fbPages.filter((p) => p.is_active !== false).map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -12428,13 +12422,7 @@ function CallCenterView({ profile }) {
       )}
 
       {/* Big call button */}
-      <button onClick={() => {
-          if (!activeFbPageId && fbPages.filter((p) => p.is_active !== false).length > 0) {
-            alert("⚠ Эхлээд ажиллаж буй FB Page-ээ сонгоно уу");
-            return;
-          }
-          setShowCallModal(true);
-        }}
+      <button onClick={() => setShowCallModal(true)}
         style={{
           background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
           color: "white",
@@ -13205,7 +13193,7 @@ function CallCenterView({ profile }) {
 
               // 🔗 Page заавал байх ёстой — эс бөгөөс "Тодорхойгүй"-д орно
               if (!effectiveFbPageId) {
-                alert("⚠ FB Page сонгогдоогүй байна.\n\nДугаар бүртгэхийн тулд дээд талаас 'Ажиллаж буй FB Page'-ээ сонгоно уу.");
+                alert("⚠ FB Page сонгоно уу.\n\nДугаар бүртгэхийн тулд аль FB Page-ийн захиалга болохыг сонгоно уу.");
                 return;
               }
               
