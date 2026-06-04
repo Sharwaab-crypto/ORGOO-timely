@@ -11812,6 +11812,7 @@ function CallCenterView({ profile }) {
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
   const [page, setPage] = useState(1); // Дугаарын pagination
   const PAGE_SIZE = 100; // Дуудлагын pagination — нэг хуудсанд 100 дугаар
+  const [expandedCallCards, setExpandedCallCards] = useState(() => new Set()); // 🆕 Бүх дуудлага харуулсан card-ууд (cycle key)
 
   // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
@@ -13191,7 +13192,11 @@ function CallCenterView({ profile }) {
                           </div>
                         ) : (
                           <div className="space-y-1.5">
-                          {calls.slice(0, 10).map((c) => {
+                          {(() => {
+                            const cardKey = `${phone}-${cycle.cycleIndex ?? 0}`;
+                            const isExpanded = expandedCallCards.has(cardKey);
+                            const visibleCalls = isExpanded ? calls : calls.slice(0, 10);
+                            return visibleCalls.map((c) => {
                             let operator = profiles.find((p) => p.id === c.created_by);
                             // 🔧 "ordered" дуудлага — бодит захиалга авсан хүн (taken_by) харуулах
                             if (c.call_status === "ordered") {
@@ -13257,12 +13262,30 @@ function CallCenterView({ profile }) {
                                 </div>
                               </div>
                             );
-                          })}
-                          {calls.length > 10 && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic text-center pt-1">
-                              + {calls.length - 10} илүү дуудлага
-                            </div>
-                          )}
+                          });
+                          })()}
+                          {calls.length > 10 && (() => {
+                            const cardKey = `${phone}-${cycle.cycleIndex ?? 0}`;
+                            const isExpanded = expandedCallCards.has(cardKey);
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedCallCards((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cardKey)) next.delete(cardKey);
+                                    else next.add(cardKey);
+                                    return next;
+                                  });
+                                }}
+                                className="press-btn w-full text-center pt-1"
+                                style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}>
+                                <span className="text-[10px]">
+                                  {isExpanded ? "▲ Хураах" : `▼ + ${calls.length - 10} илүү дуудлага харах`}
+                                </span>
+                              </button>
+                            );
+                          })()}
                         </div>
                         )}
                       </div>
