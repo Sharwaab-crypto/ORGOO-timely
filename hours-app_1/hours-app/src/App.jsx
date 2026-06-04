@@ -20481,7 +20481,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
     <div className="glass rounded-xl p-3 relative"
       onContextMenu={(e) => e.preventDefault()}
       style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
         {/* Index badge */}
         <div style={{
           background: "rgba(59,130,246,0.1)", color: "#3b82f6",
@@ -20491,7 +20491,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         </div>
 
         {/* Phones + Address */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" style={{ minWidth: 140 }}>
           <div className="flex items-center gap-2 flex-wrap">
             {order.customer_phone ? (
               <a href={`tel:${order.customer_phone}`}
@@ -20540,7 +20540,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           {order.delivery_address && (
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5 flex items-start gap-1">
               <MapPin size={10} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
-              <span className="truncate">{order.delivery_address}</span>
+              <span className="line-clamp-2">{order.delivery_address}</span>
             </div>
           )}
           {order.driver_id && (() => {
