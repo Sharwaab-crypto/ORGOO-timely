@@ -12235,12 +12235,23 @@ function CallCenterView({ profile }) {
                     };
                   });
 
+                  // 🔗 Утас бүрийн АНХ бүртгэсэн оператор (давхар тооллого арилгах)
+                  const phoneFirstOp = {};
+                  filteredCalls
+                    .filter((c) => c.call_status === "pending" && c.phone && c.created_by)
+                    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+                    .forEach((c) => {
+                      if (!phoneFirstOp[c.phone]) phoneFirstOp[c.phone] = c.created_by;
+                    });
+
                   // Дуудлагуудыг тоолох
                   filteredCalls.forEach((c) => {
                     if (!c.created_by) return;
                     if (!opMap[c.created_by]) return;
-                    // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
-                    if (c.call_status === "pending") opMap[c.created_by].uniquePhones.add(c.phone);
+                    // 🆕 "Бүртгэсэн дугаар" — зөвхөн анх бүртгэсэн оператор тоолно
+                    if (c.call_status === "pending" && c.phone && phoneFirstOp[c.phone] === c.created_by) {
+                      opMap[c.created_by].uniquePhones.add(c.phone);
+                    }
                     opMap[c.created_by].totalCalls++;
                   });
 
@@ -12353,8 +12364,11 @@ function CallCenterView({ profile }) {
           c.call_status === "cancelled"
         );
 
-        // 📞 Нийт дугаар = Давхардаагүй (unique) бүртгэгдсэн дугаарын тоо
-        const uniquePhones = new Set(allCallsForStats.map((c) => c.phone)).size;
+        // 📞 Нийт дугаар = анх бүртгэсэн (pending) давхардаагүй дугаар
+        // (Ажилчдын үзүүлэлт / Борлуулалттай ижил логик)
+        const uniquePhones = new Set(
+          recentCalls.filter((c) => c.call_status === "pending" && c.phone).map((c) => c.phone)
+        ).size;
         
         // ☎ Нийт залгалт = "Залгалт" хийсэн дуудлага
         // (no_answer, unreachable, callback, ordered, cancelled — operator залгасан)
