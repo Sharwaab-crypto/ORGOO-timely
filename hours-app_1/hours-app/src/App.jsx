@@ -12095,14 +12095,21 @@ function CallCenterView({ profile }) {
   const handleStatusSelect = async (status, statusLabel) => {
     if (!statusPopupCall) return;
     try {
-      // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page
-      let stPage = activeFbPageId || null;
+      // 🔗 Page олох: идэвхтэй шүүлт → statusPopupCall.fbPageId → өмнөх дуудлага → захиалга
+      let stPage = activeFbPageId || statusPopupCall.fbPageId || null;
       if (!stPage) {
         const { data: prevCall } = await supabase
           .from("biz_calls").select("fb_page_id")
           .eq("phone", statusPopupCall.phone).not("fb_page_id", "is", null)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (prevCall) stPage = prevCall.fb_page_id;
+      }
+      if (!stPage) {
+        const { data: ord } = await supabase
+          .from("biz_orders").select("fb_page_id")
+          .eq("customer_phone", statusPopupCall.phone).not("fb_page_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (ord) stPage = ord.fb_page_id;
       }
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
@@ -13351,10 +13358,19 @@ function CallCenterView({ profile }) {
           initialName={orderForCall.name}
           initialNotes={orderForCall.notes}
           initialProducts={orderForCall.products}
-          onCallback={(phone) => {
+          onCallback={async (phone) => {
             // Захиалга modal-аас status popup-руу шилжих
+            // 🔗 Тухайн утасны page-ийг олж дамжуулах
+            let cbPage = activeFbPageId || null;
+            if (!cbPage && phone) {
+              const { data: pc } = await supabase
+                .from("biz_calls").select("fb_page_id")
+                .eq("phone", phone).not("fb_page_id", "is", null)
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              if (pc) cbPage = pc.fb_page_id;
+            }
             setOrderForCall(null);
-            setStatusPopupCall({ phone, callId: orderForCall.callId });
+            setStatusPopupCall({ phone, callId: orderForCall.callId, fbPageId: cbPage });
           }}
           onExistingOrderFound={({ phone, orderId, orderInfo }) => {
             setOrderForCall(null);
