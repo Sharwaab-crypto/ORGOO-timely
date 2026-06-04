@@ -12588,15 +12588,33 @@ function CallCenterView({ profile }) {
 
           const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
 
-          // Calling — "Залгах дугаар": сүүлийн дуудлага захиалга АВААГҮЙ (ordered биш) бөгөөд цуцлаагүй
-          // ⚠ Захиалга мөр (biz_orders) дугаар бүртгэхэд автоматаар үүсдэг тул түүнийг шалгуур болгохгүй.
-          //    Сүүлийн дуудлага "no_answer/callback/unreachable" бол дахин залгах ёстой → calling-д үлдэнэ.
+          // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
+          const orderInfoByPhone = {};
+          Object.keys(phoneGroupedAll).forEach((phone) => {
+            const hasOrderedCall = phoneGroupedAll[phone].some((c) => c.call_status === "ordered");
+            const ord = orders
+              .filter((o) => o.customer_phone === phone)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
+            const cancelledOrder = ord && ord.status === "cancelled";
+            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder };
+          });
+
+          // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
+          // ⚠ Захиалга мөр автоматаар үүсдэг тул "ordered дуудлага байсан эсэх"-ийг шалгуур болгоно.
+          //    no_answer/callback/unreachable + ordered дуудлагагүй → энд (#139 шиг).
+          //    Харин ordered дуудлага + идэвхтэй захиалга → "Захиалга болсон"-д шилжинэ.
           {
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
               const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
               const latestStatus = sorted[0]?.call_status;
-              // Сүүлийн status нь ordered/cancelled бол → calling-д ОРОХГҮЙ (захиалга болсон/цуцалсан)
+              const info = orderInfoByPhone[phone];
+              // Сүүлийн status ordered/cancelled бол → calling-д ОРОХГҮЙ
               if (latestStatus === "ordered" || latestStatus === "cancelled") return;
+              // Захиалга жинхэнэ авагдсан (ordered дуудлага байсан) БА идэвхтэй захиалгатай → calling-д ОРОХГҮЙ
+              if (info.hasOrderedCall && info.activeOrder) return;
+              // Захиалга цуцлагдсан → Устгагдсан-д орно, calling-д ОРОХГҮЙ
+              if (info.cancelledOrder) return;
               counts.calling++;
             });
           }
@@ -12604,26 +12622,20 @@ function CallCenterView({ profile }) {
           // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
           counts.delivered = orders.filter((o) => o.status === "delivered").length;
           
-          // "Захиалга болсон" — дуудлагын сүүлийн статус "ordered" (оператор ЖИНХЭНЭ захиалга авсан)
-          // ⚠ Захиалга мөр (biz_orders) дугаар бүртгэхэд автоматаар үүсдэг тул түүнийг л шалгаж болохгүй.
-          //    "Дуудаад авахгүй"/"no_answer" дуудлага захиалга биш → энд орохгүй.
+          // "Захиалга болсон" — ordered дуудлага байсан БА захиалга идэвхтэй (delivered/cancelled биш)
+          // ⚠ Захиалга авсны дараа дахин дуудлага бүртгэсэн ч (сүүлийн статус pending) захиалгатай хэвээр → энд.
           {
             const seenOrd = new Set();
             const seenCan = new Set();
             let ordC = 0, canC = 0;
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-              const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-              const latestStatus = sorted[0]?.call_status;
-              // Тухайн утсаар хамгийн сүүлийн захиалга
-              const ord = orders
-                .filter((o) => o.customer_phone === phone)
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-              // Захиалга болсон: сүүлийн дуудлага "ordered" БА захиалга идэвхтэй (delivered/cancelled биш)
-              if (latestStatus === "ordered" && ord && ord.status !== "delivered" && ord.status !== "cancelled") {
+              const info = orderInfoByPhone[phone];
+              // Захиалга болсон: ordered дуудлага байсан БА захиалга идэвхтэй
+              if (info.hasOrderedCall && info.activeOrder) {
                 if (!seenOrd.has(phone)) { seenOrd.add(phone); ordC++; }
               }
-              // Цуцалсан: захиалга cancelled ЭСВЭЛ сүүлийн дуудлага cancelled
-              if ((ord && ord.status === "cancelled") || latestStatus === "cancelled") {
+              // Цуцалсан: захиалга cancelled
+              if (info.cancelledOrder) {
                 if (!seenCan.has(phone)) { seenCan.add(phone); canC++; }
               }
             });
@@ -12816,6 +12828,16 @@ function CallCenterView({ profile }) {
                 latestCallStatusByPhone[phone] = sortedCalls[0]?.call_status;
               });
 
+              // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + захиалгын төлөв
+              const orderInfoByPhone = {};
+              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+                const hasOrderedCall = calls.some((c) => c.call_status === "ordered");
+                const ord = orderStatusByPhone[phone];
+                const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
+                const cancelledOrder = ord && ord.status === "cancelled";
+                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder };
+              });
+
               // Cycles-ыг сүүлд бүртгэсэн цагаар sort (шинэ нь эхэнд)
               const sortedCycleList = [...cycleList].sort((a, b) =>
                 new Date(b.firstDate) - new Date(a.firstDate)
@@ -12827,6 +12849,7 @@ function CallCenterView({ profile }) {
               const seenPhones = new Set();
               let filteredCycles = sortedCycleList.filter((cy) => {
                 const order = orderStatusByPhone[cy.phone];
+                const info = orderInfoByPhone[cy.phone] || {};
 
                 if (activeTab === "all") {
                   // Бүгд — утас бүрийн хамгийн сүүлчийн cycle л харуулна
@@ -12836,8 +12859,11 @@ function CallCenterView({ profile }) {
                 }
 
                 if (activeTab === "calling") {
-                  // "Залгах дугаар" — сүүлийн дуудлага захиалга аваагүй/цуцлаагүй (open cycle)
-                  // ⚠ Захиалга мөр автоматаар үүсдэг тул түүнийг шалгуур болгохгүй.
+                  // "Залгах дугаар" — захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
+                  // ⚠ ordered дуудлага + идэвхтэй захиалгатай дугаар → энд ОРОХГҮЙ (Захиалга болсон руу)
+                  if (info.hasOrderedCall && info.activeOrder) return false;
+                  // Захиалга цуцлагдсан → Устгагдсан руу
+                  if (info.cancelledOrder) return false;
                   return cy.status === "calling";
                 }
                 
@@ -12847,13 +12873,12 @@ function CallCenterView({ profile }) {
                   
                   let matches = false;
                   if (activeTab === "ordered") {
-                    // ⭐ Сүүлийн дуудлага "ordered" БА захиалга идэвхтэй (delivered/cancelled биш)
-                    //    "Дуудаад авахгүй"/"no_answer" дуудлага энд ОРОХГҮЙ
-                    matches = latestCallStatusByPhone[cy.phone] === "ordered"
-                      && order && order.status !== "delivered" && order.status !== "cancelled";
+                    // ⭐ ordered дуудлага байсан БА захиалга идэвхтэй (delivered/cancelled биш)
+                    //    "Дуудаад авахгүй"/"no_answer" дуудлага (захиалгагүй) энд ОРОХГҮЙ
+                    matches = info.hasOrderedCall && info.activeOrder;
                   } else if (activeTab === "cancelled") {
-                    // Захиалга цуцлагдсан ЭСВЭЛ сүүлийн дуудлага цуцлагдсан
-                    matches = (order && order.status === "cancelled") || latestCallStatusByPhone[cy.phone] === "cancelled";
+                    // Захиалга цуцлагдсан
+                    matches = info.cancelledOrder;
                   } else if (activeTab === "delivered") {
                     matches = order && order.status === "delivered";
                   }
