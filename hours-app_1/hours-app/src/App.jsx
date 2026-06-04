@@ -21503,14 +21503,17 @@ function OrdersView({ profile }) {
     filtered = filtered.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     });
   } else if (filter === "new") {
-    // 🆕 Шинэ — driver-гүй ЭСВЭЛ is_unknown захиалгыг хасна (Тодорхойгүй tab-руу шилждэг)
-    filtered = filtered.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown);
+    // 🆕 Шинэ — захиалга идэвхтэй (new/assigned), driver-гүй, тодорхой (is_unknown биш)
+    // ⚠ status="assigned" атлаа driver_id NULL захиалга мөн энд багтана (хуваарилалт цуцлагдсан)
+    filtered = filtered.filter((o) =>
+      (o.status === "new" || o.status === "assigned") && !o.driver_id && !o.is_unknown);
   } else if (filter === "assigned") {
-    // 🚚 Хуваарилагдсан — Шинэ статустай боловч driver-той
-    filtered = filtered.filter((o) => o.status === "new" && o.driver_id);
+    // 🚚 Хуваарилагдсан — driver оноогдсон, идэвхтэй захиалга
+    filtered = filtered.filter((o) =>
+      o.driver_id && o.status !== "delivered" && o.status !== "cancelled");
   } else if (filter !== "all") {
     filtered = filtered.filter((o) => o.status === filter);
   }
@@ -21539,12 +21542,12 @@ function OrdersView({ profile }) {
         : orders.filter((o) => o.driver_id === driverFilter));
   const counts = {
     all: countBase.length,
-    new: countBase.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length, // 🔧 Зөвхөн driver-гүй + тодорхой
-    assigned: countBase.filter((o) => o.status === "new" && o.driver_id).length, // 🆕 Хуваарилагдсан
+    new: countBase.filter((o) => (o.status === "new" || o.status === "assigned") && !o.driver_id && !o.is_unknown).length, // 🔧 driver-гүй идэвхтэй
+    assigned: countBase.filter((o) => o.driver_id && o.status !== "delivered" && o.status !== "cancelled").length, // 🆕 Хуваарилагдсан = driver-той
     unknown: countBase.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     }).length,
     pending: countBase.filter((o) => o.status === "pending").length,
     delivered: countBase.filter((o) => o.status === "delivered").length,
