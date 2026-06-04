@@ -12022,6 +12022,21 @@ function CallCenterView({ profile }) {
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
+      // 0. 🚫 Захиалга аль хэдийн болсон дугаарыг дахин залгахыг хориглох
+      //    (idэвхтэй захиалга = delivered/cancelled биш) → давхар дуудлага, давхар захиалга үүсэхээс сэргийлнэ
+      const { data: activeOrd } = await supabase
+        .from("biz_orders")
+        .select("id, order_number, status")
+        .eq("customer_phone", phone)
+        .not("status", "in", "(delivered,cancelled)")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (activeOrd) {
+        alert(`🚫 Энэ дугаар аль хэдийн ЗАХИАЛГА БОЛСОН байна!\n\n📦 Захиалга: #${activeOrd.order_number || "—"}\n\nЗахиалга болсон дугаар руу дахин залгах боломжгүй.`);
+        return;
+      }
+
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
         .from("biz_call_locks")
