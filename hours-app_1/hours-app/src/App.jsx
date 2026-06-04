@@ -13745,30 +13745,40 @@ function CallCenterView({ profile }) {
               }));
               await supabase.from("biz_order_items").insert(orderItems);
 
-              // Захиалга үүссэний дараа lock release + дуудлагын status шинэчлэх
+              // Захиалга үүссэний дараа lock release
               await releaseLock(data.phone);
-              // 🆕 Дуудлагыг "ordered" болгох — callId байвал түүгээр, эс бөгөөс утасны
-              //    хамгийн сүүлийн pending дуудлагыг ordered болгоно (дата гажихаас сэргийлнэ).
-              if (orderForCall.callId) {
-                await supabase.from("biz_calls").update({
-                  call_status: "ordered",
-                }).eq("id", orderForCall.callId);
-              } else if (data.phone) {
-                // callId алга — утасны сүүлийн pending дуудлагыг олж ordered болгоно
-                const { data: lastPending } = await supabase
-                  .from("biz_calls")
-                  .select("id")
-                  .eq("phone", data.phone)
-                  .eq("call_status", "pending")
-                  .order("created_at", { ascending: false })
-                  .limit(1)
-                  .maybeSingle();
-                if (lastPending) {
-                  await supabase.from("biz_calls").update({
-                    call_status: "ordered",
-                  }).eq("id", lastPending.id);
+              // 🆕 Дуудлагын түүхэнд 2 мөр харагдуулна:
+              //    1) Анхны "Дугаар бүртгэсэн" (pending) мөр ХЭВЭЭР үлдэнэ
+              //    2) Шинэ "Захиалга болсон" (ordered) мөр НЭМЖ үүсгэнэ
+              //    (Захиалга заавал дугаар бүртгэснээр үүсдэг тул хамгийн багадаа 2 мөр)
+              {
+                // Анхны pending дуудлагын мэдээллийг авах (page, customer, products хадгалах)
+                let srcCall = null;
+                if (orderForCall.callId) {
+                  const { data: c } = await supabase.from("biz_calls")
+                    .select("*").eq("id", orderForCall.callId).maybeSingle();
+                  srcCall = c;
                 }
+                if (!srcCall && data.phone) {
+                  const { data: c } = await supabase.from("biz_calls")
+                    .select("*").eq("phone", data.phone)
+                    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                  srcCall = c;
+                }
+                // Шинэ "ordered" дуудлага нэмэх (анхны pending мөрийг дарж бичихгүй)
+                await supabase.from("biz_calls").insert({
+                  phone: data.phone,
+                  customer_id: srcCall?.customer_id || customerId || null,
+                  customer_name: data.name || srcCall?.customer_name || null,
+                  notes: srcCall?.notes || null,
+                  interested_products: srcCall?.interested_products || [],
+                  call_status: "ordered",
+                  fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
+                  created_by: profile.id,
+                  created_at: new Date().toISOString(),
+                });
               }
+
 
               setOrderForCall(null);
               await loadAll();
@@ -28915,8 +28925,18 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
         const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", existing.id);
         if (updErr) throw updErr;
 
-        // Дуудлагыг "ordered" болгох
-        await supabase.from("biz_calls").update({ call_status: "ordered" }).eq("id", call.id);
+        // Дуудлагын түүхэнд "ordered" мөр нэмэх (анхны дуудлага хэвээр)
+        await supabase.from("biz_calls").insert({
+          phone: call.phone,
+          customer_id: call.customer_id || null,
+          customer_name: customerName.trim() || call.customer_name || null,
+          notes: call.notes || null,
+          interested_products: call.interested_products || [],
+          call_status: "ordered",
+          fb_page_id: newPageId || call.fb_page_id || null,
+          created_by: call.created_by || null,
+          created_at: new Date().toISOString(),
+        });
 
         alert(
           `✅ Захиалга #${existing.order_number}-руу нэгтгэгдсэн!\n\n` +
@@ -28986,8 +29006,18 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
       }));
       await supabase.from("biz_order_items").insert(orderItems);
 
-      // 3. Дуудлагыг "ordered" болгох
-      await supabase.from("biz_calls").update({ call_status: "ordered" }).eq("id", call.id);
+      // 3. Дуудлагын түүхэнд 2 мөр: анхны дуудлага хэвээр + шинэ "ordered" нэмэх
+      await supabase.from("biz_calls").insert({
+        phone: call.phone,
+        customer_id: call.customer_id || null,
+        customer_name: customerName.trim() || call.customer_name || null,
+        notes: call.notes || null,
+        interested_products: call.interested_products || [],
+        call_status: "ordered",
+        fb_page_id: call.fb_page_id || null,
+        created_by: call.created_by || null,
+        created_at: new Date().toISOString(),
+      });
 
       alert(`✅ Захиалга үүсгэгдсэн!\n#${order.order_number}\nДүн: ${totalAmount.toLocaleString()}₮`);
       onSaved();
