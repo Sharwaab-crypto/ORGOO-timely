@@ -13765,18 +13765,24 @@ function CallCenterView({ profile }) {
                     .order("created_at", { ascending: false }).limit(1).maybeSingle();
                   srcCall = c;
                 }
-                // Шинэ "ordered" дуудлага нэмэх (анхны pending мөрийг дарж бичихгүй)
-                await supabase.from("biz_calls").insert({
-                  phone: data.phone,
-                  customer_id: srcCall?.customer_id || customerId || null,
-                  customer_name: data.name || srcCall?.customer_name || null,
-                  notes: srcCall?.notes || null,
-                  interested_products: srcCall?.interested_products || [],
-                  call_status: "ordered",
-                  fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
-                  created_by: profile.id,
-                  created_at: new Date().toISOString(),
-                });
+                // ⚠ Сүүлийн дуудлага аль хэдийн "ordered" бол → давхар нэмэхгүй (нэг захиалга = нэг ordered)
+                const { data: lastCall } = await supabase.from("biz_calls")
+                  .select("call_status").eq("phone", data.phone)
+                  .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                if (lastCall?.call_status !== "ordered") {
+                  // Шинэ "ordered" дуудлага нэмэх (анхны pending мөрийг дарж бичихгүй)
+                  await supabase.from("biz_calls").insert({
+                    phone: data.phone,
+                    customer_id: srcCall?.customer_id || customerId || null,
+                    customer_name: data.name || srcCall?.customer_name || null,
+                    notes: srcCall?.notes || null,
+                    interested_products: srcCall?.interested_products || [],
+                    call_status: "ordered",
+                    fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
+                    created_by: profile.id,
+                    created_at: new Date().toISOString(),
+                  });
+                }
               }
 
 
@@ -28925,18 +28931,25 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
         const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", existing.id);
         if (updErr) throw updErr;
 
-        // Дуудлагын түүхэнд "ordered" мөр нэмэх (анхны дуудлага хэвээр)
-        await supabase.from("biz_calls").insert({
-          phone: call.phone,
-          customer_id: call.customer_id || null,
-          customer_name: customerName.trim() || call.customer_name || null,
-          notes: call.notes || null,
-          interested_products: call.interested_products || [],
-          call_status: "ordered",
-          fb_page_id: newPageId || call.fb_page_id || null,
-          created_by: call.created_by || null,
-          created_at: new Date().toISOString(),
-        });
+        // Дуудлагын түүхэнд "ordered" мөр нэмэх (сүүлийн нь ordered биш бол л)
+        {
+          const { data: lastC } = await supabase.from("biz_calls")
+            .select("call_status").eq("phone", call.phone)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (lastC?.call_status !== "ordered") {
+            await supabase.from("biz_calls").insert({
+              phone: call.phone,
+              customer_id: call.customer_id || null,
+              customer_name: customerName.trim() || call.customer_name || null,
+              notes: call.notes || null,
+              interested_products: call.interested_products || [],
+              call_status: "ordered",
+              fb_page_id: newPageId || call.fb_page_id || null,
+              created_by: call.created_by || null,
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
 
         alert(
           `✅ Захиалга #${existing.order_number}-руу нэгтгэгдсэн!\n\n` +
@@ -29006,18 +29019,25 @@ function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
       }));
       await supabase.from("biz_order_items").insert(orderItems);
 
-      // 3. Дуудлагын түүхэнд 2 мөр: анхны дуудлага хэвээр + шинэ "ordered" нэмэх
-      await supabase.from("biz_calls").insert({
-        phone: call.phone,
-        customer_id: call.customer_id || null,
-        customer_name: customerName.trim() || call.customer_name || null,
-        notes: call.notes || null,
-        interested_products: call.interested_products || [],
-        call_status: "ordered",
-        fb_page_id: call.fb_page_id || null,
-        created_by: call.created_by || null,
-        created_at: new Date().toISOString(),
-      });
+      // 3. Дуудлагын түүхэнд "ordered" мөр нэмэх (сүүлийн нь ordered биш бол л)
+      {
+        const { data: lastC } = await supabase.from("biz_calls")
+          .select("call_status").eq("phone", call.phone)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (lastC?.call_status !== "ordered") {
+          await supabase.from("biz_calls").insert({
+            phone: call.phone,
+            customer_id: call.customer_id || null,
+            customer_name: customerName.trim() || call.customer_name || null,
+            notes: call.notes || null,
+            interested_products: call.interested_products || [],
+            call_status: "ordered",
+            fb_page_id: call.fb_page_id || null,
+            created_by: call.created_by || null,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
 
       alert(`✅ Захиалга үүсгэгдсэн!\n#${order.order_number}\nДүн: ${totalAmount.toLocaleString()}₮`);
       onSaved();
