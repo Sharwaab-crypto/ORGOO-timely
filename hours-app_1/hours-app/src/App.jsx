@@ -13187,6 +13187,11 @@ function CallCenterView({ profile }) {
           profile={profile}
           onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
             try {
+              // 🛍 Заавал бараа сонгосон байх ёстой
+              if (!interested_products || interested_products.length === 0) {
+                alert("⚠ Дугаар бүртгэхийн тулд хамгийн багадаа нэг бараа сонгоно уу.");
+                return;
+              }
               // 🔗 БАРАА → FB PAGE АВТОМАТ ОНОЛТ
               // Хэрэв сонгосон бараа FB Page-руу холбогдсон бол FB Page-ийг автомат тавина
               let effectiveFbPageId = fb_page_id || activeFbPageId;
@@ -18667,7 +18672,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const removeItem = (productId) => setItems(items.filter((it) => it.productId !== productId));
 
   const validPhones = phones.filter((p) => p.phone.trim());
-  const canSave = validPhones.length > 0 && !!fbPageId; // 🔗 FB Page заавал шаардлагатай
+  const canSave = validPhones.length > 0 && !!fbPageId && items.length > 0; // 🔗 FB Page + 🛍 бараа заавал
 
   const inputStyle = { background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
 
