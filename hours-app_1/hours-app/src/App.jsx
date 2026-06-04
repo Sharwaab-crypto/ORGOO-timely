@@ -12255,8 +12255,10 @@ function CallCenterView({ profile }) {
                   filteredCalls.forEach((c) => {
                     if (!c.created_by) return;
                     if (!opMap[c.created_by]) return;
-                    // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
-                    if (c.call_status === "pending") opMap[c.created_by].uniquePhones.add(c.phone);
+                    // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (самбартай ижил)
+                    if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+                      opMap[c.created_by].uniquePhones.add(c.phone);
+                    }
                     opMap[c.created_by].totalCalls++;
                   });
 
@@ -13963,7 +13965,10 @@ function OperatorKPIReportView({ profile }) {
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
       // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
-      if (c.phone && c.call_status === "pending") opMap[c.created_by].uniquePhonesSet.add(c.phone);
+      // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
+      if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+        opMap[c.created_by].uniquePhonesSet.add(c.phone);
+      }
       opMap[c.created_by].totalCalls++;
     });
 
@@ -14991,7 +14996,10 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
       // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)-ийн өвөрмөц утас
-      if (c.phone && c.call_status === "pending") map[key].phoneSet.add(c.phone);
+      // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
+      if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+        map[key].phoneSet.add(c.phone);
+      }
       map[key].totalCalls++; // нийт залгалт (бүх төрөл)
     });
 
@@ -29746,8 +29754,10 @@ function OperatorKPIView({ profile }) {
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
 
-  // Stats — "Бүртгэсэн дугаар" зөвхөн анхны бүртгэл (pending)
-  const uniquePhones = new Set(filteredCalls.filter((c) => c.call_status === "pending").map((c) => c.phone)).size;
+  // Stats — "Бүртгэсэн дугаар" анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
+  const uniquePhones = new Set(
+    filteredCalls.filter((c) => c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status).map((c) => c.phone)
+  ).size;
   const totalOrders = filteredOrders.length;
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
   const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
