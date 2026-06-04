@@ -11733,6 +11733,9 @@ function CallCenterView({ profile }) {
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [fbPages, setFbPages] = useState([]);
+  const [activeFbPageId, setActiveFbPageId] = useState(() => {
+    try { return localStorage.getItem("orgoo-active-fbpage") || ""; } catch { return ""; }
+  }); // 🔗 Дуудлага бүртгэх идэвхтэй FB Page
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [orderTotal, setOrderTotal] = useState(0);
@@ -12022,6 +12025,7 @@ function CallCenterView({ profile }) {
             notes: callNotes || null,
             interested_products: callProducts || [],
             call_status: "pending",
+            fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
             created_by: profile.id,
             created_at: new Date().toISOString(),
           }).select("id").single();
@@ -12086,6 +12090,7 @@ function CallCenterView({ profile }) {
         customer_id: statusPopupCall.customerId || null,
         notes: `[${statusLabel}]`,
         call_status: status,
+        fb_page_id: activeFbPageId || null, // 🔗 Идэвхтэй FB Page
         created_by: profile.id,
         created_at: new Date().toISOString(),
       });
@@ -12394,8 +12399,35 @@ function CallCenterView({ profile }) {
         );
       })()}
 
+      {/* 🔗 Идэвхтэй FB Page сонгогч */}
+      {fbPages.filter((p) => p.is_active !== false).length > 0 && (
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider whitespace-nowrap">
+            🔗 Ажиллаж буй Page
+          </span>
+          <select value={activeFbPageId}
+            onChange={(e) => {
+              setActiveFbPageId(e.target.value);
+              try { localStorage.setItem("orgoo-active-fbpage", e.target.value); } catch {}
+            }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${activeFbPageId ? T.highlight : T.warn}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold">
+            <option value="">⚠ Page сонгоогүй</option>
+            {fbPages.filter((p) => p.is_active !== false).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Big call button */}
-      <button onClick={() => setShowCallModal(true)}
+      <button onClick={() => {
+          if (!activeFbPageId && fbPages.filter((p) => p.is_active !== false).length > 0) {
+            alert("⚠ Эхлээд ажиллаж буй FB Page-ээ сонгоно уу");
+            return;
+          }
+          setShowCallModal(true);
+        }}
         style={{
           background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
           color: "white",
