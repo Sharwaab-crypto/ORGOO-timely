@@ -13037,51 +13037,58 @@ function CallCenterView({ profile }) {
                           </div>
                         ) : (
                           <div className="space-y-1.5">
-                          {calls.slice(0, 6).map((c) => {
+                          {calls.slice(0, 10).map((c) => {
                             const operator = profiles.find((p) => p.id === c.created_by);
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
                             const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
 
                             // Status from call_status field or notes fallback
                             let status = null;
-                            if (c.call_status === "ordered") {
-                              status = { label: "Захиалга өгсөн", color: T.ok, bg: "rgba(16,185,129,0.1)" };
+                            if (c.call_status === "pending") {
+                              status = { label: "📝 Дугаар бүртгэсэн", color: T.highlight, bg: T.highlightSoft };
+                            } else if (c.call_status === "ordered") {
+                              status = { label: "🛒 Захиалга болгосон", color: T.ok, bg: "rgba(16,185,129,0.1)" };
                             } else if (c.call_status === "no_answer") {
-                              status = { label: "Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
+                              status = { label: "📵 Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
                             } else if (c.call_status === "unreachable") {
-                              status = { label: "Холбогдох боломжгүй", color: T.err, bg: T.errSoft };
+                              status = { label: "🚫 Холбогдох боломжгүй", color: T.err, bg: T.errSoft };
                             } else if (c.call_status === "callback") {
-                              status = { label: "Эргэн холбогдох", color: T.highlight, bg: T.highlightSoft };
-                            } else if (isCancelled) {
-                              status = { label: "Цуцалсан", color: T.err, bg: T.errSoft };
+                              status = { label: "🔄 Эргэн холбогдох", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" };
+                            } else if (c.call_status === "cancelled" || isCancelled) {
+                              status = { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft };
                             }
 
+                            // Тэмдэглэл (статусын шошго биш, жинхэнэ notes)
+                            const noteText = cleanNotes && !cleanNotes.startsWith("[") ? cleanNotes : null;
+
                             return (
-                              <div key={c.id} className="flex items-center gap-2 flex-wrap">
-                                <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
+                              <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
+                                <div className="flex items-center gap-1 flex-shrink-0" style={{ color: T.muted, fontFamily: FM }}>
                                   <Clock size={10} />
-                                  <span className="text-[11px]">{timeAgo(c.created_at)}</span>
+                                  <span className="text-[11px] whitespace-nowrap">{timeAgo(c.created_at)}</span>
                                 </div>
-                                <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                                  {operator?.name || "—"}
-                                </span>
-                                {status && (
-                                  <span style={{ background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600 }}
-                                    className="text-[10px] px-2 py-0.5 rounded">
-                                    {status.label}
+                                <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                                  <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                                    {operator?.name || "—"}
                                   </span>
-                                )}
-                                {!status && cleanNotes && (
-                                  <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] italic">
-                                    "{cleanNotes.slice(0, 40)}{cleanNotes.length > 40 ? '...' : ''}"
-                                  </span>
-                                )}
+                                  {status && (
+                                    <span style={{ background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600 }}
+                                      className="text-[10px] px-2 py-0.5 rounded">
+                                      {status.label}
+                                    </span>
+                                  )}
+                                  {noteText && (
+                                    <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] italic">
+                                      "{noteText.slice(0, 40)}{noteText.length > 40 ? '...' : ''}"
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
-                          {calls.length > 6 && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
-                              + {calls.length - 6} илүү
+                          {calls.length > 10 && (
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic text-center pt-1">
+                              + {calls.length - 10} илүү дуудлага
                             </div>
                           )}
                         </div>
