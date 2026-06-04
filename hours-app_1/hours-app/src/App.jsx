@@ -13092,7 +13092,17 @@ function CallCenterView({ profile }) {
                               <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
                                 <div className="flex items-center gap-1 flex-shrink-0" style={{ color: T.muted, fontFamily: FM }}>
                                   <Clock size={10} />
-                                  <span className="text-[11px] whitespace-nowrap">{timeAgo(c.created_at)}</span>
+                                  <span className="text-[11px] whitespace-nowrap">
+                                    {(() => {
+                                      const d = new Date(c.created_at);
+                                      const now = new Date();
+                                      const hhmm = d.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit", hour12: false });
+                                      const sameDay = d.toDateString() === now.toDateString();
+                                      if (sameDay) return hhmm;
+                                      const md = d.toLocaleDateString("mn-MN", { month: "2-digit", day: "2-digit" });
+                                      return `${md} ${hhmm}`;
+                                    })()}
+                                  </span>
                                 </div>
                                 <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
                                   <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
