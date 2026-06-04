@@ -13962,11 +13962,19 @@ function OperatorKPIReportView({ profile }) {
       };
     });
 
+    // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн оператор тодорхойлох (давхцалгүй, нийлбэр = нийт)
+    const phoneFirstOp = {};
+    filteredCalls
+      .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        if (!phoneFirstOp[c.phone]) phoneFirstOp[c.phone] = c.created_by;
+      });
+
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)
-      // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
-      if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн оператор тоолно
+      if (c.phone && phoneFirstOp[c.phone] === c.created_by) {
         opMap[c.created_by].uniquePhonesSet.add(c.phone);
       }
       opMap[c.created_by].totalCalls++;
@@ -14991,13 +14999,22 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       cancelledOrders: [],
     };
 
-    // Дуудлагууд — "Дугаар" = зөвхөн анх бүртгэсэн (pending), "Залгалт" = бүх дуудлага
+    // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн page тодорхойлох (давхцалгүй)
+    const phoneFirstPage = {};
+    filteredCalls
+      .filter((c) => c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        const k = c.fb_page_id || "__null__";
+        if (!phoneFirstPage[c.phone]) phoneFirstPage[c.phone] = k;
+      });
+
+    // Дуудлагууд — "Дугаар" = анх бүртгэсэн page, "Залгалт" = бүх дуудлага
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      // 🆕 "Бүртгэсэн дугаар" — зөвхөн анхны бүртгэл (pending)-ийн өвөрмөц утас
-      // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (pending/ordered/cancelled), Дуудлага самбартай ижил
-      if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн page тоолно
+      if (c.phone && phoneFirstPage[c.phone] === key) {
         map[key].phoneSet.add(c.phone);
       }
       map[key].totalCalls++; // нийт залгалт (бүх төрөл)
