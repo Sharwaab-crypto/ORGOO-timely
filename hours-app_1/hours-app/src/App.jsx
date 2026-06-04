@@ -20528,17 +20528,17 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
     <div className="glass rounded-xl p-3 relative"
       onContextMenu={(e) => e.preventDefault()}
       style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
-      <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+      <div className="flex items-start gap-2 sm:gap-3">
         {/* Index badge */}
         <div style={{
           background: "rgba(59,130,246,0.1)", color: "#3b82f6",
           fontFamily: FD, fontWeight: 700,
-        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 mt-0.5">
           {index + 1}
         </div>
 
         {/* Phones + Address */}
-        <div className="flex-1 min-w-0" style={{ minWidth: 140 }}>
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {order.customer_phone ? (
               <a href={`tel:${order.customer_phone}`}
@@ -20583,11 +20583,17 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                 );
               });
             })()}
+            {/* Status pill — утасны хажууд */}
+            <span style={{
+              background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
+            }} className="text-[10px] px-2 py-0.5 rounded-full">
+              {status.label}
+            </span>
           </div>
           {order.delivery_address && (
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5 flex items-start gap-1">
-              <MapPin size={10} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
-              <span className="line-clamp-2">{order.delivery_address}</span>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1 flex items-start gap-1">
+              <MapPin size={11} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
+              <span>{order.delivery_address}</span>
             </div>
           )}
           {order.driver_id && (() => {
@@ -20602,85 +20608,74 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               </div>
             ) : null;
           })()}
-        </div>
 
-        {/* 🛍 Бүх бараа эгнүүлсэн харагдалт (5+ үед scroll) */}
-        {items.length > 0 && (
-          <div className={`flex-shrink-0 flex items-start gap-1.5 ${items.length > 4 ? "overflow-x-auto pb-1" : ""}`}
-            style={{ 
-              maxWidth: items.length > 4 ? 220 : "none",
-              scrollbarWidth: "thin",
-            }}>
-            {items.map((it, idx) => {
-              const isMerchantItem = it.fb_page_id && merchantPageIds.includes(it.fb_page_id);
-              return (
-                <div key={it.id || idx} className="relative flex-shrink-0">
-                  {it.product_image ? (
-                    <img src={it.product_image} alt=""
-                      style={{ 
-                        width: 40, height: 60, objectFit: "cover", borderRadius: 6,
-                        border: isMerchantItem ? `2px solid #0284c7` : "none",  // Merchant зураг хүрээтэй
-                      }} />
-                  ) : (
-                    <div style={{ 
-                      width: 40, height: 60, borderRadius: 6, 
-                      background: T.surfaceAlt, 
-                      border: `1px dashed ${T.border}`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 16,
-                    }}>📦</div>
-                  )}
-                  {/* Захиалсан тоо badge — Merchant бараа бол өөр өнгө */}
-                  {Number(it.quantity) > 0 && (
-                    <div style={{
-                      position: "absolute", top: -6, right: -6,
-                      background: isMerchantItem 
-                        ? "linear-gradient(135deg, #0ea5e9, #0284c7)"  // 🔵 Merchant — Цэнхэр
-                        : "linear-gradient(135deg, #0E9C8E, #0B7D72)",  // 🌸 Бусад — Ягаан
-                      color: "white",
-                      minWidth: 20, height: 20, borderRadius: 999,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      padding: "0 4px",
-                      fontSize: 10, fontWeight: 700,
-                      boxShadow: isMerchantItem 
-                        ? "0 2px 6px rgba(14,165,233,0.4)" 
-                        : "0 2px 6px rgba(236,72,153,0.4)",
-                      border: "1.5px solid white",
-                    }}>×{Number(it.quantity)}</div>
-                  )}
-                  <div style={{ 
-                    color: isMerchantItem ? "#0284c7" : T.muted, 
-                    fontFamily: FM,
-                    fontWeight: isMerchantItem ? 700 : 400,
-                  }} className="text-[9px] text-center mt-1 tabular-nums">
-                    {Number(it.unit_price || 0).toLocaleString()}₮
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Status pill */}
-        <span style={{
-          background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
-        }} className="text-[10px] px-2.5 py-1 rounded-full flex-shrink-0">
-          {status.label}
-        </span>
-
-        {/* Amount */}
-        <div className="text-right flex-shrink-0">
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
-            {total.toLocaleString()}₮
-          </div>
-          <div style={{
-            fontFamily: FD, fontWeight: 600,
-            color: isFullyPaid ? T.ok : (balance > 0 ? T.muted : T.ok),
-          }} className="text-[11px] tabular-nums whitespace-nowrap">
-            {isFullyPaid ? `✓ ${paid.toLocaleString()}₮` : `${paid.toLocaleString()}₮`}
+          {/* 🛍 Бараа + үнэ — мэдээллийн доор, эгнээнд */}
+          <div className="flex items-end gap-3 mt-2 flex-wrap">
+            {items.length > 0 && (
+              <div className={`flex items-start gap-1.5 ${items.length > 4 ? "overflow-x-auto pb-1" : ""}`}
+                style={{ maxWidth: items.length > 4 ? 200 : "none", scrollbarWidth: "thin" }}>
+                {items.map((it, idx) => {
+                  const isMerchantItem = it.fb_page_id && merchantPageIds.includes(it.fb_page_id);
+                  return (
+                    <div key={it.id || idx} className="relative flex-shrink-0">
+                      {it.product_image ? (
+                        <img src={it.product_image} alt=""
+                          style={{
+                            width: 38, height: 54, objectFit: "cover", borderRadius: 6,
+                            border: isMerchantItem ? `2px solid #0284c7` : "none",
+                          }} />
+                      ) : (
+                        <div style={{
+                          width: 38, height: 54, borderRadius: 6,
+                          background: T.surfaceAlt,
+                          border: `1px dashed ${T.border}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 16,
+                        }}>📦</div>
+                      )}
+                      {Number(it.quantity) > 0 && (
+                        <div style={{
+                          position: "absolute", top: -6, right: -6,
+                          background: isMerchantItem
+                            ? "linear-gradient(135deg, #0ea5e9, #0284c7)"
+                            : "linear-gradient(135deg, #0E9C8E, #0B7D72)",
+                          color: "white",
+                          minWidth: 18, height: 18, borderRadius: 999,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          padding: "0 4px",
+                          fontSize: 9, fontWeight: 700,
+                          border: "1.5px solid white",
+                        }}>×{Number(it.quantity)}</div>
+                      )}
+                      <div style={{
+                        color: isMerchantItem ? "#0284c7" : T.muted,
+                        fontFamily: FM,
+                        fontWeight: isMerchantItem ? 700 : 400,
+                      }} className="text-[9px] text-center mt-0.5 tabular-nums">
+                        {Number(it.unit_price || 0).toLocaleString()}₮
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Нийт дүн */}
+            <div className="ml-auto text-right">
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
+                {total.toLocaleString()}₮
+              </div>
+              <div style={{
+                fontFamily: FD, fontWeight: 600,
+                color: isFullyPaid ? T.ok : (balance > 0 ? T.muted : T.ok),
+              }} className="text-[11px] tabular-nums whitespace-nowrap">
+                {isFullyPaid ? `✓ ${paid.toLocaleString()}₮` : `${paid.toLocaleString()}₮`}
+              </div>
+            </div>
           </div>
         </div>
 
+        {/* Баруун талын товчнууд (pin + menu) — босоо */}
+        <div className="flex flex-col items-center gap-2 flex-shrink-0">
         {/* Pin button (Дэлгэрэнгүй харах) */}
         <button onClick={onClick}
           className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
@@ -20771,6 +20766,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
           )}
         </div>
         )}
+        </div>
       </div>
     </div>
   );
