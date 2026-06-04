@@ -21514,6 +21514,7 @@ function OrdersView({ profile }) {
                                 status: "pending",
                                 assigned_at: new Date().toISOString(),
                                 assigned_by: profile.id,
+                                is_unknown: false, // 🔧 Driver хуваарилсан → Тодорхойгүй-аас гаргах
                               }).eq("id", assignDriverOrder.id);
                               setAssignDriverOrder(null);
                               await loadAll();
@@ -22001,6 +22002,7 @@ function OrdersView({ profile }) {
               await supabase.from("biz_orders").update({
                 delivery_lat: lat,
                 delivery_lng: lng,
+                is_unknown: false, // 🔧 GPS орсон → Тодорхойгүй-аас гаргах
               }).eq("id", mapOrder.id);
               setMapOrder(null);
               await loadAll();
