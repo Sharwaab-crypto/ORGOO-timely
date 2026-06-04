@@ -11957,6 +11957,12 @@ function CallCenterView({ profile }) {
 
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
+    // 🔗 Page заавал сонгосон байх ёстой
+    const activePages = fbPages.filter((p) => p.is_active !== false);
+    if (!activeFbPageId && activePages.length > 0) {
+      alert("⚠ Эхлээд дээд талаас 'Ажиллаж буй FB Page'-ээ сонгоно уу");
+      return;
+    }
     try {
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
@@ -13168,7 +13174,7 @@ function CallCenterView({ profile }) {
             try {
               // 🔗 БАРАА → FB PAGE АВТОМАТ ОНОЛТ
               // Хэрэв сонгосон бараа FB Page-руу холбогдсон бол FB Page-ийг автомат тавина
-              let effectiveFbPageId = fb_page_id;
+              let effectiveFbPageId = fb_page_id || activeFbPageId;
               const requiredFbPages = new Set();
               for (const ip of (interested_products || [])) {
                 const prod = products.find((p) => p.id === ip.id);
@@ -13187,6 +13193,12 @@ function CallCenterView({ profile }) {
                 effectiveFbPageId = requiredId;
               }
               // ⚡ Дуудлага бүртгэх үед давхар шалгахгүй (Дуудаад авлаа товч даргахад л шалгана)
+
+              // 🔗 Page заавал байх ёстой — эс бөгөөс "Тодорхойгүй"-д орно
+              if (!effectiveFbPageId) {
+                alert("⚠ FB Page сонгогдоогүй байна.\n\nДугаар бүртгэхийн тулд дээд талаас 'Ажиллаж буй FB Page'-ээ сонгоно уу.");
+                return;
+              }
               
               // Тус утсаар customer + call бичих
               for (const phoneEntry of phoneList) {
