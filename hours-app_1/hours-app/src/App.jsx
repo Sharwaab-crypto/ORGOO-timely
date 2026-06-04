@@ -12448,15 +12448,19 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
+          // 🔗 Page шүүлт — Ажиллаж буй page сонгогдсон бол зөвхөн тэр page-ийн дуудлага
+          const pageFilteredCalls = activeFbPageId
+            ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
+            : recentCalls;
           // Period-ээр шүүсэн (ordered, cancelled tab-д)
-          const filteredByPeriod = recentCalls.filter((c) => {
+          const filteredByPeriod = pageFilteredCalls.filter((c) => {
             const d = new Date(c.created_at);
             return d >= periodRange.start && d < periodRange.end;
           });
 
           // Calling tab — period үл хамааран
           const phoneGroupedAll = {};
-          recentCalls.forEach((c) => {
+          pageFilteredCalls.forEach((c) => {
             if (!phoneGroupedAll[c.phone]) phoneGroupedAll[c.phone] = [];
             phoneGroupedAll[c.phone].push(c);
           });
@@ -12603,7 +12607,7 @@ function CallCenterView({ profile }) {
           <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
             <Loader2 className="spin mx-auto mb-2" size={20} />
           </div>
-        ) : recentCalls.length === 0 ? (
+        ) : pageFilteredCalls.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📞</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
@@ -12614,7 +12618,7 @@ function CallCenterView({ profile }) {
           <div className="space-y-1.5">
             {(() => {
               // Бүх дуудлагуудыг ашиглана (period filter байхгүй)
-              const filteredByPeriod = recentCalls;
+              const filteredByPeriod = pageFilteredCalls;
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
