@@ -21075,10 +21075,21 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
   const firstProduct = firstItem ? null : null; // image_url-ийг items-аас авах
   const firstImage = firstItem?.product_image || null;
 
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <div className="glass rounded-xl p-3 relative"
       onContextMenu={(e) => e.preventDefault()}
-      style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+        transform: isHovered ? "translateY(-2px)" : "translateY(0)",
+        boxShadow: isHovered ? "0 8px 24px rgba(14, 156, 142, 0.18)" : undefined,
+        border: isHovered ? `1px solid ${T.highlight}` : "1px solid transparent",
+        cursor: onClick ? "pointer" : "default",
+      }}>
       <div className="flex items-start gap-2 sm:gap-3">
         {/* Index badge */}
         <div style={{
@@ -32276,6 +32287,7 @@ function DriverDashboard({ profile }) {
   }, [view]);
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
   const [driverSearch, setDriverSearch] = useState(""); // 🔍 Дугаар/хаягаар хайх
+  const [hoveredOrderId, setHoveredOrderId] = useState(null); // 🖱 Hover effect
   const [assignOrder, setAssignOrder] = useState(null); // 🚚 Өөр driver-т хуваарилах modal
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
@@ -32995,9 +33007,14 @@ function DriverDashboard({ profile }) {
               const hasPin = o.delivery_lat && o.delivery_lng;
               return (
               <div key={o.id} className="glass rounded-xl p-3"
+                onMouseEnter={() => setHoveredOrderId(o.id)}
+                onMouseLeave={() => setHoveredOrderId(null)}
                 style={{
                   borderLeft: !hasPin ? `4px solid ${T.err}` : "none",
                   background: !hasPin ? "rgba(239,68,68,0.04)" : undefined,
+                  transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                  transform: hoveredOrderId === o.id ? "translateY(-2px)" : "translateY(0)",
+                  boxShadow: hoveredOrderId === o.id ? "0 8px 24px rgba(14, 165, 233, 0.18)" : undefined,
                 }}>
                 {!hasPin && (
                   <div className="flex items-center justify-between mb-1.5">
