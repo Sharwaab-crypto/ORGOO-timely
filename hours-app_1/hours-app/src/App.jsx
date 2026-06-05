@@ -7682,6 +7682,8 @@ function InventoryView({ profile, isAdmin = false }) {
   const [movements, setMovements] = useState([]);
   const [receivings, setReceivings] = useState([]); // 🆕 Бөөн орлогын header
   const [warehouses, setWarehouses] = useState([]); // 🆕 Агуулахууд (нэр харуулах)
+  const [stockByWarehouse, setStockByWarehouse] = useState({}); // 🆕 { product_id: { warehouse_id: qty } }
+  const [warehouseStockPopup, setWarehouseStockPopup] = useState(null); // 🆕 { product } — агуулах бүрийн нөөц
   const [expandedReceiving, setExpandedReceiving] = useState(null); // 🆕 Click-ээр өргөтгөгдөх
   const [receivingItems, setReceivingItems] = useState({}); // 🆕 cache: receiving_id => movements[]
   const [loading, setLoading] = useState(true);
@@ -7712,15 +7714,20 @@ function InventoryView({ profile, isAdmin = false }) {
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
-        supabase.from("inv_stock").select("product_id, quantity"),
+        supabase.from("inv_stock").select("product_id, quantity, warehouse_id"),
         supabase.from("inv_receivings").select("*").order("received_at", { ascending: false }).limit(100),
         supabase.from("inv_warehouses").select("id, name, type"),
       ]);
       // Бараа тус бүрийн нийт нөөцийг inv_stock-аас тооцоолох (multi-warehouse)
       const stockByProduct = {};
+      const stockByProductWarehouse = {}; // 🆕 { product_id: { warehouse_id: qty } }
       (stkData || []).forEach((s) => {
         stockByProduct[s.product_id] = (stockByProduct[s.product_id] || 0) + Number(s.quantity || 0);
+        if (!stockByProductWarehouse[s.product_id]) stockByProductWarehouse[s.product_id] = {};
+        stockByProductWarehouse[s.product_id][s.warehouse_id] =
+          (stockByProductWarehouse[s.product_id][s.warehouse_id] || 0) + Number(s.quantity || 0);
       });
+      setStockByWarehouse(stockByProductWarehouse); // 🆕
       const productsWithStock = (prodData || []).map((p) => ({
         ...p,
         stock: stockByProduct[p.id] || 0,
@@ -8132,10 +8139,17 @@ function InventoryView({ profile, isAdmin = false }) {
                     Үлдэгдэл: {p.stock} {p.unit} · Мин: {p.min_stock} {p.unit}
                   </div>
                 </div>
-                <button onClick={() => setMovementFor({ product: p, type: "in" })}
-                  className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold">
-                  📥 Орлого
-                </button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button onClick={() => setWarehouseStockPopup({ product: p })}
+                    className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: T.surfaceAlt, color: "#0ea5e9", fontFamily: FS, border: `1px solid ${T.border}` }}>
+                    🏬 Агуулах
+                  </button>
+                  <button onClick={() => setMovementFor({ product: p, type: "in" })}
+                    className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold">
+                    📥 Орлого
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -8371,6 +8385,80 @@ function InventoryView({ profile, isAdmin = false }) {
           }}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {/* 🏬 Агуулах бүрийн нөөц popup */}
+      {warehouseStockPopup && createPortal(
+        <div
+          onClick={() => setWarehouseStockPopup(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: 18, width: "100%", maxWidth: 380,
+              maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                🏬 Агуулах бүрийн нөөц
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-0.5">
+                {warehouseStockPopup.product.name}
+              </div>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {(() => {
+                const pStock = stockByWarehouse[warehouseStockPopup.product.id] || {};
+                // Бүх агуулахыг харуулна (нөөцтэй болон нөөцгүй)
+                const rows = warehouses.map((w) => ({
+                  name: w.name,
+                  type: w.type,
+                  qty: pStock[w.id] || 0,
+                })).sort((a, b) => b.qty - a.qty);
+                const total = rows.reduce((s, r) => s + r.qty, 0);
+                if (rows.length === 0) {
+                  return <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">Агуулах байхгүй</div>;
+                }
+                return (
+                  <>
+                    {rows.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
+                        style={{ background: r.qty > 0 ? "rgba(14,165,233,0.06)" : T.surfaceAlt }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{r.type === "main" ? "🏢" : "🚚"}</span>
+                          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm">{r.name}</span>
+                        </div>
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: r.qty > 0 ? "#0ea5e9" : T.muted }}
+                          className="text-base tabular-nums">
+                          {r.qty} <span className="text-[10px]" style={{ color: T.muted }}>{warehouseStockPopup.product.unit}</span>
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-lg mt-1"
+                      style={{ background: "rgba(14,156,142,0.1)", borderTop: `2px solid ${T.highlight}` }}>
+                      <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Нийт</span>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
+                        {total} <span className="text-[10px]" style={{ color: T.muted }}>{warehouseStockPopup.product.unit}</span>
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="px-3 pb-3">
+              <button onClick={() => setWarehouseStockPopup(null)}
+                className="press-btn w-full py-2.5 rounded-xl text-sm"
+                style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+                Хаах
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {movementFor && (
