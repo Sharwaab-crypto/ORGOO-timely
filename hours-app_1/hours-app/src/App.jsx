@@ -8418,15 +8418,15 @@ function InventoryView({ profile, isAdmin = false }) {
             <div className="p-3 space-y-1.5">
               {(() => {
                 const pStock = stockByWarehouse[warehouseStockPopup.product.id] || {};
-                // Бүх агуулахыг харуулна (нөөцтэй болон нөөцгүй)
+                // Зөвхөн НӨӨЦТЭЙ (qty > 0) агуулахыг харуулна
                 const rows = warehouses.map((w) => ({
                   name: w.name,
                   type: w.type,
                   qty: pStock[w.id] || 0,
-                })).sort((a, b) => b.qty - a.qty);
+                })).filter((r) => r.qty > 0).sort((a, b) => b.qty - a.qty);
                 const total = rows.reduce((s, r) => s + r.qty, 0);
                 if (rows.length === 0) {
-                  return <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">Агуулах байхгүй</div>;
+                  return <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">Энэ бараа аль ч агуулахад үлдэгдэлгүй байна</div>;
                 }
                 return (
                   <>
