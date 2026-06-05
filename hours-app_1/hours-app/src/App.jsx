@@ -21084,11 +21084,14 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
       onMouseLeave={() => setIsHovered(false)}
       style={{
         userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
-        transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
-        transform: isHovered ? "translateY(-2px)" : "translateY(0)",
-        boxShadow: isHovered ? "0 8px 24px rgba(14, 156, 142, 0.18)" : undefined,
-        border: isHovered ? `1px solid ${T.highlight}` : "1px solid transparent",
+        transition: "transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, border-color 0.18s ease",
+        transform: isHovered ? "translateY(-5px) scale(1.015)" : "translateY(0) scale(1)",
+        boxShadow: isHovered
+          ? `0 16px 40px rgba(14, 156, 142, 0.35), 0 0 0 1px ${T.highlight}`
+          : undefined,
+        border: isHovered ? `2px solid ${T.highlight}` : "2px solid transparent",
         cursor: onClick ? "pointer" : "default",
+        zIndex: isHovered ? 5 : 1,
       }}>
       <div className="flex items-start gap-2 sm:gap-3">
         {/* Index badge */}
@@ -33012,9 +33015,13 @@ function DriverDashboard({ profile }) {
                 style={{
                   borderLeft: !hasPin ? `4px solid ${T.err}` : "none",
                   background: !hasPin ? "rgba(239,68,68,0.04)" : undefined,
-                  transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                  transform: hoveredOrderId === o.id ? "translateY(-2px)" : "translateY(0)",
-                  boxShadow: hoveredOrderId === o.id ? "0 8px 24px rgba(14, 165, 233, 0.18)" : undefined,
+                  transition: "transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease",
+                  transform: hoveredOrderId === o.id ? "translateY(-5px) scale(1.015)" : "translateY(0) scale(1)",
+                  boxShadow: hoveredOrderId === o.id
+                    ? "0 16px 40px rgba(14, 165, 233, 0.35), 0 0 0 2px #0ea5e9"
+                    : undefined,
+                  zIndex: hoveredOrderId === o.id ? 5 : 1,
+                  position: "relative",
                 }}>
                 {!hasPin && (
                   <div className="flex items-center justify-between mb-1.5">
