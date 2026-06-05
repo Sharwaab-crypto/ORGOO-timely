@@ -8570,6 +8570,70 @@ function WarehousesView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // 🆕 Driver (агуулах) сонгоход бараа автомат тооцох (driver-ийн логиктой ижил)
+  //   • receive (Бараа авах) → тэр driver-ийн захиалгаас хэрэгтэй бараа
+  //   • transfer (Бараа өгөх) → үндсэн агуулахын бүх бараа
+  useEffect(() => {
+    if (!showActionModal || !actionWarehouse) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const selWh = warehouses.find((w) => w.id === actionWarehouse);
+        const mainWh = warehouses.find((w) => w.type === "main");
+        if (!selWh) return;
+
+        if (showActionModal === "transfer") {
+          // 🔄 Бараа өгөх → үндсэн агуулахад байгаа бүх бараа (admin гараар тоо оруулна)
+          const srcStock = stock.filter((s) => s.warehouse_id === mainWh?.id && Number(s.quantity) > 0);
+          const items = srcStock.map((s) => {
+            const product = products.find((p) => p.id === s.product_id);
+            if (!product) return null;
+            return {
+              product_id: s.product_id, product_name: product.name, product_sku: product.sku,
+              product_image: product.image_url || null, quantity: 0, maxQty: Number(s.quantity),
+            };
+          }).filter(Boolean);
+          if (!cancelled) setActionItems(items);
+        } else if (showActionModal === "receive") {
+          // 📥 Бараа авах → сонгосон driver-ийн захиалгаас хэрэгтэй (дутуу) бараа
+          const driverId = selWh.driver_id;
+          if (!driverId) { if (!cancelled) setActionItems([]); return; }
+          const { data: ordData } = await supabase
+            .from("biz_orders").select("id")
+            .eq("driver_id", driverId).in("status", ["new", "pending", "assigned"]);
+          const orderIds = (ordData || []).map((o) => o.id);
+          if (orderIds.length === 0) { if (!cancelled) setActionItems([]); return; }
+          const itemData = await fetchInChunks("biz_order_items", orderIds, {
+            select: "product_id, product_name, quantity",
+            filterColumn: "order_id", chunkSize: 200,
+          });
+          const requiredMap = {};
+          (itemData || []).forEach((it) => {
+            if (!it.product_id) return;
+            if (!requiredMap[it.product_id]) requiredMap[it.product_id] = { product_id: it.product_id, qty: 0 };
+            requiredMap[it.product_id].qty += Number(it.quantity || 0);
+          });
+          const items = Object.values(requiredMap).map((r) => {
+            const product = products.find((p) => p.id === r.product_id);
+            if (!product) return null;
+            const drStock = stock.find((s) => s.warehouse_id === selWh.id && s.product_id === r.product_id);
+            const missing = Math.max(0, r.qty - Number(drStock?.quantity || 0));
+            if (missing <= 0) return null;
+            const mainStock = stock.find((s) => s.warehouse_id === mainWh?.id && s.product_id === r.product_id);
+            const avail = Number(mainStock?.quantity || 0);
+            return {
+              product_id: r.product_id, product_name: product.name, product_sku: product.sku,
+              product_image: product.image_url || null,
+              quantity: Math.min(missing, avail), maxQty: avail,
+            };
+          }).filter(Boolean);
+          if (!cancelled) setActionItems(items);
+        }
+      } catch (e) { console.error("[warehouse auto-calc]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [actionWarehouse, showActionModal, warehouses, stock, products]);
+
   // Тус агуулахын stock тоо (зөвхөн идэвхтэй бараа)
   const getWarehouseStock = (whId) => {
     const validIds = new Set(products.map((p) => p.id));
