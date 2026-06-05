@@ -13568,7 +13568,7 @@ function CallCenterView({ profile }) {
 
                 // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
                 // Үргэлж pending — Залгах дугаар tab-руу орно
-                await supabase.from("biz_calls").insert({
+                const { error: callErr } = await supabase.from("biz_calls").insert({
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
@@ -13578,11 +13578,19 @@ function CallCenterView({ profile }) {
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
                 });
+                // ⚠ Insert амжилтгүй бол хэрэглэгчид мэдэгдэх (чимээгүй алгасахгүй)
+                if (callErr) {
+                  console.error("[Дугаар бүртгэх] biz_calls insert алдаа:", callErr);
+                  throw new Error(`${phone} дугаар бүртгэхэд алдаа: ${callErr.message}`);
+                }
               }
 
               setShowCallModal(false);
               await loadAll();
-            } catch (e) { alert("Алдаа: " + e.message); }
+            } catch (e) {
+              console.error("[Дугаар бүртгэх] Алдаа:", e);
+              alert("⚠ Дугаар бүртгэхэд алдаа гарлаа:\n\n" + (e.message || JSON.stringify(e)) + "\n\nДахин оролдоно уу.");
+            }
           }}
           onClose={() => setShowCallModal(false)}
         />
