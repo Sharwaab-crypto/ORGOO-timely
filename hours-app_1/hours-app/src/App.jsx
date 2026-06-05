@@ -12953,7 +12953,9 @@ function CallCenterView({ profile }) {
                 const info = orderInfoByPhone[cy.phone] || {};
 
                 if (activeTab === "all") {
-                  // Бүгд — утас бүрийн хамгийн сүүлчийн cycle л харуулна
+                  // Бүгд — хайлт хийж байвал CYCLE бүрийг тусдаа харуулна (бүх түүх),
+                  //   эс бөгөөс утас бүрийн хамгийн сүүлчийн cycle л харуулна (жагсаалт богино).
+                  if (searchPhone.trim()) return true; // хайлтад бүх cycle
                   if (seenPhones.has(cy.phone)) return false;
                   seenPhones.add(cy.phone);
                   return true;
