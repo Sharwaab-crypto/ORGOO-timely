@@ -21369,6 +21369,11 @@ function MapPickerModal({ order, onSave, onClose }) {
       attribution: "© OpenStreetMap",
     }).addTo(map);
 
+    // 🔧 Modal дотор нээгдэх үед container хэмжээ 0 байж болзошгүй →
+    //    invalidateSize-ээр map-ийг дахин тооцуулна (хоосон/саарал харагдахаас сэргийлнэ)
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 100);
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 300);
+
     const customIcon = L.divIcon({
       html: `<div style="background: #0E9C8E; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
       iconSize: [24, 24],
@@ -21445,7 +21450,7 @@ function MapPickerModal({ order, onSave, onClose }) {
             🔍 Хаягаар хайх
           </button>
           <div ref={mapContainerRef}
-            style={{ width: "100%", height: 400, borderRadius: 12, overflow: "hidden", border: `1px solid ${T.border}` }} />
+            style={{ width: "100%", height: 400, minHeight: 400, borderRadius: 12, overflow: "hidden", border: `1px solid ${T.border}`, background: "#e5e7eb" }} />
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 text-center">
             💡 Газрын зураг дээр дарж эсвэл pin-ийг чирж байршлыг сонгоно уу
           </div>
