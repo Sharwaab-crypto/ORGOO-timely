@@ -8038,14 +8038,19 @@ function InventoryView({ profile, isAdmin = false }) {
                     <span>Зарсан: {Number(p.sale_price || 0).toLocaleString()}₮</span>
                   </div>
 
-                  {isAdmin && (
-                    <div className="flex gap-1 mt-2 pt-2 border-t justify-end" style={{ borderColor: T.borderSoft }}>
+                  <div className="flex gap-1 mt-2 pt-2 border-t justify-between items-center" style={{ borderColor: T.borderSoft }}>
+                    <button onClick={() => setWarehouseStockPopup({ product: p })}
+                      className="press-btn px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: T.surfaceAlt, color: "#0ea5e9", fontFamily: FS, border: `1px solid ${T.border}` }}>
+                      🏬 Агуулах
+                    </button>
+                    {isAdmin && (
                       <button onClick={() => setEditing(p)} style={{ color: T.muted }}
                         className="press-btn p-1 rounded">
                         <Edit3 size={11} />
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               );
             })}
