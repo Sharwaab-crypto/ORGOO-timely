@@ -16430,7 +16430,7 @@ function DriverSettlementView({ profile }) {
     
     const delivered = dOrders.filter((o) => o.status === "delivered");
     const cancelled = dOrders.filter((o) => o.status === "cancelled");
-    const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending");
+    const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned");
 
     const deliveredTotal = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
     const paidAlready = delivered.reduce((s, o) => s + Number(o.paid_amount || 0), 0);
@@ -21514,7 +21514,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
                 <div className="p-1.5 space-y-1">
                   {filtered.map((d) => {
                     const count = orders.filter((o) => o.driver_id === d.id).length;
-                    const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending")).length;
+                    const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length;
                     return (
                       <button key={d.id}
                         onClick={() => { onChange(d.id); setOpen(false); setSearch(""); }}
@@ -21825,7 +21825,7 @@ function OrdersView({ profile }) {
                     {drivers.map((d) => {
                       const isSelected = assignDriverOrder.driver_id === d.id;
                       const dOrders = orders.filter((o) => o.driver_id === d.id);
-                      const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                      const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                       return (
                         <button key={d.id}
                           onClick={async () => {
@@ -22046,7 +22046,7 @@ function OrdersView({ profile }) {
           const dOrders = orders.filter((o) => o.driver_id === driverFilter);
           const delivered = dOrders.filter((o) => o.status === "delivered").length;
           const cancelled = dOrders.filter((o) => o.status === "cancelled").length;
-          const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+          const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
           const revenue = dOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0);
           return (
             <div style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}
@@ -22390,7 +22390,7 @@ function OrdersView({ profile }) {
                   {drivers.map((d) => {
                     const isSelected = assignDriverOrder.driver_id === d.id;
                     const dOrders = orders.filter((o) => o.driver_id === d.id);
-                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                     return (
                       <button key={d.id}
                         onClick={async () => {
@@ -30312,7 +30312,7 @@ function OperatorKPIView({ profile }) {
   ).length;
   const totalOrders = filteredOrders.filter((o) => o.status !== "cancelled").length; // Захиалга = цуцлагдаагүй (Admin-тай ижил)
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
-  const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+  const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
   const cancelledOrders = filteredOrders.filter((o) => o.status === "cancelled").length;
   // Хувь тооцоход нийт захиалга (цуцлагдсаныг ОРУУЛНА) ашиглана
   const allOrdersCount = filteredOrders.length;
@@ -31369,7 +31369,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
           // АВАХ
           const { data: ordData } = await supabase
             .from("biz_orders").select("id")
-            .eq("driver_id", profile.id).in("status", ["new", "pending"]);
+            .eq("driver_id", profile.id).in("status", ["new", "pending", "assigned"]);
           const orderIds = (ordData || []).map((o) => o.id);
 
           if (orderIds.length === 0) {
@@ -33523,7 +33523,7 @@ function DriverDashboard({ profile }) {
                 <div className="space-y-1.5">
                   {drivers.map((d) => {
                     const dOrders = orders.filter((o) => o.driver_id === d.id);
-                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                     const isMe = d.id === profile.id;
                     return (
                       <button key={d.id}
