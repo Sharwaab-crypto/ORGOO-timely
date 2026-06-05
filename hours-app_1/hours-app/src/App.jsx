@@ -12673,21 +12673,43 @@ function CallCenterView({ profile }) {
             counts.delivered = delivPhones.size;
           }
           
-          // "Захиалга болсон" / "Цуцалсан" — period-аар шүүсэн (захиалгын огноогоор)
+          // "Захиалга болсон" / "Цуцалсан" — CYCLE-аар тоолно (жагсаалттай таарах)
           {
-            const seenOrd = new Set();
-            const seenCan = new Set();
             let ordC = 0, canC = 0;
+            const seenOrdPhone = new Set();
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
               const info = orderInfoByPhone[phone];
-              // Захиалга болсон: ordered дуудлага байсан БА захиалга идэвхтэй БА period дотор
-              if (info.hasOrderedCall && info.activeOrder && info.ord && inPeriod(info.ord.created_at)) {
-                if (!seenOrd.has(phone)) { seenOrd.add(phone); ordC++; }
-              }
-              // Цуцалсан: захиалга cancelled БА period дотор
-              if (info.cancelledOrder && info.ord && inPeriod(info.ord.cancelled_at || info.ord.created_at)) {
-                if (!seenCan.has(phone)) { seenCan.add(phone); canC++; }
-              }
+              // Cycle хуваах (жагсаалттай ижил логик: pending эсвэл өдөр солигдвол шинэ cycle)
+              const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              const cycles = [];
+              let cur = [];
+              let closed = false;
+              sorted.forEach((c) => {
+                let startNew = false;
+                if (closed) {
+                  if (c.call_status === "pending" || !c.call_status) startNew = true;
+                  else if (cur.length > 0) {
+                    const pd = new Date(cur[cur.length - 1].created_at).toDateString();
+                    const cd = new Date(c.created_at).toDateString();
+                    if (pd !== cd) startNew = true;
+                  }
+                }
+                if (startNew) { cycles.push(cur); cur = []; closed = false; }
+                cur.push(c);
+                if (c.call_status === "ordered" || c.call_status === "cancelled") closed = true;
+              });
+              if (cur.length > 0) cycles.push(cur);
+
+              cycles.forEach((cyCalls) => {
+                const last = cyCalls[cyCalls.length - 1];
+                const cyStatus = last.call_status === "ordered" ? "ordered"
+                              : last.call_status === "cancelled" ? "cancelled" : "calling";
+                if (cyStatus === "cancelled" && inPeriod(last.created_at)) canC++;
+                // Захиалга болсон: ordered cycle БА захиалга идэвхтэй
+                if (cyStatus === "ordered" && info.activeOrder && inPeriod(last.created_at)) {
+                  if (!seenOrdPhone.has(phone)) { seenOrdPhone.add(phone); ordC++; }
+                }
+              });
             });
             counts.ordered = ordC;
             counts.cancelled = canC;
@@ -12946,33 +12968,30 @@ function CallCenterView({ profile }) {
                   return cy.status === "calling";
                 }
                 
-                // Тус утсаар нэг л card харах (хамгийн сүүлчийн cycle)
-                if (activeTab === "ordered" || activeTab === "cancelled" || activeTab === "delivered") {
+                // 🗓 Period шүүлт
+                const inListPeriod = (dateStr) => {
+                  if (period === "all") return true;
+                  if (!dateStr) return false;
+                  const d = new Date(dateStr);
+                  return d >= periodRange.start && d < periodRange.end;
+                };
+
+                // Cycle бүрийг ТУСДАА харна (нэг утсаар олон cycle байж болно)
+                if (activeTab === "ordered") {
+                  // Захиалга болсон cycle — ordered дуудлагатай cycle БА захиалга идэвхтэй
+                  if (cy.status !== "ordered") return false;
+                  if (!info.activeOrder) return false;
+                  return inListPeriod(cy.latestDate);
+                }
+                if (activeTab === "cancelled") {
+                  // Цуцлагдсан cycle — cancelled статустай cycle
+                  if (cy.status !== "cancelled") return false;
+                  return inListPeriod(cy.latestDate);
+                }
+                if (activeTab === "delivered") {
                   if (seenPhones.has(cy.phone)) return false;
-
-                  // 🗓 Period шүүлт (count-той таарах)
-                  const inListPeriod = (dateStr) => {
-                    if (period === "all") return true;
-                    if (!dateStr) return false;
-                    const d = new Date(dateStr);
-                    return d >= periodRange.start && d < periodRange.end;
-                  };
-
-                  let matches = false;
-                  if (activeTab === "ordered") {
-                    // ⭐ ordered дуудлага байсан БА захиалга идэвхтэй БА period дотор
-                    matches = info.hasOrderedCall && info.activeOrder && order && inListPeriod(order.created_at);
-                  } else if (activeTab === "cancelled") {
-                    // Захиалга цуцлагдсан БА period дотор
-                    matches = info.cancelledOrder && order && inListPeriod(order.cancelled_at || order.created_at);
-                  } else if (activeTab === "delivered") {
-                    matches = order && order.status === "delivered" && inListPeriod(order.delivered_at || order.created_at);
-                  }
-                  
-                  if (matches) {
-                    seenPhones.add(cy.phone);
-                    return true;
-                  }
+                  const matches = order && order.status === "delivered" && inListPeriod(order.delivered_at || order.created_at);
+                  if (matches) { seenPhones.add(cy.phone); return true; }
                   return false;
                 }
                 return true;
