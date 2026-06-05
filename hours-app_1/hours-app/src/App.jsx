@@ -21705,7 +21705,8 @@ function OrdersView({ profile }) {
     filtered = filtered.filter((o) =>
       o.order_number?.toLowerCase().includes(q) ||
       o.customer_phone?.includes(q) ||
-      o.customer_name?.toLowerCase().includes(q)
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.delivery_address?.toLowerCase().includes(q)
     );
   }
 
@@ -32196,6 +32197,8 @@ function DriverDashboard({ profile }) {
     try { localStorage.setItem("orgoo-driver-view", view); } catch {}
   }, [view]);
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
+  const [driverSearch, setDriverSearch] = useState(""); // 🔍 Дугаар/хаягаар хайх
+  const [assignOrder, setAssignOrder] = useState(null); // 🚚 Өөр driver-т хуваарилах modal
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
   const [insufficientStockOrder, setInsufficientStockOrder] = useState(null); // { orderId, msg }
@@ -32544,6 +32547,16 @@ function DriverDashboard({ profile }) {
     if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
     if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
     return true;
+  }).filter((o) => {
+    // 🔍 Дугаар / нэр / хаяг / захиалгын дугаараар хайх
+    if (!driverSearch.trim()) return true;
+    const q = driverSearch.toLowerCase();
+    return (
+      o.customer_phone?.includes(q) ||
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.delivery_address?.toLowerCase().includes(q) ||
+      o.order_number?.toLowerCase().includes(q)
+    );
   });
 
   // Pagination
@@ -32855,6 +32868,25 @@ function DriverDashboard({ profile }) {
           </button>
         </div>
 
+        {/* 🔍 Хайх — дугаар, нэр, хаяг, захиалгын ID */}
+        <div className="glass rounded-2xl p-2 flex items-center gap-2">
+          <span style={{ color: T.muted }} className="pl-1">🔍</span>
+          <input
+            value={driverSearch}
+            onChange={(e) => { setDriverSearch(e.target.value); setPage(1); }}
+            placeholder="Дугаар, нэр, хаягаар хайх..."
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: T.ink, fontFamily: FS }}
+          />
+          {driverSearch && (
+            <button onClick={() => setDriverSearch("")}
+              className="press-btn px-2 py-1 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+              ✕
+            </button>
+          )}
+        </div>
+
         {/* Orders list / Map */}
         {loading ? (
           <div className="glass rounded-2xl p-8 text-center">
@@ -33051,6 +33083,14 @@ function DriverDashboard({ profile }) {
                         className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
                         ✅ Өөртөө авах
+                      </button>
+                    )}
+                    {/* "Тодорхойгүй" tab → "Хүргэлт хуваарилах" (өөр driver-т оноох) */}
+                    {filter === "unknown" && (
+                      <button onClick={() => setAssignOrder(o)}
+                        className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: "#0ea5e9", color: "white", fontFamily: FS, fontWeight: 600 }}>
+                        🚚 Хүргэлт хуваарилах
                       </button>
                     )}
                     {/* "Хүргэх" tab дотор → "Тодорхойгүй болгох" товч */}
@@ -33600,6 +33640,80 @@ function DriverDashboard({ profile }) {
       )}
 
       {/* Cancel modal — Сэтгэгдэл бичих */}
+      {/* 🚚 Өөр driver-т хуваарилах modal */}
+      {assignOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+          background: "rgba(14, 156, 142, 0.15)", backdropFilter: "blur(8px)",
+        }}
+          onClick={() => setAssignOrder(null)}>
+          <div style={{
+            background: "rgba(255, 255, 255, 0.98)", backdropFilter: "blur(24px) saturate(180%)",
+            border: "1px solid rgba(255, 255, 255, 0.8)", boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
+            borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "80vh", overflow: "auto",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+                🚚 Хүргэлт хуваарилах
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                {assignOrder.customer_name || assignOrder.customer_phone} — {Number(assignOrder.total_amount).toLocaleString()}₮
+              </div>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {drivers.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
+                  Хүргэгч олдсонгүй
+                </div>
+              ) : drivers.filter((d) => d.id !== profile.id).length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
+                  Өөр хүргэгч олдсонгүй
+                </div>
+              ) : drivers.filter((d) => d.id !== profile.id).map((d) => (
+                <button key={d.id}
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase.from("biz_orders").update({
+                        driver_id: d.id,
+                        is_unknown: false,
+                        status: "assigned",
+                        assigned_at: new Date().toISOString(),
+                        assigned_by: profile.id,
+                      }).eq("id", assignOrder.id);
+                      if (error) { alert("⚠ Алдаа: " + error.message); return; }
+                      setOrders((prev) => prev.map((order) =>
+                        order.id === assignOrder.id
+                          ? { ...order, driver_id: d.id, is_unknown: false, status: "assigned" }
+                          : order
+                      ));
+                      setAssignOrder(null);
+                      alert(`✅ ${d.name}-д хуваарилагдлаа`);
+                    } catch (e) { alert("Алдаа: " + e.message); }
+                  }}
+                  className="press-btn w-full px-3 py-2.5 rounded-lg text-left flex items-center gap-2"
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+                  <span style={{ background: "#0ea5e9", color: "white" }}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
+                    {(d.name || "?")[0]}
+                  </span>
+                  <span className="text-sm">{d.name || "Нэргүй"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-3 pb-3">
+              <button onClick={() => setAssignOrder(null)}
+                className="press-btn w-full py-2 rounded-lg text-sm"
+                style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+                Болих
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {cancelOrder && createPortal(
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
