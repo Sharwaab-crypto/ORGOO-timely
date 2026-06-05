@@ -12834,9 +12834,20 @@ function CallCenterView({ profile }) {
                 let cycleClosed = false; // одоогийн cycle хаагдсан эсэх
 
                 sorted.forEach((call) => {
-                  // 🆕 Хэрэв cycle хаагдсан байж, ШИНЭ pending (дугаар бүртгэх) ирвэл → ШИНЭ cycle эхлүүлнэ.
-                  //    (дараалсан cancelled-ууд pending-гүй бол өмнөх cycle-д наалдана — салахгүй)
-                  if (cycleClosed && (call.call_status === "pending" || !call.call_status)) {
+                  // 🆕 Шинэ cycle эхлүүлэх нөхцөл (cycle хаагдсаны дараа):
+                  //    (a) pending (дугаар дахин бүртгэсэн) ИРВЭЛ, ЭСВЭЛ
+                  //    (b) ӨӨР ӨДӨР болсон (өчигдрийн cancelled-ийн дараа өнөөдрийн дуудлага = шинэ ажлын мөчлөг)
+                  let startNew = false;
+                  if (cycleClosed) {
+                    if (call.call_status === "pending" || !call.call_status) {
+                      startNew = true;
+                    } else if (currentCycle.length > 0) {
+                      const prevDay = new Date(currentCycle[currentCycle.length - 1].created_at).toDateString();
+                      const curDay = new Date(call.created_at).toDateString();
+                      if (prevDay !== curDay) startNew = true; // өдөр солигдсон
+                    }
+                  }
+                  if (startNew) {
                     // Өмнөх хаагдсан cycle-ийг push хийнэ
                     if (currentCycle.length > 0) {
                       const lastCall = currentCycle[currentCycle.length - 1];
@@ -12856,7 +12867,7 @@ function CallCenterView({ profile }) {
 
                   currentCycle.push(call);
 
-                  // ordered/cancelled → cycle хаагдсан гэж тэмдэглэнэ (гэхдээ дараагийн pending хүртэл push хийхгүй)
+                  // ordered/cancelled → cycle хаагдсан гэж тэмдэглэнэ
                   if (call.call_status === "ordered" || call.call_status === "cancelled") {
                     cycleClosed = true;
                   }
