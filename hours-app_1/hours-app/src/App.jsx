@@ -12831,31 +12831,47 @@ function CallCenterView({ profile }) {
                 const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 let currentCycle = [];
                 let cycleIdx = 0;
+                let cycleClosed = false; // одоогийн cycle хаагдсан эсэх
 
                 sorted.forEach((call) => {
-                  currentCycle.push(call);
-                  // Хэрэв ordered эсвэл cancelled бол цикл хаах
-                  if (call.call_status === "ordered" || call.call_status === "cancelled") {
-                    cycleList.push({
-                      phone,
-                      calls: currentCycle,
-                      status: call.call_status,
-                      latestDate: call.created_at,
-                      firstDate: currentCycle[0].created_at, // анх бүртгэсэн цаг
-                      cycleIndex: cycleIdx++,
-                    });
+                  // 🆕 Хэрэв cycle хаагдсан байж, ШИНЭ pending (дугаар бүртгэх) ирвэл → ШИНЭ cycle эхлүүлнэ.
+                  //    (дараалсан cancelled-ууд pending-гүй бол өмнөх cycle-д наалдана — салахгүй)
+                  if (cycleClosed && (call.call_status === "pending" || !call.call_status)) {
+                    // Өмнөх хаагдсан cycle-ийг push хийнэ
+                    if (currentCycle.length > 0) {
+                      const lastCall = currentCycle[currentCycle.length - 1];
+                      cycleList.push({
+                        phone,
+                        calls: currentCycle,
+                        status: lastCall.call_status === "ordered" ? "ordered"
+                              : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
+                        latestDate: lastCall.created_at,
+                        firstDate: currentCycle[0].created_at,
+                        cycleIndex: cycleIdx++,
+                      });
+                    }
                     currentCycle = [];
+                    cycleClosed = false;
+                  }
+
+                  currentCycle.push(call);
+
+                  // ordered/cancelled → cycle хаагдсан гэж тэмдэглэнэ (гэхдээ дараагийн pending хүртэл push хийхгүй)
+                  if (call.call_status === "ordered" || call.call_status === "cancelled") {
+                    cycleClosed = true;
                   }
                 });
 
-                // Үлдсэн дуудлагууд (closed status-аар хаагдаагүй) — open cycle
+                // Үлдсэн дуудлагууд — сүүлийн cycle
                 if (currentCycle.length > 0) {
+                  const lastCall = currentCycle[currentCycle.length - 1];
                   cycleList.push({
                     phone,
                     calls: currentCycle,
-                    status: "calling", // open
-                    latestDate: currentCycle[currentCycle.length - 1].created_at,
-                    firstDate: currentCycle[0].created_at, // анх бүртгэсэн цаг
+                    status: lastCall.call_status === "ordered" ? "ordered"
+                          : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
+                    latestDate: lastCall.created_at,
+                    firstDate: currentCycle[0].created_at,
                     cycleIndex: cycleIdx,
                   });
                 }
