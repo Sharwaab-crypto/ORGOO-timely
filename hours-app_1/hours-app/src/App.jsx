@@ -23059,15 +23059,12 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
     } : {
       new: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
       ],
       pending: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
       ],
       assigned: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
       ],
       delivered: [],
       cancelled: [],
@@ -33090,21 +33087,14 @@ function DriverDashboard({ profile }) {
                         ❓ Тодорхойгүй болгох
                       </button>
                     )}
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн / Цуцлах" товч АЛГА */}
+                    <div className="grid grid-cols-1 gap-2">
+                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <>
-                          <button onClick={() => updateStatus(o.id, "delivered")}
-                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: T.ok, color: "white", fontFamily: FS }}>
-                            ✓ Хүргэсэн
-                          </button>
-                          <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
-                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                            ✕ Хүргэх боломжгүй
-                          </button>
-                        </>
+                        <button onClick={() => updateStatus(o.id, "delivered")}
+                          className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                          style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                          ✓ Хүргэсэн
+                        </button>
                       )}
                     </div>
                   </div>
