@@ -32342,6 +32342,7 @@ function DriverDashboard({ profile }) {
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
   const [driverSearch, setDriverSearch] = useState(""); // 🔍 Дугаар/хаягаар хайх
   const [hoveredOrderId, setHoveredOrderId] = useState(null); // 🖱 Hover effect
+  const [phoneAction, setPhoneAction] = useState(null); // 📞 { phone } — Залгах/Мессеж сонголт
   const [assignOrder, setAssignOrder] = useState(null); // 🚚 Өөр driver-т хуваарилах modal
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
@@ -33098,11 +33099,12 @@ function DriverDashboard({ profile }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <a href={`tel:${o.customer_phone}`}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPhoneAction({ phone: o.customer_phone }); }}
                         style={{ color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
                         className="text-sm tabular-nums hover:underline">
                         📞 {o.customer_phone}
-                      </a>
+                      </button>
                       {o.customer_name && (
                         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
                           {o.customer_name}
@@ -33808,6 +33810,54 @@ function DriverDashboard({ profile }) {
 
       {/* Cancel modal — Сэтгэгдэл бичих */}
       {/* 🚚 Өөр driver-т хуваарилах modal */}
+      {/* 📞 Залгах / Мессеж сонголт popup */}
+      {phoneAction && createPortal(
+        <div
+          onClick={() => setPhoneAction(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: 18, width: "100%", maxWidth: 320,
+              overflow: "hidden", boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3 text-center" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                {phoneAction.phone}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                Юу хийх вэ?
+              </div>
+            </div>
+            <a href={`tel:${phoneAction.phone}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,156,142,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">📞</span>
+              <span className="text-sm">Залгах</span>
+            </a>
+            <a href={`sms:${phoneAction.phone}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,165,233,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">💬</span>
+              <span className="text-sm">Мессеж илгээх</span>
+            </a>
+            <button
+              onClick={() => setPhoneAction(null)}
+              className="press-btn w-full px-4 py-3 text-center"
+              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+              Болих
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {assignOrder && createPortal(
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
