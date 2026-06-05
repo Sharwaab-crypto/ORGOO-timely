@@ -21358,14 +21358,14 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                 Юу хийх вэ?
               </div>
             </div>
-            <a href={`tel:${phoneAction.phone}`}
+            <a href={`tel:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
               onClick={() => setPhoneAction(null)}
               className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
               style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
               <span style={{ background: "rgba(14,156,142,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">📞</span>
               <span className="text-sm">Залгах</span>
             </a>
-            <a href={`sms:${phoneAction.phone}`}
+            <a href={`sms:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
               onClick={() => setPhoneAction(null)}
               className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
               style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
@@ -33833,14 +33833,14 @@ function DriverDashboard({ profile }) {
                 Юу хийх вэ?
               </div>
             </div>
-            <a href={`tel:${phoneAction.phone}`}
+            <a href={`tel:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
               onClick={() => setPhoneAction(null)}
               className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
               style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
               <span style={{ background: "rgba(14,156,142,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">📞</span>
               <span className="text-sm">Залгах</span>
             </a>
-            <a href={`sms:${phoneAction.phone}`}
+            <a href={`sms:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
               onClick={() => setPhoneAction(null)}
               className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
               style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
