@@ -32541,7 +32541,13 @@ function DriverDashboard({ profile }) {
         alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
         return;
       }
-      await loadAll();
+      // ⚡ Optimistic update — зөвхөн тухайн захиалгын state шинэчилнэ (loadAll биш)
+      //    → хуудас эхнээс эхлэхгүй, scroll/page хэвээр, тухайн захиалга дээрээ үргэлжилнэ
+      setOrders((prev) => prev.map((o) =>
+        o.id === orderId ? { ...o, ...updates } : o
+      ));
+      // activeOrder нээлттэй бол хаах (хүргэгдсэн/цуцлагдсан захиалга жагсаалтаас гарна)
+      if (activeOrder?.id === orderId) setActiveOrder(null);
     } catch (e) {
       const isShortStock = e.message?.includes("үлдэгдэл хүрэлцэхгүй");
       if (isShortStock) {
@@ -33490,7 +33496,10 @@ function DriverDashboard({ profile }) {
                           });
                         }
                       }
-                      await loadAll();
+                      // ⚡ Optimistic update (loadAll биш — scroll/page хэвээр)
+                      setOrders((prev) => prev.map((o) =>
+                        o.id === ratingOrder.order.id ? { ...o, status: "cancelled", notes: fullNote } : o
+                      ));
                     }
                     
                     setRatingOrder(null);
@@ -33651,7 +33660,8 @@ function DriverDashboard({ profile }) {
                               .from("biz_orders")
                               .update({
                                 driver_id: d.id,
-                                status: "pending",
+                                status: "assigned",
+                                is_unknown: false,
                                 assigned_at: new Date().toISOString(),
                                 assigned_by: profile.id,
                               })
@@ -33662,12 +33672,16 @@ function DriverDashboard({ profile }) {
                             if (!data || data.length === 0) {
                               alert("⚠ Энэ захиалгыг өөр хүн аль хэдийнэ авсан байна.");
                               setAssignDriverOrder(null);
-                              await loadAll();
                               return;
                             }
+                            // ⚡ Optimistic update (loadAll биш)
+                            setOrders((prev) => prev.map((o) =>
+                              o.id === assignDriverOrder.id
+                                ? { ...o, driver_id: d.id, is_unknown: false, status: "assigned" }
+                                : o
+                            ));
                             alert(`✅ ${d.name}-руу хуваарилагдлаа!`);
                             setAssignDriverOrder(null);
-                            await loadAll();
                           } catch (e) {
                             alert("Алдаа: " + (e.message || JSON.stringify(e)));
                           }
