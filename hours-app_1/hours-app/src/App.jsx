@@ -32580,7 +32580,7 @@ function DriverDashboard({ profile }) {
         .from("biz_orders")
         .update({
           driver_id: profile.id,
-          status: "new",            // 🆕 "new" — Button 2-той зөрчилгүй болгох
+          status: "assigned",      // 🚚 driver авсан → assigned (Хүргэх tab-д тогтвортой үлдэнэ)
           is_unknown: false,        // 🆕 Тодорхойгүй flag-ийг арилгах
           assigned_at: new Date().toISOString(),
           assigned_by: profile.id,
@@ -32597,7 +32597,7 @@ function DriverDashboard({ profile }) {
       // Optimistic update — UI шууд шинэчлэх (одоогийн tab дээр үлдэнэ)
       setOrders((prev) => prev.map((order) =>
         order.id === orderId
-          ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+          ? { ...order, driver_id: profile.id, is_unknown: false, status: "assigned" }
           : order
       ));
       alert("✅ Захиалга 'Хүргэх' хэсэгт орлоо!");
@@ -33026,7 +33026,7 @@ function DriverDashboard({ profile }) {
                           const { error, data } = await supabase.from("biz_orders").update({
                             driver_id: profile.id,
                             is_unknown: false,
-                            status: "new",
+                            status: "assigned",
                           }).eq("id", o.id).select();
                           
                           logDev("[Өөртөө авах] Result:", { error, data });
@@ -33039,7 +33039,7 @@ function DriverDashboard({ profile }) {
                           // Optimistic update (одоогийн tab дээр үлдэнэ)
                           setOrders((prev) => prev.map((order) =>
                             order.id === o.id
-                              ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+                              ? { ...order, driver_id: profile.id, is_unknown: false, status: "assigned" }
                               : order
                           ));
                           // ⚡ loadAll() ажиллуулахгүй — optimistic update хангалттай (scroll position хадгална)
