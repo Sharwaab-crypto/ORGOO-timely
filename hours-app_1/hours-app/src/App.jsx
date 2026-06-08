@@ -12935,13 +12935,10 @@ function CallCenterView({ profile }) {
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
               const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
               const latestStatus = sorted[0]?.call_status;
-              const info = orderInfoByPhone[phone];
-              // Сүүлийн status ordered/cancelled бол → calling-д ОРОХГҮЙ
+              // ⚠ Жагсаалттай ижил: сүүлийн дуудлага нь ordered/cancelled БИШ бол (cycle хаагдаагүй = calling)
+              //    → "Залгах дугаар"-д тооцно. Өмнө ordered/cancelled байсан ч дугаар ДАХИН бүртгэгдсэн
+              //    (сүүлийн нь pending) бол шинэ cycle = дахин залгах ёстой.
               if (latestStatus === "ordered" || latestStatus === "cancelled") return;
-              // Захиалга жинхэнэ авагдсан (ordered дуудлага байсан) БА идэвхтэй захиалгатай → calling-д ОРОХГҮЙ
-              if (info.hasOrderedCall && info.activeOrder) return;
-              // Захиалга цуцлагдсан → Устгагдсан-д орно, calling-д ОРОХГҮЙ
-              if (info.cancelledOrder) return;
               counts.calling++;
             });
           }
@@ -13254,12 +13251,15 @@ function CallCenterView({ profile }) {
                 }
 
                 if (activeTab === "calling") {
-                  // "Залгах дугаар" — захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
-                  // ⚠ ordered дуудлага + идэвхтэй захиалгатай дугаар → энд ОРОХГҮЙ (Захиалга болсон руу)
-                  if (info.hasOrderedCall && info.activeOrder) return false;
-                  // Захиалга цуцлагдсан → Устгагдсан руу
-                  if (info.cancelledOrder) return false;
-                  return cy.status === "calling";
+                  // "Залгах дугаар" — дахин залгах ёстой ШИНЭ cycle (calling статустай)
+                  // ⚠ Шалгуур нь CYCLE түвшинд: тухайн cycle өөрөө хаагдаагүй (calling) бол энд орно.
+                  //    Өмнөх cycle-д ordered/cancelled байсан ч ХАМААРАХГҮЙ —
+                  //    cancelled-ийн дараа дугаар ДАХИН бүртгэгдсэн бол шинэ cycle = дахин залгах ёстой.
+                  if (cy.status !== "calling") return false;
+                  // Зөвхөн ЭНЭ cycle нь хамгийн сүүлийн (хамгийн шинэ) cycle мөн эсэхийг шалгах:
+                  //   хэрэв энэ utas-д calling cycle байгаа бол энэ нь хамгийн сүүлийнх (шинэ pending) —
+                  //   идэвхтэй захиалгатай бол ч (ховор) calling cycle давуу.
+                  return true;
                 }
                 
                 // 🗓 Period шүүлт
