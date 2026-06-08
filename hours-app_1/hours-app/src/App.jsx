@@ -32514,12 +32514,26 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
     (async () => {
       setLoadingOrders(true);
       try {
-        const { data } = await supabase
+        const { data: ords } = await supabase
           .from("biz_orders")
-          .select("id, order_number, customer_phone, status, total_amount, delivered_at, created_at")
+          .select("id, order_number, customer_phone, status, total_amount, delivery_fee, delivered_at, created_at")
           .eq("settlement_id", activeReport.id)
           .order("delivered_at", { ascending: false });
-        if (!cancelled) setReportOrders(data || []);
+        const ordList = ords || [];
+        // Захиалга бүрийн барааны тоо (biz_order_items)
+        const ordIds = ordList.map((o) => o.id);
+        const itemCountByOrder = {};
+        if (ordIds.length > 0) {
+          const { data: items } = await supabase
+            .from("biz_order_items")
+            .select("order_id, quantity")
+            .in("order_id", ordIds);
+          (items || []).forEach((it) => {
+            itemCountByOrder[it.order_id] = (itemCountByOrder[it.order_id] || 0) + Number(it.quantity || 0);
+          });
+        }
+        const enriched = ordList.map((o) => ({ ...o, itemCount: itemCountByOrder[o.id] || 0 }));
+        if (!cancelled) setReportOrders(enriched);
       } catch (e) { console.error(e); if (!cancelled) setReportOrders([]); }
       finally { if (!cancelled) setLoadingOrders(false); }
     })();
@@ -32648,10 +32662,16 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
                       <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
                         {o.order_number || "—"} · {o.customer_phone || "—"}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span style={{ background: st.bg, color: st.color, fontFamily: FM }}
                           className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">
                           {st.label}
+                        </span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                          📦 {o.itemCount}ш
+                        </span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                          🚚 {Number(o.delivery_fee || 0).toLocaleString()}₮
                         </span>
                         {o.delivered_at && (
                           <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
