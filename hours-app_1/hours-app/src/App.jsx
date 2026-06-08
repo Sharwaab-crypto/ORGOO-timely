@@ -12949,6 +12949,12 @@ function CallCenterView({ profile }) {
             }
           });
 
+          // ⚡ Map-ууд: карт render дотор products.find / customers.find давталтаас сэргийлэх (O(1))
+          const productById = new Map();
+          products.forEach((pr) => productById.set(pr.id, pr));
+          const customerByPhone = new Map();
+          customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
+
           // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
           const orderInfoByPhone = {};
           Object.keys(phoneGroupedAll).forEach((phone) => {
@@ -13387,7 +13393,7 @@ function CallCenterView({ profile }) {
                 //    (нэг cycle дотор "Дугаар бүртгэсэн" + "Захиалга болсон" 2 мөр харагдана)
                 const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
-                const customer = customers.find((cu) => cu.phone === phone);
+                const customer = customerByPhone.get(phone);
                 // 📦 Энэ утасны захиалгын дугаар (байвал картан дээр харуулна)
                 const cardOrderInfo = orderInfoByPhone[phone] || {};
                 const cardOrderNumber = cardOrderInfo.ord?.order_number || null;
@@ -13400,8 +13406,9 @@ function CallCenterView({ profile }) {
                 calls.forEach((c) => {
                   if (c.interested_products && Array.isArray(c.interested_products)) {
                     c.interested_products.forEach((p) => {
-                      // products массиваас бараа олж image_url нэмэх
-                      const productInfo = products.find((pr) => pr.id === p.id);
+                      // ⚡ ГАЦАА ЗАСВАР: products.find (O(n)) → productById.get (O(1))
+                      //    Карт бүрд × бараа бүрд find хийж байсан = сая сая үйлдэл, 5-10с гацаа
+                      const productInfo = productById.get(p.id);
                       const enriched = {
                         ...p,
                         image_url: p.image_url || productInfo?.image_url || null,
