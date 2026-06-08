@@ -12286,8 +12286,22 @@ function CallCenterView({ profile }) {
   // 🔔 Badge + Realtime
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ хуримтлуулах (render бүрд биш)
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ ГАЦАА ЗАСВАР: олон оператор зэрэг ажиллахад realtime өөрчлөлт бүрд setPendingChanges
+    //    дуудагдаж, бүр CallCenter render (3,333 дуудлагын cycle тооцоо) дахин ажилладаг байсан.
+    //    Одоо өөрчлөлтийг хуримтлуулж, 1.5 секунд тутамд НЭГ л удаа setState (render багасна).
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return; // аль хэдийн төлөвлөгдсөн
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     const channel = supabase
       .channel("callcenter-badge")
       .on(
@@ -12296,7 +12310,7 @@ function CallCenterView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .on(
@@ -12305,11 +12319,14 @@ function CallCenterView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, []);
 
   const handleRefresh = async () => {
