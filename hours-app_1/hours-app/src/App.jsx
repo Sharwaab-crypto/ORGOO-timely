@@ -15120,9 +15120,11 @@ function DeliveryDashboardView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
+      // ⚡ ГАЦАА ЗАСВАР: сүүлийн 60 хоногийн driver-тэй захиалга (өмнө бүх 879+ татдаг)
+      const ord60 = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
       const [{ data: drvData }, ordData] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).order("created_at", { ascending: false })),
+        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).gte("created_at", ord60).order("created_at", { ascending: false })),
       ]);
       setDrivers(drvData || []);
       setOrders(ordData || []);
@@ -15132,11 +15134,34 @@ function DeliveryDashboardView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime — debounced
-  const debouncedReload = useDebouncedCallback(loadAll, 800);
+  // ⚡ Realtime — OPTIMISTIC: бүх дата дахин татахгүй, зөвхөн өөрчлөгдсөн мөрийг state-д шинэчилнэ.
+  //    (өмнө өөрчлөлт бүрд loadAll → бүх 879+ захиалга татаж database-ийг ачаалдаг байсан)
   useEffect(() => {
     const ch = supabase.channel("delivery-dashboard-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, (payload) => {
+        const { eventType, new: newRow, old: oldRow } = payload;
+        setOrders((prev) => {
+          if (eventType === "DELETE") {
+            return prev.filter((o) => o.id !== oldRow.id);
+          }
+          if (eventType === "INSERT") {
+            // Зөвхөн driver-тэй захиалга энэ самбарт хамаарна
+            if (!newRow.driver_id) return prev;
+            if (prev.some((o) => o.id === newRow.id)) return prev; // давхардахгүй
+            return [newRow, ...prev];
+          }
+          if (eventType === "UPDATE") {
+            const exists = prev.some((o) => o.id === newRow.id);
+            // Driver оноогдсон → жагсаалтад нэмэх
+            if (!exists && newRow.driver_id) return [newRow, ...prev];
+            // Driver авагдсан (null болсон) → жагсаалтаас хасах
+            if (exists && !newRow.driver_id) return prev.filter((o) => o.id !== newRow.id);
+            // Энгийн шинэчлэл
+            return prev.map((o) => (o.id === newRow.id ? { ...o, ...newRow } : o));
+          }
+          return prev;
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
