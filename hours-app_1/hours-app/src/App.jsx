@@ -13291,6 +13291,7 @@ function CallCenterView({ profile }) {
                     // Өмнөх хаагдсан cycle-ийг push хийнэ
                     if (currentCycle.length > 0) {
                       const lastCall = currentCycle[currentCycle.length - 1];
+                      const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
                       cycleList.push({
                         phone,
                         calls: currentCycle,
@@ -13298,6 +13299,7 @@ function CallCenterView({ profile }) {
                               : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
                         latestDate: lastCall.created_at,
                         firstDate: currentCycle[0].created_at,
+                        registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
                         cycleIndex: cycleIdx++,
                       });
                     }
@@ -13316,6 +13318,7 @@ function CallCenterView({ profile }) {
                 // Үлдсэн дуудлагууд — сүүлийн cycle
                 if (currentCycle.length > 0) {
                   const lastCall = currentCycle[currentCycle.length - 1];
+                  const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
                   cycleList.push({
                     phone,
                     calls: currentCycle,
@@ -13323,6 +13326,7 @@ function CallCenterView({ profile }) {
                           : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
                     latestDate: lastCall.created_at,
                     firstDate: currentCycle[0].created_at,
+                    registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
                     cycleIndex: cycleIdx,
                   });
                 }
@@ -13357,9 +13361,9 @@ function CallCenterView({ profile }) {
                 orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder, latestCallStatus, ord };
               });
 
-              // Cycles-ыг сүүлд бүртгэсэн цагаар sort (шинэ нь эхэнд)
+              // Cycles-ыг ДУГААР БҮРТГЭСЭН (pending) огноогоор sort (шинэ бүртгэсэн нь эхэнд)
               const sortedCycleList = [...cycleList].sort((a, b) =>
-                new Date(b.firstDate) - new Date(a.firstDate)
+                new Date(b.registeredDate) - new Date(a.registeredDate)
               );
 
               // Tab-ийн дагуу filter
@@ -13428,9 +13432,9 @@ function CallCenterView({ profile }) {
                 );
               }
 
-              // Хамгийн сүүлд бүртгэсэн дугаар дээр (firstDate буурахаар)
+              // Хамгийн сүүлд бүртгэсэн дугаар дээр (registeredDate буурахаар)
               const sortedCycles = filteredCycles.sort((a, b) =>
-                new Date(b.firstDate) - new Date(a.firstDate)
+                new Date(b.registeredDate) - new Date(a.registeredDate)
               );
 
               if (sortedCycles.length === 0) {
