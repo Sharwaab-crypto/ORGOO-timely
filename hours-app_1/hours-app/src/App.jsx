@@ -18679,6 +18679,10 @@ function SettlementReportsView({ profile }) {
   const [profiles_, setProfilesData] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
+  // ✏️ Admin засвар (хаагдсан тооцоо засах)
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({ cash: "", bank: "", expense: "", cashNotes: "", bankNotes: "", expenseNotes: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
   const [showOrdersList, setShowOrdersList] = useState(false);
@@ -18762,6 +18766,54 @@ function SettlementReportsView({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // ✏️ Засвар эхлүүлэх — одоогийн утгаар form дүүргэх
+  const startEdit = (r) => {
+    setEditForm({
+      cash: String(r.cash_amount || 0),
+      bank: String(r.bank_amount || 0),
+      expense: String(r.expense_amount || 0),
+      cashNotes: r.cash_notes || "",
+      bankNotes: r.bank_notes || "",
+      expenseNotes: r.expense_notes || "",
+    });
+    setEditMode(true);
+  };
+
+  // 💾 Засвар хадгалах — biz_settlements шинэчлэх
+  const saveEdit = async () => {
+    if (!activeReport) return;
+    const cash = Number(editForm.cash || 0);
+    const bank = Number(editForm.bank || 0);
+    const expense = Number(editForm.expense || 0);
+    const totalSubmitted = cash + bank;
+    setSavingEdit(true);
+    try {
+      const { data, error } = await supabase
+        .from("biz_settlements")
+        .update({
+          cash_amount: cash,
+          bank_amount: bank,
+          expense_amount: expense,
+          total_submitted: totalSubmitted,
+          cash_notes: editForm.cashNotes || null,
+          bank_notes: editForm.bankNotes || null,
+          expense_notes: editForm.expenseNotes || null,
+        })
+        .eq("id", activeReport.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setActiveReport(data);
+      setReports((prev) => prev.map((x) => (x.id === data.id ? data : x)));
+      setEditMode(false);
+      alert("✅ Тооцоо засагдлаа");
+    } catch (e) {
+      alert("❌ Засвар хадгалахад алдаа гарлаа\n" + e.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   // Шүүсэн жагсаалт
   const filteredReports = reports.filter((r) => {
@@ -18859,9 +18911,72 @@ function SettlementReportsView({ profile }) {
 
         {/* Дэлгэрэнгүй */}
         <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">
-            💰 Тушаалтын задаргаа
+          <div className="flex items-center justify-between mb-3">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+              💰 Тушаалтын задаргаа
+            </div>
+            {!editMode && (
+              <button onClick={() => startEdit(r)}
+                style={{ background: T.accentSoft || T.surfaceAlt, color: T.accent || T.ink, fontFamily: FS, fontWeight: 600 }}
+                className="press-btn text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1">
+                ✏️ Засах
+              </button>
+            )}
           </div>
+
+          {editMode ? (
+            /* ✏️ Засвар хийх form */
+            <div className="space-y-2">
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">💵 Бэлэн (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.cash}
+                  onChange={(e) => setEditForm((p) => ({ ...p, cash: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.cashNotes} placeholder="Бэлэн тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, cashNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">🏦 Данс (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.bank}
+                  onChange={(e) => setEditForm((p) => ({ ...p, bank: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.bankNotes} placeholder="Данс тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, bankNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">📤 Борлуулалт (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.expense}
+                  onChange={(e) => setEditForm((p) => ({ ...p, expense: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.expenseNotes} placeholder="Борлуулалт тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, expenseNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] text-center py-1">
+                Нийт тушаасан: {(Number(editForm.cash || 0) + Number(editForm.bank || 0)).toLocaleString()}₮
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditMode(false)} disabled={savingEdit}
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                  className="press-btn flex-1 py-2 rounded-lg text-sm">
+                  Болих
+                </button>
+                <button onClick={saveEdit} disabled={savingEdit}
+                  style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600, opacity: savingEdit ? 0.6 : 1 }}
+                  className="press-btn flex-1 py-2 rounded-lg text-sm flex items-center justify-center gap-1">
+                  {savingEdit ? <Loader2 className="spin" size={14} /> : "💾"} Хадгалах
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-2">
             <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
               <div className="flex-1">
@@ -18911,6 +19026,7 @@ function SettlementReportsView({ profile }) {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Бусад мэдээлэл */}
