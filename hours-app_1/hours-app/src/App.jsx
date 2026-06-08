@@ -12212,8 +12212,8 @@ function CallCenterView({ profile }) {
       //    (өмнө бүх 3,333+ дуудлага татаж байсан → timeout/гацаа).
       //    60 хоног нь идэвхтэй дуудлагын мөчлөгийг бүрэн хамарна.
       const callsQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false })
-        : supabase.from("biz_calls").select("*").order("created_at", { ascending: false });
+        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(3000)
+        : supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(3000);
       const ordersQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
         : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by");
@@ -12221,14 +12221,15 @@ function CallCenterView({ profile }) {
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
 
-      const [callData, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
-        fetchAllRows(callsQuery),
+      const [callRes, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
+        callsQuery,
         productsQuery,
         fetchAllRows(supabase.from("biz_customers").select("*")),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
         fetchAllRows(ordersQuery),
       ]);
+      const callData = callRes.data;
 
       // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
       let allCalls = callData || [];
