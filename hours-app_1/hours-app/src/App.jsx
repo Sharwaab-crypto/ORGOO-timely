@@ -15134,34 +15134,12 @@ function DeliveryDashboardView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // ⚡ Realtime — OPTIMISTIC: бүх дата дахин татахгүй, зөвхөн өөрчлөгдсөн мөрийг state-д шинэчилнэ.
-  //    (өмнө өөрчлөлт бүрд loadAll → бүх 879+ захиалга татаж database-ийг ачаалдаг байсан)
+  // Realtime — debounced (2.5 сек): олон өөрчлөлт зэрэг ирэхэд нэг л удаа loadAll.
+  //    (optimistic хувилбар гацаа үүсгэсэн тул найдвартай debounced-руу буцаасан)
+  const debouncedReload = useDebouncedCallback(loadAll, 2500);
   useEffect(() => {
     const ch = supabase.channel("delivery-dashboard-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, (payload) => {
-        const { eventType, new: newRow, old: oldRow } = payload;
-        setOrders((prev) => {
-          if (eventType === "DELETE") {
-            return prev.filter((o) => o.id !== oldRow.id);
-          }
-          if (eventType === "INSERT") {
-            // Зөвхөн driver-тэй захиалга энэ самбарт хамаарна
-            if (!newRow.driver_id) return prev;
-            if (prev.some((o) => o.id === newRow.id)) return prev; // давхардахгүй
-            return [newRow, ...prev];
-          }
-          if (eventType === "UPDATE") {
-            const exists = prev.some((o) => o.id === newRow.id);
-            // Driver оноогдсон → жагсаалтад нэмэх
-            if (!exists && newRow.driver_id) return [newRow, ...prev];
-            // Driver авагдсан (null болсон) → жагсаалтаас хасах
-            if (exists && !newRow.driver_id) return prev.filter((o) => o.id !== newRow.id);
-            // Энгийн шинэчлэл
-            return prev.map((o) => (o.id === newRow.id ? { ...o, ...newRow } : o));
-          }
-          return prev;
-        });
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
