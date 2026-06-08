@@ -13176,6 +13176,12 @@ function CallCenterView({ profile }) {
                 phoneGrouped[c.phone].push(c);
               });
 
+              // ⚡ ГАЦАА ЗАСВАР: O(1) хайлтын Map (карт бүрд products.find/customers.find давталтаас сэргийлэх)
+              const productById = new Map();
+              products.forEach((pr) => productById.set(pr.id, pr));
+              const customerByPhone = new Map();
+              customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
+
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
               const cycleList = []; // [{ phone, calls, status, latestDate, cycleIndex }]
               Object.entries(phoneGrouped).forEach(([phone, calls]) => {
