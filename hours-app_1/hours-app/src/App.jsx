@@ -12463,7 +12463,12 @@ function CallCenterView({ profile }) {
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
   });
-  const [searchPhone, setSearchPhone] = useState(""); // дугаар хайх
+  const [searchPhone, setSearchPhone] = useState(""); // дугаар хайх (input value)
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // ⚡ Хойшлуулсан хайлт (жагсаалт шүүхэд)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchPhone), 250);
+    return () => clearTimeout(t);
+  }, [searchPhone]);
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
@@ -12911,6 +12916,17 @@ function CallCenterView({ profile }) {
 
           const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
 
+          // ⚡ ГАЦАА ЗАСВАР: захиалгыг утсаар нэг удаа бүлэглэх (өмнө утас бүрд orders.filter
+          //    хийж байсан → O(утас×захиалга) ≈ сая үйлдэл, гацаа үүсгэдэг байсан)
+          const latestOrderByPhone = {};
+          orders.forEach((o) => {
+            if (!o.customer_phone) return;
+            const ex = latestOrderByPhone[o.customer_phone];
+            if (!ex || new Date(o.created_at) > new Date(ex.created_at)) {
+              latestOrderByPhone[o.customer_phone] = o;
+            }
+          });
+
           // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
           const orderInfoByPhone = {};
           Object.keys(phoneGroupedAll).forEach((phone) => {
@@ -12918,11 +12934,8 @@ function CallCenterView({ profile }) {
             const hasOrderedCall = callsArr.some((c) => c.call_status === "ordered");
             const sortedC = [...callsArr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             const latestCallStatus = sortedC[0]?.call_status;
-            const ord = orders
-              .filter((o) => o.customer_phone === phone)
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const ord = latestOrderByPhone[phone]; // ⚡ pre-grouped (filter биш)
             const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
-            // Цуцалсан: захиалга cancelled ЭСВЭЛ (захиалгагүй атлаа сүүлийн дуудлага cancelled)
             const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
             orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder, latestCallStatus };
           });
@@ -13244,7 +13257,7 @@ function CallCenterView({ profile }) {
                 if (activeTab === "all") {
                   // Бүгд — хайлт хийж байвал CYCLE бүрийг тусдаа харуулна (бүх түүх),
                   //   эс бөгөөс утас бүрийн хамгийн сүүлчийн cycle л харуулна (жагсаалт богино).
-                  if (searchPhone.trim()) return true; // хайлтад бүх cycle
+                  if (debouncedSearch.trim()) return true; // хайлтад бүх cycle
                   if (seenPhones.has(cy.phone)) return false;
                   seenPhones.add(cy.phone);
                   return true;
@@ -13292,8 +13305,8 @@ function CallCenterView({ profile }) {
               });
 
               // 🔍 Хайлтын filter
-              if (searchPhone.trim()) {
-                const searchTerm = searchPhone.trim().toLowerCase();
+              if (debouncedSearch.trim()) {
+                const searchTerm = debouncedSearch.trim().toLowerCase();
                 filteredCycles = filteredCycles.filter((cy) => 
                   cy.phone.toLowerCase().includes(searchTerm)
                 );
