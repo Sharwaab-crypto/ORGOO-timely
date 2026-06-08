@@ -12950,17 +12950,37 @@ function CallCenterView({ profile }) {
         </div>
       )}
 
-      {/* Big call button */}
-      <button onClick={() => setShowCallModal(true)}
-        style={{
-          background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
-          color: "white",
-          fontFamily: FS,
-          boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
-        }}
-        className="press-btn w-full py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
-        📞 Дугаар бүртгэх
-      </button>
+      {/* Big call button + Залгах дугаар руу шилжих */}
+      <div className="grid grid-cols-3 gap-2">
+        <button onClick={() => setShowCallModal(true)}
+          style={{
+            background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
+            color: "white",
+            fontFamily: FS,
+            boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
+          }}
+          className="press-btn col-span-2 py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
+          📞 Дугаар бүртгэх
+        </button>
+        <button onClick={() => {
+            setActiveTab("calling");
+            setPage(1);
+            // Жагсаалт руу зөөлөн гүйлгэх
+            setTimeout(() => {
+              window.scrollTo({ top: 400, behavior: "smooth" });
+            }, 100);
+          }}
+          style={{
+            background: "linear-gradient(135deg, #f59e0b, #f97316)",
+            color: "white",
+            fontFamily: FS,
+            boxShadow: "0 8px 24px rgba(245,158,11,0.3)",
+          }}
+          className="press-btn py-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-1">
+          <span className="text-2xl">📲</span>
+          <span className="text-xs">Залгах дугаар</span>
+        </button>
+      </div>
 
       {/* Recent calls + Tabs */}
       <div>
