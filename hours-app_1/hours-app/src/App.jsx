@@ -34297,13 +34297,20 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                     <div className="grid grid-cols-1 gap-2">
-                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн" товч АЛГА */}
+                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн"/"Амжилтгүй" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <button onClick={() => updateStatus(o.id, "delivered")}
-                          className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                          style={{ background: T.ok, color: "white", fontFamily: FS }}>
-                          ✓ Хүргэсэн
-                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => setRatingOrder({ order: o, action: "delivered" })}
+                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                            ✓ Хүргэсэн
+                          </button>
+                          <button onClick={() => setRatingOrder({ order: o, action: "cancelled" })}
+                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.err}` }}>
+                            ✕ Амжилтгүй
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
