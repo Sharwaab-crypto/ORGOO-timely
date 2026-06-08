@@ -12090,6 +12090,7 @@ function CallCenterView({ profile }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null); // Засварлах захиалга
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
+  const [productsByPhoneAll, setProductsByPhoneAll] = useState({}); // утас→бараанууд (бүх бараатай дуудлагаас)
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -12233,25 +12234,28 @@ function CallCenterView({ profile }) {
       const callData = callRes.data;
       const ordData = ordRes.data;
 
-      // 🛍 ЗАСВАР: limit(3000)-аас гадуур үлдсэн ХУУЧИН бараатай дуудлагуудыг тусдаа татах.
-      //    (Дугаар олон no_answer-тай бол сүүлийн 3000-д зөвхөн no_answer орж, бараатай
-      //     pending дуудлага limit-аас гадуур үлдэж "Бараа 0" харагдах асуудал гарсан.)
-      //    interested_products бүхий дуудлага л татна (хөнгөн, цөөн багана).
-      let callData2 = callData || [];
+      // 🛍 ЗАСВАР: limit(3000)-аас гадуур үлдсэн бараатай дуудлагуудыг ТУСДАА татах
+      //    (зөвхөн бараа харуулахад — recentCalls-д нэмэхгүй тул cycle/count буруудахгүй)
       if (!isMerchant) {
         try {
           const withProducts = await fetchAllRows(
             supabase.from("biz_calls")
-              .select("id, phone, call_status, created_at, interested_products, fb_page_id")
+              .select("phone, interested_products")
               .not("interested_products", "is", null)
           );
-          const existIds = new Set(callData2.map((c) => c.id));
-          (withProducts || []).forEach((c) => { if (!existIds.has(c.id)) callData2.push(c); });
+          // Утас → бараанууд Map (бүх бараатай дуудлагаас)
+          const pmap = {};
+          (withProducts || []).forEach((c) => {
+            if (!c.interested_products || !Array.isArray(c.interested_products)) return;
+            if (!pmap[c.phone]) pmap[c.phone] = [];
+            pmap[c.phone].push(...c.interested_products);
+          });
+          setProductsByPhoneAll(pmap);
         } catch (e) { console.error("[products calls fetch]", e); }
       }
 
       // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
-      let allCalls = callData2 || [];
+      let allCalls = callData || [];
       if (isMerchant && allowedPageIds.length > 0 && (ordData || []).length > 0) {
         const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
         if (customerPhones.length > 0) {
@@ -13202,15 +13206,12 @@ function CallCenterView({ profile }) {
               const customerByPhone = new Map();
               customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
 
-              // 🛍 Утас бүрийн БҮХ дуудлагаас сонирхсон бараа нэгтгэх (period/cycle хамаарахгүй)
-              //    Өмнө cycle-ийн calls-аас авдаг байсан → period шүүлт эсвэл cycle хуваагдалтаас
-              //    болж хуучин дуудлагын бараа алдагдаж "Бараа 0" харагдах асуудал гарсан.
+              // 🛍 Утас бүрийн БҮХ дуудлагаас сонирхсон бараа нэгтгэх (period/cycle/limit хамаарахгүй)
+              //    productsByPhoneAll — бүх бараатай дуудлагаас (limit-гүй тусдаа татсан)
               const productsByPhone = {};
-              (activeFbPageId ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId) : recentCalls).forEach((c) => {
-                if (!c.interested_products || !Array.isArray(c.interested_products)) return;
-                if (!productsByPhone[c.phone]) productsByPhone[c.phone] = new Map();
-                const pm = productsByPhone[c.phone];
-                c.interested_products.forEach((p) => {
+              Object.entries(productsByPhoneAll).forEach(([phone, prods]) => {
+                const pm = new Map();
+                prods.forEach((p) => {
                   const productInfo = productById.get(p.id);
                   const enriched = {
                     ...p,
@@ -13222,6 +13223,7 @@ function CallCenterView({ profile }) {
                   if (existing) existing.totalQty += (p.qty || 1);
                   else pm.set(p.id, { ...enriched, totalQty: p.qty || 1 });
                 });
+                productsByPhone[phone] = pm;
               });
 
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
