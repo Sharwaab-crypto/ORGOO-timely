@@ -12208,9 +12208,14 @@ function CallCenterView({ profile }) {
       const isMerchant = profile.role === "merchant";
       const allowedPageIds = isMerchant ? (profile.fb_page_ids || []) : null;
 
+      // ⚡ ГАЦАА ЗАСВАР: biz_calls-ийг сүүлийн 60 хоногоор хязгаарлах
+      //    (өмнө бүх 3,333+ дуудлага татаж байсан → timeout/гацаа).
+      //    60 хоног нь идэвхтэй дуудлагын мөчлөгийг бүрэн хамарна.
+      const calls60DaysAgo = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
+
       const callsQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false })
-        : supabase.from("biz_calls").select("*").order("created_at", { ascending: false });
+        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).gte("created_at", calls60DaysAgo).order("created_at", { ascending: false })
+        : supabase.from("biz_calls").select("*").gte("created_at", calls60DaysAgo).order("created_at", { ascending: false });
       const ordersQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
         : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by");
