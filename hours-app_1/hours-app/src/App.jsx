@@ -12233,8 +12233,25 @@ function CallCenterView({ profile }) {
       const callData = callRes.data;
       const ordData = ordRes.data;
 
+      // 🛍 ЗАСВАР: limit(3000)-аас гадуур үлдсэн ХУУЧИН бараатай дуудлагуудыг тусдаа татах.
+      //    (Дугаар олон no_answer-тай бол сүүлийн 3000-д зөвхөн no_answer орж, бараатай
+      //     pending дуудлага limit-аас гадуур үлдэж "Бараа 0" харагдах асуудал гарсан.)
+      //    interested_products бүхий дуудлага л татна (хөнгөн, цөөн багана).
+      let callData2 = callData || [];
+      if (!isMerchant) {
+        try {
+          const withProducts = await fetchAllRows(
+            supabase.from("biz_calls")
+              .select("id, phone, call_status, created_at, interested_products, fb_page_id")
+              .not("interested_products", "is", null)
+          );
+          const existIds = new Set(callData2.map((c) => c.id));
+          (withProducts || []).forEach((c) => { if (!existIds.has(c.id)) callData2.push(c); });
+        } catch (e) { console.error("[products calls fetch]", e); }
+      }
+
       // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
-      let allCalls = callData || [];
+      let allCalls = callData2 || [];
       if (isMerchant && allowedPageIds.length > 0 && (ordData || []).length > 0) {
         const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
         if (customerPhones.length > 0) {
