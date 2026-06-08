@@ -17637,14 +17637,14 @@ function DriverSettlementView({ profile }) {
                           </button>
                         </div>
                       ))}
-                      {/* Нийт дүн */}
+                      {/* Нийт дүн (бараа + хүргэлт) */}
                       <div className="rounded-lg p-2 flex justify-between items-center"
                         style={{ background: "rgba(245,158,11,0.1)", border: `1px solid ${T.warn}` }}>
                         <span style={{ fontFamily: FS, fontWeight: 600, color: T.warn }} className="text-xs">
-                          Шинэ нийт дүн
+                          Шинэ нийт дүн (бараа + хүргэлт)
                         </span>
                         <span style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
-                          {editOrderItems.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0).toLocaleString()}₮
+                          {(editOrderItems.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0) + (Number(editOrder.deliveryFee) || 0)).toLocaleString()}₮
                         </span>
                       </div>
                     </div>
@@ -17867,14 +17867,17 @@ function DriverSettlementView({ profile }) {
                       }
                       
                       // ─── 6. biz_orders update ───
-                      const newTotal = editOrderItems.reduce(
+                      const itemsTotal = editOrderItems.reduce(
                         (s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 
                         0
                       );
+                      const deliveryFeeVal = Number(editOrder.deliveryFee) || 0;
+                      // total_amount = бараа дүн + хүргэлтийн үнэ (хүргэлт багтсан)
+                      const newTotal = itemsTotal + deliveryFeeVal;
                       const updates = { 
                         status: newStatus,
                         total_amount: newTotal,
-                        delivery_fee: Number(editOrder.deliveryFee) || 0,
+                        delivery_fee: deliveryFeeVal,
                       };
                       if (newStatus === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
