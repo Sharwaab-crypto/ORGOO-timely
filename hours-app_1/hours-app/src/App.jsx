@@ -12211,25 +12211,27 @@ function CallCenterView({ profile }) {
       // ⚡ ГАЦАА ЗАСВАР: biz_calls-ийг сүүлийн 60 хоногоор хязгаарлах
       //    (өмнө бүх 3,333+ дуудлага татаж байсан → timeout/гацаа).
       //    60 хоног нь идэвхтэй дуудлагын мөчлөгийг бүрэн хамарна.
+      const callCols = "id, phone, call_status, created_at, created_by, fb_page_id, interested_products, notes, customer_name, customer_id";
       const callsQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(3000)
-        : supabase.from("biz_calls").select("*").order("created_at", { ascending: false }).limit(3000);
+        ? supabase.from("biz_calls").select(callCols).in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(3000)
+        : supabase.from("biz_calls").select(callCols).order("created_at", { ascending: false }).limit(3000);
       const ordersQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
-        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by");
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(5000)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").order("created_at", { ascending: false }).limit(5000);
       const productsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
 
-      const [callRes, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
+      const [callRes, { data: prodData }, custData, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
         callsQuery,
         productsQuery,
-        fetchAllRows(supabase.from("biz_customers").select("*")),
+        fetchAllRows(supabase.from("biz_customers").select("phone, name, created_at, last_order_at")),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
-        fetchAllRows(ordersQuery),
+        ordersQuery,
       ]);
       const callData = callRes.data;
+      const ordData = ordRes.data;
 
       // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
       let allCalls = callData || [];
