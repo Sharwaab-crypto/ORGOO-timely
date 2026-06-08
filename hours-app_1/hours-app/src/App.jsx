@@ -9836,12 +9836,14 @@ function TransferRequestsView({ profile }) {
       // Зөвхөн movement бичнэ — trigger автоматаар inv_stock шинэчилнэ
       for (const it of reqItems) {
         const finalQty = Number(editedQty[it.id] ?? it.quantity);
-        if (finalQty <= 0) continue; // 0 болгосон барааг алгасах
 
-        // Тоо өөрчлөгдсөн бол items хүснэгтэд бас хадгалах
+        // Тоо өөрчлөгдсөн бол items хүснэгтэд бас хадгалах (0 болгосон ч)
+        //   ⚠ 0 болгосон барааг хадгалахгүй бол дэлгэцэд хуучин тоо (×2) буруу харагдана.
         if (finalQty !== Number(it.quantity)) {
           await supabase.from("inv_transfer_items").update({ quantity: finalQty }).eq("id", it.id);
         }
+
+        if (finalQty <= 0) continue; // 0 болгосон бараанд movement бичихгүй (нөөц орохгүй)
 
         await supabase.from("inv_movements").insert({
           product_id: it.product_id,
