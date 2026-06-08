@@ -32489,6 +32489,8 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
+  const [reportOrders, setReportOrders] = useState([]); // тухайн тооцооны захиалгууд
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   const loadReports = async () => {
     setLoading(true);
@@ -32504,6 +32506,25 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   };
 
   useEffect(() => { loadReports(); }, []);
+
+  // 📦 Тухайн тооцоонд хамаарах захиалгуудыг татах (settlement_id-аар)
+  useEffect(() => {
+    if (!activeReport) { setReportOrders([]); return; }
+    let cancelled = false;
+    (async () => {
+      setLoadingOrders(true);
+      try {
+        const { data } = await supabase
+          .from("biz_orders")
+          .select("id, order_number, customer_phone, status, total_amount, delivered_at, created_at")
+          .eq("settlement_id", activeReport.id)
+          .order("delivered_at", { ascending: false });
+        if (!cancelled) setReportOrders(data || []);
+      } catch (e) { console.error(e); if (!cancelled) setReportOrders([]); }
+      finally { if (!cancelled) setLoadingOrders(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeReport]);
 
   // Detail харах
   if (activeReport) {
@@ -32598,6 +32619,55 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
               {r.order_count}
             </span>
           </div>
+        </div>
+
+        {/* 📦 Хаагдсан захиалгуудын жагсаалт */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3 flex items-center gap-2">
+            📦 Хаагдсан захиалгууд ({reportOrders.length})
+          </div>
+          {loadingOrders ? (
+            <div className="py-6 text-center">
+              <Loader2 className="spin mx-auto" size={18} style={{ color: T.muted }} />
+            </div>
+          ) : reportOrders.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">
+              Энэ тооцоонд захиалга алга
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {reportOrders.map((o) => {
+                const st = o.status === "delivered"
+                  ? { label: "Хүргэсэн", color: T.ok, bg: "rgba(16,185,129,0.1)" }
+                  : o.status === "cancelled"
+                  ? { label: "Цуцалсан", color: T.err, bg: T.errSoft }
+                  : { label: o.status, color: T.muted, bg: T.surfaceAlt };
+                return (
+                  <div key={o.id} className="flex items-center justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                        {o.order_number || "—"} · {o.customer_phone || "—"}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span style={{ background: st.bg, color: st.color, fontFamily: FM }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                          {st.label}
+                        </span>
+                        {o.delivered_at && (
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                            {new Date(o.delivered_at).toLocaleString("mn-MN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums flex-shrink-0">
+                      {Number(o.total_amount || 0).toLocaleString()}₮
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
