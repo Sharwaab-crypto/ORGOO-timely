@@ -12210,8 +12210,8 @@ function CallCenterView({ profile }) {
         ? supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false })
         : supabase.from("biz_calls").select("*").order("created_at", { ascending: false });
       const ordersQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
-        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, taken_by");
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by");
       const productsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
@@ -13228,7 +13228,7 @@ function CallCenterView({ profile }) {
                 const ord = orderStatusByPhone[phone];
                 const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
                 const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
-                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder, latestCallStatus };
+                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder, latestCallStatus, ord };
               });
 
               // Cycles-ыг сүүлд бүртгэсэн цагаар sort (шинэ нь эхэнд)
@@ -13353,6 +13353,9 @@ function CallCenterView({ profile }) {
                 const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
                 const customer = customers.find((cu) => cu.phone === phone);
+                // 📦 Энэ утасны захиалгын дугаар (байвал картан дээр харуулна)
+                const cardOrderInfo = orderInfoByPhone[phone] || {};
+                const cardOrderNumber = cardOrderInfo.ord?.order_number || null;
                 
                 // Card-ийн # тоо = жагсаалтын дараалсан дугаар (дээрээс доош 1, 2, 3...)
                 const callIndex = startIdx + cycleIdx + 1;
@@ -13409,6 +13412,13 @@ function CallCenterView({ profile }) {
                         className="px-2 py-0.5 rounded text-xs">
                         #{callIndex ?? "—"}
                       </span>
+                      {cardOrderNumber && (
+                        <span style={{ background: "rgba(14,156,142,0.12)", color: T.highlight, fontFamily: FD, fontWeight: 700 }}
+                          className="px-2 py-0.5 rounded text-[10px] tabular-nums"
+                          title="Захиалгын дугаар">
+                          📦 {cardOrderNumber}
+                        </span>
+                      )}
                       {customer?.name && (
                         <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
                           {customer.name}
