@@ -9217,6 +9217,69 @@ function WarehousesView({ profile }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  SEARCHABLE SELECT — Нэрээ бичиж хайж сонгох dropdown
+// ═══════════════════════════════════════════════════════════════════════════
+function SearchableSelect({ value, onChange, options, placeholder = "Бүгд", allLabel = "Бүгд" }) {
+  // options: [{ value, label }]
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(""); } };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selected = options.find((o) => o.value === value);
+  const selectedLabel = value === "all" ? allLabel : (selected?.label || allLabel);
+  const filtered = query.trim()
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full px-2 py-1.5 rounded-lg text-xs text-left flex items-center justify-between gap-1"
+        style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+        <span className="truncate">{selectedLabel}</span>
+        <span style={{ color: T.muted }}>▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg overflow-hidden"
+          style={{ background: "white", border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxHeight: 260 }}>
+          <div className="p-1.5" style={{ borderBottom: `1px solid ${T.border}` }}>
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔎 Нэрээ бичих..."
+              className="w-full px-2 py-1.5 rounded text-xs outline-none"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            <button type="button"
+              onClick={() => { onChange("all"); setOpen(false); setQuery(""); }}
+              className="press-btn w-full px-3 py-2 text-left text-xs"
+              style={{ background: value === "all" ? T.surfaceAlt : "transparent", color: T.ink, fontFamily: FS, fontWeight: value === "all" ? 600 : 400 }}>
+              {allLabel}
+            </button>
+            {filtered.map((o) => (
+              <button key={o.value} type="button"
+                onClick={() => { onChange(o.value); setOpen(false); setQuery(""); }}
+                className="press-btn w-full px-3 py-2 text-left text-xs truncate"
+                style={{ background: value === o.value ? "rgba(14,156,142,0.1)" : "transparent", color: T.ink, fontFamily: FS, fontWeight: value === o.value ? 600 : 400 }}>
+                {o.label}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-3 py-3 text-center text-xs" style={{ color: T.muted, fontFamily: FS }}>Олдсонгүй</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  MOVEMENTS VIEW — Барааны хөдөлгөөнийг хянах хэсэг (Admin)
 // ═══════════════════════════════════════════════════════════════════════════
 function MovementsView({ profile }) {
@@ -9466,40 +9529,34 @@ function MovementsView({ profile }) {
           {/* Агуулах */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Агуулах</label>
-            <select value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterWarehouse}
+              onChange={setFilterWarehouse}
+              allLabel="Бүгд"
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
           </div>
 
           {/* Бараа */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Бараа</label>
-            <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ""}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterProduct}
+              onChange={setFilterProduct}
+              allLabel="Бүгд"
+              options={products.map((p) => ({ value: p.id, label: `${p.name}${p.sku ? ` (${p.sku})` : ""}` }))}
+            />
           </div>
 
           {/* Ажилтан */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Ажилтан</label>
-            <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterUser}
+              onChange={setFilterUser}
+              allLabel="Бүгд"
+              options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </div>
 
           {/* Огноо — Эхлэх */}
