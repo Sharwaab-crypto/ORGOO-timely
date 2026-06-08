@@ -22115,7 +22115,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                     🚚 Delivery хуваарилах
                   </button>
                 )}
-                {onCancel && order.status !== "cancelled" && (
+                {onCancel && order.status !== "cancelled" && order.status !== "delivered" && (
                   <button onClick={() => { setShowMenu(false); onCancel(); }}
                     className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: T.err, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
