@@ -18683,6 +18683,10 @@ function SettlementReportsView({ profile }) {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ cash: "", bank: "", expense: "", cashNotes: "", bankNotes: "", expenseNotes: "" });
   const [savingEdit, setSavingEdit] = useState(false);
+  // ✏️ Захиалга засах
+  const [editOrderId, setEditOrderId] = useState(null);
+  const [orderForm, setOrderForm] = useState({ total: "", paid: "", status: "" });
+  const [savingOrder, setSavingOrder] = useState(false);
 
   // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
   const [showOrdersList, setShowOrdersList] = useState(false);
@@ -18786,7 +18790,23 @@ function SettlementReportsView({ profile }) {
     const cash = Number(editForm.cash || 0);
     const bank = Number(editForm.bank || 0);
     const expense = Number(editForm.expense || 0);
-    const totalSubmitted = cash + bank;
+    const totalSubmitted = cash + bank + expense;
+    // ⚠ БАТАЛГААЖУУЛАЛТ: Бэлэн + Данс + Борлуулалт = Тушаах ёстой дүн байх ёстой
+    const owed = Number(activeReport.settlement_amount || 0);
+    const diff = owed - totalSubmitted;
+    if (Math.abs(diff) >= 0.01) {
+      alert(
+        `⚠ Нийлбэр тушаах дүнтэй тохирохгүй байна!\n\n` +
+        `Тушаах ёстой: ${owed.toLocaleString()}₮\n` +
+        `💵 Бэлэн: ${cash.toLocaleString()}₮\n` +
+        `🏦 Данс: ${bank.toLocaleString()}₮\n` +
+        `📤 Борлуулалт: ${expense.toLocaleString()}₮\n` +
+        `Нийлбэр: ${totalSubmitted.toLocaleString()}₮\n\n` +
+        `Зөрүү: ${diff > 0 ? "+" : ""}${diff.toLocaleString()}₮\n\n` +
+        `Бэлэн + Данс + Борлуулалт = Тушаах ёстой дүн байх ёстой.`
+      );
+      return;
+    }
     setSavingEdit(true);
     try {
       const { data, error } = await supabase
@@ -18812,6 +18832,38 @@ function SettlementReportsView({ profile }) {
       alert("❌ Засвар хадгалахад алдаа гарлаа\n" + e.message);
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // ✏️ Захиалга засах эхлүүлэх
+  const startEditOrder = (o) => {
+    setOrderForm({ total: String(o.total_amount || 0), paid: String(o.paid_amount || 0), status: o.status || "delivered" });
+    setEditOrderId(o.id);
+  };
+
+  // 💾 Захиалга засвар хадгалах
+  const saveOrderEdit = async (orderId) => {
+    setSavingOrder(true);
+    try {
+      const { data, error } = await supabase
+        .from("biz_orders")
+        .update({
+          total_amount: Number(orderForm.total || 0),
+          paid_amount: Number(orderForm.paid || 0),
+          status: orderForm.status,
+        })
+        .eq("id", orderId)
+        .select()
+        .single();
+      if (error) throw error;
+      // Локал жагсаалт шинэчлэх
+      setSettlementOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...data } : o)));
+      setEditOrderId(null);
+      alert("✅ Захиалга засагдлаа");
+    } catch (e) {
+      alert("❌ Захиалга засахад алдаа гарлаа\n" + e.message);
+    } finally {
+      setSavingOrder(false);
     }
   };
 
@@ -18960,8 +19012,34 @@ function SettlementReportsView({ profile }) {
                   style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
                   className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
               </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] text-center py-1">
-                Нийт тушаасан: {(Number(editForm.cash || 0) + Number(editForm.bank || 0)).toLocaleString()}₮
+              <div className="py-1 px-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                {(() => {
+                  const c = Number(editForm.cash || 0), b = Number(editForm.bank || 0), e = Number(editForm.expense || 0);
+                  const sum = c + b + e;
+                  const owed = Number(activeReport.settlement_amount || 0);
+                  const diff = owed - sum;
+                  const ok = Math.abs(diff) < 0.01;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">Тушаах ёстой</span>
+                        <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums">{owed.toLocaleString()}₮</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">Нийлбэр (бэлэн+данс+борл.)</span>
+                        <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums">{sum.toLocaleString()}₮</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5 pt-0.5" style={{ borderTop: `1px solid ${T.border}` }}>
+                        <span style={{ color: ok ? T.ok : T.err, fontFamily: FS, fontWeight: 600 }} className="text-[10px]">
+                          {ok ? "✓ Тохирч байна" : "✗ Зөрүү"}
+                        </span>
+                        <span style={{ color: ok ? T.ok : T.err, fontFamily: FD, fontWeight: 700 }} className="text-[11px] tabular-nums">
+                          {ok ? "0₮" : `${diff > 0 ? "+" : ""}${diff.toLocaleString()}₮`}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div className="flex gap-2 pt-1">
                 <button onClick={() => setEditMode(false)} disabled={savingEdit}
@@ -19205,8 +19283,61 @@ function SettlementReportsView({ profile }) {
                                 {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
                               </div>
                             )}
+                            {editOrderId !== o.id && (
+                              <button onClick={() => startEditOrder(o)}
+                                style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                                className="press-btn text-[9px] mt-1">
+                                ✏️ Засах
+                              </button>
+                            )}
                           </div>
                         </div>
+
+                        {/* ✏️ Захиалга засах form */}
+                        {editOrderId === o.id && (
+                          <div className="mt-2 pt-2 ml-10 space-y-2" style={{ borderTop: `1px dashed ${T.border}` }}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт дүн (₮)</label>
+                                <input type="number" inputMode="numeric" value={orderForm.total}
+                                  onChange={(e) => setOrderForm((p) => ({ ...p, total: e.target.value }))}
+                                  style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                                  className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5" />
+                              </div>
+                              <div>
+                                <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Төлсөн (₮)</label>
+                                <input type="number" inputMode="numeric" value={orderForm.paid}
+                                  onChange={(e) => setOrderForm((p) => ({ ...p, paid: e.target.value }))}
+                                  style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                                  className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5" />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Төлөв</label>
+                              <select value={orderForm.status}
+                                onChange={(e) => setOrderForm((p) => ({ ...p, status: e.target.value }))}
+                                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                                className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5">
+                                <option value="delivered">✓ Хүргэсэн</option>
+                                <option value="cancelled">✕ Цуцалсан</option>
+                                <option value="assigned">Хуваарилагдсан</option>
+                                <option value="new">Шинэ</option>
+                              </select>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => setEditOrderId(null)} disabled={savingOrder}
+                                style={{ background: T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                                className="press-btn flex-1 py-1.5 rounded-lg text-xs">
+                                Болих
+                              </button>
+                              <button onClick={() => saveOrderEdit(o.id)} disabled={savingOrder}
+                                style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600, opacity: savingOrder ? 0.6 : 1 }}
+                                className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1">
+                                {savingOrder ? <Loader2 className="spin" size={12} /> : "💾"} Хадгалах
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* 🛍 Бараа жагсаалт */}
                         {orderItems.length > 0 && (
