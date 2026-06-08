@@ -22131,8 +22131,20 @@ function OrdersView({ profile }) {
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ throttle: хуримтлуулах
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ Throttle: олон захиалга зэрэг өөрчлөгдөхөд render бүрд биш, 1.5с тутамд нэг л удаа setState
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return;
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     const channel = supabase
       .channel("orders-view-badge")
       .on(
@@ -22141,11 +22153,14 @@ function OrdersView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -32800,8 +32815,20 @@ function DriverDashboard({ profile }) {
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ throttle
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ Throttle: олон өөрчлөлт зэрэг ирэхэд 1.5с тутамд нэг л удаа setState
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return;
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     // Realtime channel — DB өөрчлөгдөхөд badge counter +1
     const channel = supabase
       .channel(`driver-badge-${profile.id}`)
@@ -32817,22 +32844,22 @@ function DriverDashboard({ profile }) {
           if (!o) return;
           
           // Зөвхөн чухал өөрчлөлтийг тоолох:
-          // - Шинэ захиалга (driver_id=null, status=new)
-          // - Миний захиалгад өөрчлөлт
-          // - Тодорхойгүй захиалга
           const isRelevant = 
             (!o.driver_id && o.status === "new") ||
             o.driver_id === profile.id ||
             o.is_unknown === true;
           
           if (isRelevant) {
-            setPendingChanges((prev) => prev + 1);
+            bumpBadge();
           }
         }
       )
       .subscribe();
     
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, [profile.id]);
 
   // Manual refresh — Badge даргах
