@@ -22996,7 +22996,7 @@ function OrdersView({ profile }) {
               merchantPageIds={merchantPageIds}
               onClick={() => setActiveOrder(o)}
               onMap={() => setMapOrder(o)}
-              onEdit={() => setEditOrder(o)}
+              onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
               onCancel={async () => {
                 if (!confirm(`Захиалгыг цуцлах уу?\n\nҮйлчлүүлэгч: ${o.customer_name || o.customer_phone}\nДүн: ${Number(o.total_amount).toLocaleString()}₮`)) return;
