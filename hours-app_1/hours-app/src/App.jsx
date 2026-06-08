@@ -13022,17 +13022,22 @@ function CallCenterView({ profile }) {
           });
 
           // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
-          // ⚠ Захиалга мөр автоматаар үүсдэг тул "ordered дуудлага байсан эсэх"-ийг шалгуур болгоно.
-          //    no_answer/callback/unreachable + ordered дуудлагагүй → энд (#139 шиг).
-          //    Харин ordered дуудлага + идэвхтэй захиалга → "Захиалга болсон"-д шилжинэ.
+          // ⚠ Сүүлийн pending (дугаар бүртгэсэн)-ээс ХОЙШ ordered/cancelled байгаа эсэхээр шийднэ.
+          //    ordered/cancelled болсны дараа дахин залгасан (unreachable г.м) нь "залгах дугаар" БИШ
+          //    — захиалга аль хэдийн болсон/цуцлагдсан. Зөвхөн ДАХИН pending бүртгэсэн бол шинэ cycle.
           {
             Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-              const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-              const latestStatus = sorted[0]?.call_status;
-              // ⚠ Жагсаалттай ижил: сүүлийн дуудлага нь ordered/cancelled БИШ бол (cycle хаагдаагүй = calling)
-              //    → "Залгах дугаар"-д тооцно. Өмнө ordered/cancelled байсан ч дугаар ДАХИН бүртгэгдсэн
-              //    (сүүлийн нь pending) бол шинэ cycle = дахин залгах ёстой.
-              if (latestStatus === "ordered" || latestStatus === "cancelled") return;
+              const asc = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              // Сүүлийн pending-ийн индекс олох
+              let lastPendingIdx = -1;
+              asc.forEach((c, i) => {
+                if (c.call_status === "pending" || !c.call_status) lastPendingIdx = i;
+              });
+              // Сүүлийн pending-ээс хойших дуудлагууд (тэр мөчлөг)
+              const cycleCalls = lastPendingIdx >= 0 ? asc.slice(lastPendingIdx) : asc;
+              const hasOrdered = cycleCalls.some((c) => c.call_status === "ordered");
+              const hasCancelled = cycleCalls.some((c) => c.call_status === "cancelled");
+              if (hasOrdered || hasCancelled) return; // захиалга болсон/цуцалсан — calling биш
               counts.calling++;
             });
           }
@@ -13292,11 +13297,15 @@ function CallCenterView({ profile }) {
                     if (currentCycle.length > 0) {
                       const lastCall = currentCycle[currentCycle.length - 1];
                       const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
+                      // ⚠ Cycle статус — cycle ДОТОР ordered/cancelled БАЙСАН эсэхээр (сүүлийн дуудлагаар БИШ).
+                      //    ordered болсны дараа хүргэлт/баталгаажуулах гэж дахин залгасан (unreachable г.м)
+                      //    нь "залгах дугаар" биш — захиалга аль хэдийн болсон.
+                      const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
+                      const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
                       cycleList.push({
                         phone,
                         calls: currentCycle,
-                        status: lastCall.call_status === "ordered" ? "ordered"
-                              : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
+                        status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
                         latestDate: lastCall.created_at,
                         firstDate: currentCycle[0].created_at,
                         registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
@@ -13319,11 +13328,12 @@ function CallCenterView({ profile }) {
                 if (currentCycle.length > 0) {
                   const lastCall = currentCycle[currentCycle.length - 1];
                   const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
+                  const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
+                  const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
                   cycleList.push({
                     phone,
                     calls: currentCycle,
-                    status: lastCall.call_status === "ordered" ? "ordered"
-                          : lastCall.call_status === "cancelled" ? "cancelled" : "calling",
+                    status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
                     latestDate: lastCall.created_at,
                     firstDate: currentCycle[0].created_at,
                     registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
