@@ -13238,17 +13238,15 @@ function CallCenterView({ profile }) {
                 let cycleClosed = false; // одоогийн cycle хаагдсан эсэх
 
                 sorted.forEach((call) => {
-                  // 🆕 Шинэ cycle эхлүүлэх нөхцөл (cycle хаагдсаны дараа):
-                  //    (a) pending (дугаар дахин бүртгэсэн) ИРВЭЛ, ЭСВЭЛ
-                  //    (b) ӨӨР ӨДӨР болсон (өчигдрийн cancelled-ийн дараа өнөөдрийн дуудлага = шинэ ажлын мөчлөг)
+                  // 🆕 Шинэ cycle ЗӨВХӨН шинэ pending (дугаар дахин бүртгэх) дээр эхэлнэ.
+                  //    ⚠ Өдөр солигдох нь cycle хаахгүй — pending→cancelled→дараа өдөр дахин
+                  //    залгасан нь ИЖИЛ ажлын мөчлөг (дугаар бүртгэснээс хойшхи бүх ажиллагаа).
+                  //    Өмнө "өдөр солих" cycle хааж, pending өмнөх cycle-д үлдэж, түүхэд
+                  //    "Дугаар бүртгэсэн" мөр алга болдог байсан.
                   let startNew = false;
                   if (cycleClosed) {
                     if (call.call_status === "pending" || !call.call_status) {
                       startNew = true;
-                    } else if (currentCycle.length > 0) {
-                      const prevDay = new Date(currentCycle[currentCycle.length - 1].created_at).toDateString();
-                      const curDay = new Date(call.created_at).toDateString();
-                      if (prevDay !== curDay) startNew = true; // өдөр солигдсон
                     }
                   }
                   if (startNew) {
