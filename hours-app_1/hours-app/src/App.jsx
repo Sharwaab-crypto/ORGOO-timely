@@ -18713,7 +18713,7 @@ function SettlementReportsView({ profile }) {
       setLoadingOrders(true);
       try {
         const { data, error } = await supabase.from("biz_orders")
-          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, status, delivered_at, cancelled_at, created_at, driver_id")
+          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivery_fee, status, delivered_at, cancelled_at, created_at, driver_id")
           .eq("settlement_id", activeReport.id)
           .order("delivered_at", { ascending: false, nullsFirst: false });
         if (error) throw error;
@@ -19198,6 +19198,19 @@ function SettlementReportsView({ profile }) {
             </span>
           </div>
           <div className="flex items-center justify-between py-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">🚚 Хүргэлтийн төлбөр</span>
+            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+              {settlementOrders.length > 0
+                ? `${settlementOrders.reduce((s, o) => s + Number(o.delivery_fee || 0), 0).toLocaleString()}₮`
+                : "—"}
+            </span>
+          </div>
+          {settlementOrders.length === 0 && (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-right -mt-1">
+              (захиалгууд дэлгэхэд тооцогдоно)
+            </div>
+          )}
+          <div className="flex items-center justify-between py-1">
             <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Урьдчилж төлөгдсөн</span>
             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-sm tabular-nums">
               {Number(r.paid_already).toLocaleString()}₮
@@ -19357,6 +19370,11 @@ function SettlementReportsView({ profile }) {
                             <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
                               💵 Төлсөн: {paidAmt.toLocaleString()}₮
                             </div>
+                            {Number(o.delivery_fee || 0) > 0 && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                                🚚 Хүргэлт: {Number(o.delivery_fee).toLocaleString()}₮
+                              </div>
+                            )}
                             {o.delivered_at && (
                               <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
                                 {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
