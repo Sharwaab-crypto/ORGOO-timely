@@ -18687,6 +18687,10 @@ function SettlementReportsView({ profile }) {
   const [editOrderId, setEditOrderId] = useState(null);
   const [orderForm, setOrderForm] = useState({ total: "", paid: "", status: "" });
   const [savingOrder, setSavingOrder] = useState(false);
+  // ✏️ Барааны тоо засах
+  const [editItemId, setEditItemId] = useState(null);
+  const [itemQty, setItemQty] = useState("");
+  const [savingItem, setSavingItem] = useState(false);
 
   // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
   const [showOrdersList, setShowOrdersList] = useState(false);
@@ -18864,6 +18868,35 @@ function SettlementReportsView({ profile }) {
       alert("❌ Захиалга засахад алдаа гарлаа\n" + e.message);
     } finally {
       setSavingOrder(false);
+    }
+  };
+
+  // 💾 Барааны тоо засвар хадгалах
+  const saveItemQty = async (item, orderId) => {
+    const qty = Number(itemQty || 0);
+    if (qty <= 0) { alert("⚠ Тоо 0-ээс их байх ёстой"); return; }
+    setSavingItem(true);
+    try {
+      const newTotal = qty * Number(item.unit_price || 0);
+      const { data, error } = await supabase
+        .from("biz_order_items")
+        .update({ quantity: qty, total_amount: newTotal })
+        .eq("id", item.id)
+        .select()
+        .single();
+      if (error) throw error;
+      // Локал items шинэчлэх
+      setSettlementItems((prev) => {
+        const copy = { ...prev };
+        copy[orderId] = (copy[orderId] || []).map((it) => (it.id === item.id ? { ...it, ...data } : it));
+        return copy;
+      });
+      setEditItemId(null);
+      alert("✅ Барааны тоо засагдлаа");
+    } catch (e) {
+      alert("❌ Барааны тоо засахад алдаа гарлаа\n" + e.message);
+    } finally {
+      setSavingItem(false);
     }
   };
 
@@ -19348,13 +19381,37 @@ function SettlementReportsView({ profile }) {
                             </div>
                             <div className="space-y-1">
                               {orderItems.map((it) => (
+                                editItemId === it.id ? (
+                                  <div key={it.id} className="flex items-center gap-1.5 text-[10px]">
+                                    <input type="number" inputMode="numeric" value={itemQty} autoFocus
+                                      onChange={(e) => setItemQty(e.target.value)}
+                                      style={{ background: T.surface, border: `1px solid ${T.highlight}`, color: T.ink, fontFamily: FD }}
+                                      className="w-12 px-1.5 py-0.5 rounded text-[10px] outline-none text-center" />
+                                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="flex-1 truncate">
+                                      {it.product_name || "—"}
+                                    </span>
+                                    <button onClick={() => saveItemQty(it, o.id)} disabled={savingItem}
+                                      style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
+                                      className="press-btn px-2 py-0.5 rounded text-[9px]">
+                                      {savingItem ? "..." : "💾"}
+                                    </button>
+                                    <button onClick={() => setEditItemId(null)} disabled={savingItem}
+                                      style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}
+                                      className="press-btn px-2 py-0.5 rounded text-[9px]">
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
                                 <div key={it.id} className="flex items-center gap-2 text-[10px]">
-                                  <span style={{
-                                    background: T.highlight, color: "white",
-                                    fontFamily: FD, fontWeight: 700,
-                                  }} className="px-1.5 py-0.5 rounded text-[9px] tabular-nums">
-                                    ×{it.quantity}
-                                  </span>
+                                  <button
+                                    onClick={() => { setEditItemId(it.id); setItemQty(String(it.quantity || 0)); }}
+                                    style={{
+                                      background: T.highlight, color: "white",
+                                      fontFamily: FD, fontWeight: 700,
+                                    }} className="press-btn px-1.5 py-0.5 rounded text-[9px] tabular-nums flex-shrink-0"
+                                    title="Тоо засах">
+                                    ×{it.quantity} ✏️
+                                  </button>
                                   <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }}
                                     className="flex-1 truncate">
                                     {it.product_name || "—"}
@@ -19367,6 +19424,7 @@ function SettlementReportsView({ profile }) {
                                     {Number(it.total_amount || it.quantity * it.unit_price || 0).toLocaleString()}₮
                                   </span>
                                 </div>
+                                )
                               ))}
                             </div>
                           </div>
