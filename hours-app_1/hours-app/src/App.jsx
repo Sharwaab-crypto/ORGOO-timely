@@ -20869,8 +20869,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     const khoroo = e.target.value;
                     setSelectedKhoroo(khoroo);
                     if (selectedCity && selectedDistrict && khoroo) {
-                      const found = dbKhoroo.find((k) => k.khoroo === khoroo);
-                      if (found) {
+                      // ⚡ dbLocations-аас ШУУД хайх (dbKhoroo memo stale байж болзошгүй async timing)
+                      const found = dbLocations.find(
+                        (l) => l.city === selectedCity && l.district === selectedDistrict && l.khoroo === khoroo
+                      );
+                      if (found && found.lat != null && found.lng != null) {
                         setPinLat(Number(found.lat));
                         setPinLng(Number(found.lng));
                       }
