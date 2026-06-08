@@ -9686,6 +9686,8 @@ function TransferRequestsView({ profile }) {
   const [activeReq, setActiveReq] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
+  const [empFilter, setEmpFilter] = useState("all"); // 🆕 Ажилтнаар шүүх
+  const [monthFilter, setMonthFilter] = useState("all"); // 🆕 Он-сараар шүүх (YYYY-MM)
   const [editedQty, setEditedQty] = useState({}); // Засагдсан тоо: { itemId: quantity }
 
   const loadAll = async () => {
@@ -9812,7 +9814,20 @@ function TransferRequestsView({ profile }) {
   };
 
   // Filter
-  const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  let filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  // 🆕 Ажилтнаар шүүх
+  if (empFilter !== "all") {
+    filtered = filtered.filter((r) => r.requester_id === empFilter);
+  }
+  // 🆕 Он-сараар шүүх
+  if (monthFilter !== "all") {
+    filtered = filtered.filter((r) => {
+      if (!r.created_at) return false;
+      const d = new Date(r.created_at);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return ym === monthFilter;
+    });
+  }
 
   const counts = {
     pending: requests.filter((r) => r.status === "pending").length,
@@ -10022,6 +10037,49 @@ function TransferRequestsView({ profile }) {
             )}
           </button>
         ))}
+      </div>
+
+      {/* 🆕 Ажилтан + Он-сар шүүлт */}
+      <div className="glass rounded-2xl p-2 flex gap-2 flex-wrap items-center">
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider pl-1">Шүүх:</span>
+        {(() => {
+          // Ажилчдын жагсаалт (хүсэлт гаргасан)
+          const empIds = [...new Set(requests.map((r) => r.requester_id).filter(Boolean))];
+          const empOptions = empIds.map((id) => ({ id, name: profiles[id]?.name || "—" }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          // Он-сарын жагсаалт
+          const months = [...new Set(requests.map((r) => {
+            if (!r.created_at) return null;
+            const d = new Date(r.created_at);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          }).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+          return (
+            <>
+              <select value={empFilter} onChange={(e) => setEmpFilter(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs outline-none"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+                <option value="all">👤 Бүх ажилтан</option>
+                {empOptions.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs outline-none"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+                <option value="all">🗓 Бүх сар</option>
+                {months.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {(empFilter !== "all" || monthFilter !== "all") && (
+                <button onClick={() => { setEmpFilter("all"); setMonthFilter("all"); }}
+                  className="press-btn px-2 py-1.5 rounded-lg text-xs"
+                  style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                  ✕ Цэвэрлэх
+                </button>
+              )}
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto pr-1">
+                {filtered.length} хүсэлт
+              </span>
+            </>
+          );
+        })()}
       </div>
 
       {loading ? (
