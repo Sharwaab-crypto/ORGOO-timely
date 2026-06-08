@@ -12093,6 +12093,7 @@ function CallCenterView({ profile }) {
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
   const [productsByPhoneAll, setProductsByPhoneAll] = useState({}); // утас→бараанууд (бүх бараатай дуудлагаас)
+  const [callsByPhoneAll, setCallsByPhoneAll] = useState({}); // утас→бүх дуудлага (түүх limit-гүй харуулахад)
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -12254,6 +12255,32 @@ function CallCenterView({ profile }) {
           });
           setProductsByPhoneAll(pmap);
         } catch (e) { console.error("[products calls fetch]", e); }
+
+        // 📋 ЗАСВАР: "Залгах дугаар"-т харагдах утаснуудын БҮХ дуудлагыг түүх харуулахад
+        //    тусдаа татах (limit 3000-аас гадуур хуучин pending/дунд дуудлага түүхэд орохгүй
+        //    байсныг засна). recentCalls-д НЭМЭХГҮЙ тул cycle/count цэвэр хэвээр.
+        try {
+          // Calling утаснууд = сүүлийн дуудлага нь ordered/cancelled БИШ
+          const lastStatusByPhone = {};
+          (callData || []).forEach((c) => {
+            if (!lastStatusByPhone[c.phone]) lastStatusByPhone[c.phone] = c.call_status; // callData нь desc sort
+          });
+          const callingPhones = Object.keys(lastStatusByPhone).filter(
+            (ph) => lastStatusByPhone[ph] !== "ordered" && lastStatusByPhone[ph] !== "cancelled"
+          );
+          if (callingPhones.length > 0) {
+            const allCallsForPhones = await fetchInChunks("biz_calls", callingPhones, {
+              select: "id, phone, call_status, created_at, created_by, notes, interested_products, fb_page_id",
+              filterColumn: "phone",
+            });
+            const cmap = {};
+            (allCallsForPhones || []).forEach((c) => {
+              if (!cmap[c.phone]) cmap[c.phone] = [];
+              cmap[c.phone].push(c);
+            });
+            setCallsByPhoneAll(cmap);
+          }
+        } catch (e) { console.error("[history calls fetch]", e); }
       }
 
       // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
@@ -13200,6 +13227,17 @@ function CallCenterView({ profile }) {
               filteredByPeriod.forEach((c) => {
                 if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
                 phoneGrouped[c.phone].push(c);
+              });
+              // 📋 Calling утаснуудын БҮХ дуудлагыг (limit-гүй татсан) түүхэд ашиглах.
+              //    Хуучин pending/дунд дуудлага limit 3000-аас гадуур үлдэж түүхэд
+              //    харагдахгүй байсныг засна. callsByPhoneAll-д байгаа утсыг бүхэлд нь солино.
+              Object.entries(callsByPhoneAll).forEach(([phone, allC]) => {
+                if (activeFbPageId) {
+                  const filtered = allC.filter((c) => !c.fb_page_id || c.fb_page_id === activeFbPageId);
+                  if (filtered.length > 0) phoneGrouped[phone] = filtered;
+                } else {
+                  if (allC.length > 0) phoneGrouped[phone] = allC;
+                }
               });
 
               // ⚡ ГАЦАА ЗАСВАР: O(1) хайлтын Map (карт бүрд products.find/customers.find давталтаас сэргийлэх)
