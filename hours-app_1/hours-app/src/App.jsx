@@ -13185,6 +13185,28 @@ function CallCenterView({ profile }) {
               const customerByPhone = new Map();
               customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
 
+              // 🛍 Утас бүрийн БҮХ дуудлагаас сонирхсон бараа нэгтгэх (period/cycle хамаарахгүй)
+              //    Өмнө cycle-ийн calls-аас авдаг байсан → period шүүлт эсвэл cycle хуваагдалтаас
+              //    болж хуучин дуудлагын бараа алдагдаж "Бараа 0" харагдах асуудал гарсан.
+              const productsByPhone = {};
+              (activeFbPageId ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId) : recentCalls).forEach((c) => {
+                if (!c.interested_products || !Array.isArray(c.interested_products)) return;
+                if (!productsByPhone[c.phone]) productsByPhone[c.phone] = new Map();
+                const pm = productsByPhone[c.phone];
+                c.interested_products.forEach((p) => {
+                  const productInfo = productById.get(p.id);
+                  const enriched = {
+                    ...p,
+                    image_url: p.image_url || productInfo?.image_url || null,
+                    sku: p.sku || productInfo?.sku || null,
+                    name: p.name || productInfo?.name || "—",
+                  };
+                  const existing = pm.get(p.id);
+                  if (existing) existing.totalQty += (p.qty || 1);
+                  else pm.set(p.id, { ...enriched, totalQty: p.qty || 1 });
+                });
+              });
+
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
               const cycleList = []; // [{ phone, calls, status, latestDate, cycleIndex }]
               Object.entries(phoneGrouped).forEach(([phone, calls]) => {
@@ -13410,27 +13432,8 @@ function CallCenterView({ profile }) {
                 // Card-ийн # тоо = жагсаалтын дараалсан дугаар (дээрээс доош 1, 2, 3...)
                 const callIndex = startIdx + cycleIdx + 1;
 
-                // Сонирхсон бараа нэгтгэх
-                const productMap = new Map();
-                calls.forEach((c) => {
-                  if (c.interested_products && Array.isArray(c.interested_products)) {
-                    c.interested_products.forEach((p) => {
-                      // ⚡ ГАЦАА ЗАСВАР: products.find (O(n)) → productById.get (O(1))
-                      //    Карт бүрд × бараа бүрд find хийж байсан = сая сая үйлдэл, 5-10с гацаа
-                      const productInfo = productById.get(p.id);
-                      const enriched = {
-                        ...p,
-                        image_url: p.image_url || productInfo?.image_url || null,
-                        sku: p.sku || productInfo?.sku || null,
-                        name: p.name || productInfo?.name || "—",
-                      };
-                      const existing = productMap.get(p.id);
-                      if (existing) existing.totalQty += (p.qty || 1);
-                      else productMap.set(p.id, { ...enriched, totalQty: p.qty || 1 });
-                    });
-                  }
-                });
-                const allProducts = Array.from(productMap.values());
+                // Сонирхсон бараа — тухайн утасны БҮХ дуудлагаас (period/cycle хамаарахгүй)
+                const allProducts = Array.from((productsByPhone[phone] || new Map()).values());
 
                 // Time ago
                 const timeAgo = (date) => {
