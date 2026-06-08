@@ -9303,7 +9303,9 @@ function MovementsView({ profile }) {
     setLoading(true);
     try {
       const [{ data: mv }, { data: prd }, { data: wh }, { data: prf }, { data: stk }] = await Promise.all([
-        supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("inv_movements")
+          .select("id, product_id, warehouse_id, to_warehouse_id, movement_type, quantity, notes, created_at, created_by")
+          .order("created_at", { ascending: false }).limit(500),
         supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("inv_warehouses").select("id, name, driver_id"),
         supabase.from("profiles").select("id, name, role"),
