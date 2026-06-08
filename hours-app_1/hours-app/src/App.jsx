@@ -9746,6 +9746,7 @@ function TransferRequestsView({ profile }) {
   const [empFilter, setEmpFilter] = useState("all"); // 🆕 Ажилтнаар шүүх
   const [monthFilter, setMonthFilter] = useState("all"); // 🆕 Он-сараар шүүх (YYYY-MM)
   const [editedQty, setEditedQty] = useState({}); // Засагдсан тоо: { itemId: quantity }
+  const [approving, setApproving] = useState(false); // 🆕 Давхар батлахаас сэргийлэх
 
   const loadAll = async () => {
     setLoading(true);
@@ -9802,6 +9803,12 @@ function TransferRequestsView({ profile }) {
 
   // Зөвшөөрөх
   const approveRequest = async (req) => {
+    if (approving) return; // 🛡 Аль хэдийн батлах явцад байна — давхар даралтаас сэргийлнэ
+    // 🛡 Хүсэлт аль хэдийн боловсруулагдсан бол дахин батлахгүй
+    if (req.status !== "pending") {
+      alert("⚠ Энэ хүсэлт аль хэдийн боловсруулагдсан байна.");
+      return;
+    }
     const reqItems = items[req.id] || [];
     if (reqItems.length === 0) {
       alert("Хүсэлтэд бараа байхгүй");
@@ -9811,6 +9818,16 @@ function TransferRequestsView({ profile }) {
     if (!confirm(`Хүсэлтийг зөвшөөрөх үү?\n\nХэрэглэгч: ${profiles[req.requester_id]?.name || "—"}\n${reqItems.length} төрлийн бараа\n\n${req.is_return ? "БУЦААГДАХ" : "ШИЛЖҮҮЛЭГДЭХ"}`)) return;
 
    try {
+      setApproving(true); // 🛡 Эхэлсэн гэж тэмдэглэх
+      // 🛡 DB-ээс хүсэлтийн одоогийн статусыг дахин шалгах (race condition сэргийлэх)
+      const { data: freshReq } = await supabase
+        .from("inv_transfer_requests").select("status").eq("id", req.id).single();
+      if (freshReq && freshReq.status !== "pending") {
+        alert("⚠ Энэ хүсэлт аль хэдийн боловсруулагдсан байна.");
+        setApproving(false);
+        await loadAll();
+        return;
+      }
       const fromWhId = req.from_warehouse_id;
       const toWhId = req.to_warehouse_id;
 
@@ -9854,6 +9871,8 @@ function TransferRequestsView({ profile }) {
       } else {
         alert("Алдаа: " + e.message);
       }
+    } finally {
+      setApproving(false); // 🛡 Дуусгах
     }
   };
 
@@ -10058,9 +10077,10 @@ function TransferRequestsView({ profile }) {
               ✕ Татгалзах
             </button>
             <button onClick={() => approveRequest(activeReq)}
+              disabled={approving}
               className="press-btn py-3 rounded-xl text-sm font-semibold"
-              style={{ background: T.ok, color: "white", fontFamily: FS }}>
-              ✓ Зөвшөөрөх
+              style={{ background: approving ? T.muted : T.ok, color: "white", fontFamily: FS, opacity: approving ? 0.6 : 1, cursor: approving ? "wait" : "pointer" }}>
+              {approving ? "⏳ Боловсруулж байна..." : "✓ Зөвшөөрөх"}
             </button>
           </div>
         )}
