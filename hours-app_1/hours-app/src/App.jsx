@@ -17503,6 +17503,7 @@ function DriverSettlementView({ profile }) {
                       order: o,
                       paidAmount: String(paid),
                       status: o.status,
+                      deliveryFee: String(o.delivery_fee || 0),
                     })}
                       className="press-btn p-1.5 rounded-lg flex-shrink-0"
                       style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}` }}
@@ -17677,6 +17678,21 @@ function DriverSettlementView({ profile }) {
                       ✕ Цуцалсан
                     </button>
                   </div>
+                </div>
+
+                {/* 🚚 Хүргэлтийн үнэ */}
+                <div className="mb-3">
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    🚚 Хүргэлтийн үнэ (delivery_fee)
+                  </label>
+                  <input type="number" value={editOrder.deliveryFee ?? ""}
+                    onChange={(e) => setEditOrder({ ...editOrder, deliveryFee: e.target.value })}
+                    placeholder="0"
+                    style={{
+                      background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink,
+                      fontFamily: FD, fontWeight: 600,
+                    }}
+                    className="w-full px-3 py-2.5 rounded-lg text-base tabular-nums" />
                 </div>
 
                 {/* Тушаасан дүн (зөвхөн delivered үед) */}
@@ -17858,6 +17874,7 @@ function DriverSettlementView({ profile }) {
                       const updates = { 
                         status: newStatus,
                         total_amount: newTotal,
+                        delivery_fee: Number(editOrder.deliveryFee) || 0,
                       };
                       if (newStatus === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
