@@ -18713,7 +18713,7 @@ function SettlementReportsView({ profile }) {
       setLoadingOrders(true);
       try {
         const { data, error } = await supabase.from("biz_orders")
-          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, status, delivered_at, cancelled_at, created_at")
+          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, status, delivered_at, cancelled_at, created_at, driver_id")
           .eq("settlement_id", activeReport.id)
           .order("delivered_at", { ascending: false, nullsFirst: false });
         if (error) throw error;
@@ -18723,7 +18723,7 @@ function SettlementReportsView({ profile }) {
         if (data && data.length > 0) {
           const orderIds = data.map(o => o.id);
           const items = await fetchInChunks("biz_order_items", orderIds, {
-            select: "id, order_id, product_name, quantity, unit_price, total_amount",
+            select: "id, order_id, product_id, product_name, quantity, unit_price, total_amount",
             filterColumn: "order_id",
           });
           // Group by order_id
@@ -18871,20 +18871,66 @@ function SettlementReportsView({ profile }) {
     }
   };
 
-  // 💾 Барааны тоо засвар хадгалах
-  const saveItemQty = async (item, orderId) => {
-    const qty = Number(itemQty || 0);
-    if (qty <= 0) { alert("⚠ Тоо 0-ээс их байх ёстой"); return; }
+  // 💾 Барааны тоо засвар хадгалах + агуулахын нөөц залруулах
+  const saveItemQty = async (item, order) => {
+    const orderId = order.id;
+    const newQty = Number(itemQty || 0);
+    if (newQty <= 0) { alert("⚠ Тоо 0-ээс их байх ёстой"); return; }
+    const oldQty = Number(item.quantity || 0);
+    const diff = newQty - oldQty; // + бол нэмэгдсэн (агуулахаас нэмж хасна), - бол хасагдсан (буцаана)
+    if (diff === 0) { setEditItemId(null); return; }
+
     setSavingItem(true);
     try {
-      const newTotal = qty * Number(item.unit_price || 0);
+      // 1. biz_order_items тоо + дүн шинэчлэх
+      const newTotal = newQty * Number(item.unit_price || 0);
       const { data, error } = await supabase
         .from("biz_order_items")
-        .update({ quantity: qty, total_amount: newTotal })
+        .update({ quantity: newQty, total_amount: newTotal })
         .eq("id", item.id)
         .select()
         .single();
       if (error) throw error;
+
+      // 2. Захиалга delivered БА product_id, driver_id байгаа бол → агуулахын нөөц залруулах
+      let stockMsg = "";
+      if (order.status === "delivered" && item.product_id && order.driver_id) {
+        // Driver-ийн агуулах олох
+        const { data: wh } = await supabase
+          .from("inv_warehouses")
+          .select("id")
+          .eq("driver_id", order.driver_id)
+          .eq("type", "driver")
+          .maybeSingle();
+        if (wh?.id) {
+          // diff > 0: нэмж хүргэсэн → агуулахаас нэмж хасах (out)
+          // diff < 0: бага хүргэсэн → агуулахад буцааж нэмэх (in)
+          const mvType = diff > 0 ? "out" : "in";
+          const mvQty = Math.abs(diff);
+          const { error: mvErr } = await supabase.from("inv_movements").insert({
+            product_id: item.product_id,
+            warehouse_id: wh.id,
+            movement_type: mvType,
+            quantity: mvQty,
+            reason: "adjustment",
+            created_by: profile.id,
+            notes: `Тооцоо засвар #${orderId.slice(0, 8)}: ${item.product_name || ""} ${oldQty}→${newQty}ш`,
+          });
+          if (mvErr) {
+            // Нөөц хүрэлцэхгүй г.м → тоог буцаах
+            await supabase.from("biz_order_items")
+              .update({ quantity: oldQty, total_amount: oldQty * Number(item.unit_price || 0) })
+              .eq("id", item.id);
+            throw new Error(`Агуулахын нөөц залруулж чадсангүй:\n${mvErr.message}\n(Барааны тоо буцаагдлаа)`);
+          }
+          stockMsg = diff > 0
+            ? `\n📦 Агуулахаас ${mvQty}ш нэмж хасагдлаа`
+            : `\n📦 Агуулахад ${mvQty}ш буцаагдлаа`;
+        } else {
+          stockMsg = "\n⚠ Driver-ийн агуулах олдсонгүй — нөөц залруулаагүй";
+        }
+      }
+
       // Локал items шинэчлэх
       setSettlementItems((prev) => {
         const copy = { ...prev };
@@ -18892,9 +18938,9 @@ function SettlementReportsView({ profile }) {
         return copy;
       });
       setEditItemId(null);
-      alert("✅ Барааны тоо засагдлаа");
+      alert(`✅ Барааны тоо засагдлаа (${oldQty}→${newQty}ш)${stockMsg}`);
     } catch (e) {
-      alert("❌ Барааны тоо засахад алдаа гарлаа\n" + e.message);
+      alert("❌ " + e.message);
     } finally {
       setSavingItem(false);
     }
@@ -19390,7 +19436,7 @@ function SettlementReportsView({ profile }) {
                                     <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="flex-1 truncate">
                                       {it.product_name || "—"}
                                     </span>
-                                    <button onClick={() => saveItemQty(it, o.id)} disabled={savingItem}
+                                    <button onClick={() => saveItemQty(it, o)} disabled={savingItem}
                                       style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
                                       className="press-btn px-2 py-0.5 rounded text-[9px]">
                                       {savingItem ? "..." : "💾"}
