@@ -32520,19 +32520,24 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
           .eq("settlement_id", activeReport.id)
           .order("delivered_at", { ascending: false });
         const ordList = ords || [];
-        // Захиалга бүрийн барааны тоо (biz_order_items)
+        // Захиалга бүрийн бараанууд (biz_order_items) — нэр + тоо
         const ordIds = ordList.map((o) => o.id);
-        const itemCountByOrder = {};
+        const itemsByOrder = {};
         if (ordIds.length > 0) {
           const { data: items } = await supabase
             .from("biz_order_items")
-            .select("order_id, quantity")
+            .select("order_id, product_name, quantity")
             .in("order_id", ordIds);
           (items || []).forEach((it) => {
-            itemCountByOrder[it.order_id] = (itemCountByOrder[it.order_id] || 0) + Number(it.quantity || 0);
+            if (!itemsByOrder[it.order_id]) itemsByOrder[it.order_id] = [];
+            itemsByOrder[it.order_id].push({ name: it.product_name || "—", qty: Number(it.quantity || 0) });
           });
         }
-        const enriched = ordList.map((o) => ({ ...o, itemCount: itemCountByOrder[o.id] || 0 }));
+        const enriched = ordList.map((o) => {
+          const its = itemsByOrder[o.id] || [];
+          const itemCount = its.reduce((s, x) => s + x.qty, 0);
+          return { ...o, items: its, itemCount };
+        });
         if (!cancelled) setReportOrders(enriched);
       } catch (e) { console.error(e); if (!cancelled) setReportOrders([]); }
       finally { if (!cancelled) setLoadingOrders(false); }
@@ -32657,7 +32662,8 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
                   ? { label: "Цуцалсан", color: T.err, bg: T.errSoft }
                   : { label: o.status, color: T.muted, bg: T.surfaceAlt };
                 return (
-                  <div key={o.id} className="flex items-center justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div key={o.id} className="p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
                         {o.order_number || "—"} · {o.customer_phone || "—"}
@@ -32683,6 +32689,22 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums flex-shrink-0">
                       {Number(o.total_amount || 0).toLocaleString()}₮
                     </div>
+                    </div>
+                    {/* Барааны дэлгэрэнгүй: нэр + тоо */}
+                    {o.items && o.items.length > 0 && (
+                      <div className="mt-1.5 pt-1.5 space-y-0.5" style={{ borderTop: `1px solid ${T.border}` }}>
+                        {o.items.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate flex-1 min-w-0">
+                              • {it.name}
+                            </span>
+                            <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums flex-shrink-0 ml-2">
+                              {it.qty}ш
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
