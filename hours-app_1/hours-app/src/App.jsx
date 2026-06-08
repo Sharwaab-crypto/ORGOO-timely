@@ -16817,6 +16817,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 function DriverSettlementView({ profile }) {
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [itemsByOrder, setItemsByOrder] = useState({}); // order_id → [items] (бараа харуулахад)
   const [loading, setLoading] = useState(true);
   const [activeDriver, setActiveDriver] = useState(null);
   const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
@@ -16907,6 +16908,22 @@ function DriverSettlementView({ profile }) {
       setDrivers(drvData || []);
       setOrders(ordData || []);
       setOpenSettlements(openSettleData || []);
+      // 🛍 Захиалгын бараа татах (картад харуулах) — driver-ийн захиалгуудынх
+      try {
+        const driverOrderIds = (ordData || []).map((o) => o.id);
+        if (driverOrderIds.length > 0) {
+          const allItems = await fetchInChunks("biz_order_items", driverOrderIds, {
+            select: "order_id, product_name, quantity",
+            filterColumn: "order_id",
+          });
+          const grouped = {};
+          (allItems || []).forEach((it) => {
+            if (!grouped[it.order_id]) grouped[it.order_id] = [];
+            grouped[it.order_id].push(it);
+          });
+          setItemsByOrder(grouped);
+        }
+      } catch (e) { console.error("[settlement items]", e); }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -17448,6 +17465,26 @@ function DriverSettlementView({ profile }) {
                           {o.notes.split("\n").pop()}
                         </div>
                       )}
+                      {/* 🛍 Бараа жагсаалт */}
+                      {(() => {
+                        const orderItems = itemsByOrder[o.id] || [];
+                        if (orderItems.length === 0) return null;
+                        return (
+                          <div className="mt-1 space-y-0.5">
+                            {orderItems.map((it, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5">
+                                <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                  className="text-[8px] px-1 py-0.5 rounded tabular-nums flex-shrink-0">
+                                  ×{it.quantity}
+                                </span>
+                                <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px] truncate">
+                                  {it.product_name || "—"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div style={{ fontFamily: FD, fontWeight: 700, color: isDelivered ? T.ink : T.muted }}
