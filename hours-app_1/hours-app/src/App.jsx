@@ -32886,7 +32886,21 @@ function DriverDashboard({ profile }) {
           return;
         }
 
-        // 3. Stock хөдөлгөөн бичих
+        // 3. ⚡ ЗАСВАР: Захиалгыг ЭХЛЭЭД delivered болгох. Амжилттай бол л stock хасна.
+        //    (өмнө movement эхэлж бичигдээд, захиалга update амжаагүй бол → бараа хасагдсан
+        //     атлаа захиалга assigned хэвээр үлддэг зөрчил гардаг байсан)
+        const { error: ordErr, data: ordData } = await supabase
+          .from("biz_orders")
+          .update(updates)
+          .eq("id", orderId)
+          .select();
+        if (ordErr) throw ordErr;
+        if (!ordData || ordData.length === 0) {
+          alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
+          return;
+        }
+
+        // 4. Захиалга delivered болсон → одоо stock хөдөлгөөн бичих
         const movements = validItems.map((it) => ({
           product_id: it.product_id,
           warehouse_id: driverWh.id,
@@ -32903,36 +32917,33 @@ function DriverDashboard({ profile }) {
           .select();
 
         if (mvErr) {
-          // Үлдэгдэл хүрэлцэхгүй алдаа → попап-руу зааварчилгаа
+          // ⚠ Захиалга delivered болсон ч stock хасагдсангүй → буцааж assigned болгох
+          //    (зөрчлөөс сэргийлэх: бараа хасагдаагүй бол захиалга ч delivered байх ёсгүй)
+          await supabase.from("biz_orders")
+            .update({ status: "assigned", delivered_at: null, delivered_by: null })
+            .eq("id", orderId);
           const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
           if (isShortStock) {
             setInsufficientStockOrder({ orderId, msg: mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
             return;
           }
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\nAdmin-руу хандаж SQL editor-руу "driver-stock-rls-fix.sql" ажиллуулах хэрэгтэй.`);
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\n(Захиалга буцаагдлаа — дахин оролдоно уу)`);
           return;
         }
 
         if (!mvData || mvData.length === 0) {
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн хадгалагдсангүй.\nAdmin-руу хандаарай.`);
+          // Stock хасагдсангүй → захиалга буцааж assigned
+          await supabase.from("biz_orders")
+            .update({ status: "assigned", delivered_at: null, delivered_by: null })
+            .eq("id", orderId);
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн хадгалагдсангүй.\n(Захиалга буцаагдлаа — дахин оролдоно уу)`);
           return;
         }
 
         logDev("✓ Stock хасагдсан:", mvData.length, "ш бараа");
       }
 
-      const { error, data } = await supabase
-        .from("biz_orders")
-        .update(updates)
-        .eq("id", orderId)
-        .select();
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
-        return;
-      }
-      // ⚡ Optimistic update — зөвхөн тухайн захиалгын state шинэчилнэ (loadAll биш)
-      //    → хуудас эхнээс эхлэхгүй, scroll/page хэвээр, тухайн захиалга дээрээ үргэлжилнэ
+      // ⚡ Optimistic update — зөвхөн тухайн захиалгын state шинэчилнэ
       setOrders((prev) => prev.map((o) =>
         o.id === orderId ? { ...o, ...updates } : o
       ));
