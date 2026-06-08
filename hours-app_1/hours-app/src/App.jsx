@@ -33582,6 +33582,39 @@ function DriverDashboard({ profile }) {
         }
 
         logDev("✓ Stock хасагдсан:", mvData.length, "ш бараа");
+      } else {
+        // 🔄 ЗАСВАР: Захиалга өмнө delivered байсан БА одоо delivered БИШ (cancelled/assigned)
+        //    болж байвал — өмнө хасагдсан барааг агуулахад БУЦААЖ нэмэх (in movement).
+        //    Өмнө: delivered→cancelled үед out movement үлдэж, бараа буруу хасагдсан хэвээр байсан.
+        const currentOrder = orders.find((o) => o.id === orderId);
+        const wasDelivered = currentOrder?.status === "delivered";
+        if (wasDelivered) {
+          // Driver-ийн агуулах
+          const { data: driverWh } = await supabase
+            .from("inv_warehouses").select("id").eq("driver_id", profile.id).maybeSingle();
+          // Захиалгын бараа
+          const { data: orderItems } = await supabase
+            .from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
+          if (driverWh && orderItems && orderItems.length > 0) {
+            const returnMovements = orderItems
+              .filter((it) => it.product_id)
+              .map((it) => ({
+                product_id: it.product_id,
+                warehouse_id: driverWh.id,
+                movement_type: "in",
+                quantity: Number(it.quantity || 0),
+                reason: "return",
+                created_by: profile.id,
+                notes: `Захиалга #${orderId.slice(0, 8)} ${newStatus === "cancelled" ? "цуцлагдсан" : "буцаагдсан"}: ${it.product_name || ""} (нөөц сэргээв)`,
+              }));
+            if (returnMovements.length > 0) {
+              await supabase.from("inv_movements").insert(returnMovements);
+            }
+          }
+        }
+        // Захиалгын статус шинэчлэх
+        const { error: ordErr2 } = await supabase.from("biz_orders").update(updates).eq("id", orderId);
+        if (ordErr2) throw ordErr2;
       }
 
       // ⚡ Optimistic update — зөвхөн тухайн захиалгын state шинэчилнэ
