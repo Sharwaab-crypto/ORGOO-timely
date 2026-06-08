@@ -14682,9 +14682,11 @@ function OperatorKPIReportView({ profile }) {
     });
 
     // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн оператор тодорхойлох (давхцалгүй, нийлбэр = нийт)
+    //    ⚠ Зөвхөн pending (жинхэнэ "дугаар бүртгэх") — Operator KPI-тай ижил.
+    //    ordered/cancelled нь "залгах" үйлдэл тул "бүртгэсэн дугаар"-т тооцохгүй.
     const phoneFirstOp = {};
     filteredCalls
-      .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status))
+      .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       .forEach((c) => {
         if (!phoneFirstOp[c.phone]) phoneFirstOp[c.phone] = c.created_by;
