@@ -31138,6 +31138,7 @@ function OperatorDashboard({ profile }) {
 function OperatorKPIView({ profile }) {
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [phoneFirstOp, setPhoneFirstOp] = useState({}); // утас → анх бүртгэсэн оператор id
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState(() => {
@@ -31190,6 +31191,27 @@ function OperatorKPIView({ profile }) {
         const { data: ordData } = await supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`);
         setCalls(callData || []);
         setOrders(ordData || []);
+
+        // 🔗 "Бүртгэсэн дугаар" Admin-тай ижил болгох: өөрийн pending утаснуудыг
+        //    ӨӨР хэн нэгэн түүнээс өмнө бүртгэсэн эсэхийг шалгах (давхардлаас сэргийлнэ).
+        const myPendingPhones = [...new Set(
+          (callData || [])
+            .filter((c) => (c.call_status === "pending" || !c.call_status) && c.phone)
+            .map((c) => c.phone)
+        )];
+        if (myPendingPhones.length > 0) {
+          const allForPhones = await fetchInChunks("biz_calls", myPendingPhones, {
+            select: "phone, created_by, call_status, created_at",
+            filterColumn: "phone",
+          });
+          // Утас бүрийн анхны pending бүртгэгч
+          const firstOp = {};
+          (allForPhones || [])
+            .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+            .forEach((c) => { if (!firstOp[c.phone]) firstOp[c.phone] = c.created_by; });
+          setPhoneFirstOp(firstOp);
+        }
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -31207,10 +31229,12 @@ function OperatorKPIView({ profile }) {
   }), [orders, periodRange]);
 
   // Stats — "Бүртгэсэн дугаар" = өөрийн АНХ бүртгэсэн (pending) дуудлагын unique утас.
-  //   Дугаар бүртгэх үйлдэл = pending үүсгэх. ordered/cancelled нь "залгах" (бусдын
-  //   бүртгэсэн дугаар руу ч байж болзошгүй) тул "бүртгэсэн дугаар"-т тооцохгүй.
+  //   ⚠ Admin-тай ижил: зөвхөн ӨӨР хэн нэгэн өмнө бүртгээгүй (анх би бүртгэсэн) утас.
   const uniquePhones = new Set(
-    filteredCalls.filter((c) => c.call_status === "pending" || !c.call_status).map((c) => c.phone)
+    filteredCalls
+      .filter((c) => (c.call_status === "pending" || !c.call_status) && c.phone)
+      .filter((c) => !phoneFirstOp[c.phone] || phoneFirstOp[c.phone] === profile.id)
+      .map((c) => c.phone)
   ).size;
   // ☎ "Нийт залгалт" = оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна) — Admin-тай ижил
   const totalCalls = filteredCalls.filter((c) =>
