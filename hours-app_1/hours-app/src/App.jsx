@@ -19969,6 +19969,37 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [items, setItems] = useState([]); // [{ productId, qty, ... }]
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  // 🆕 Бараа бүрийн "захиалга болсон ч хүргэгдээгүй" тоо (идэвхтэй захиалгууд: new/assigned)
+  const [pendingQtyByProduct, setPendingQtyByProduct] = useState({}); // { product_id: total_qty }
+
+  // Идэвхтэй (хүргэгдээгүй) захиалгуудаас бараа бүрийн нийт тоог татах
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: activeOrders } = await supabase
+          .from("biz_orders")
+          .select("id")
+          .in("status", ["new", "assigned"])
+          .limit(5000);
+        const orderIds = (activeOrders || []).map((o) => o.id);
+        if (orderIds.length === 0) { if (!cancelled) setPendingQtyByProduct({}); return; }
+        const orderItems = await fetchInChunks("biz_order_items", orderIds, {
+          select: "product_id, quantity, order_id",
+          filterColumn: "order_id",
+        });
+        if (cancelled) return;
+        const qtyMap = {};
+        (orderItems || []).forEach((it) => {
+          if (!it.product_id) return;
+          qtyMap[it.product_id] = (qtyMap[it.product_id] || 0) + Number(it.quantity || 0);
+        });
+        setPendingQtyByProduct(qtyMap);
+      } catch (e) { console.error("[pending qty fetch]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [activeProduct, setActiveProduct] = useState(null);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
@@ -20365,6 +20396,14 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                                 className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
                                 Тайлбар
                               </button>
+                              {pendingQtyByProduct[p.id] > 0 && (
+                                <span
+                                  title="Захиалга болсон ч хүргэгдээгүй тоо"
+                                  style={{ background: T.warnSoft, color: T.warn, fontFamily: FD, fontWeight: 700 }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded tabular-nums ml-auto">
+                                  🚚 {pendingQtyByProduct[p.id]}
+                                </span>
+                              )}
                             </div>
 
                             {/* Image (clickable to add) */}
