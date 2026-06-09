@@ -19971,8 +19971,10 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [showProductPicker, setShowProductPicker] = useState(false);
   // 🆕 Бараа бүрийн "захиалга болсон ч хүргэгдээгүй" тоо (идэвхтэй захиалгууд: new/assigned)
   const [pendingQtyByProduct, setPendingQtyByProduct] = useState({}); // { product_id: total_qty }
+  // 🆕 Бараа бүрийн ЖИНХЭНЭ үлдэгдэл (inv_stock нийлбэр — inv_products.stock хуучирсан байдаг)
+  const [realStockByProduct, setRealStockByProduct] = useState({}); // { product_id: total_stock }
 
-  // Идэвхтэй (хүргэгдээгүй) захиалгуудаас бараа бүрийн нийт тоог татах
+  // Идэвхтэй (хүргэгдээгүй) захиалгуудаас бараа бүрийн нийт тоог татах + жинхэнэ үлдэгдэл
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -19983,19 +19985,42 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
           .in("status", ["new", "assigned"])
           .limit(5000);
         const orderIds = (activeOrders || []).map((o) => o.id);
-        if (orderIds.length === 0) { if (!cancelled) setPendingQtyByProduct({}); return; }
-        const orderItems = await fetchInChunks("biz_order_items", orderIds, {
-          select: "product_id, quantity, order_id",
-          filterColumn: "order_id",
-        });
-        if (cancelled) return;
-        const qtyMap = {};
-        (orderItems || []).forEach((it) => {
-          if (!it.product_id) return;
-          qtyMap[it.product_id] = (qtyMap[it.product_id] || 0) + Number(it.quantity || 0);
-        });
-        setPendingQtyByProduct(qtyMap);
+        if (orderIds.length === 0) { if (!cancelled) setPendingQtyByProduct({}); }
+        else {
+          const orderItems = await fetchInChunks("biz_order_items", orderIds, {
+            select: "product_id, quantity, order_id",
+            filterColumn: "order_id",
+          });
+          if (!cancelled) {
+            const qtyMap = {};
+            (orderItems || []).forEach((it) => {
+              if (!it.product_id) return;
+              qtyMap[it.product_id] = (qtyMap[it.product_id] || 0) + Number(it.quantity || 0);
+            });
+            setPendingQtyByProduct(qtyMap);
+          }
+        }
       } catch (e) { console.error("[pending qty fetch]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ЖИНХЭНЭ үлдэгдэл — inv_stock-аас бараа бүрийн нийлбэр (inv_products.stock хуучирсан тул)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stockRows = await fetchAllRows(
+          supabase.from("inv_stock").select("product_id, quantity")
+        );
+        if (cancelled) return;
+        const stockMap = {};
+        (stockRows || []).forEach((s) => {
+          if (!s.product_id) return;
+          stockMap[s.product_id] = (stockMap[s.product_id] || 0) + Number(s.quantity || 0);
+        });
+        setRealStockByProduct(stockMap);
+      } catch (e) { console.error("[real stock fetch]", e); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -20529,7 +20554,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             {Number(p.sale_price || 0).toLocaleString()}₮
                           </td>
                           <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM, textAlign: "right" }} className="tabular-nums">
-                            {p.stock || 0}
+                            {realStockByProduct[p.id] ?? (p.stock || 0)}
                           </td>
                           <td style={{ padding: "10px 8px", textAlign: "center" }}>
                             <input type="number" value={it.qty}
