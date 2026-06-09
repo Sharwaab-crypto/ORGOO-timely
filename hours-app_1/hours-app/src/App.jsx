@@ -13342,6 +13342,17 @@ function CallCenterView({ profile }) {
                 }
               });
 
+              // 🐞 TEMP DEBUG — 99298162 cycle шалгах (дараа устгана)
+              if (typeof window !== "undefined") {
+                const dbgPhone = "99298162";
+                const dbgInGrouped = phoneGrouped[dbgPhone];
+                const dbgInAll = callsByPhoneAll[dbgPhone];
+                const dbgCycles = cycleList.filter((c) => c.phone === dbgPhone);
+                console.log("🐞 [99298162] phoneGrouped:", dbgInGrouped?.map((c) => c.call_status),
+                  "| callsByPhoneAll:", dbgInAll?.map((c) => c.call_status),
+                  "| cycles:", dbgCycles.map((c) => ({ status: c.status, n: c.calls.length, statuses: c.calls.map((x) => x.call_status) })));
+              }
+
               // biz_orders-аас status-ыг авах
               const orderStatusByPhone = {};
               orders.forEach((o) => {
