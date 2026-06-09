@@ -19972,6 +19972,56 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [activeProduct, setActiveProduct] = useState(null);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
+  // 🆕 Картын popup-тай адил: барааны тэмдэглэл + нийт нөөц + агуулах задаргаа
+  const [pdProductInfo, setPdProductInfo] = useState(null); // { product, totalStock }
+  const [pdStockPopup, setPdStockPopup] = useState(null); // { product, stocks }
+
+  // Popup нээгдэх үед барааны description + total stock татах (картын логиктой ижил)
+  useEffect(() => {
+    if (!activeProduct) {
+      setPdProductInfo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const productId = activeProduct.id;
+        if (!productId) {
+          setPdProductInfo({ product: null, totalStock: 0 });
+          return;
+        }
+        const [{ data: p }, { data: stk }] = await Promise.all([
+          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_stock").select("quantity").eq("product_id", productId),
+        ]);
+        if (cancelled) return;
+        const totalStock = (stk || []).reduce((s, x) => s + Number(x.quantity || 0), 0);
+        setPdProductInfo({ product: p, totalStock });
+      } catch (e) { console.error(e); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeProduct]);
+
+  // "Үлдэгдэл харах" — агуулах тус бүрд хуваан үзүүлэх (картын логиктой ижил)
+  const pdOpenStockPopup = async (product) => {
+    try {
+      if (!product?.id) {
+        alert("⚠ Энэ бараа агуулахад бүртгэлгүй");
+        return;
+      }
+      const [{ data: stk }, { data: whs }] = await Promise.all([
+        supabase.from("inv_stock").select("warehouse_id, quantity").eq("product_id", product.id),
+        supabase.from("inv_warehouses").select("id, name, driver_id"),
+      ]);
+      const whMap = Object.fromEntries((whs || []).map((w) => [w.id, w]));
+      const stocks = (stk || []).map((s) => ({
+        warehouse: whMap[s.warehouse_id],
+        qty: Number(s.quantity || 0),
+      })).filter((x) => x.warehouse && x.qty > 0);
+      stocks.sort((a, b) => b.qty - a.qty);
+      setPdStockPopup({ product: pdProductInfo?.product || product, stocks });
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
   // 🔗 FB Page хязгаарлалтын confirm modal
   const [pageConflictModal, setPageConflictModal] = useState(null);
   // pageConflictModal: null | { newProduct, removingItems, targetFbPageId, targetPageName }
@@ -20465,71 +20515,119 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
         </div>
       </div>
 
-      {/* Барааны popup */}
+      {/* Барааны popup — картын popup-тай адил (тэмдэглэл + нийт нөөц + агуулах задаргаа) */}
       {activeProduct && (
         <div onClick={() => setActiveProduct(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
-          className="flex items-center justify-center p-4">
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          }}>
           <div onClick={(e) => e.stopPropagation()}
-            className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
-            <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
-              {activeProduct.image_url ? (
-                <img src={activeProduct.image_url} alt={activeProduct.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <div style={{
-                  width: "100%", height: "100%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 80,
-                }}>📦</div>
-              )}
-              <button onClick={() => setActiveProduct(null)}
-                style={{
-                  position: "absolute", top: 12, right: 12,
-                  background: "rgba(0,0,0,0.6)", color: "white",
-                  width: 32, height: 32, borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                <X size={16} />
-              </button>
+            style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 520,
+              maxHeight: "85vh", overflowY: "auto",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {activeProduct.image_url ? (
+                    <img src={activeProduct.image_url} alt=""
+                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                  ) : (
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 8,
+                      background: T.surfaceAlt, display: "flex",
+                      alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>📦</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base truncate">
+                      {activeProduct.name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {activeProduct.sku && `SKU: ${activeProduct.sku} · `}
+                      {Number(activeProduct.sale_price || 0).toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setActiveProduct(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
+
+            {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
+              {/* 1. Барааны тэмдэглэл (description) */}
               <div>
-                <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                  {activeProduct.name}
-                </h4>
-                {activeProduct.sku && (
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                    SKU: {activeProduct.sku}
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                  📝 Барааны тэмдэглэл
+                </div>
+                {!pdProductInfo ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+                  </div>
+                ) : !pdProductInfo.product ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                      Бараа нөөц бүртгэлд олдсонгүй
+                    </div>
+                  </div>
+                ) : pdProductInfo.product.description ? (
+                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
+                      {pdProductInfo.product.description}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                      Тэмдэглэл оруулаагүй байна
+                    </div>
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between">
-                <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
-                  {Number(activeProduct.sale_price || 0).toLocaleString()}₮
-                </span>
-                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                  Нөөц: {activeProduct.stock} {activeProduct.unit}
-                </span>
-              </div>
-              {activeProduct.description && (
-                <div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
-                    📄 Тайлбар
+
+              {/* 2. Үлдэгдэл card */}
+              {pdProductInfo?.product && (
+                <button
+                  onClick={() => pdOpenStockPopup(pdProductInfo.product)}
+                  className="press-btn w-full rounded-lg p-3 flex items-center justify-between"
+                  style={{
+                    background: pdProductInfo.totalStock > 0 ? "rgba(16,185,129,0.08)" : T.errSoft,
+                    border: `1px solid ${pdProductInfo.totalStock > 0 ? T.ok : T.err}`,
+                  }}>
+                  <div className="text-left">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                      📦 Нийт үлдэгдэл (бүх агуулах)
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: pdProductInfo.totalStock > 0 ? T.ok : T.err }} className="text-2xl tabular-nums">
+                      {pdProductInfo.totalStock.toLocaleString()}ш
+                    </div>
                   </div>
-                  <div className="text-sm whitespace-pre-wrap p-3 rounded-lg"
-                    style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
-                    {activeProduct.description}
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Дэлгэрэнгүй →
                   </div>
-                </div>
+                </button>
               )}
+
+              {/* 3. Сонгогдсон эсэх / сонгох товч */}
               {(() => {
                 const selected = items.find((ip) => ip.productId === activeProduct.id);
                 if (!selected) {
                   return (
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-center text-xs italic">
-                      💡 Зураг дээр дарж сонгоно уу
-                    </div>
+                    <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
+                      className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ background: T.highlight, color: "white", fontFamily: FS }}>
+                      🛒 Энэ барааг сонгох
+                    </button>
                   );
                 }
                 return (
@@ -20548,6 +20646,103 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── Агуулахын үлдэгдэл popup (картынхтай адил) ─── */}
+      {pdStockPopup && createPortal(
+        <div onClick={() => setPdStockPopup(null)}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+              maxHeight: "85vh", overflowY: "auto",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                    📦 Агуулахын үлдэгдэл
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    {pdStockPopup.product?.name || "—"}
+                  </div>
+                </div>
+                <button onClick={() => setPdStockPopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              {pdStockPopup.stocks.length === 0 ? (
+                <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div className="text-3xl mb-2">📭</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Үлдэгдэлтэй агуулах алга
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg p-3 mb-3" style={{ background: T.highlightSoft }}>
+                    <div className="flex items-center justify-between">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        Нийт үлдэгдэл
+                      </div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                        {pdStockPopup.stocks.reduce((s, x) => s + x.qty, 0).toLocaleString()}ш
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                    Үлдэгдэлтэй агуулахууд ({pdStockPopup.stocks.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {pdStockPopup.stocks.map((s, idx) => {
+                      const isDriver = !!s.warehouse?.driver_id;
+                      return (
+                        <div key={s.warehouse?.id || idx}
+                          className="flex items-center justify-between rounded-lg p-3"
+                          style={{
+                            background: T.surface,
+                            borderLeft: `3px solid ${s.qty > 0 ? T.ok : T.err}`,
+                            border: `1px solid ${T.border}`,
+                          }}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span style={{ fontSize: 18 }}>
+                              {isDriver ? "🚚" : "🏬"}
+                            </span>
+                            <div className="min-w-0">
+                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                                {s.warehouse?.name || "—"}
+                              </div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                                {isDriver ? "Хүргэгчийн агуулах" : "Үндсэн агуулах"}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{
+                            fontFamily: FD, fontWeight: 700,
+                            color: s.qty > 0 ? T.ok : T.err,
+                          }} className="text-xl tabular-nums">
+                            {s.qty.toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* 🔗 FB Page conflict confirm modal */}
