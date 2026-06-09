@@ -12496,7 +12496,7 @@ function CallCenterView({ profile }) {
           const { data: newCall } = await supabase.from("biz_calls").insert({
             phone,
             customer_id: null, // Дараа CallReceiveModal-аас customer link
-            notes: callNotes || null,
+            notes: null, // 🆕 Шинэ дуудлага — өмнөх notes хуулахгүй (утасны дугаар/хуучин тэмдэглэл давтагдахаас сэргийлнэ)
             interested_products: callProducts || [],
             call_status: "pending",
             fb_page_id: callPage, // 🔗 Resolved page
@@ -13342,14 +13342,6 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // 🐞 TEMP DEBUG — 99298162 cycle шалгах (дараа устгана)
-              if (typeof window !== "undefined") {
-                const dbgPhone = "99298162";
-                const dbgCycles = cycleList.filter((c) => c.phone === dbgPhone);
-                console.log("🐞 [99298162] activeTab:", activeTab, "| cycleCount:", dbgCycles.length,
-                  "| statuses:", JSON.stringify(dbgCycles.map((c) => ({ status: c.status, calls: c.calls.map((x) => x.call_status) }))));
-              }
-
               // biz_orders-аас status-ыг авах
               const orderStatusByPhone = {};
               orders.forEach((o) => {
@@ -14115,7 +14107,7 @@ function CallCenterView({ profile }) {
           profile={profile}
           initialPhone={orderForCall.phone}
           initialName={orderForCall.name}
-          initialNotes={orderForCall.notes}
+          initialNotes={""}
           initialProducts={orderForCall.products}
           onCallback={async (phone) => {
             // Захиалга modal-аас status popup-руу шилжих
