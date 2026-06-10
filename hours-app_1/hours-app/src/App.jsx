@@ -12532,13 +12532,15 @@ function CallCenterView({ profile }) {
         phone,
         name: customerName,
         notes: callNotes,
-        products: [], // 🆕 Шинэ захиалга — өмнөх барааг урьдчилан дүүргэхгүй (хоосон эхэлнэ)
+        products: callProducts || [], // ✅ Тухайн дугаарын сонирхсон бараа (хамгийн сүүлийн pending-ийнх).
+                                        //    productsByPhoneAll нь зөвхөн сүүлийн pending дуудлагын
+                                        //    барааг агуулдаг тул хуучин ordered/delivered бараа орохгүй.
         callId: activeCallId, // 🆕 Шинэ үүсгэгдсэн call-ийн ID
       });
       await loadAll();
     } catch (e) {
       console.error("Error:", e);
-      setOrderForCall({ phone, name: customerName, notes: callNotes, products: [], callId });
+      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts || [], callId });
     }
     } finally {
       // 🛡 Боловсруулалт дууссан — дугаарыг чөлөөлөх (дараа дахин дарж болно)
