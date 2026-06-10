@@ -11982,11 +11982,24 @@ function LowStockAlertBanner() {
 
   const load = async () => {
     try {
-      const { data } = await supabase.from("inv_products")
-        .select("id, name, sku, stock, min_stock, image_url")
-        .gt("min_stock", 0);
-      
-      const low = (data || []).filter((p) => p.stock <= p.min_stock);
+      const [{ data }, { data: stockRows }] = await Promise.all([
+        supabase.from("inv_products")
+          .select("id, name, sku, min_stock, image_url")
+          .gt("min_stock", 0),
+        supabase.from("inv_stock").select("product_id, quantity"),
+      ]);
+
+      // 🆕 ЖИНХЭНЭ нөөц — inv_stock нийлбэр (inv_products.stock хуучирсан тул ашиглахгүй).
+      //    "Бараа нөөц" хэсэгтэй ижил эх үүсвэр.
+      const stockByProduct = {};
+      (stockRows || []).forEach((s) => {
+        if (!s.product_id) return;
+        stockByProduct[s.product_id] = (stockByProduct[s.product_id] || 0) + Number(s.quantity || 0);
+      });
+
+      const low = (data || [])
+        .map((p) => ({ ...p, stock: stockByProduct[p.id] || 0 }))
+        .filter((p) => p.stock <= p.min_stock);
       // Хамгийн бага үлдэгдлээр sort
       low.sort((a, b) => a.stock - b.stock);
       setLowProducts(low);
