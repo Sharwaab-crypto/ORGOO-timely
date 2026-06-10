@@ -20949,7 +20949,6 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
     if (!initialProducts || !Array.isArray(initialProducts) || initialProducts.length === 0) return [];
-    console.log("[CallReceiveModal] initialProducts:", initialProducts);
     return initialProducts.map((ip) => {
       const product = products.find((p) => p.id === ip.id);
       if (!product) {
@@ -33996,106 +33995,26 @@ function DriverDashboard({ profile }) {
     try {
       // 🚫 Хүргэгдсэн үед заавал агуулахаас бараа хасах — алгасч болохгүй
       if (newStatus === "delivered") {
-        // 1. Driver-ийн өөрийн агуулахыг олох
-        const { data: driverWh, error: whErr } = await supabase
-          .from("inv_warehouses")
-          .select("id, name")
-          .eq("driver_id", profile.id)
-          .maybeSingle();
+        // ⚡ АТОМИК: захиалга delivered болгох + бараа хасах нэг транзакцид (RPC).
+        //    Сүлжээ тасарсан ч хагас төлөв (movement орсон ч захиалга assigned) үүсэхгүй.
+        //    Аль хэдийн delivered бол давхар хасахгүй (идемпотент).
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("deliver_order", {
+          p_order_id: orderId,
+          p_driver_id: profile.id,
+        });
 
-        if (whErr) {
-          alert(`❌ Агуулах хайхад алдаа гарлаа\n${whErr.message}\n\nAdmin-руу хандаарай.`);
-          return;
-        }
-
-        if (!driverWh) {
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nТанд агуулах оноогдоогүй байна.\nAdmin-аас агуулах тохируулсны дараа дахин оролдоно уу.`);
-          return;
-        }
-
-        // 2. Захиалгын барааг авах
-        const { data: orderItems, error: itemsErr } = await supabase
-          .from("biz_order_items")
-          .select("product_id, quantity, product_name")
-          .eq("order_id", orderId);
-
-        if (itemsErr) {
-          alert(`❌ Захиалгын бараа уншихад алдаа гарлаа\n${itemsErr.message}`);
-          return;
-        }
-
-        if (!orderItems || orderItems.length === 0) {
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nЭнэ захиалгад бараа алга байна.\nАхлагчтай холбогдоорой.`);
-          return;
-        }
-
-        const validItems = orderItems.filter((it) => it.product_id);
-
-        if (validItems.length === 0) {
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nЗахиалгын бараанд product_id холбогдоогүй (${orderItems.length}ш бараа).\nАхлагчид хандан барааг бүртгэлд холбуулна уу.`);
-          return;
-        }
-
-        if (validItems.length < orderItems.length) {
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\n${orderItems.length}ш бараанаас ${orderItems.length - validItems.length}ш нь product_id-гүй (free text).\nАхлагчид хандан бараа бүртгэлд холбуулна уу.`);
-          return;
-        }
-
-        // 3. ⚡ ЗАСВАР: Захиалгыг ЭХЛЭЭД delivered болгох. Амжилттай бол л stock хасна.
-        //    (өмнө movement эхэлж бичигдээд, захиалга update амжаагүй бол → бараа хасагдсан
-        //     атлаа захиалга assigned хэвээр үлддэг зөрчил гардаг байсан)
-        const { error: ordErr, data: ordData } = await supabase
-          .from("biz_orders")
-          .update(updates)
-          .eq("id", orderId)
-          .select();
-        if (ordErr) throw ordErr;
-        if (!ordData || ordData.length === 0) {
-          alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
-          return;
-        }
-
-        // 4. Захиалга delivered болсон → одоо stock хөдөлгөөн бичих
-        const movements = validItems.map((it) => ({
-          product_id: it.product_id,
-          warehouse_id: driverWh.id,
-          movement_type: "out",
-          quantity: Number(it.quantity || 0),
-          reason: "delivery",
-          created_by: profile.id,
-          notes: `Захиалга #${orderId.slice(0, 8)} хүргэгдсэн: ${it.product_name || ""}`,
-        }));
-
-        const { data: mvData, error: mvErr } = await supabase
-          .from("inv_movements")
-          .insert(movements)
-          .select();
-
-        if (mvErr) {
-          // ⚠ Захиалга delivered болсон ч stock хасагдсангүй → буцааж assigned болгох
-          //    (зөрчлөөс сэргийлэх: бараа хасагдаагүй бол захиалга ч delivered байх ёсгүй)
-          await supabase.from("biz_orders")
-            .update({ status: "assigned", delivered_at: null, delivered_by: null })
-            .eq("id", orderId);
-          const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
+        if (rpcErr) {
+          const isShortStock = rpcErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
           if (isShortStock) {
-            setInsufficientStockOrder({ orderId, msg: mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
+            setInsufficientStockOrder({ orderId, msg: rpcErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
             return;
           }
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн бичигдсэнгүй:\n${mvErr.message}\n\n(Захиалга буцаагдлаа — дахин оролдоно уу)`);
+          // Бусад алдаа (агуулах алга, бараа холбогдоогүй г.м) — RPC-ийн мессежийг шууд харуулна
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\n${rpcErr.message}`);
           return;
         }
 
-        if (!mvData || mvData.length === 0) {
-          // Stock хасагдсангүй → захиалга буцааж assigned
-          await supabase.from("biz_orders")
-            .update({ status: "assigned", delivered_at: null, delivered_by: null })
-            .eq("id", orderId);
-          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\nБарааны хөдөлгөөн хадгалагдсангүй.\n(Захиалга буцаагдлаа — дахин оролдоно уу)`);
-          return;
-        }
-
-        logDev("✓ Stock хасагдсан:", mvData.length, "ш бараа");
+        logDev("✓ deliver_order RPC:", rpcData);
       } else {
         // 🔄 ЗАСВАР: Захиалга өмнө delivered байсан БА одоо delivered БИШ (cancelled/assigned)
         //    болж байвал — өмнө хасагдсан барааг агуулахад БУЦААЖ нэмэх (in movement).
