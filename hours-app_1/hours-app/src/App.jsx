@@ -12105,6 +12105,7 @@ function CallCenterView({ profile }) {
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [orderTotal, setOrderTotal] = useState(0);
   const [copiedPhone, setCopiedPhone] = useState("");
+  const processingPhonesRef = useRef(new Set()); // 🛡 Хурдан давхар дарахаас сэргийлэх (race condition)
   const [productNotePopup, setProductNotePopup] = useState(null); // { product, calls } — Барааны тэмдэглэл popup
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product info
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
@@ -12392,7 +12393,12 @@ function CallCenterView({ profile }) {
 
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
+    // 🛡 Хурдан давхар дарах хамгаалалт — энэ дугаар одоо боловсруулагдаж байвал зогсоох
+    //    (DB query async тул, түгжээгүй бол хоёр клик зэрэг давхар pending үүсгэж магадгүй)
+    if (processingPhonesRef.current.has(phone)) return;
+    processingPhonesRef.current.add(phone);
     try {
+      try {
       // 0. 🚫 Зөвхөн "new" (дөнгөж үүссэн, хараахан хуваарилагдаагүй) захиалгатай дугаарыг хориглох.
       //    assigned/delivered/cancelled бол шинэ захиалга авахыг зөвшөөрнө (хэрэглэгч дахин захиалж болно).
       const { data: activeOrd } = await supabase
@@ -12522,6 +12528,10 @@ function CallCenterView({ profile }) {
     } catch (e) {
       console.error("Error:", e);
       setOrderForCall({ phone, name: customerName, notes: callNotes, products: [], callId });
+    }
+    } finally {
+      // 🛡 Боловсруулалт дууссан — дугаарыг чөлөөлөх (дараа дахин дарж болно)
+      processingPhonesRef.current.delete(phone);
     }
   };
 
