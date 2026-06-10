@@ -12497,7 +12497,7 @@ function CallCenterView({ profile }) {
             phone,
             customer_id: null, // Дараа CallReceiveModal-аас customer link
             notes: null, // 🆕 Шинэ дуудлага — өмнөх notes хуулахгүй (утасны дугаар/хуучин тэмдэглэл давтагдахаас сэргийлнэ)
-            interested_products: callProducts || [],
+            interested_products: [], // 🆕 Шинэ дуудлага — өмнөх барааг хуулахгүй (хоосон эхэлнэ)
             call_status: "pending",
             fb_page_id: callPage, // 🔗 Resolved page
             created_by: profile.id,
@@ -12515,13 +12515,13 @@ function CallCenterView({ profile }) {
         phone,
         name: customerName,
         notes: callNotes,
-        products: callProducts,
+        products: [], // 🆕 Шинэ захиалга — өмнөх барааг урьдчилан дүүргэхгүй (хоосон эхэлнэ)
         callId: activeCallId, // 🆕 Шинэ үүсгэгдсэн call-ийн ID
       });
       await loadAll();
     } catch (e) {
       console.error("Error:", e);
-      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts, callId });
+      setOrderForCall({ phone, name: customerName, notes: callNotes, products: [], callId });
     }
   };
 
