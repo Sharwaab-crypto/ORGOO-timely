@@ -12244,18 +12244,26 @@ function CallCenterView({ profile }) {
         try {
           const withProducts = await fetchAllRows(
             supabase.from("biz_calls")
-              .select("phone, interested_products, call_status")
+              .select("phone, interested_products, call_status, created_at")
               .not("interested_products", "is", null)
           );
-          // Утас → бараанууд Map — ЗӨВХӨН pending (идэвхтэй) дуудлагаас.
-          //   ordered/cancelled/delivered болсон дуудлагын бараа ОРОХГҮЙ (хуучин захиалгын
-          //   бараа шинэ дуудлагын картад буруугаар нэмэгдэхээс сэргийлнэ).
-          const pmap = {};
+          // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
+          //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
+          //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
+          //    хуучин шийдэгдээгүй pending эсвэл захиалгын бараа шинэ дуудлагын картад
+          //    буруугаар нэмэгдэхгүй.)
+          const latestPendingByPhone = {}; // phone → {created_at, products}
           (withProducts || []).forEach((c) => {
             if (!c.interested_products || !Array.isArray(c.interested_products)) return;
             if (c.call_status !== "pending" && c.call_status) return; // зөвхөн pending (эсвэл статусгүй)
-            if (!pmap[c.phone]) pmap[c.phone] = [];
-            pmap[c.phone].push(...c.interested_products);
+            const prev = latestPendingByPhone[c.phone];
+            if (!prev || new Date(c.created_at) > new Date(prev.created_at)) {
+              latestPendingByPhone[c.phone] = { created_at: c.created_at, products: c.interested_products };
+            }
+          });
+          const pmap = {};
+          Object.entries(latestPendingByPhone).forEach(([phone, v]) => {
+            pmap[phone] = [...v.products];
           });
           setProductsByPhoneAll(pmap);
         } catch (e) { console.error("[products calls fetch]", e); }
