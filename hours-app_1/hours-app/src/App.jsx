@@ -23206,6 +23206,45 @@ function OrdersView({ profile }) {
     const updates = { status: newStatus };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
+
+    // 🔄 ЗАСВАР: delivered байсан захиалгыг cancelled/assigned болгоход — өмнө хасагдсан
+    //    барааг хүргэгчийн агуулахад БУЦААЖ нэмэх (in movement). Эс бөгөөс out үлдэж,
+    //    нөөц буруу хасагдсан хэвээр үлддэг (admin/оператор цуцлахад гардаг байсан зөрчил).
+    if (newStatus !== "delivered") {
+      const cur = orders.find((o) => o.id === orderId)
+        || (await supabase.from("biz_orders").select("status, driver_id").eq("id", orderId).maybeSingle()).data;
+      if (cur?.status === "delivered" && cur?.driver_id) {
+        try {
+          const { data: driverWh } = await supabase
+            .from("inv_warehouses").select("id").eq("driver_id", cur.driver_id).maybeSingle();
+          const { data: ordItems } = await supabase
+            .from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
+          // Аль хэдийн буцаагдаагүй эсэхийг шалгах (давхар буцаахаас сэргийлэх)
+          const { data: existingReturns } = await supabase
+            .from("inv_movements").select("product_id")
+            .eq("reason", "return")
+            .ilike("notes", `%${orderId.slice(0, 8)}%`);
+          const returnedSet = new Set((existingReturns || []).map((r) => r.product_id));
+          if (driverWh && ordItems && ordItems.length > 0) {
+            const returnMovements = ordItems
+              .filter((it) => it.product_id && !returnedSet.has(it.product_id))
+              .map((it) => ({
+                product_id: it.product_id,
+                warehouse_id: driverWh.id,
+                movement_type: "in",
+                quantity: Number(it.quantity || 0),
+                reason: "return",
+                created_by: profile.id,
+                notes: `Захиалга #${orderId.slice(0, 8)} ${newStatus === "cancelled" ? "цуцлагдсан" : "буцаагдсан"}: ${it.product_name || ""} (нөөц сэргээв)`,
+              }));
+            if (returnMovements.length > 0) {
+              await supabase.from("inv_movements").insert(returnMovements);
+            }
+          }
+        } catch (e) { console.error("[cancel stock reverse]", e); }
+      }
+    }
+
     await supabase.from("biz_orders").update(updates).eq("id", orderId);
     // 🆕 Захиалга цуцлагдахад biz_calls-д "cancelled" дуудлага нэмэх →
     //    дуудлагын cycle хаагдаж, шинэ захиалга тусдаа card болж салагдана.
