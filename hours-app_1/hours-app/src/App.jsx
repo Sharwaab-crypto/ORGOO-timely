@@ -19690,11 +19690,8 @@ function SettlementReportsView({ profile }) {
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
             {(totalSubmitted + totalPrepaid).toLocaleString()}₮
           </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
-            💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()} · 📤 {totalExpense.toLocaleString()}
-          </div>
-          <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }} className="text-[10px] tabular-nums mt-0.5">
-            💰 Урьдчилгаа: {totalPrepaid.toLocaleString()}₮
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums mt-0.5">
+            Бэлэн+Данс+Зарлага+Урьдчилгаа
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
@@ -19713,6 +19710,34 @@ function SettlementReportsView({ profile }) {
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📊 Нийт тооцоо</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xl tabular-nums">
             {totalSettlements}
+          </div>
+        </div>
+      </div>
+
+      {/* Тушаалтын задаргаа — Бэлэн / Данс / Зарлага / Урьдчилгаа */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #10b981` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💵 Бэлэн</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#10b981" }} className="text-xl tabular-nums">
+            {totalCash.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #3b82f6` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">🏦 Данс</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-xl tabular-nums">
+            {totalBank.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Зарлага</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+            {totalExpense.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #6366f1` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Урьдчилгаа</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xl tabular-nums">
+            {totalPrepaid.toLocaleString()}₮
           </div>
         </div>
       </div>
