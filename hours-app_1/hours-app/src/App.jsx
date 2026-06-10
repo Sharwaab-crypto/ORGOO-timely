@@ -34850,7 +34850,7 @@ function DriverDashboard({ profile }) {
           backdropFilter: "blur(8px)",
           overflowY: "auto",
         }}
-          onClick={() => { setActiveOrder(null); loadAll(); }}>
+          onClick={() => { setActiveOrder(null); }}>
           <div style={{
               background: T.bg,
               borderRadius: 16, width: "100%", maxWidth: 600,
@@ -34863,7 +34863,7 @@ function DriverDashboard({ profile }) {
               items={items[activeOrder.id] || []}
               isDriver={true}
               currentDriverId={profile.id}
-              onClose={() => { setActiveOrder(null); loadAll(); }}
+              onClose={() => { setActiveOrder(null); }}
               onUpdateStatus={async (s) => {
                 if (s === "delivered") {
                   // Хүргэсэн → үнэлгээ popup нээх
