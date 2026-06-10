@@ -12393,18 +12393,18 @@ function CallCenterView({ profile }) {
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
     try {
-      // 0. 🚫 Захиалга аль хэдийн болсон дугаарыг дахин залгахыг хориглох
-      //    (idэвхтэй захиалга = delivered/cancelled биш) → давхар дуудлага, давхар захиалга үүсэхээс сэргийлнэ
+      // 0. 🚫 Зөвхөн "new" (дөнгөж үүссэн, хараахан хуваарилагдаагүй) захиалгатай дугаарыг хориглох.
+      //    assigned/delivered/cancelled бол шинэ захиалга авахыг зөвшөөрнө (хэрэглэгч дахин захиалж болно).
       const { data: activeOrd } = await supabase
         .from("biz_orders")
         .select("id, order_number, status")
         .eq("customer_phone", phone)
-        .not("status", "in", "(delivered,cancelled)")
+        .eq("status", "new")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (activeOrd) {
-        alert(`🚫 Энэ дугаар аль хэдийн ЗАХИАЛГА БОЛСОН байна!\n\n📦 Захиалга: #${activeOrd.order_number || "—"}\n\nЗахиалга болсон дугаар руу дахин залгах боломжгүй.`);
+        alert(`🚫 Энэ дугаар аль хэдийн ЗАХИАЛГА БОЛСОН байна!\n\n📦 Захиалга: #${activeOrd.order_number || "—"}\n\nЗахиалга болсон (хараахан хуваарилагдаагүй) дугаар руу дахин залгах боломжгүй.`);
         return;
       }
 
@@ -13971,8 +13971,23 @@ function CallCenterView({ profile }) {
               }
               
               // Тус утсаар customer + call бичих
+              const skippedPhones = [];
               for (const phoneEntry of phoneList) {
                 const { phone, notes } = phoneEntry;
+
+                // 🚫 "new" (дөнгөж үүссэн, хараахан хуваарилагдаагүй) захиалгатай дугаарыг алгасах.
+                //    assigned/delivered/cancelled бол шинэ захиалга авахыг зөвшөөрнө.
+                const { data: newOrd } = await supabase
+                  .from("biz_orders")
+                  .select("order_number")
+                  .eq("customer_phone", phone)
+                  .eq("status", "new")
+                  .limit(1)
+                  .maybeSingle();
+                if (newOrd) {
+                  skippedPhones.push(`${phone} (#${newOrd.order_number || "—"})`);
+                  continue;
+                }
 
                 // 1. Customer find or create
                 let customerId = null;
@@ -14010,6 +14025,11 @@ function CallCenterView({ profile }) {
                   console.error("[Дугаар бүртгэх] biz_calls insert алдаа:", callErr);
                   throw new Error(`${phone} дугаар бүртгэхэд алдаа: ${callErr.message}`);
                 }
+              }
+
+              // 🚫 "new" захиалгатай тул алгассан дугааруудыг мэдэгдэх
+              if (skippedPhones.length > 0) {
+                alert(`🚫 Дараах дугаар(ууд) аль хэдийн ЗАХИАЛГА БОЛСОН тул бүртгэгдсэнгүй:\n\n${skippedPhones.join("\n")}\n\n(Захиалга хараахан хуваарилагдаагүй байгаа дугаарт дахин захиалга авах боломжгүй.)`);
               }
 
               setShowCallModal(false);
