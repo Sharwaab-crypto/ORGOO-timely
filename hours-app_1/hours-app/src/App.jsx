@@ -18908,6 +18908,8 @@ function SettlementReportsView({ profile }) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
+  const [prepaidBySettlement, setPrepaidBySettlement] = useState({}); // { settlement_id: total_prepaid }
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -18924,6 +18926,23 @@ function SettlementReportsView({ profile }) {
       });
       setDrivers(dMap);
       setProfilesData(pMap);
+
+      // 🆕 Settlement тус бүрийн нийт урьдчилгаа (prepaid) — захиалгуудаас тооцоолно
+      //    (biz_settlements-д prepaid багана байхгүй тул biz_orders-аас нийлбэрлэнэ)
+      const settlementIds = (rData || []).map((r) => r.id);
+      if (settlementIds.length > 0) {
+        const ordRows = await fetchInChunks("biz_orders", settlementIds, {
+          select: "settlement_id, prepaid_amount, status",
+          filterColumn: "settlement_id",
+        });
+        const ppMap = {};
+        (ordRows || []).forEach((o) => {
+          if (o.status !== "delivered") return;
+          if (!o.settlement_id) return;
+          ppMap[o.settlement_id] = (ppMap[o.settlement_id] || 0) + Number(o.prepaid_amount || 0);
+        });
+        setPrepaidBySettlement(ppMap);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -19126,6 +19145,7 @@ function SettlementReportsView({ profile }) {
 
   // Тооцоолол (filter-ийн хүрээнд)
   const totalSubmitted = filteredReports.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
+  const totalPrepaid = filteredReports.reduce((s, r) => s + Number(prepaidBySettlement[r.id] || 0), 0);
   const totalExpense = filteredReports.reduce((s, r) => s + Number(r.expense_amount || 0), 0);
   const totalCash = filteredReports.reduce((s, r) => s + Number(r.cash_amount || 0), 0);
   const totalBank = filteredReports.reduce((s, r) => s + Number(r.bank_amount || 0), 0);
@@ -19673,6 +19693,9 @@ function SettlementReportsView({ profile }) {
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
             💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()}
           </div>
+          <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }} className="text-[10px] tabular-nums mt-0.5">
+            💰 Урьдчилгаа: {totalPrepaid.toLocaleString()}₮
+          </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Нийт зарлага</div>
@@ -19908,6 +19931,15 @@ function SettlementReportsView({ profile }) {
                       </div>
                     </div>
                   </div>
+                  {Number(prepaidBySettlement[r.id] || 0) > 0 && (
+                    <div className="mt-1.5 rounded-lg p-1.5 flex items-center justify-between"
+                      style={{ background: "rgba(99,102,241,0.08)" }}>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Урьдчилгаа</span>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xs tabular-nums">
+                        {Number(prepaidBySettlement[r.id]).toLocaleString()}₮
+                      </span>
+                    </div>
+                  )}
                 </button>
               );
             })}
