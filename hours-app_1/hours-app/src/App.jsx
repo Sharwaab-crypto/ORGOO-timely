@@ -12244,13 +12244,16 @@ function CallCenterView({ profile }) {
         try {
           const withProducts = await fetchAllRows(
             supabase.from("biz_calls")
-              .select("phone, interested_products")
+              .select("phone, interested_products, call_status")
               .not("interested_products", "is", null)
           );
-          // Утас → бараанууд Map (бүх бараатай дуудлагаас)
+          // Утас → бараанууд Map — ЗӨВХӨН pending (идэвхтэй) дуудлагаас.
+          //   ordered/cancelled/delivered болсон дуудлагын бараа ОРОХГҮЙ (хуучин захиалгын
+          //   бараа шинэ дуудлагын картад буруугаар нэмэгдэхээс сэргийлнэ).
           const pmap = {};
           (withProducts || []).forEach((c) => {
             if (!c.interested_products || !Array.isArray(c.interested_products)) return;
+            if (c.call_status !== "pending" && c.call_status) return; // зөвхөн pending (эсвэл статусгүй)
             if (!pmap[c.phone]) pmap[c.phone] = [];
             pmap[c.phone].push(...c.interested_products);
           });
