@@ -19683,8 +19683,8 @@ function SettlementReportsView({ profile }) {
   // Жагсаалт
   return (
     <div className="space-y-3">
-      {/* Stats — 4 card */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* Stats — 3 card (зарлага доод эгнээнд) */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Нийт тушаасан</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
@@ -19692,12 +19692,6 @@ function SettlementReportsView({ profile }) {
           </div>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums mt-0.5">
             Бэлэн+Данс+Зарлага+Урьдчилгаа
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Нийт зарлага</div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
-            {totalExpense.toLocaleString()}₮
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.highlight}` }}>
