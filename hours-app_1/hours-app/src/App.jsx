@@ -19688,10 +19688,10 @@ function SettlementReportsView({ profile }) {
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Нийт тушаасан</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
-            {totalSubmitted.toLocaleString()}₮
+            {(totalSubmitted + totalPrepaid).toLocaleString()}₮
           </div>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
-            💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()}
+            💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()} · 📤 {totalExpense.toLocaleString()}
           </div>
           <div style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }} className="text-[10px] tabular-nums mt-0.5">
             💰 Урьдчилгаа: {totalPrepaid.toLocaleString()}₮
