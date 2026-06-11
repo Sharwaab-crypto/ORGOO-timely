@@ -2156,24 +2156,25 @@ function AdminDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
-  const upsertKpiEntries = async (deptId, date, entries) => {
-    // entries = [{ kpi_id, value, note }]
+  const upsertKpiEntries = async (deptId, date, entries, keepOpen = false) => {
+    // entries = [{ kpi_id, value, entry_date?, note? }]
     try {
       const rows = entries.map((e) => ({
         kpi_id: e.kpi_id,
         department_id: deptId,
-        entry_date: date,
+        entry_date: e.entry_date || date,
         value: e.value,
         note: e.note || null,
         entered_by: profile.id,
         updated_at: new Date().toISOString(),
       }));
+      if (rows.length === 0) { if (!keepOpen) setKpiInputDept(null); return; }
       const { error } = await supabase.from("kpi_entries").upsert(rows, {
         onConflict: "kpi_id,entry_date",
       });
       if (error) throw error;
-      setKpiInputDept(null);
-      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      if (!keepOpen) setKpiInputDept(null);
+      setFeedback({ type: "success", msg: `Хадгаллаа (${rows.length} утга)` });
       await loadAll();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
@@ -35866,23 +35867,25 @@ function ManagerDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
-  const upsertKpiEntries = async (deptId, date, entries) => {
+  const upsertKpiEntries = async (deptId, date, entries, keepOpen = false) => {
     try {
+      // entries: [{kpi_id, value, entry_date?, note?}] — entry_date байвал тэрийг, эс бол date ашиглана
       const rows = entries.map((e) => ({
         kpi_id: e.kpi_id,
         department_id: deptId,
-        entry_date: date,
+        entry_date: e.entry_date || date,
         value: e.value,
         note: e.note || null,
         entered_by: profile.id,
         updated_at: new Date().toISOString(),
       }));
+      if (rows.length === 0) { if (!keepOpen) setKpiInputDept(null); return; }
       const { error } = await supabase.from("kpi_entries").upsert(rows, {
         onConflict: "kpi_id,entry_date",
       });
       if (error) throw error;
-      setKpiInputDept(null);
-      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      if (!keepOpen) setKpiInputDept(null);
+      setFeedback({ type: "success", msg: `Хадгаллаа (${rows.length} утга)` });
       await loadAll();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
@@ -38787,79 +38790,189 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
 //  KPI ENTRY FORM (manager / admin daily input)
 // ═══════════════════════════════════════════════════════════════════════════
 function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClose }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
-  const [values, setValues] = useState({});
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [rangeMode, setRangeMode] = useState(7); // 7 | 14 | 30 | "custom"
+  const [customStart, setCustomStart] = useState(todayStr);
+  const [customEnd, setCustomEnd] = useState(todayStr);
+  const [values, setValues] = useState({}); // `${kpi_id}|${date}` → string
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Зөвхөн input KPI-уудыг харуулах (calculated болон copy биш)
+  // Зөвхөн input KPI (calculated/copy биш)
   const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated" && k.kpi_type !== "copy");
 
-  // Date солигдох тоолон утгуудыг ачаалах
+  // Огнооны жагсаалт (сүүлийн N хоног, эсвэл custom хүрээ) — хуучин→шинэ
+  const dateList = (() => {
+    const out = [];
+    if (rangeMode === "custom") {
+      let d = new Date(customStart + "T00:00:00");
+      const end = new Date(customEnd + "T00:00:00");
+      if (isNaN(d) || isNaN(end) || d > end) return [todayStr];
+      let guard = 0;
+      while (d <= end && guard < 92) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); guard++; }
+    } else {
+      const today = new Date(todayStr + "T00:00:00");
+      for (let i = rangeMode - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        out.push(d.toISOString().slice(0, 10));
+      }
+    }
+    return out;
+  })();
+
+  // Эхлэх утгуудыг existingEntries-ээс дүүргэх
   useEffect(() => {
     const initial = {};
     inputKpis.forEach((k) => {
-      const existing = existingEntries.find(e => e.kpi_id === k.id && e.entry_date === date);
-      initial[k.id] = existing ? String(existing.value) : "";
+      dateList.forEach((dt) => {
+        const ex = existingEntries.find((e) => e.kpi_id === k.id && e.entry_date === dt);
+        if (ex) initial[`${k.id}|${dt}`] = String(ex.value);
+      });
     });
     setValues(initial);
-  }, [date, inputKpis.length]);
+  }, [rangeMode, customStart, customEnd, inputKpis.length]);
 
-  const submit = async (advanceDay = false) => {
-    setErr("");
-    const entries = Object.entries(values)
-      .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
-      .map(([kpi_id, v]) => ({ kpi_id, value: Number(v) }));
-    if (entries.length === 0) return setErr("Ядаж нэг тоо оруулна уу");
-    setBusy(true);
-    await onSave(department.id, date, entries, advanceDay); // advanceDay=true бол modal хаахгүй
-    setBusy(false);
-    if (advanceDay) {
-      // 📅 Дараагийн өдөр рүү шилжих — огноог +1 хоног, талбаруудыг цэвэрлэх
-      const next = new Date(date + "T00:00:00");
-      next.setDate(next.getDate() + 1);
-      const nextStr = next.toISOString().slice(0, 10);
-      setDate(nextStr);
-      // values нь date useEffect-ээр шинэ огооны хуучин утгаар (байвал) дүүрнэ
-      setErr("");
-    }
+  const dayLabel = (dt) => {
+    const d = new Date(dt + "T00:00:00");
+    const days = ["Ня", "Да", "Мя", "Лх", "Пү", "Ба", "Бя"];
+    return { md: dt.slice(5), wd: days[d.getDay()] };
   };
 
-  return (
-    <Modal onClose={onClose} title={`${department.name} · KPI оруулах`} maxW="max-w-lg">
-      <div className="space-y-4">
-        <Field label="Огноо" required>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
-        </Field>
+  const collectEntries = () => {
+    const entries = [];
+    Object.entries(values).forEach(([key, v]) => {
+      if (v === "" || isNaN(Number(v))) return;
+      const [kpi_id, entry_date] = key.split("|");
+      entries.push({ kpi_id, entry_date, value: Number(v) });
+    });
+    return entries;
+  };
 
-        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-          {inputKpis.length === 0 ? (
-            <div className="glass-soft rounded-xl p-4 text-center">
-              <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
-            </div>
-          ) : (
-            inputKpis.map((k) => (
-              <div key={k.id} className="glass-soft rounded-xl p-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{k.name}</div>
-                  {k.unit && <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{k.unit}</div>}
-                </div>
-                <input type="number" step="any" value={values[k.id] || ""}
-                  onChange={(e) => setValues({ ...values, [k.id]: e.target.value })}
-                  placeholder="0"
-                  style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                  className="w-32 px-3 py-2 rounded-lg border text-sm outline-none text-right tabular-nums" />
-              </div>
-            ))
-          )}
+  const submit = async () => {
+    setErr("");
+    const entries = collectEntries();
+    if (entries.length === 0) return setErr("Ядаж нэг тоо оруулна уу");
+    setBusy(true);
+    await onSave(department.id, todayStr, entries, false);
+    setBusy(false);
+  };
+
+  // 🆕 Дундаж утга оруулах — нэг тоог хүрээний бүх өдөрт тавих
+  const fillAverage = () => {
+    const avg = window.prompt("Бүх өдөрт тавих дундаж/нийт утга оруулна уу (KPI бүрд тус тусдаа асууна).\n\nЭхлээд эхний KPI-д:");
+    // Энгийн хувилбар: KPI бүрд асууж, бүх өдөрт тэр утгыг тавина
+    const next = { ...values };
+    inputKpis.forEach((k, i) => {
+      const val = i === 0 && avg !== null ? avg
+        : window.prompt(`"${k.name}" — бүх ${dateList.length} өдөрт тавих утга:`);
+      if (val === null || val === "" || isNaN(Number(val))) return;
+      dateList.forEach((dt) => { next[`${k.id}|${dt}`] = String(Number(val)); });
+    });
+    setValues(next);
+  };
+
+  const filledCount = collectEntries().length;
+
+  return (
+    <Modal onClose={onClose} title={`Олон өдрийн тоо оруулах · ${department.name}`} maxW="max-w-4xl">
+      <div className="space-y-3">
+        {/* Хугацааны товчнууд */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] uppercase">Хугацаа:</span>
+          {[{ v: 7, l: "7 хоног" }, { v: 14, l: "14 хоног" }, { v: 30, l: "30 хоног" }, { v: "custom", l: "Тусгай" }].map((opt) => (
+            <button key={opt.v} onClick={() => setRangeMode(opt.v)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={rangeMode === opt.v
+                ? { background: T.highlight, color: "white", fontFamily: FS }
+                : { background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+              {opt.l}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <button onClick={fillAverage}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5"
+            style={{ background: T.ok, color: "white", fontFamily: FS }}>
+            Σ Дундаж утга оруулах
+          </button>
         </div>
+
+        {/* Custom огноо сонгогч */}
+        {rangeMode === "custom" && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customStart} max={todayStr} onChange={(e) => setCustomStart(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-sm outline-none" />
+            <span style={{ color: T.muted }}>→</span>
+            <input type="date" value={customEnd} max={todayStr} onChange={(e) => setCustomEnd(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-sm outline-none" />
+          </div>
+        )}
+
+        <div style={{ background: T.highlightSoft, color: T.ink, fontFamily: FM }} className="text-[11px] px-3 py-2 rounded-lg">
+          💡 Зөвлөгөө: Tab товчоор дараагийн нүд рүү шилжинэ. Хоосон нүд хадгалагдсан утгыг өөрчлөхгүй.
+        </div>
+
+        {inputKpis.length === 0 ? (
+          <div className="glass-soft rounded-xl p-4 text-center">
+            <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
+          </div>
+        ) : (
+          <div className="overflow-auto max-h-[55vh] rounded-xl border" style={{ borderColor: T.line }}>
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr style={{ background: T.surfaceAlt }}>
+                  <th style={{ color: T.muted, fontFamily: FM, background: T.surfaceAlt }}
+                    className="text-left px-3 py-2 text-[10px] uppercase sticky left-0 z-20 min-w-[120px]">КПИ</th>
+                  {dateList.map((dt) => {
+                    const { md, wd } = dayLabel(dt);
+                    const isToday = dt === todayStr;
+                    return (
+                      <th key={dt} className="px-2 py-2 text-center min-w-[70px]"
+                        style={{ background: isToday ? T.highlightSoft : T.surfaceAlt }}>
+                        <div style={{ color: isToday ? T.highlight : T.ink, fontFamily: FM, fontWeight: 600 }} className="text-[11px] tabular-nums">{md}</div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">{wd}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {inputKpis.map((k) => (
+                  <tr key={k.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                    <td className="px-3 py-2 sticky left-0 z-10" style={{ background: T.bg, borderLeft: `2px solid ${T.highlight}` }}>
+                      <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate max-w-[110px]">{k.name}</div>
+                      {k.unit && <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">{k.unit}</div>}
+                    </td>
+                    {dateList.map((dt) => (
+                      <td key={dt} className="px-1 py-1 text-center">
+                        <input type="number" step="any"
+                          value={values[`${k.id}|${dt}`] || ""}
+                          onChange={(e) => setValues({ ...values, [`${k.id}|${dt}`]: e.target.value })}
+                          placeholder="—"
+                          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                          className="w-16 px-1.5 py-1.5 rounded border text-xs outline-none text-center tabular-nums focus:border-black" />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {err && <ErrorBox>{err}</ErrorBox>}
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex items-center justify-between">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+            {inputKpis.length} КПИ × {dateList.length} өдөр = <span style={{ color: T.highlight, fontWeight: 700 }}>{filledCount}</span> оруулсан
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
+            {dateList[0]} → {dateList[dateList.length - 1]}
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-1">
           <button onClick={onClose}
             className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
             style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
@@ -38867,7 +38980,7 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
             className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ fontFamily: FS }}>
             {busy && <Loader2 size={13} className="spin" />}
-            Хадгалах
+            💾 Бүгдийг хадгалах
           </button>
         </div>
       </div>
