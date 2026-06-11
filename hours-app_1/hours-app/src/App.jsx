@@ -8373,9 +8373,26 @@ function InventoryView({ profile, isAdmin = false }) {
           onSave={async (data) => {
             try {
               if (editing.id) {
-                await supabase.from("inv_products").update({ ...data, updated_at: new Date().toISOString() }).eq("id", editing.id);
+                const { data: updated, error } = await supabase
+                  .from("inv_products")
+                  .update({ ...data, updated_at: new Date().toISOString() })
+                  .eq("id", editing.id)
+                  .select();
+                if (error) throw error;
+                if (!updated || updated.length === 0) {
+                  alert("⚠ Хадгалах боломжгүй байна.\n\nТанд энэ барааг засах эрх байхгүй байж магадгүй (RLS).\nAdmin-руу хандана уу.");
+                  return;
+                }
               } else {
-                await supabase.from("inv_products").insert({ ...data, created_by: profile.id });
+                const { data: inserted, error } = await supabase
+                  .from("inv_products")
+                  .insert({ ...data, created_by: profile.id })
+                  .select();
+                if (error) throw error;
+                if (!inserted || inserted.length === 0) {
+                  alert("⚠ Бараа нэмэх боломжгүй байна.\n\nТанд эрх байхгүй байж магадгүй (RLS).\nAdmin-руу хандана уу.");
+                  return;
+                }
               }
               setEditing(null);
               await loadAll();
@@ -13531,6 +13548,13 @@ function CallCenterView({ profile }) {
                 //    (нэг cycle дотор "Дугаар бүртгэсэн" + "Захиалга болсон" 2 мөр харагдана)
                 const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
+                // 💬 Операторын бичсэн сэтгэгдэл — статусын "[...]" тэмдэглэгээ биш, бодит notes.
+                //    Сүүлийн дуудлага notes-гүй байж болзошгүй (шинэ pending хоосон), тиймээс
+                //    notes-той хамгийн сүүлийн дуудлагаас авна. "[" -ээр эхэлсэн статус notes-ийг алгасна.
+                const noteCall = [...calls].reverse().find(
+                  (c) => c.notes && c.notes.trim() && !c.notes.trim().startsWith("[")
+                );
+                const cardCallNote = noteCall?.notes || null;
                 const customer = customerByPhone.get(phone);
                 // 📦 Энэ утасны захиалгын дугаар (байвал картан дээр харуулна)
                 const cardOrderInfo = orderInfoByPhone[phone] || {};
@@ -13605,7 +13629,7 @@ function CallCenterView({ profile }) {
 
                         return (
                           <>
-                            <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, allProducts.map((p) => ({ ...p, qty: p.totalQty || p.qty || 1 })), latestCall.id)}
+                            <button onClick={() => handlePhoneClick(phone, customer?.name, cardCallNote, allProducts.map((p) => ({ ...p, qty: p.totalQty || p.qty || 1 })), latestCall.id)}
                               disabled={isLockedByOther}
                               className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
                               style={{
@@ -14163,7 +14187,7 @@ function CallCenterView({ profile }) {
           profile={profile}
           initialPhone={orderForCall.phone}
           initialName={orderForCall.name}
-          initialNotes={""}
+          initialNotes={orderForCall.notes || ""}
           initialProducts={orderForCall.products}
           onCallback={async (phone) => {
             // Захиалга modal-аас status popup-руу шилжих
@@ -16039,14 +16063,52 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
     const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered");
     const revenue = deliveredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
     const delivered = deliveredOrders.length;
+    const cancelled = filteredOrders.filter((o) => o.status === "cancelled").length; // 🆕 Цуцалсан тоо
     const totalOrders = filteredOrders.length;
     const avgOrder = delivered > 0 ? revenue / delivered : 0;
     // 🆕 Бүх page-ээс нийт: дугаар бүртгэсэн, залгалт, захиалга бүртгэсэн
     const totalPhones = fbReport.reduce((s, p) => s + (p.uniquePhones || 0), 0);
     const totalCalls = fbReport.reduce((s, p) => s + (p.totalCalls || 0), 0);
     const totalRegOrders = fbReport.reduce((s, p) => s + (p.totalOrders || 0), 0);
-    return { revenue, delivered, totalOrders, avgOrder, totalPhones, totalCalls, totalRegOrders };
+    return { revenue, delivered, cancelled, totalOrders, avgOrder, totalPhones, totalCalls, totalRegOrders };
   }, [filteredOrders, fbReport]);
+
+  // 🆕 Барааны задаргаа popup — захиалгын статусаар (delivered/cancelled/all) барааг нэгтгэнэ
+  const [breakdownModal, setBreakdownModal] = useState(null); // { title, statusFilter } | null
+  const productBreakdown = useMemo(() => {
+    if (!breakdownModal) return null;
+    const { statusFilter } = breakdownModal;
+    // Шүүсэн захиалгууд (статусаар)
+    const ordIds = new Set(
+      filteredOrders
+        .filter((o) => statusFilter === "all" ? true : o.status === statusFilter)
+        .map((o) => o.id)
+    );
+    // Тэдгээр захиалгын бараа нэгтгэх
+    const prodMap = {}; // product_id → { name, sku, image_url, qty, amount }
+    (items || []).forEach((it) => {
+      if (!ordIds.has(it.order_id)) return;
+      const pid = it.product_id;
+      if (!prodMap[pid]) {
+        const p = products.find((x) => x.id === pid);
+        prodMap[pid] = {
+          name: it.product_name || p?.name || "—",
+          sku: p?.sku || "",
+          image_url: p?.image_url || null,
+          qty: 0, amount: 0,
+        };
+      }
+      prodMap[pid].qty += Number(it.quantity || 0);
+      prodMap[pid].amount += Number(it.quantity || 0) * Number(it.price || it.unit_price || 0);
+    });
+    const list = Object.values(prodMap).sort((a, b) => b.qty - a.qty);
+    return {
+      list,
+      totalProducts: list.length,
+      totalQty: list.reduce((s, p) => s + p.qty, 0),
+      totalAmount: list.reduce((s, p) => s + p.amount, 0),
+    };
+  }, [breakdownModal, filteredOrders, items, products]);
 
   // Excel export
   const exportExcel = () => {
@@ -16180,7 +16242,8 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                 Нийт орлого
               </div>
             </div>
-            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+            <button onClick={() => setBreakdownModal({ title: "Хүргэгдсэн захиалгын бараа", statusFilter: "delivered" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid ${T.highlight}` }}>
               <div style={{ background: T.highlightSoft, color: T.highlight }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
                 <ShoppingBag size={16} />
@@ -16189,9 +16252,9 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                 {totals.delivered}
               </div>
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
-                Хүргэгдсэн захиалга
+                Хүргэгдсэн захиалга <span style={{ color: T.muted }}>›</span>
               </div>
-            </div>
+            </button>
             <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #3b82f6` }}>
               <div style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
@@ -16240,7 +16303,8 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                 Нийт залгалт
               </div>
             </div>
-            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #14b8a6` }}>
+            <button onClick={() => setBreakdownModal({ title: "Бүртгэсэн захиалгын бараа", statusFilter: "all" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid #14b8a6` }}>
               <div style={{ background: "rgba(20,184,166,0.1)", color: "#14b8a6" }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
                 <ShoppingBag size={16} />
@@ -16249,10 +16313,85 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                 {totals.totalRegOrders}
               </div>
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
-                Бүртгэсэн захиалга
+                Бүртгэсэн захиалга <span style={{ color: T.muted }}>›</span>
+              </div>
+            </button>
+            <button onClick={() => setBreakdownModal({ title: "Цуцалсан захиалгын бараа", statusFilter: "cancelled" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid #ef4444` }}>
+              <div style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                ✕
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#ef4444" }} className="text-2xl tabular-nums">
+                {totals.cancelled}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Цуцалсан захиалга <span style={{ color: T.muted }}>›</span>
+              </div>
+            </button>
+          </div>
+
+          {/* 🆕 Барааны задаргаа popup — карт дээр дарахад */}
+          {breakdownModal && productBreakdown && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center p-3 overflow-y-auto"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+              onClick={() => setBreakdownModal(null)}>
+              <div className="rounded-2xl w-full max-w-2xl my-6"
+                style={{ background: T.bg, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}
+                onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: T.line }}>
+                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-base flex items-center gap-2">
+                    🛍 {breakdownModal.title} <span style={{ color: T.muted }} className="text-sm">({productBreakdown.totalProducts})</span>
+                  </div>
+                  <button onClick={() => setBreakdownModal(null)}
+                    style={{ color: T.muted }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5">✕</button>
+                </div>
+                {/* Нийт стат */}
+                <div className="grid grid-cols-3 gap-2 p-4">
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Бараа</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">{productBreakdown.totalProducts}</div>
+                  </div>
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт ширхэг</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">{productBreakdown.totalQty}</div>
+                  </div>
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт дүн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">{productBreakdown.totalAmount.toLocaleString()}₮</div>
+                  </div>
+                </div>
+                {/* Барааны grid */}
+                {productBreakdown.list.length === 0 ? (
+                  <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Бараа байхгүй</div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 pt-0">
+                    {productBreakdown.list.map((p, idx) => (
+                      <div key={idx} className="rounded-xl overflow-hidden border" style={{ borderColor: T.line, background: T.card }}>
+                        <div className="text-center pt-2">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Гарсан тоо</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                            {p.qty}<span style={{ color: T.muted }} className="text-xs"> ×</span>
+                          </div>
+                        </div>
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name} className="w-full h-28 object-cover" />
+                        ) : (
+                          <div className="w-full h-28 flex items-center justify-center text-3xl" style={{ background: T.highlightSoft }}>📦</div>
+                        )}
+                        <div className="p-2">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs line-clamp-2">{p.name}</div>
+                          {p.sku && <div style={{ color: T.highlight, fontFamily: FM }} className="text-[10px] mt-0.5">#{p.sku}</div>}
+                          <div style={{ color: T.ok, fontFamily: FD, fontWeight: 600 }} className="text-xs mt-1 tabular-nums">{p.amount.toLocaleString()}₮</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          )}
 
           {/* FB Pages report */}
           <div>
@@ -38667,15 +38806,24 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
     setValues(initial);
   }, [date, inputKpis.length]);
 
-  const submit = async () => {
+  const submit = async (advanceDay = false) => {
     setErr("");
     const entries = Object.entries(values)
       .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
       .map(([kpi_id, v]) => ({ kpi_id, value: Number(v) }));
     if (entries.length === 0) return setErr("Ядаж нэг тоо оруулна уу");
     setBusy(true);
-    await onSave(department.id, date, entries);
+    await onSave(department.id, date, entries, advanceDay); // advanceDay=true бол modal хаахгүй
     setBusy(false);
+    if (advanceDay) {
+      // 📅 Дараагийн өдөр рүү шилжих — огноог +1 хоног, талбаруудыг цэвэрлэх
+      const next = new Date(date + "T00:00:00");
+      next.setDate(next.getDate() + 1);
+      const nextStr = next.toISOString().slice(0, 10);
+      setDate(nextStr);
+      // values нь date useEffect-ээр шинэ огооны хуучин утгаар (байвал) дүүрнэ
+      setErr("");
+    }
   };
 
   return (
