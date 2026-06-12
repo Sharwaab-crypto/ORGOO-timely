@@ -12269,13 +12269,15 @@ function CallCenterView({ profile }) {
       const callData = callRes.data;
       const ordData = ordRes.data;
 
-      // 🛍 ЗАСВАР: limit(3000)-аас гадуур үлдсэн бараатай дуудлагуудыг ТУСДАА татах
-      //    (зөвхөн бараа харуулахад — recentCalls-д нэмэхгүй тул cycle/count буруудахгүй)
+      // 🛍 ЗАСВАР: зөвхөн PENDING дуудлагуудын барааг ТУСДАА татах (limit-гүй бүх түүх биш!)
+      //    ⚡ ГАЦАА ЗАСВАР: өмнө бүх interested_products-той дуудлага (~10K+ том jsonb) татаж
+      //    байсан → 5-10 сек гацаа. Pending нь хэдэн зуу л байдаг тул хурдан.
       if (!isMerchant) {
         try {
           const withProducts = await fetchAllRows(
             supabase.from("biz_calls")
               .select("phone, interested_products, call_status, created_at")
+              .eq("call_status", "pending")
               .not("interested_products", "is", null)
           );
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
