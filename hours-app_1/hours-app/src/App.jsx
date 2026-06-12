@@ -12295,7 +12295,7 @@ function CallCenterView({ profile }) {
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
 
-      const [callRes, { data: prodData }, custData, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
+      const [callRes, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
         callsQuery,
         productsQuery,
         // ⚡ ГАЦАА ЗАСВАР: бүх 6,400 хэрэглэгч (олон хуудас) татахын оронд зөвхөн сүүлийн
