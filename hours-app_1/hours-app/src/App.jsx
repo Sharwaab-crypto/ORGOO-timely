@@ -1662,32 +1662,53 @@ function AdminDashboard({ profile }) {
 
   const loadAll = async () => {
     try {
-      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann, wsch, fbp] = await Promise.all([
+      // ⚡ ГАЦАА ЗАСВАР: HR/Team дата (sessions, approvals, leaves, sites, employee_sites,
+      //    manager_employees, work_schedules) нь зөвхөн team/dashboard/schedule/calendar зэрэг
+      //    HR view-д хэрэгтэй. callcenter/sales/orders/inventory зэрэг view дээр эдгээрийг
+      //    татах нь дэмий ачаалал (давхар loadAll, 21 сек гацаа) үүсгэдэг байсан.
+      //    Эдгээр view дээр HR датаг алгасаж, зөвхөн идэвхтэй view-д хэрэгтэйг татна.
+      const hrViews = ["team", "dashboard", "schedule", "calendar", "skills", "polls", "hrfile", "announcements", "tasks", "best", "operator-kpi"];
+      const needsHR = hrViews.includes(view);
+
+      // Үндсэн дата — олон view-д хэрэгтэй, хөнгөн (үргэлж татна)
+      const corePromises = [
         supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing", "merchant"]).order("created_at", { ascending: false }),
+        supabase.from("departments").select("*").order("name"),
+        supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
+        supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+        supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
+      ];
+
+      // HR/Team дата — зөвхөн хэрэгтэй view-д
+      const hrPromises = needsHR ? [
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
         supabase.from("approvals").select("*").order("created_at", { ascending: false }),
         supabase.from("sites").select("*").order("name"),
         supabase.from("employee_sites").select("*"),
         supabase.from("manager_employees").select("*"),
-        supabase.from("departments").select("*").order("name"),
         supabase.from("leaves").select("*").order("created_at", { ascending: false }),
-        supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
-        supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
-        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-        supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
         supabase.from("work_schedules").select("*"),
-        supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
+      ] : [];
+
+      const [coreRes, hrRes] = await Promise.all([
+        Promise.all(corePromises),
+        Promise.all(hrPromises),
       ]);
+
+      const [emps, dept, kpiD, kpiE, tsk, ann, fbp] = coreRes;
+      const [sess, active, apps, st, es, me, lvs, wsch] = needsHR ? hrRes : [];
 
       // 🔧 Алдаа гарсан query-уудыг log хийх (silent failure-аас сэргийлэх)
       const errs = [];
       if (emps.error) errs.push(`profiles: ${emps.error.message}`);
-      if (sess.error) errs.push(`sessions: ${sess.error.message}`);
-      if (active.error) errs.push(`active_sessions: ${active.error.message}`);
-      if (apps.error) errs.push(`approvals: ${apps.error.message}`);
-      if (st.error) errs.push(`sites: ${st.error.message}`);
       if (dept.error) errs.push(`departments: ${dept.error.message}`);
+      if (needsHR && sess?.error) errs.push(`sessions: ${sess.error.message}`);
+      if (needsHR && active?.error) errs.push(`active_sessions: ${active.error.message}`);
+      if (needsHR && apps?.error) errs.push(`approvals: ${apps.error.message}`);
+      if (needsHR && st?.error) errs.push(`sites: ${st.error.message}`);
       if (errs.length > 0) {
         logErr("[AdminDashboard.loadAll] errors:", errs);
       }
@@ -1697,24 +1718,28 @@ function AdminDashboard({ profile }) {
         setEmployees(emps.data.filter((p) => ["employee", "operator", "driver", "manager", "marketing", "merchant"].includes(p.role)));
         setManagers(emps.data.filter((p) => p.role === "manager"));
       }
-      if (sess.data) setSessions(sess.data);
-      if (active.data) {
-        const map = {};
-        active.data.forEach((a) => { map[a.employee_id] = a; });
-        setActiveSessions(map);
-      }
-      if (apps.data) setApprovals(apps.data);
-      if (st.data) setSites(st.data);
-      if (es.data) setEmployeeSites(es.data);
-      if (me.data) setManagerEmployees(me.data);
       if (dept.data) setDepartments(dept.data);
-      if (lvs.data) setLeaves(lvs.data);
-      if (wsch.data) setWorkSchedules(wsch.data);
       if (fbp.data) setFbPages(fbp.data);
       if (kpiD.data) setKpiDefs(kpiD.data);
       if (kpiE.data) setKpiEntries(kpiE.data);
       if (tsk.data) setTasks(tsk.data);
       if (ann.data) setAnnouncements(ann.data);
+
+      // HR дата — зөвхөн татсан үед setState (бусад үед хуучин утга хэвээр үлдэнэ)
+      if (needsHR) {
+        if (sess?.data) setSessions(sess.data);
+        if (active?.data) {
+          const map = {};
+          active.data.forEach((a) => { map[a.employee_id] = a; });
+          setActiveSessions(map);
+        }
+        if (apps?.data) setApprovals(apps.data);
+        if (st?.data) setSites(st.data);
+        if (es?.data) setEmployeeSites(es.data);
+        if (me?.data) setManagerEmployees(me.data);
+        if (lvs?.data) setLeaves(lvs.data);
+        if (wsch?.data) setWorkSchedules(wsch.data);
+      }
     } catch (e) {
       logErr("[AdminDashboard.loadAll] exception:", e);
       setFeedback?.({ type: "error", msg: "Өгөгдөл татаж чадсангүй: " + (e.message || "Холбоо тасарсан") });
@@ -1722,6 +1747,17 @@ function AdminDashboard({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // 🔄 HR view руу анх орох үед HR дата татах (callcenter дээр алгассан байсныг нөхөх).
+  //    view солих болгонд биш — зөвхөн HR биш view-ээс HR view руу шилжихэд.
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    const hrViews = ["team", "dashboard", "schedule", "calendar", "skills", "polls", "hrfile", "announcements", "tasks", "best", "operator-kpi"];
+    const wasHR = hrViews.includes(prevViewRef.current);
+    const isHR = hrViews.includes(view);
+    if (!wasHR && isHR) loadAll();
+    prevViewRef.current = view;
+  }, [view]);
 
   // Debounced loadAll — олон realtime event нэг дор ирэхэд 1 удаа дуудна
   const debouncedReload = useDebouncedCallback(loadAll, 800);
