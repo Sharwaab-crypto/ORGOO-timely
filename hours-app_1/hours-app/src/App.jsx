@@ -12314,8 +12314,11 @@ function CallCenterView({ profile }) {
             (ph) => lastStatusByPhone[ph] !== "ordered" && lastStatusByPhone[ph] !== "cancelled"
           );
           if (callingPhones.length > 0) {
+            // ⚡ ГАЦАА ЗАСВАР: interested_products (том jsonb, зурагтай) ХАСав —
+            //    бараа productsByPhoneAll-аас ирдэг тул түүхэнд хэрэггүй. Энэ нь
+            //    дата хэмжээг эрс багасгаж гацаа арилгана.
             const allCallsForPhones = await fetchInChunks("biz_calls", callingPhones, {
-              select: "id, phone, call_status, created_at, created_by, notes, interested_products, fb_page_id",
+              select: "id, phone, call_status, created_at, created_by, notes, fb_page_id",
               filterColumn: "phone",
             });
             const cmap = {};
