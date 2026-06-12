@@ -39411,6 +39411,30 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   const periodLabel = groupBy === "week" ? "долоо хоног" : groupBy === "month" ? "сар" : "өдөр";
 
+  // 🎯 KPI бүрийн нэг үе (өдөр/долоо хоног/сар)-ийн зорилтыг тооцоолох helper.
+  //    ReferenceLine болон багана дээрх % шошго хоёулаа үүнийг ашиглана (нэг эх).
+  const periodTargetFor = (kpi) => {
+    if (kpi.target_source_kpi_id && kpi.target_percent) {
+      const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+      const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+      if ((chartData || []).length > 0 && sourceTotal > 0) {
+        return Math.round((sourceTotal / chartData.length) * Number(kpi.target_percent) / 100);
+      }
+      return 0;
+    }
+    if (kpi.target) {
+      let t = Number(kpi.target);
+      if (kpi.target_period === "daily" && groupBy === "week") t *= 7;
+      else if (kpi.target_period === "daily" && groupBy === "month") t *= 30;
+      else if (kpi.target_period === "weekly" && groupBy === "day") t /= 7;
+      else if (kpi.target_period === "weekly" && groupBy === "month") t *= 4;
+      else if (kpi.target_period === "monthly" && groupBy === "day") t /= 30;
+      else if (kpi.target_period === "monthly" && groupBy === "week") t /= 4;
+      return Math.round(t);
+    }
+    return 0;
+  };
+
   // 🎯 Зорилтын reference line-ийг багтаахаар Y тэнхлэгийн дээд хязгаарыг тооцоолох.
   //    (Зорилт өндөр байвал (жнь monthly target долоо хоногт хувирахад) автомат Y тэнхлэгээс
   //     хэтэрч, шугам график дээр харагдахгүй байсныг засна.)
@@ -39423,25 +39447,10 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         if (v > dataMax) dataMax = v;
       });
     });
-    // Зорилтын max (график дээрхтэй ижил тооцоолол)
+    // Зорилтын max (helper ашиглана)
     let targetMax = 0;
     deptKpis.forEach((kpi) => {
-      let t = 0;
-      if (kpi.target_source_kpi_id && kpi.target_percent) {
-        const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
-        const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
-        if ((chartData || []).length > 0 && sourceTotal > 0) {
-          t = Math.round((sourceTotal / chartData.length) * Number(kpi.target_percent) / 100);
-        }
-      } else if (kpi.target) {
-        t = Number(kpi.target);
-        if (kpi.target_period === "daily" && groupBy === "week") t *= 7;
-        else if (kpi.target_period === "daily" && groupBy === "month") t *= 30;
-        else if (kpi.target_period === "weekly" && groupBy === "day") t /= 7;
-        else if (kpi.target_period === "weekly" && groupBy === "month") t *= 4;
-        else if (kpi.target_period === "monthly" && groupBy === "day") t /= 30;
-        else if (kpi.target_period === "monthly" && groupBy === "week") t /= 4;
-      }
+      const t = periodTargetFor(kpi);
       if (t > targetMax) targetMax = t;
     });
     const overallMax = Math.max(dataMax, targetMax);
@@ -39495,40 +39504,22 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {/* 🎯 Зорилтын reference line — KPI бүрд (динамик эсвэл статик) */}
             {deptKpis.map((kpi, i) => {
-              let perPeriodTarget = 0;
-              if (kpi.target_source_kpi_id && kpi.target_percent) {
-                // Динамик зорилт — эх KPI-ийн entries-аас тооцоолох
-                const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
-                const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
-                if (chartData.length > 0 && sourceTotal > 0) {
-                  const sourceAvg = sourceTotal / chartData.length;
-                  perPeriodTarget = Math.round((sourceAvg * Number(kpi.target_percent)) / 100);
-                }
-              } else if (kpi.target) {
-                // Статик зорилт
-                perPeriodTarget = Number(kpi.target);
-                if (kpi.target_period === "daily" && groupBy === "week") perPeriodTarget *= 7;
-                else if (kpi.target_period === "daily" && groupBy === "month") perPeriodTarget *= 30;
-                else if (kpi.target_period === "weekly" && groupBy === "day") perPeriodTarget /= 7;
-                else if (kpi.target_period === "weekly" && groupBy === "month") perPeriodTarget *= 4;
-                else if (kpi.target_period === "monthly" && groupBy === "day") perPeriodTarget /= 30;
-                else if (kpi.target_period === "monthly" && groupBy === "week") perPeriodTarget /= 4;
-                perPeriodTarget = Math.round(perPeriodTarget);
-              }
+              const perPeriodTarget = periodTargetFor(kpi);
               if (perPeriodTarget <= 0) return null;
               return (
                 <ReferenceLine
                   key={`target-${kpi.id}`}
                   y={perPeriodTarget}
                   stroke={COLORS[i % COLORS.length]}
-                  strokeDasharray="5 5"
-                  strokeWidth={1.5}
+                  strokeDasharray="8 4"
+                  strokeWidth={2.5}
+                  strokeOpacity={0.9}
                   label={{
-                    value: `🎯 ${kpi.name} (${perPeriodTarget.toLocaleString()})`,
+                    value: `🎯 ${kpi.name}: ${perPeriodTarget.toLocaleString()}`,
                     position: "insideTopRight",
-                    fontSize: 9,
+                    fontSize: 10,
                     fill: COLORS[i % COLORS.length],
-                    fontWeight: 600,
+                    fontWeight: 700,
                   }}
                 />
               );
@@ -39545,15 +39536,26 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
                 strokeWidth={chartType === "line" ? 2.5 : 1}
                 dot={chartType === "line" ? { r: 3 } : false}
               >
-                {/* 🏷 Тоон утга харуулна — bar/area chart-руу зөвхөн */}
-                {chartType !== "line" && chartData.length <= 10 && (
-                  <LabelList
-                    dataKey={kpi.name}
-                    position="top"
-                    style={{ fontSize: 10, fontWeight: 600, fill: COLORS[i % COLORS.length] }}
-                    formatter={(v) => v > 0 ? (v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString()) : ""}
-                  />
-                )}
+                {/* 🏷 Тоон утга + зорилтын % харуулна — bar/area chart-руу зөвхөн */}
+                {chartType !== "line" && chartData.length <= 10 && (() => {
+                  const tgt = periodTargetFor(kpi);
+                  return (
+                    <LabelList
+                      dataKey={kpi.name}
+                      position="top"
+                      style={{ fontSize: 10, fontWeight: 700, fill: COLORS[i % COLORS.length] }}
+                      formatter={(v) => {
+                        if (!v || v <= 0) return "";
+                        const valStr = v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString();
+                        if (tgt > 0) {
+                          const pct = Math.round((v / tgt) * 100);
+                          return `${valStr} (${pct}%)`;
+                        }
+                        return valStr;
+                      }}
+                    />
+                  );
+                })()}
               </DataComponent>
             ))}
           </ChartComponent>
