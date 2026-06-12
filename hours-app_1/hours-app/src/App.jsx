@@ -12298,7 +12298,12 @@ function CallCenterView({ profile }) {
       const [callRes, { data: prodData }, custData, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
         callsQuery,
         productsQuery,
-        fetchAllRows(supabase.from("biz_customers").select("phone, name, created_at, last_order_at")),
+        // ⚡ ГАЦАА ЗАСВАР: бүх 6,400 хэрэглэгч (олон хуудас) татахын оронд зөвхөн сүүлийн
+        //    90 хоногт захиалгатай идэвхтэй хэрэглэгчийг татна. (customers нь зөвхөн картан дээр
+        //    нэр харуулахад ашиглагддаг — хуучин идэвхгүй хэрэглэгч хэрэггүй.)
+        supabase.from("biz_customers").select("phone, name, created_at, last_order_at")
+          .gte("last_order_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+          .limit(5000),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
         ordersQuery,
