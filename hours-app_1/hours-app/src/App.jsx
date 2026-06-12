@@ -12169,6 +12169,7 @@ function CallCenterView({ profile }) {
     try { return localStorage.getItem("orgoo-active-fbpage") || ""; } catch { return ""; }
   }); // 🔗 Дуудлага бүртгэх идэвхтэй FB Page
   const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(false); // ⚡ давхар loadAll дуудлагаас хамгаалах guard
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [orderTotal, setOrderTotal] = useState(0);
   const [copiedPhone, setCopiedPhone] = useState("");
@@ -12274,6 +12275,11 @@ function CallCenterView({ profile }) {
   }, [period, customStart, customEnd]);
 
   const loadAll = async () => {
+    // ⚡ ГАЦАА ЗАСВАР: давхар дуудлагаас хамгаалах — хэрэв аль хэдийн ачаалж байвал алгасна.
+    //    (StrictMode эсвэл re-mount-аас болж loadAll 2 удаа зэрэг ажиллаж, бүх дата давхар
+    //     татагдаж байсныг (biz_calls/orders/customers ×2) зогсооно.)
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       // 🏪 Merchant горим — зөвхөн өөрийн FB Page-ээр шүүх
@@ -12421,7 +12427,7 @@ function CallCenterView({ profile }) {
         setOrderTotal(orderCount || 0);
       }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); loadingRef.current = false; }
   };
 
   useEffect(() => { loadAll(); }, []);
