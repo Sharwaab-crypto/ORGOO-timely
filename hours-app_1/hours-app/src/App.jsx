@@ -39411,6 +39411,45 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   const periodLabel = groupBy === "week" ? "долоо хоног" : groupBy === "month" ? "сар" : "өдөр";
 
+  // 🎯 Зорилтын reference line-ийг багтаахаар Y тэнхлэгийн дээд хязгаарыг тооцоолох.
+  //    (Зорилт өндөр байвал (жнь monthly target долоо хоногт хувирахад) автомат Y тэнхлэгээс
+  //     хэтэрч, шугам график дээр харагдахгүй байсныг засна.)
+  const yAxisMax = useMemo(() => {
+    // Өгөгдлийн max
+    let dataMax = 0;
+    (chartData || []).forEach((row) => {
+      deptKpis.forEach((kpi) => {
+        const v = Number(row[kpi.name]) || 0;
+        if (v > dataMax) dataMax = v;
+      });
+    });
+    // Зорилтын max (график дээрхтэй ижил тооцоолол)
+    let targetMax = 0;
+    deptKpis.forEach((kpi) => {
+      let t = 0;
+      if (kpi.target_source_kpi_id && kpi.target_percent) {
+        const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+        const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+        if ((chartData || []).length > 0 && sourceTotal > 0) {
+          t = Math.round((sourceTotal / chartData.length) * Number(kpi.target_percent) / 100);
+        }
+      } else if (kpi.target) {
+        t = Number(kpi.target);
+        if (kpi.target_period === "daily" && groupBy === "week") t *= 7;
+        else if (kpi.target_period === "daily" && groupBy === "month") t *= 30;
+        else if (kpi.target_period === "weekly" && groupBy === "day") t /= 7;
+        else if (kpi.target_period === "weekly" && groupBy === "month") t *= 4;
+        else if (kpi.target_period === "monthly" && groupBy === "day") t /= 30;
+        else if (kpi.target_period === "monthly" && groupBy === "week") t /= 4;
+      }
+      if (t > targetMax) targetMax = t;
+    });
+    const overallMax = Math.max(dataMax, targetMax);
+    if (overallMax <= 0) return undefined; // авто
+    // 10% дээш зай үлдээж, зорилт багтаана
+    return Math.ceil((overallMax * 1.1) / 100) * 100;
+  }, [chartData, deptKpis, filteredEntries, groupBy]);
+
   // 📊 График-ийн тоймийг бэлдэх
   const chartSummary = useMemo(() => {
     if (!chartData || chartData.length === 0) return null;
@@ -39451,7 +39490,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
           <ChartComponent data={chartData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={[0, yAxisMax || "auto"]} />
             <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {/* 🎯 Зорилтын reference line — KPI бүрд (динамик эсвэл статик) */}
