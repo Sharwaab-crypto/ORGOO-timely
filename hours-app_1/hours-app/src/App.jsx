@@ -34325,7 +34325,16 @@ function DriverDashboard({ profile }) {
     await supabase.auth.signOut();
   };
 
+  const deliveringRef = useRef(new Set()); // ⚡ Давхар хүргэлтээс сэргийлэх — ажиллаж буй orderId-ууд
   const updateStatus = async (orderId, newStatus) => {
+    // ⚡ ДАВХАР ХҮРГЭЛТ ЗАСВАР: ижил захиалгыг зэрэг/давхар хүргэхээс сэргийлэх.
+    //    (Жолооч "Хүргэсэн" товчийг хоёр дарахад deliver_order 2 удаа зэрэг ажиллаж,
+    //     бараа 2 дахин хасагдаж байсныг (нөөц сөрөг болох гол шалтгаан) зогсооно.)
+    if (deliveringRef.current.has(orderId)) {
+      console.log("[updateStatus] аль хэдийн боловсруулж байна:", orderId);
+      return;
+    }
+    deliveringRef.current.add(orderId);
     const updates = { status: newStatus };
     if (newStatus === "delivered") {
       updates.delivered_at = new Date().toISOString();
@@ -34402,6 +34411,9 @@ function DriverDashboard({ profile }) {
         return;
       }
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
+    } finally {
+      // ⚡ Guard цэвэрлэх — return хийсэн ч ажиллана (давхар-дарах хамгаалалт суллана)
+      deliveringRef.current.delete(orderId);
     }
   };
 
