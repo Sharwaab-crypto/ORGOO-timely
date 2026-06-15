@@ -8,13 +8,13 @@ import {
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
-  Truck, DollarSign, Headphones, Warehouse,
+  Truck, DollarSign, Headphones, Warehouse, Menu, Search,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList, ReferenceLine,
 } from "recharts";
 import * as Sentry from "@sentry/react";
 import { supabase, isConfigured } from "./supabaseClient";
@@ -468,34 +468,34 @@ const siteOf = (p) => ({ lat: p.site_lat, lng: p.site_lng, radius: p.site_radius
 
 // ─────────── design tokens ───────────
 const T = {
-  // Background — Soft gradient (peach → pink → violet)
-  bg: "linear-gradient(135deg, #fef3ec 0%, #ffe5e5 50%, #e8e3f8 100%)",
-  bgSolid: "#fef3ec",
+  // Background — Soft gradient (mint → aqua tint → deep teal tint)
+  bg: "linear-gradient(135deg, #f0faf7 0%, #ddf3ee 50%, #e2eff0 100%)",
+  bgSolid: "#f0faf7",
   // Surfaces — frosted glass
   surface: "rgba(255, 255, 255, 0.7)",
   surfaceStrong: "rgba(255, 255, 255, 0.85)",
   surfaceAlt: "rgba(255, 255, 255, 0.45)",
   surfaceGlass: "rgba(255, 255, 255, 0.55)",
-  // Text — warm slate
-  ink: "#44403c", inkSoft: "#57534e",
-  muted: "#78716c", mutedSoft: "#a8a29e",
+  // Text — deep teal slate
+  ink: "#0C2A30", inkSoft: "#1f4248",
+  muted: "#5b7c7e", mutedSoft: "#8fabac",
   // Borders — translucent white
   border: "rgba(255, 255, 255, 0.7)",
   borderSoft: "rgba(255, 255, 255, 0.5)",
-  borderStrong: "rgba(244, 114, 182, 0.25)",
-  // Accent — Pink → Orange gradient
-  highlight: "#ec4899",
-  highlightDark: "#db2777",
-  highlightSoft: "rgba(244, 114, 182, 0.12)",
-  highlightGlow: "0 8px 24px rgba(244, 114, 182, 0.25)",
+  borderStrong: "rgba(14, 156, 142, 0.25)",
+  // Accent — Aqua → Deep teal gradient
+  highlight: "#0E9C8E",
+  highlightDark: "#0B7D72",
+  highlightSoft: "rgba(63, 224, 198, 0.14)",
+  highlightGlow: "0 8px 24px rgba(14, 156, 142, 0.25)",
   // Statuses
   ok: "#10b981", okSoft: "rgba(16,185,129,0.12)",
   err: "#ef4444", errSoft: "rgba(239,68,68,0.12)",
   warn: "#f59e0b", warnSoft: "rgba(245,158,11,0.12)",
   // Helpers
   blur: "blur(20px) saturate(180%)",
-  cardShadow: "0 8px 24px rgba(244, 114, 182, 0.08)",
-  cardShadowHover: "0 12px 32px rgba(244, 114, 182, 0.15)",
+  cardShadow: "0 8px 24px rgba(14, 156, 142, 0.08)",
+  cardShadowHover: "0 12px 32px rgba(14, 156, 142, 0.15)",
 };
 const FS = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
 const FM = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
@@ -549,7 +549,7 @@ function ErrorFallback({ error, resetError }) {
             style={{
               flex: 1,
               padding: "0.75rem 1rem",
-              background: "linear-gradient(135deg, #f97316, #ec4899)",
+              background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
               color: "white",
               border: "none",
               borderRadius: "10px",
@@ -585,16 +585,28 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
-  const [globalAlert, setGlobalAlert] = useState(null); // ⭐ Глобал alert popup
+  const [toasts, setToasts] = useState([]); // ⭐ Toast notification stack
+  const toastIdRef = useRef(0);
 
-  // ─── window.alert-ыг тохирох UI popup-аар солих ─────────────────
+  // ─── window.alert-ыг toast notification болгож солих ─────────────────
   useEffect(() => {
     const originalAlert = window.alert.bind(window);
     window.alert = (msg) => {
-      setGlobalAlert(String(msg ?? ""));
+      const id = ++toastIdRef.current;
+      const text = String(msg ?? "");
+      setToasts((prev) => [...prev, { id, text, ts: Date.now() }]);
+      // Auto-dismiss дараа
+      const dismissMs = text.length > 100 ? 6000 : 4000;
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, dismissMs);
     };
     return () => { window.alert = originalAlert; };
   }, []);
+
+  const dismissToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Alert-ийн төрлийг автомат илрүүлэх (icon, color)
   const detectAlertType = (msg) => {
@@ -614,6 +626,21 @@ function AppRoot() {
 
   // ─── Mobile UX системт сайжруулалт CSS ──────────────────────────
   useEffect(() => {
+    // Browser tab гарчиг
+    document.title = "CoreLink";
+    // Favicon — Ripple лого (aqua gradient SVG)
+    (function setFavicon() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 200 200"><defs><linearGradient id="rip" x1="46" y1="46" x2="154" y2="154" gradientUnits="userSpaceOnUse"><stop stop-color="#3FE0C6"/><stop offset="1" stop-color="#0E9C8E"/></linearGradient></defs><circle cx="100" cy="100" r="78" stroke="url(#rip)" stroke-width="5" opacity="0.30" fill="none"/><circle cx="100" cy="100" r="58" stroke="url(#rip)" stroke-width="8" opacity="0.62" fill="none"/><circle cx="100" cy="100" r="36" stroke="url(#rip)" stroke-width="12" fill="none"/><circle cx="100" cy="100" r="13" fill="url(#rip)"/></svg>`;
+      const href = "data:image/svg+xml," + encodeURIComponent(svg);
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.type = "image/svg+xml";
+      link.href = href;
+    })();
     const styleId = "orgoo-mobile-improvements";
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
@@ -690,6 +717,55 @@ function AppRoot() {
       .sidebar-collapsed-nav button > svg {
         flex-shrink: 0;
       }
+
+      /* ═══════════ DARK MODE ═══════════ */
+      html.dark-mode body { background: #07211f; }
+      html.dark-mode .min-h-screen { background: #07211f !important; color: #d6ede8 !important; }
+      /* Цайвар surface (rgba цагаан) → бараан teal */
+      html.dark-mode [style*="rgba(255, 255, 255, 0.7)"],
+      html.dark-mode [style*="rgba(255, 255, 255, 0.85)"],
+      html.dark-mode [style*="rgba(255, 255, 255, 0.55)"],
+      html.dark-mode [style*="rgba(255,255,255,0.7)"],
+      html.dark-mode [style*="rgba(255,255,255,0.85)"] {
+        background: rgba(18, 48, 46, 0.85) !important;
+      }
+      html.dark-mode [style*="rgba(255, 255, 255, 0.45)"],
+      html.dark-mode [style*="rgba(255,255,255,0.45)"] {
+        background: rgba(255, 255, 255, 0.04) !important;
+      }
+      /* Текст өнгө */
+      html.dark-mode h1, html.dark-mode h2, html.dark-mode h3,
+      html.dark-mode p, html.dark-mode span, html.dark-mode div,
+      html.dark-mode td, html.dark-mode th, html.dark-mode label,
+      html.dark-mode button, html.dark-mode a {
+        color: inherit;
+      }
+      html.dark-mode [style*="color: rgb(12, 42, 48)"],
+      html.dark-mode [style*="color:#0C2A30"],
+      html.dark-mode [style*="color: #0C2A30"] { color: #e3f3ef !important; }
+      html.dark-mode [style*="color: rgb(31, 66, 72)"],
+      html.dark-mode [style*="#1f4248"] { color: #cfe6e1 !important; }
+      html.dark-mode [style*="#5b7c7e"],
+      html.dark-mode [style*="rgb(91, 124, 126)"] { color: #8fb3ae !important; }
+      html.dark-mode [style*="#8fabac"] { color: #6e928e !important; }
+      /* Border */
+      html.dark-mode [style*="rgba(255, 255, 255, 0.7)"][style*="border"],
+      html.dark-mode [style*="borderColor"] { border-color: rgba(255,255,255,0.08) !important; }
+      /* Card border-той surface */
+      html.dark-mode .glass { background: rgba(18, 48, 46, 0.85) !important; border-color: rgba(255,255,255,0.08) !important; }
+      /* Input талбар */
+      html.dark-mode input, html.dark-mode select, html.dark-mode textarea {
+        background: rgba(255,255,255,0.05) !important;
+        color: #e3f3ef !important;
+        border-color: rgba(255,255,255,0.12) !important;
+      }
+      html.dark-mode input::placeholder, html.dark-mode textarea::placeholder { color: #6e928e !important; }
+      /* hover саарал → бараан */
+      html.dark-mode .hover\\:bg-gray-50:hover,
+      html.dark-mode .hover\\:bg-gray-100:hover { background: rgba(255,255,255,0.06) !important; }
+      /* Border utility классууд */
+      html.dark-mode .border-b, html.dark-mode .border-t,
+      html.dark-mode .border { border-color: rgba(255,255,255,0.08) !important; }
     `;
     document.head.appendChild(style);
     return () => {
@@ -796,68 +872,98 @@ function AppRoot() {
     <>
       {installBanner}
       <NotificationManager profile={profile} />
-      {(profile.role === "admin" || profile.role === "manager") ? <AdminDashboard profile={profile} />
+      {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") ? <AdminDashboard profile={profile} />
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
         : profile.role === "driver" ? <DriverDashboard profile={profile} />
+        : profile.role === "merchant" ? <MerchantDashboard profile={profile} />
         : <EmployeeDashboard profile={profile} />}
 
-      {/* ─── Global Alert Popup (window.alert override) ───────── */}
-      {globalAlert !== null && createPortal(
-        (() => {
-          const at = detectAlertType(globalAlert);
-          const cleanMsg = globalAlert.replace(/^[✅✕⚠❌ℹ📭🎉]\s*/g, "").trim();
-          const lines = cleanMsg.split("\n").filter((l) => l.trim());
-          const title = lines[0] || "";
-          const body = lines.slice(1).join("\n").trim();
-          
-          return (
-            <div style={{
-              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000,
-              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-              background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
-            }}
-              onClick={() => setGlobalAlert(null)}>
-              <div style={{
-                background: "white", borderRadius: 18, width: "100%", maxWidth: 380,
-                boxShadow: `0 24px 60px ${at.color}40`,
-                border: `2px solid ${at.color}`,
-                overflow: "hidden",
-              }}
-                onClick={(e) => e.stopPropagation()}>
-                <div style={{
-                  background: `linear-gradient(135deg, ${at.color}15, ${at.color}25)`,
-                  padding: "20px 20px 12px", textAlign: "center",
+      {/* ─── 🍞 Toast Notification Stack (window.alert override) ───────── */}
+      {toasts.length > 0 && createPortal(
+        <div style={{
+          position: "fixed",
+          top: 16,
+          right: 16,
+          zIndex: 100000,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          maxWidth: 360,
+          width: "calc(100vw - 32px)",
+          pointerEvents: "none",
+        }}>
+          {toasts.map((toast) => {
+            const at = detectAlertType(toast.text);
+            const cleanMsg = toast.text.replace(/^[✅✕⚠❌ℹ📭🎉]\s*/g, "").trim();
+            const lines = cleanMsg.split("\n").filter((l) => l.trim());
+            const title = lines[0] || "";
+            const body = lines.slice(1).join("\n").trim();
+            return (
+              <div key={toast.id}
+                onClick={() => dismissToast(toast.id)}
+                style={{
+                  background: "white",
+                  borderRadius: 12,
+                  boxShadow: `0 10px 30px rgba(0,0,0,0.12), 0 0 0 1px ${at.color}33`,
+                  borderLeft: `4px solid ${at.color}`,
+                  padding: "12px 14px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                  animation: "toast-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                  fontFamily: "'SF Pro Text', system-ui",
                 }}>
-                  <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 8 }}>{at.icon}</div>
+                <div style={{
+                  fontSize: 20,
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}>{at.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontFamily: "'SF Pro Display', -apple-system, system-ui",
-                    fontWeight: 700, fontSize: 16, color: at.color,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    color: at.color,
+                    lineHeight: 1.4,
+                    marginBottom: body ? 4 : 0,
                   }}>{title}</div>
+                  {body && (
+                    <div style={{
+                      fontSize: 12,
+                      color: "#475569",
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-wrap",
+                      maxHeight: 100,
+                      overflowY: "auto",
+                    }}>{body}</div>
+                  )}
                 </div>
-                {body && (
-                  <div style={{
-                    padding: "12px 20px", color: "#475569",
-                    fontFamily: "'SF Pro Text', system-ui",
-                    fontSize: 13, lineHeight: 1.6,
-                    whiteSpace: "pre-wrap", textAlign: "center",
-                    maxHeight: "40vh", overflowY: "auto",
-                  }}>{body}</div>
-                )}
-                <div style={{ padding: "12px 20px 20px" }}>
-                  <button onClick={() => setGlobalAlert(null)}
-                    style={{
-                      width: "100%", padding: "12px", borderRadius: 12,
-                      background: at.color, color: "white",
-                      fontFamily: "'SF Pro Display', system-ui",
-                      fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
-                    }}>
-                    Ойлголоо
-                  </button>
-                </div>
+                <button onClick={(e) => { e.stopPropagation(); dismissToast(toast.id); }}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    padding: 2,
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                  aria-label="Хаах">
+                  ✕
+                </button>
               </div>
-            </div>
-          );
-        })(),
+            );
+          })}
+          <style>{`
+            @keyframes toast-slide-in {
+              from { transform: translateX(120%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          `}</style>
+        </div>,
         document.body
       )}
     </>
@@ -893,10 +999,15 @@ function TimeTracker({ profile }) {
       startOfDay.setHours(0, 0, 0, 0);
       const { data: sess } = await supabase
         .from("sessions")
-        .select("duration_ms")
+        .select("start_time, end_time")
         .eq("employee_id", profile.id)
         .gte("start_time", startOfDay.toISOString());
-      const totalMs = (sess || []).reduce((s, x) => s + (x.duration_ms || 0), 0);
+      // ⚠ sessions хүснэгтэд duration_ms багана БАЙХГҮЙ — start_time/end_time-аас тооцно
+      const totalMs = (sess || []).reduce((s, x) => {
+        if (!x.start_time) return s;
+        const end = x.end_time ? new Date(x.end_time) : new Date(); // дуусаагүй бол одоо хүртэл
+        return s + Math.max(0, end - new Date(x.start_time));
+      }, 0);
       setTodayHrs(totalMs / 3600000);
     } catch (e) { console.error(e); }
   };
@@ -963,13 +1074,11 @@ function TimeTracker({ profile }) {
         const photoUrl = photoBlob ? await uploadClockPhoto(profile.id, photoBlob, "out") : null;
         const startTime = new Date(photoCapture.active.start_time);
         const endTime = new Date();
-        const durMs = endTime - startTime;
-        
+
         await supabase.from("sessions").insert({
           employee_id: profile.id,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
-          duration_ms: durMs,
           start_lat: photoCapture.active.start_lat,
           start_lng: photoCapture.active.start_lng,
           end_lat: photoCapture.loc?.lat,
@@ -1293,7 +1402,7 @@ function NotificationManager({ profile }) {
           <div className="glass-strong rounded-2xl p-4 flex items-start gap-3"
                style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.25)" }}>
             <div style={{
-              background: "#ec4899",
+              background: "#0E9C8E",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1327,7 +1436,7 @@ function NotificationManager({ profile }) {
             className="glass-strong rounded-2xl p-4 flex items-start gap-3 w-full text-left lift"
             style={{ boxShadow: "0 12px 40px rgba(99, 102, 241, 0.3)", borderColor: "rgba(99,102,241,0.3)" }}>
             <div style={{
-              background: "#ec4899",
+              background: "#0E9C8E",
               boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
             }} className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1389,6 +1498,54 @@ function ConfigError() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  RIPPLE BRAND MARK (inline SVG — концентрик долгио)
+// ═══════════════════════════════════════════════════════════════════════════
+function RippleMark({ size = 40, variant = "grad", className = "", style = {} }) {
+  // variant: "grad" (aqua→deep gradient) | "white" (цагаан, dark дэвсгэр дээр)
+  const gid = "rip-" + variant;
+  const isWhite = variant === "white";
+  const col = isWhite ? "#F4FBF9" : `url(#${gid})`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 200" fill="none"
+      className={className} style={{ flexShrink: 0, ...style }}
+      xmlns="http://www.w3.org/2000/svg">
+      {!isWhite && (
+        <defs>
+          <linearGradient id={gid} x1="46" y1="46" x2="154" y2="154" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#3FE0C6" />
+            <stop offset="1" stopColor="#0E9C8E" />
+          </linearGradient>
+        </defs>
+      )}
+      <circle cx="100" cy="100" r="78" stroke={col} strokeWidth="5" opacity="0.30" />
+      <circle cx="100" cy="100" r="58" stroke={col} strokeWidth="8" opacity="0.62" />
+      <circle cx="100" cy="100" r="36" stroke={col} strokeWidth="12" />
+      <circle cx="100" cy="100" r="13" fill={col} />
+    </svg>
+  );
+}
+
+// App icon хувилбар (дугуй булантай дөрвөлжин, градиент дэвсгэр)
+function RippleAppIcon({ size = 40, radius, className = "", style = {} }) {
+  const r = radius != null ? radius : size * 0.23;
+  return (
+    <div className={className} style={{
+      width: size, height: size, borderRadius: r, flexShrink: 0,
+      background: "linear-gradient(140deg,#13B4A2,#06464A)",
+      boxShadow: "0 8px 20px -10px rgba(6,70,74,.7)",
+      display: "grid", placeItems: "center", position: "relative", overflow: "hidden",
+      ...style,
+    }}>
+      <div style={{
+        position: "absolute", inset: 0, borderRadius: "inherit",
+        background: "radial-gradient(60% 50% at 30% 18%,rgba(255,255,255,.30),transparent)",
+      }} />
+      <RippleMark size={size * 0.62} variant="white" style={{ position: "relative" }} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  LOGIN
 // ═══════════════════════════════════════════════════════════════════════════
 function LoginScreen() {
@@ -1409,11 +1566,14 @@ function LoginScreen() {
     <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
       <div className="w-full max-w-md scale-up">
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <RippleMark size={72} variant="grad" className="scale-up" />
+          </div>
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.3em] mb-3">
             Цаг бүртгэл
           </div>
           <h1 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.04em", lineHeight: 0.95 }} className="text-6xl">
-            ORGOO<span style={{ color: T.highlight }}>.</span>
+            CoreLink<span style={{ color: T.highlight }}>.</span>
           </h1>
         </div>
 
@@ -1441,10 +1601,19 @@ function LoginScreen() {
 //  ADMIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 function AdminDashboard({ profile }) {
+  // 🎯 Marketing role — зөвхөн зарим view-руу хандана
+  const isMarketing = profile.role === "marketing";
+  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory"];
+
   const [view, setView] = useState(() => {
     try {
-      return localStorage.getItem("orgoo-admin-view") || "dashboard";
-    } catch { return "dashboard"; }
+      const saved = localStorage.getItem("orgoo-admin-view") || "dashboard";
+      // Marketing бол зөвшөөрөөгүй view-руу үсрэхгүй
+      if (isMarketing && !marketingAllowedViews.includes(saved)) {
+        return "callcenter"; // marketing-ийн анхдагч view
+      }
+      return saved;
+    } catch { return isMarketing ? "callcenter" : "dashboard"; }
   });
 
   // Save view to localStorage
@@ -1480,6 +1649,8 @@ function AdminDashboard({ profile }) {
   const [departments, setDepartments] = useState([]);
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
   const [leaves, setLeaves] = useState([]);
+  const [workSchedules, setWorkSchedules] = useState([]);
+  const [fbPages, setFbPages] = useState([]); // 🔗 FB Pages (Calendar дотор хуваарь дотор харагдах)
   const [kpiDefs, setKpiDefs] = useState([]);
   const [kpiEntries, setKpiEntries] = useState([]);
   const [editingKpi, setEditingKpi] = useState(null); // null | 'add' | kpi obj
@@ -1491,54 +1662,84 @@ function AdminDashboard({ profile }) {
 
   const loadAll = async () => {
     try {
-      const [emps, sess, active, apps, st, es, me, dept, lvs, kpiD, kpiE, tsk, ann] = await Promise.all([
-        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver"]).order("created_at", { ascending: false }),
+      // ⚡ ГАЦАА ЗАСВАР: HR/Team дата (sessions, approvals, leaves, sites, employee_sites,
+      //    manager_employees, work_schedules) нь зөвхөн team/dashboard/schedule/calendar зэрэг
+      //    HR view-д хэрэгтэй. callcenter/sales/orders/inventory зэрэг view дээр эдгээрийг
+      //    татах нь дэмий ачаалал (давхар loadAll, 21 сек гацаа) үүсгэдэг байсан.
+      //    Эдгээр view дээр HR датаг алгасаж, зөвхөн идэвхтэй view-д хэрэгтэйг татна.
+      const hrViews = ["team", "dashboard", "schedule", "calendar", "skills", "polls", "hrfile", "announcements", "tasks", "best", "operator-kpi"];
+      const needsHR = hrViews.includes(view);
+
+      // Үндсэн дата — олон view-д хэрэгтэй, хөнгөн (үргэлж татна)
+      const corePromises = [
+        supabase.from("profiles").select("*").in("role", ["employee", "manager", "operator", "driver", "marketing", "merchant"]).order("created_at", { ascending: false }),
+        supabase.from("departments").select("*").order("name"),
+        supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
+        supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
+        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+        supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
+      ];
+
+      // HR/Team дата — зөвхөн хэрэгтэй view-д
+      const hrPromises = needsHR ? [
         supabase.from("sessions").select("*").order("start_time", { ascending: false }).limit(200),
         supabase.from("active_sessions").select("*"),
         supabase.from("approvals").select("*").order("created_at", { ascending: false }),
         supabase.from("sites").select("*").order("name"),
         supabase.from("employee_sites").select("*"),
         supabase.from("manager_employees").select("*"),
-        supabase.from("departments").select("*").order("name"),
         supabase.from("leaves").select("*").order("created_at", { ascending: false }),
-        supabase.from("kpi_definitions").select("*").eq("is_active", true).order("display_order"),
-        supabase.from("kpi_entries").select("*").gte("entry_date", new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10)).order("entry_date", { ascending: false }),
-        supabase.from("tasks").select("*").order("created_at", { ascending: false }),
-        supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("work_schedules").select("*"),
+      ] : [];
+
+      const [coreRes, hrRes] = await Promise.all([
+        Promise.all(corePromises),
+        Promise.all(hrPromises),
       ]);
+
+      const [emps, dept, kpiD, kpiE, tsk, ann, fbp] = coreRes;
+      const [sess, active, apps, st, es, me, lvs, wsch] = needsHR ? hrRes : [];
 
       // 🔧 Алдаа гарсан query-уудыг log хийх (silent failure-аас сэргийлэх)
       const errs = [];
       if (emps.error) errs.push(`profiles: ${emps.error.message}`);
-      if (sess.error) errs.push(`sessions: ${sess.error.message}`);
-      if (active.error) errs.push(`active_sessions: ${active.error.message}`);
-      if (apps.error) errs.push(`approvals: ${apps.error.message}`);
-      if (st.error) errs.push(`sites: ${st.error.message}`);
       if (dept.error) errs.push(`departments: ${dept.error.message}`);
+      if (needsHR && sess?.error) errs.push(`sessions: ${sess.error.message}`);
+      if (needsHR && active?.error) errs.push(`active_sessions: ${active.error.message}`);
+      if (needsHR && apps?.error) errs.push(`approvals: ${apps.error.message}`);
+      if (needsHR && st?.error) errs.push(`sites: ${st.error.message}`);
       if (errs.length > 0) {
         logErr("[AdminDashboard.loadAll] errors:", errs);
       }
 
       if (emps.data) {
-        setEmployees(emps.data.filter((p) => ["employee", "operator", "driver"].includes(p.role)));
+        // 🔧 Manager + Marketing + Merchant-ийг бас оруулах ("Баг" view-руу харагдана)
+        setEmployees(emps.data.filter((p) => ["employee", "operator", "driver", "manager", "marketing", "merchant"].includes(p.role)));
         setManagers(emps.data.filter((p) => p.role === "manager"));
       }
-      if (sess.data) setSessions(sess.data);
-      if (active.data) {
-        const map = {};
-        active.data.forEach((a) => { map[a.employee_id] = a; });
-        setActiveSessions(map);
-      }
-      if (apps.data) setApprovals(apps.data);
-      if (st.data) setSites(st.data);
-      if (es.data) setEmployeeSites(es.data);
-      if (me.data) setManagerEmployees(me.data);
       if (dept.data) setDepartments(dept.data);
-      if (lvs.data) setLeaves(lvs.data);
+      if (fbp.data) setFbPages(fbp.data);
       if (kpiD.data) setKpiDefs(kpiD.data);
       if (kpiE.data) setKpiEntries(kpiE.data);
       if (tsk.data) setTasks(tsk.data);
       if (ann.data) setAnnouncements(ann.data);
+
+      // HR дата — зөвхөн татсан үед setState (бусад үед хуучин утга хэвээр үлдэнэ)
+      if (needsHR) {
+        if (sess?.data) setSessions(sess.data);
+        if (active?.data) {
+          const map = {};
+          active.data.forEach((a) => { map[a.employee_id] = a; });
+          setActiveSessions(map);
+        }
+        if (apps?.data) setApprovals(apps.data);
+        if (st?.data) setSites(st.data);
+        if (es?.data) setEmployeeSites(es.data);
+        if (me?.data) setManagerEmployees(me.data);
+        if (lvs?.data) setLeaves(lvs.data);
+        if (wsch?.data) setWorkSchedules(wsch.data);
+      }
     } catch (e) {
       logErr("[AdminDashboard.loadAll] exception:", e);
       setFeedback?.({ type: "error", msg: "Өгөгдөл татаж чадсангүй: " + (e.message || "Холбоо тасарсан") });
@@ -1546,6 +1747,17 @@ function AdminDashboard({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // 🔄 HR view руу анх орох үед HR дата татах (callcenter дээр алгассан байсныг нөхөх).
+  //    view солих болгонд биш — зөвхөн HR биш view-ээс HR view руу шилжихэд.
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    const hrViews = ["team", "dashboard", "schedule", "calendar", "skills", "polls", "hrfile", "announcements", "tasks", "best", "operator-kpi"];
+    const wasHR = hrViews.includes(prevViewRef.current);
+    const isHR = hrViews.includes(view);
+    if (!wasHR && isHR) loadAll();
+    prevViewRef.current = view;
+  }, [view]);
 
   // Debounced loadAll — олон realtime event нэг дор ирэхэд 1 удаа дуудна
   const debouncedReload = useDebouncedCallback(loadAll, 800);
@@ -1573,18 +1785,46 @@ function AdminDashboard({ profile }) {
 
   const upsertEmployee = async ({ formData, password, isNew, existingId, siteIds }) => {
     try {
-      let userId = existingId;
       if (isNew) {
-        const { data: signup, error: signupErr } = await supabase.auth.signUp({
-          email: formData.email,
-          password: password,
-          options: { data: { full_name: formData.name } },
+        // ⚠️ signUp нь админы session-ийг шинэ хэрэглэгчээр сольдог тул
+        // Edge Function (admin API)-аар session солихгүйгээр үүсгэнэ
+        const { data, error } = await supabase.functions.invoke("create-employee", {
+          body: {
+            email: formData.email,
+            password: password,
+            profile: {
+              role: formData.role || "employee",
+              name: formData.name,
+              job_title: formData.job_title,
+              hourly_rate: formData.hourly_rate,
+              department_id: formData.department_id || null,
+              site_lat: formData.site_lat,
+              site_lng: formData.site_lng,
+              site_radius: formData.site_radius,
+              site_label: formData.site_label,
+              schedule_days: formData.schedule_days,
+              schedule_start: formData.schedule_start,
+              schedule_end: formData.schedule_end,
+              fb_page_ids: formData.fb_page_ids || [],
+              site_ids: Array.isArray(siteIds) ? siteIds : [],
+            },
+          },
         });
-        if (signupErr) throw signupErr;
-        if (!signup.user) throw new Error("Хэрэглэгч үүсгэгдсэнгүй");
-        userId = signup.user.id;
+        if (error) {
+          let detail = error.message || "";
+          try { const ctx = await error.context?.json?.(); if (ctx?.error) detail = ctx.error; } catch {}
+          throw new Error(detail);
+        }
+        if (data?.error) throw new Error(data.error);
+
+        setFormMode(null); setFormEmp(null);
+        setFeedback({ type: "success", msg: "Ажилтан нэмэгдлээ" });
+        await loadAll();
+        return;
       }
 
+      // ─── Засах (update) — session-д нөлөөлөхгүй тул frontend-ээс шууд ───
+      const userId = existingId;
       const profileData = {
         id: userId,
         role: formData.role || "employee",
@@ -1599,15 +1839,18 @@ function AdminDashboard({ profile }) {
         schedule_days: formData.schedule_days,
         schedule_start: formData.schedule_start,
         schedule_end: formData.schedule_end,
+        fb_page_ids: formData.fb_page_ids || [], // 🏪 Merchant FB Page-ууд
         updated_at: new Date().toISOString(),
       };
 
-      if (isNew) {
-        const { error } = await supabase.from("profiles").insert(profileData);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
-        if (error) throw error;
+      const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
+      if (error) throw error;
+
+      // 🔄 Manager → бусад role-руу солигдоход manager_employees-аас холбоосыг арилгах
+      if (formData.role !== "manager") {
+        const { error: cleanupErr } = await supabase.from("manager_employees")
+          .delete().eq("manager_id", existingId);
+        if (cleanupErr) logErr("[manager_employees cleanup]", cleanupErr);
       }
 
       // Save site assignments
@@ -1622,7 +1865,7 @@ function AdminDashboard({ profile }) {
       }
 
       setFormMode(null); setFormEmp(null);
-      setFeedback({ type: "success", msg: isNew ? "Ажилтан нэмэгдлээ" : "Хадгаллаа" });
+      setFeedback({ type: "success", msg: "Хадгаллаа" });
       await loadAll();
     } catch (e) {
       setFeedback({ type: "error", msg: e.message });
@@ -1630,11 +1873,36 @@ function AdminDashboard({ profile }) {
   };
 
   const removeEmployee = async (id) => {
-    const { error } = await supabase.from("profiles").delete().eq("id", id);
-    if (error) { setFeedback({ type: "error", msg: error.message }); return; }
-    setConfirmDel(null);
-    setFeedback({ type: "success", msg: "Профайл устгагдлаа" });
-    await loadAll();
+    // Edge Function-аар Auth + profiles бүрэн устгах
+    setFeedback({ type: "info", msg: "Устгаж байна..." });
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-employee", {
+        body: { employee_id: id },
+      });
+      if (error) {
+        // Edge Function алдаа эсвэл deploy хийгээгүй бол fallback
+        let detail = error.message || "";
+        try {
+          const ctx = await error.context?.json?.();
+          if (ctx?.error) detail = ctx.error;
+        } catch {}
+        setFeedback({ type: "error", msg: "Устгахад алдаа: " + detail });
+        return;
+      }
+      if (data?.error) {
+        setFeedback({ type: "error", msg: data.error });
+        return;
+      }
+      setConfirmDel(null);
+      if (data?.partial) {
+        setFeedback({ type: "warn", msg: data.warning || "Хэсэгчлэн устгагдлаа" });
+      } else {
+        setFeedback({ type: "success", msg: "Ажилтан бүрэн устгагдлаа" });
+      }
+      await loadAll();
+    } catch (e) {
+      setFeedback({ type: "error", msg: "Сүлжээний алдаа: " + (e?.message || e) });
+    }
   };
 
   // Helper: get sites assigned to an employee (multi-site mode)
@@ -1891,7 +2159,7 @@ function AdminDashboard({ profile }) {
         const { error } = await supabase.from("kpi_definitions").update({
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
-          target: data.target, target_period: data.target_period,
+          target: data.target, target_period: data.target_period, target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -1902,7 +2170,7 @@ function AdminDashboard({ profile }) {
           department_id: data.department_id,
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
-          target: data.target, target_period: data.target_period || 'daily',
+          target: data.target, target_period: data.target_period || 'daily', target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -1924,24 +2192,25 @@ function AdminDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
-  const upsertKpiEntries = async (deptId, date, entries) => {
-    // entries = [{ kpi_id, value, note }]
+  const upsertKpiEntries = async (deptId, date, entries, keepOpen = false) => {
+    // entries = [{ kpi_id, value, entry_date?, note? }]
     try {
       const rows = entries.map((e) => ({
         kpi_id: e.kpi_id,
         department_id: deptId,
-        entry_date: date,
+        entry_date: e.entry_date || date,
         value: e.value,
         note: e.note || null,
         entered_by: profile.id,
         updated_at: new Date().toISOString(),
       }));
+      if (rows.length === 0) { if (!keepOpen) setKpiInputDept(null); return; }
       const { error } = await supabase.from("kpi_entries").upsert(rows, {
         onConflict: "kpi_id,entry_date",
       });
       if (error) throw error;
-      setKpiInputDept(null);
-      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      if (!keepOpen) setKpiInputDept(null);
+      setFeedback({ type: "success", msg: `Хадгаллаа (${rows.length} утга)` });
       await loadAll();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
@@ -2089,14 +2358,11 @@ function AdminDashboard({ profile }) {
           {/* Logo header */}
           <div className="px-3 py-3 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2">
-              <img src="/orgoo-logo.png" alt="ORGOO" 
-                className="w-10 h-10 rounded-md object-contain flex-shrink-0"
-                style={{ background: "white" }}
-                onError={(e) => { e.target.style.display = "none"; }} />
+              <RippleAppIcon size={40} radius={8} />
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
                   <div style={{ fontFamily: FS, fontWeight: 700, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                    ORGOO<span style={{ color: T.highlight }}>.</span>
+                    CoreLink<span style={{ color: T.highlight }}>.</span>
                   </div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
                     Admin
@@ -2118,7 +2384,8 @@ function AdminDashboard({ profile }) {
 
           {/* Nav */}
           <nav className={`flex-1 overflow-y-auto px-2 py-3 ${sidebarCollapsed ? "sidebar-collapsed-nav" : ""}`}>
-            <SidebarSection label="Хяналт" icon={Eye}>
+            {!isMarketing && (
+            <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
@@ -2131,52 +2398,72 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "polls"} onClick={() => { setView("polls"); setSidebarOpen(false); }} icon={Vote}>Санал асуулга</SidebarTab>
               <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>HR файл</SidebarTab>
             </SidebarSection>
+            )}
 
             <SidebarSection label="Operator" icon={Headphones}>
               <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
-              <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
+              {!isMarketing && (
+                <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
+              )}
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
 
             <SidebarSection label="Delivery" icon={Truck}>
-              <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
+              {!isMarketing && (
+                <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
+              )}
               <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
-              <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
-              <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
+              {!isMarketing && (
+                <>
+                  <SidebarTab active={view === "locations"} onClick={() => { setView("locations"); setSidebarOpen(false); }} icon={MapPin}>📍 Байршил</SidebarTab>
+                  <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
+                </>
+              )}
             </SidebarSection>
 
+            {!isMarketing && (
             <SidebarSection label="Finance" icon={DollarSign}>
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
+              <SidebarTab active={view === "sales-report"} onClick={() => { setView("sales-report"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалтын тайлан</SidebarTab>
             </SidebarSection>
+            )}
 
             <SidebarSection label="Агуулах" icon={Warehouse}>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
-              <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
-              <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
-              <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
-              <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
-              <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
+              {!isMarketing && (
+                <>
+                  <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
+                  <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
+                  <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
+                  <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
+                  <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
+                </>
+              )}
             </SidebarSection>
 
+            {!isMarketing && (
             <SidebarSection label="Ажилтнууд" icon={Users}>
               <SidebarTab active={view === "departments"} onClick={() => { setView("departments"); setSidebarOpen(false); }} icon={Users}>Хэлтсүүд</SidebarTab>
               <SidebarTab active={view === "managers"} onClick={() => { setView("managers"); setSidebarOpen(false); }} icon={ShieldCheck}>Ахлагчид</SidebarTab>
               <SidebarTab active={view === "sites"} onClick={() => { setView("sites"); setSidebarOpen(false); }} icon={MapPin}>Байрууд</SidebarTab>
             </SidebarSection>
+            )}
 
+            {!isMarketing && (
             <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>Чөлөө</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
             </SidebarSection>
+            )}
           </nav>
 
           {/* Footer · User card */}
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className={`flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors ${sidebarCollapsed ? "flex-col" : ""}`}>
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0">
                 {profile.name?.[0]}
               </div>
               {!sidebarCollapsed && (
@@ -2186,7 +2473,7 @@ function AdminDashboard({ profile }) {
                       {profile.name}
                     </div>
                     <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">
-                      {profile.role === "manager" ? "Ахлагч" : "Админ"}
+                      {profile.role === "manager" ? "Ахлагч" : profile.role === "marketing" ? "Маркетинг" : "Админ"}
                     </div>
                   </div>
                   <DarkModeToggle />
@@ -2211,12 +2498,13 @@ function AdminDashboard({ profile }) {
           {/* Mobile top bar */}
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <RippleMark size={22} variant="grad" />
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
-          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
             {/* Page header */}
             <div className="mb-6 slide-up">
               <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
@@ -2245,6 +2533,7 @@ function AdminDashboard({ profile }) {
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
                 {view === "settlement-reports" && "Тооцооний тайлан"}
+                {view === "sales-report" && "Борлуулалтын тайлан"}
                 {view === "orders" && "Захиалга"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -2281,6 +2570,7 @@ function AdminDashboard({ profile }) {
                 {view === "delivery-dashboard" && "Хүргэгч тус бүрийн ажлын хяналт"}
                 {view === "settlement" && "Хүргэгч тус бүрийн тооцоо нэгтгэл"}
                 {view === "settlement-reports" && "Хаагдсан тооцооны түүх"}
+                {view === "sales-report" && "Хүргэгдсэн барааны борлуулалт, ашгийн тооцоо"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
@@ -2431,6 +2721,8 @@ function AdminDashboard({ profile }) {
           <CalendarView
             leaves={leaves}
             employees={employees}
+            schedules={workSchedules}
+            fbPages={fbPages}
             scope="all"
           />
         )}
@@ -2438,6 +2730,7 @@ function AdminDashboard({ profile }) {
         {view === "schedule" && (
           <ScheduleView
             employees={employees}
+            departments={departments}
             sites={sites}
             isAdmin={true}
           />
@@ -2519,6 +2812,10 @@ function AdminDashboard({ profile }) {
 
         {view === "settlement-reports" && (
           <SettlementReportsView profile={profile} />
+        )}
+
+        {view === "sales-report" && (
+          <SalesReportView profile={profile} />
         )}
 
         {view === "orders" && (
@@ -2688,6 +2985,7 @@ function EmployeeDashboard({ profile }) {
   const [myActive, setMyActive] = useState(null);
   const [myApprovals, setMyApprovals] = useState([]);
   const [myLeaves, setMyLeaves] = useState([]);
+  const [myWorkSchedules, setMyWorkSchedules] = useState([]);
   const [myTasks, setMyTasks] = useState([]);
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -2708,7 +3006,7 @@ function EmployeeDashboard({ profile }) {
   useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 5000); return () => clearTimeout(t); }, [feedback]);
 
   const loadMy = async () => {
-    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues, ann] = await Promise.all([
+    const [sess, active, apps, esResult, lvs, tsk, depts, colleagues, ann, wsch] = await Promise.all([
       supabase.from("sessions").select("*").eq("employee_id", profile.id).order("start_time", { ascending: false }).limit(60),
       supabase.from("active_sessions").select("*").eq("employee_id", profile.id).maybeSingle(),
       supabase.from("approvals").select("*").eq("employee_id", profile.id).order("created_at", { ascending: false }),
@@ -2720,6 +3018,7 @@ function EmployeeDashboard({ profile }) {
         ? supabase.from("profiles").select("id, name, role, department_id").eq("department_id", profile.department_id)
         : Promise.resolve({ data: [] }),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("work_schedules").select("*").eq("employee_id", profile.id),
     ]);
     if (sess.data) setMySessions(sess.data);
     setMyActive(active.data || null);
@@ -2728,6 +3027,7 @@ function EmployeeDashboard({ profile }) {
       setMySites(esResult.data.map(es => es.sites).filter(Boolean));
     }
     if (lvs.data) setMyLeaves(lvs.data);
+    if (wsch.data) setMyWorkSchedules(wsch.data);
     if (tsk.data) setMyTasks(tsk.data);
     if (depts.data) setAllDepartments(depts.data);
     if (colleagues.data) setDeptColleagues(colleagues.data);
@@ -3035,14 +3335,14 @@ function EmployeeDashboard({ profile }) {
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
               <div style={{
-                background: isActive ? "#10b981" : "#ec4899",
+                background: isActive ? "#10b981" : "#0E9C8E",
                 color: "white",
               }} className="w-8 h-8 rounded-md flex items-center justify-center transition-all">
                 <UserIcon size={14} />
               </div>
               <div className="flex-1">
                 <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                  CoreLink<span style={{ color: T.highlight }}>.</span>
                 </div>
                 <div style={{ color: isActive ? T.ok : T.muted, fontFamily: FS, fontWeight: 500 }} className="text-[10px] uppercase tracking-wider mt-0.5">
                   {isActive ? "● Ажиллаж байна" : "Ажилтан"}
@@ -3055,13 +3355,13 @@ function EmployeeDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Үндсэн">
+            <SidebarSection label="Үндсэн" icon={Clock} defaultOpen>
               <SidebarTab active={view === "home"} onClick={() => { setView("home"); setSidebarOpen(false); }} icon={Clock}>Цаг бүртгэл</SidebarTab>
               <SidebarTab active={view === "salary"} onClick={() => { setView("salary"); setSidebarOpen(false); }} icon={FileSpreadsheet}>Цалин</SidebarTab>
               <SidebarTab active={view === "history"} onClick={() => { setView("history"); setSidebarOpen(false); }} icon={Calendar}>Түүх</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Ажил">
+            <SidebarSection label="Ажил" icon={Briefcase}>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox} badge={myAnnouncements.filter(a => a.pinned).length}>Зарлал</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
@@ -3071,7 +3371,7 @@ function EmployeeDashboard({ profile }) {
               <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>Миний файл</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Хүсэлтүүд">
+            <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar}>Чөлөө</SidebarTab>
               <SidebarTab active={view === "requests"} onClick={() => { setView("requests"); setSidebarOpen(false); }} icon={ClipboardCheck} badge={myApprovals.filter((a) => a.status === "pending").length}>Хүсэлт</SidebarTab>
             </SidebarSection>
@@ -3079,7 +3379,7 @@ function EmployeeDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -3108,9 +3408,10 @@ function EmployeeDashboard({ profile }) {
         <main className="flex-1 min-w-0">
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <RippleMark size={22} variant="grad" />
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
             {isActive && (
               <div className="ml-auto flex items-center gap-1.5">
                 <div style={{ background: T.ok }} className="w-2 h-2 rounded-full pulse-dot"></div>
@@ -3364,6 +3665,7 @@ function EmployeeDashboard({ profile }) {
           <CalendarView
             leaves={myLeaves}
             employees={[profile]}
+            schedules={myWorkSchedules}
             scope="self"
             currentUserId={profile.id}
           />
@@ -3508,9 +3810,12 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
 
     if (groupBy === "role") {
       const groups = {
+        manager: { key: "manager", label: "Ахлагч", icon: "⭐", items: [] },
         employee: { key: "employee", label: "Ажилтан", icon: "👤", items: [] },
         operator: { key: "operator", label: "Оператор", icon: "🎧", items: [] },
         driver: { key: "driver", label: "Delivery", icon: "🚚", items: [] },
+        marketing: { key: "marketing", label: "Маркетинг", icon: "📢", items: [] },
+        merchant: { key: "merchant", label: "Merchant", icon: "🏪", items: [] },
       };
       filtered.forEach((e) => {
         if (groups[e.role]) groups[e.role].items.push(e);
@@ -3558,8 +3863,11 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
           {[
             { id: "all", label: "Бүгд", icon: "👥", count: employees.length },
             { id: "employee", label: "Ажилтан", icon: "👤", count: employees.filter((e) => e.role === "employee").length },
+            { id: "manager", label: "Ахлагч", icon: "⭐", count: employees.filter((e) => e.role === "manager").length },
             { id: "operator", label: "Оператор", icon: "🎧", count: employees.filter((e) => e.role === "operator").length },
             { id: "driver", label: "Delivery", icon: "🚚", count: employees.filter((e) => e.role === "driver").length },
+            { id: "marketing", label: "Маркетинг", icon: "📢", count: employees.filter((e) => e.role === "marketing").length },
+            { id: "merchant", label: "Merchant", icon: "🏪", count: employees.filter((e) => e.role === "merchant").length },
           ].map((f) => (
             <button key={f.id} onClick={() => setFilterRole(f.id)}
               className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -3666,6 +3974,15 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                       🚚 Delivery
                     </span>
                   )}
+                  {emp.role === "merchant" && (
+                    <span style={{ background: "rgba(245,158,11,0.1)", color: "#d97706", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      🏪 Merchant
+                      {emp.fb_page_ids && emp.fb_page_ids.length > 0 && (
+                        <span style={{ marginLeft: 4 }}>({emp.fb_page_ids.length})</span>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <p style={{ color: T.muted }} className="text-xs mt-0.5 truncate">{emp.job_title}</p>
               </div>
@@ -3687,7 +4004,7 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   <FileText size={14} />
                 </button>
                 <button onClick={() => onEdit(emp)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><Edit3 size={14} /></button>
-                <button onClick={() => onDelete(emp.id)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><X size={15} /></button>
+                <button onClick={() => onDelete(emp.id)} style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10" title="Ажилтан устгах"><Trash2 size={15} /></button>
               </div>
             </div>
 
@@ -4323,6 +4640,89 @@ function PersonalRequests({ approvals, onNew }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE FORM MODAL
 // ═══════════════════════════════════════════════════════════════════════════
+
+// 🏪 MerchantPageSelector — Merchant эрхтэй ажилтанд FB Page оноох
+function MerchantPageSelector({ selectedIds = [], onChange }) {
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name, is_active").order("display_order");
+      setPages(data || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  const toggle = (id) => {
+    if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter((x) => x !== id));
+    } else {
+      onChange([...selectedIds, id]);
+    }
+  };
+
+  return (
+    <div style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 12, padding: 12 }}>
+      <Label>
+        <span style={{ color: "#d97706", fontFamily: FM, fontWeight: 600 }}>
+          🏪 FB Page-ууд ({selectedIds.length})
+        </span>
+      </Label>
+      <p style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+        Merchant зөвхөн эдгээр Page-ийн өгөгдлийг харна
+      </p>
+      {loading ? (
+        <Loader2 className="spin mx-auto my-3" size={16} />
+      ) : (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {pages.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-xs italic">
+              FB Page алга
+            </div>
+          ) : pages.map((p) => {
+            const checked = selectedIds.includes(p.id);
+            return (
+              <button key={p.id} type="button"
+                onClick={() => toggle(p.id)}
+                className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                style={{
+                  background: checked ? "rgba(245,158,11,0.15)" : "white",
+                  border: `1px solid ${checked ? "#f59e0b" : T.border}`,
+                  fontFamily: FM, fontWeight: 500,
+                  color: T.ink,
+                  textAlign: "left",
+                  opacity: p.is_active ? 1 : 0.5,
+                }}>
+                <div style={{
+                  width: 16, height: 16, borderRadius: 4,
+                  background: checked ? "#f59e0b" : "transparent",
+                  border: `1.5px solid ${checked ? "#f59e0b" : T.border}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                </div>
+                <span className="text-xs flex-1">{p.name}</span>
+                {!p.is_active && (
+                  <span style={{ color: T.muted, fontSize: 9 }}>(идэвхгүй)</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {selectedIds.length === 0 && (
+        <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] mt-2">
+          ⚠ Хамгийн багадаа 1 FB Page сонгох ёстой
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], departments = [], onSave, onClose }) {
   const [name, setName] = useState(employee?.name || "");
   const [email, setEmail] = useState("");
@@ -4331,6 +4731,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
   const [rate, setRate] = useState(employee?.hourly_rate ? String(employee.hourly_rate) : "");
   const [role, setRole] = useState(employee?.role || "employee"); // employee | manager
   const [departmentId, setDepartmentId] = useState(employee?.department_id || "");
+  const [fbPageIds, setFbPageIds] = useState(employee?.fb_page_ids || []); // 🏪 Merchant-руу FB Page-уудын ID
 
   // Multi-site assignment
   const [selectedSiteIds, setSelectedSiteIds] = useState(assignedSiteIds);
@@ -4399,6 +4800,8 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
         role === "manager" ? "Ахлагч"
         : role === "operator" ? "Оператор"
         : role === "driver" ? "Delivery"
+        : role === "marketing" ? "Маркетинг"
+        : role === "merchant" ? "Merchant"
         : "Ажилтан"
       ),
       hourly_rate: parseFloat(rate) || 0,
@@ -4409,6 +4812,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
       schedule_days: hasSchedule ? days : null,
       schedule_start: hasSchedule ? startTime : null,
       schedule_end: hasSchedule ? endTime : null,
+      fb_page_ids: role === "merchant" ? fbPageIds : [], // 🏪 Зөвхөн merchant-руу
     };
 
     await onSave({
@@ -4439,7 +4843,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
 
           <div>
             <Label>Эрх</Label>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               <button onClick={() => setRole("employee")}
                 style={{ background: role === "employee" ? T.ink : "transparent",
                          color: role === "employee" ? T.surface : T.ink,
@@ -4468,6 +4872,20 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
                 🚚 Delivery
               </button>
+              <button onClick={() => setRole("marketing")}
+                style={{ background: role === "marketing" ? "#0E9C8E" : "transparent",
+                         color: role === "marketing" ? "white" : T.ink,
+                         borderColor: role === "marketing" ? "#0E9C8E" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                📢 Маркетинг
+              </button>
+              <button onClick={() => setRole("merchant")}
+                style={{ background: role === "merchant" ? "#f59e0b" : "transparent",
+                         color: role === "merchant" ? "white" : T.ink,
+                         borderColor: role === "merchant" ? "#f59e0b" : T.border, fontFamily: FM }}
+                className="px-2 py-2 text-[9px] uppercase tracking-[0.15em] border rounded-lg hover:opacity-80 flex items-center justify-center gap-1">
+                🏪 Merchant
+              </button>
             </div>
             {role === "manager" && (
               <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
@@ -4479,12 +4897,30 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
                 🎧 Оператор: Зөвхөн дуудлага бүртгэж, захиалга авна.
               </p>
             )}
+            {role === "marketing" && (
+              <p style={{ color: "#0E9C8E" }} className="text-[11px] mt-1.5">
+                📢 Маркетинг: Дуудлага, Борлуулалт, FB Pages, Захиалга, Бараа нөөц харна.
+              </p>
+            )}
             {role === "driver" && (
               <p style={{ color: "#0ea5e9" }} className="text-[11px] mt-1.5">
                 🚚 Delivery: Зөвхөн өөрт оноосон захиалгуудыг хүргэнэ.
               </p>
             )}
+            {role === "merchant" && (
+              <p style={{ color: "#f59e0b" }} className="text-[11px] mt-1.5">
+                🏪 Merchant: Зөвхөн оноогдсон FB Page-уудтай холбоотой захиалга, дуудлага, бараа харна.
+              </p>
+            )}
           </div>
+
+          {/* 🏪 Merchant — FB Pages сонгох */}
+          {role === "merchant" && (
+            <MerchantPageSelector
+              selectedIds={fbPageIds}
+              onChange={setFbPageIds}
+            />
+          )}
 
           {departments.length > 0 && (
             <div>
@@ -4920,6 +5356,27 @@ function Tab({ active, onClick, icon: Icon, badge, children }) {
   );
 }
 
+// Section гарчгийн градиент өнгөний map (label → [from, to])
+const SECTION_GRADIENTS = {
+  "Хяналт":      ["#3FE0C6", "#0E9C8E"],
+  "Operator":    ["#85B7EB", "#185FA5"],
+  "Оператор":    ["#85B7EB", "#185FA5"],
+  "Delivery":    ["#FAC775", "#BA7517"],
+  "Finance":     ["#AFA9EC", "#534AB7"],
+  "Санхүү":      ["#AFA9EC", "#534AB7"],
+  "Агуулах":     ["#F0997B", "#D85A30"],
+  "Ажилтнууд":   ["#5DCAA5", "#0F6E56"],
+  "Ажилтан":     ["#5DCAA5", "#0F6E56"],
+  "Хүсэлтүүд":   ["#ED93B1", "#D4537E"],
+  "Бизнес":      ["#97C459", "#639922"],
+  "Үндсэн":      ["#3FE0C6", "#0E9C8E"],
+  "Ажил":        ["#85B7EB", "#185FA5"],
+};
+function sectionGradient(label) {
+  const g = SECTION_GRADIENTS[label] || ["#5DCAA5", "#0F6E56"];
+  return `linear-gradient(135deg, ${g[0]}, ${g[1]})`;
+}
+
 function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
   return (
     <button onClick={onClick}
@@ -4945,7 +5402,16 @@ function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
   );
 }
 
-function SidebarSection({ label, icon: Icon, children, defaultOpen = true }) {
+function SidebarSection({ label, icon: Icon, children, defaultOpen = false }) {
+  // Accordion руу шилжих үед хуучин "бүгд нээлттэй" төлөвийг нэг удаа цэвэрлэх
+  if (typeof window !== "undefined" && !window.__sidebarAccordionMigrated) {
+    window.__sidebarAccordionMigrated = true;
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("orgoo-sidebar-") && k !== "orgoo-sidebar-collapsed")
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {}
+  }
   // localStorage-аас сэргээх (label-ыг key болгож)
   const storageKey = label ? `orgoo-sidebar-${label}` : null;
   const [open, setOpen] = useState(() => {
@@ -4960,15 +5426,44 @@ function SidebarSection({ label, icon: Icon, children, defaultOpen = true }) {
     }
   }, [open, storageKey]);
 
+  // Accordion: өөр section нээгдэхэд энэ section хаагдана
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail !== label) setOpen(false);
+    };
+    window.addEventListener("sidebar-section-open", handler);
+    return () => window.removeEventListener("sidebar-section-open", handler);
+  }, [label]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      // Нээж байгаа бол бусдад "хаагдаач" гэж дохио өг
+      if (next) {
+        window.dispatchEvent(new CustomEvent("sidebar-section-open", { detail: label }));
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="mb-4">
       {label && (
         <button
-          onClick={() => setOpen(!open)}
+          onClick={toggle}
           className="press-btn w-full flex items-center justify-between px-3 mb-1.5 hover:opacity-70 transition-opacity group"
           style={{ fontFamily: FS, color: T.mutedSoft }}>
-          <span className="flex items-center gap-1.5">
-            {Icon && <Icon size={12} style={{ color: T.mutedSoft }} />}
+          <span className="flex items-center gap-2">
+            {Icon && (
+              <span style={{
+                background: sectionGradient(label),
+                width: 24, height: 24, borderRadius: 7,
+                display: "grid", placeItems: "center", flexShrink: 0,
+                boxShadow: "0 2px 6px -2px rgba(0,0,0,0.25)",
+              }}>
+                <Icon size={13} strokeWidth={2.2} style={{ color: "#fff" }} />
+              </span>
+            )}
             <span className="text-[10px] uppercase tracking-[0.15em] font-medium">
               {label}
             </span>
@@ -5455,6 +5950,40 @@ function ZonesView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // 🔄 Хүлээгдэж байгаа (хуваарилагдсан) бүх захиалгыг "Шинэ" рүү буцаах
+  const [resetting, setResetting] = useState(false);
+  const resetAllToNew = async () => {
+    try {
+      // Хүлээгдэж байгаа = driver оноосон ЭСВЭЛ assigned статустай,
+      // гэхдээ хүргэгдсэн/цуцлагдаагүй захиалгууд
+      const { data: pending, error: fetchErr } = await supabase
+        .from("biz_orders")
+        .select("id")
+        .not("status", "in", "(delivered,cancelled)")
+        .not("driver_id", "is", null);
+      if (fetchErr) { alert("Алдаа: " + fetchErr.message); return; }
+
+      const ids = (pending || []).map((o) => o.id);
+      if (ids.length === 0) {
+        alert("Хүлээгдэж байгаа хуваарилагдсан захиалга алга.");
+        return;
+      }
+      if (!confirm(`🔄 ${ids.length} захиалгыг "Шинэ" рүү буцаах уу?\n\n• Хүргэгчийн хуваарилалт цуцлагдана\n• Дахин хуваарилах боломжтой болно`)) return;
+
+      setResetting(true);
+      const { error: updErr } = await updateInChunks("biz_orders", "id", ids, {
+        status: "new",
+        driver_id: null,
+      });
+      if (updErr) { alert("Алдаа: " + updErr.message); }
+      else { alert(`✅ ${ids.length} захиалга "Шинэ" рүү буцлаа.`); }
+    } catch (e) {
+      alert("Алдаа: " + (e?.message || e));
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const driversWithZones = useMemo(() => {
     return drivers.map((d) => {
       const driverZones = zones.filter((z) => z.driver_id === d.id && z.is_active);
@@ -5483,6 +6012,11 @@ function ZonesView({ profile }) {
                 className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
                 🚚 Захиалга хуваарилах
+              </button>
+              <button onClick={resetAllToNew} disabled={resetting}
+                className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 700, border: `1px solid ${T.warn}`, opacity: resetting ? 0.6 : 1 }}>
+                {resetting ? "Буцааж байна..." : "🔄 Бүгдийг шинэ рүү"}
               </button>
               <button onClick={() => setShowAllMap(true)}
                 className="press-btn px-4 py-2 rounded-xl text-sm font-semibold"
@@ -5689,8 +6223,8 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
       if (!z.polygon || z.polygon.length < 3) return;
       
       const poly = L.polygon(z.polygon, {
-        color: z.color || "#ec4899",
-        fillColor: z.color || "#ec4899",
+        color: z.color || "#0E9C8E",
+        fillColor: z.color || "#0E9C8E",
         fillOpacity: 0.25,
         weight: 2,
       }).addTo(map);
@@ -5710,7 +6244,7 @@ function AllZonesMapModal({ zones, drivers, onClose }) {
       
       const label = L.marker(center, {
         icon: L.divIcon({
-          html: `<div style="background: ${z.color || '#ec4899'}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid white;">${z.name}</div>`,
+          html: `<div style="background: ${z.color || '#0E9C8E'}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid white;">${z.name}</div>`,
           iconSize: [120, 24],
           iconAnchor: [60, 12],
           className: "zone-label",
@@ -5865,18 +6399,20 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     return m;
   }, [drivers]);
 
-  // Хуваарилагдаагүй захиалгуудыг татах
+  // Зөвхөн "Шинэ" + driver оноогоогүй захиалгуудыг татах
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await supabase.from("biz_orders")
-          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-          .is("driver_id", null)
-          .in("status", ["new", "assigned"])
-          .order("created_at", { ascending: false });
+        const data = await fetchAllRows(
+          supabase.from("biz_orders")
+            .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
+            .eq("status", "new")        // ⭐ Зөвхөн "Шинэ"
+            .is("driver_id", null)      // ⭐ Driver оноогоогүй (хуваарилагдаагүй) захиалга л
+            .order("created_at", { ascending: false })
+        );
         setUnassignedOrders(data || []);
-      } catch (e) { console.error(e); }
+      } catch (e) { logErr("[unassignedOrders fetch]", e); }
       finally { setLoading(false); }
     })();
   }, []);
@@ -5888,16 +6424,28 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     const noGps = [];     // координат байхгүй
     
     unassignedOrders.forEach((o) => {
+      const alreadyAssigned = !!o.driver_id;
+      const currentDriverName = alreadyAssigned ? driverNameById[o.driver_id] : null;
+
       if (!o.delivery_lat || !o.delivery_lng) {
-        noGps.push(o);
+        noGps.push({ ...o, alreadyAssigned, currentDriverName });
         return;
       }
       const point = [Number(o.delivery_lat), Number(o.delivery_lng)];
       const zone = zones.find((z) => isPointInPolygon(point, z.polygon || []));
       if (zone) {
-        matched.push({ ...o, zone, driverName: driverNameById[zone.driver_id] });
+        // 🔄 Шалгах: одоогийн driver_id нь бүсийн driver-тэй адил уу?
+        const isSameDriver = alreadyAssigned && o.driver_id === zone.driver_id;
+        matched.push({
+          ...o,
+          zone,
+          driverName: driverNameById[zone.driver_id],
+          alreadyAssigned,
+          currentDriverName,
+          isSameDriver,
+        });
       } else {
-        unmatched.push(o);
+        unmatched.push({ ...o, alreadyAssigned, currentDriverName });
       }
     });
     
@@ -5920,27 +6468,38 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
     let failCount = 0;
     
     try {
+      // 🚀 ОПТИМИЗАЦИ: Driver-аар групплэж bulk update хийх
+      // Жнь: 500 захиалга × 5 driver → 500 request биш, 5×3=15 request л явна
+      const groupedByDriver = {};
       for (const o of toAssign) {
-        try {
-          await supabase.from("biz_orders").update({
-            driver_id: o.zone.driver_id,
-            // status хэвээр үлдэнэ (new) — driver харагдах нь чухал
-          }).eq("id", o.id);
-          successCount++;
-        } catch (e) {
-          console.error(`Assign error for ${o.order_number}:`, e);
-          failCount++;
+        const dId = o.zone.driver_id;
+        if (!groupedByDriver[dId]) groupedByDriver[dId] = [];
+        groupedByDriver[dId].push(o.id);
+      }
+
+      for (const [driverId, orderIds] of Object.entries(groupedByDriver)) {
+        const { error } = await updateInChunks("biz_orders", "id", orderIds, {
+          driver_id: driverId,
+          status: "assigned",  // ⭐ Хуваарилсан → "Шинэ" жагсаалтаас гарна
+        });
+        if (error) {
+          logErr(`[bulk assign ${driverId}]`, error);
+          failCount += orderIds.length;
+        } else {
+          successCount += orderIds.length;
         }
       }
       
       alert(`✅ ${successCount} захиалга хуваарилагдлаа${failCount > 0 ? `\n⚠ ${failCount} алдаа гарсан` : ""}`);
       
-      // Reload
-      const { data } = await supabase.from("biz_orders")
-        .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at")
-        .is("driver_id", null)
-        .in("status", ["new", "assigned"])
-        .order("created_at", { ascending: false });
+      // Reload — мөн fetchAllRows ашиглах (1000 limit-аас халих)
+      const data = await fetchAllRows(
+        supabase.from("biz_orders")
+          .select("id, order_number, customer_phone, customer_name, delivery_address, delivery_lat, delivery_lng, total_amount, status, created_at, driver_id")
+          .eq("status", "new")
+          .is("driver_id", null)   // ⭐ Driver оноогоогүй захиалга л
+          .order("created_at", { ascending: false })
+      );
       setUnassignedOrders(data || []);
       setSelectedIds(new Set());
     } catch (e) {
@@ -6178,7 +6737,7 @@ function AssignOrdersModal({ zones, drivers, profile, onClose }) {
 // ─── Бүс editor modal — газрын зураг дээр polygon үүсгэх ─────────────────
 function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
   const [name, setName] = useState(zone?.name || "");
-  const [color, setColor] = useState(zone?.color || "#ec4899");
+  const [color, setColor] = useState(zone?.color || "#0E9C8E");
   const [driverId, setDriverId] = useState(zone?.driver_id || "");
   const [notes, setNotes] = useState(zone?.notes || "");
   const [polygon, setPolygon] = useState(zone?.polygon || []);
@@ -6565,9 +7124,10 @@ function SupplierOrdersView({ profile }) {
     return o.status === filterStatus;
   });
 
-  // Stats
-  const totalQty = orders.reduce((s, o) => s + Number(o.quantity || 0), 0);
-  const totalAmount = orders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  // Stats — filter-ээс хамаарч (filterStatus === "all" бол бүгд, эс бол filter-руу)
+  const totalQty = filteredOrders.reduce((s, o) => s + Number(o.quantity || 0), 0);
+  const totalAmount = filteredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  // Эдгээр нь ВСЕГДА бүх захиалгаас (tab-руу хамаарахгүй) — мэдээллийн зорилгоор
   const arrivedCount = orders.filter((o) => o.status === "arrived").length;
   const pendingCount = orders.filter((o) => o.status === "pending" || o.status === "shipping").length;
 
@@ -7157,10 +7717,17 @@ function InventoryView({ profile, isAdmin = false }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [movements, setMovements] = useState([]);
+  const [receivings, setReceivings] = useState([]); // 🆕 Бөөн орлогын header
+  const [warehouses, setWarehouses] = useState([]); // 🆕 Агуулахууд (нэр харуулах)
+  const [stockByWarehouse, setStockByWarehouse] = useState({}); // 🆕 { product_id: { warehouse_id: qty } }
+  const [warehouseStockPopup, setWarehouseStockPopup] = useState(null); // 🆕 { product } — агуулах бүрийн нөөц
+  const [expandedReceiving, setExpandedReceiving] = useState(null); // 🆕 Click-ээр өргөтгөгдөх
+  const [receivingItems, setReceivingItems] = useState({}); // 🆕 cache: receiving_id => movements[]
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [movementFor, setMovementFor] = useState(null); // { product, type: "in"|"out" }
   const [showBulkReceive, setShowBulkReceive] = useState(false);
+  const [showCatManager, setShowCatManager] = useState(false);
   const [filterCat, setFilterCat] = useState("all");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("products"); // products | history | low
@@ -7173,17 +7740,31 @@ function InventoryView({ profile, isAdmin = false }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: prodData }, { data: catData }, { data: movData }, { data: stkData }] = await Promise.all([
+      const [
+        { data: prodData },
+        { data: catData },
+        { data: movData },
+        { data: stkData },
+        { data: recvData },     // 🆕 Бөөн орлогын header-ууд
+        { data: whData },        // 🆕 Агуулахууд
+      ] = await Promise.all([
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
-        supabase.from("inv_stock").select("product_id, quantity"),
+        supabase.from("inv_stock").select("product_id, quantity, warehouse_id"),
+        supabase.from("inv_receivings").select("*").order("received_at", { ascending: false }).limit(100),
+        supabase.from("inv_warehouses").select("id, name, type"),
       ]);
       // Бараа тус бүрийн нийт нөөцийг inv_stock-аас тооцоолох (multi-warehouse)
       const stockByProduct = {};
+      const stockByProductWarehouse = {}; // 🆕 { product_id: { warehouse_id: qty } }
       (stkData || []).forEach((s) => {
         stockByProduct[s.product_id] = (stockByProduct[s.product_id] || 0) + Number(s.quantity || 0);
+        if (!stockByProductWarehouse[s.product_id]) stockByProductWarehouse[s.product_id] = {};
+        stockByProductWarehouse[s.product_id][s.warehouse_id] =
+          (stockByProductWarehouse[s.product_id][s.warehouse_id] || 0) + Number(s.quantity || 0);
       });
+      setStockByWarehouse(stockByProductWarehouse); // 🆕
       const productsWithStock = (prodData || []).map((p) => ({
         ...p,
         stock: stockByProduct[p.id] || 0,
@@ -7191,7 +7772,9 @@ function InventoryView({ profile, isAdmin = false }) {
       setProducts(productsWithStock);
       setCategories(catData || []);
       setMovements(movData || []);
-    } catch (e) { console.error(e); }
+      setReceivings(recvData || []);   // 🆕
+      setWarehouses(whData || []);      // 🆕
+    } catch (e) { logErr("[inventory loadAll]", e); }
     finally { setLoading(false); }
   };
 
@@ -7231,6 +7814,59 @@ function InventoryView({ profile, isAdmin = false }) {
     if (!confirm("Энэ барааг устгах уу?")) return;
     await supabase.from("inv_products").update({ is_active: false }).eq("id", id);
     await loadAll();
+  };
+
+  // 📊 Бараа нөөцийг Excel-ээр татах (одоогийн шүүлтүүрийг тооцно)
+  const exportInventoryExcel = () => {
+    const list = filtered;
+    if (list.length === 0) { alert("Татах бараа алга"); return; }
+    const rows = list.map((p, i) => {
+      const cat = catById(p.category_id);
+      const stock = Number(p.stock || 0);
+      const cost = Number(p.cost_price || 0);
+      const sale = Number(p.sale_price || 0);
+      return {
+        "№": i + 1,
+        "Барааны нэр": p.name || "",
+        "SKU": p.sku || "",
+        "Баркод": p.barcode || "",
+        "Категори": cat?.name || "",
+        "Нэгж": p.unit || "",
+        "Үлдэгдэл": stock,
+        "Мин. нөөц": Number(p.min_stock || 0),
+        "Авсан үнэ": cost,
+        "Зарах үнэ": sale,
+        "Нөөцийн өртөг": stock * cost,
+        "Нөөцийн үнэ": stock * sale,
+        "Төлөв": stock <= 0 ? "Дууссан" : (p.min_stock > 0 && stock <= p.min_stock ? "Нөөц багатай" : "Хэвийн"),
+      };
+    });
+    // Нийт мөр
+    rows.push({
+      "№": "",
+      "Барааны нэр": "НИЙТ",
+      "SKU": "",
+      "Баркод": "",
+      "Категори": "",
+      "Нэгж": "",
+      "Үлдэгдэл": list.reduce((s, p) => s + Number(p.stock || 0), 0),
+      "Мин. нөөц": "",
+      "Авсан үнэ": "",
+      "Зарах үнэ": "",
+      "Нөөцийн өртөг": list.reduce((s, p) => s + Number(p.stock || 0) * Number(p.cost_price || 0), 0),
+      "Нөөцийн үнэ": list.reduce((s, p) => s + Number(p.stock || 0) * Number(p.sale_price || 0), 0),
+      "Төлөв": "",
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 5 }, { wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 16 },
+      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+      { wch: 14 }, { wch: 14 }, { wch: 13 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Бараа нөөц");
+    const fname = `Бараа_нооц_${new Date().toLocaleDateString("en-CA")}.xlsx`;
+    XLSX.writeFile(wb, fname);
   };
 
   return (
@@ -7309,6 +7945,21 @@ function InventoryView({ profile, isAdmin = false }) {
                 fontFamily: FS,
               }}>
               📥 Бөөн орлого
+            </button>
+            <button onClick={() => setShowCatManager(true)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+              🏷 Категори
+            </button>
+            <button onClick={exportInventoryExcel}
+              disabled={filtered.length === 0}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1"
+              style={{
+                background: filtered.length === 0 ? T.surfaceAlt : "linear-gradient(135deg, #0ea5e9, #14b8a6)",
+                color: filtered.length === 0 ? T.mutedSoft : "white",
+                fontFamily: FS,
+              }}>
+              <FileSpreadsheet size={12} /> Excel татах
             </button>
             <button onClick={() => setEditing({})}
               className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -7424,11 +8075,11 @@ function InventoryView({ profile, isAdmin = false }) {
                     <span>Зарсан: {Number(p.sale_price || 0).toLocaleString()}₮</span>
                   </div>
 
-                  <div className="flex gap-1 mt-2 pt-2 border-t" style={{ borderColor: T.borderSoft }}>
-                    <button onClick={() => setMovementFor({ product: p, type: "in" })}
-                      className="press-btn flex-1 py-1 rounded text-[10px]"
-                      style={{ background: T.successSoft || "rgba(16,185,129,0.1)", color: T.ok, fontFamily: FS, fontWeight: 600 }}>
-                      📥 Орлого
+                  <div className="flex gap-1 mt-2 pt-2 border-t justify-between items-center" style={{ borderColor: T.borderSoft }}>
+                    <button onClick={() => setWarehouseStockPopup({ product: p })}
+                      className="press-btn px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1"
+                      style={{ background: T.surfaceAlt, color: "#0ea5e9", fontFamily: FS, border: `1px solid ${T.border}` }}>
+                      🏬 Агуулах
                     </button>
                     {isAdmin && (
                       <button onClick={() => setEditing(p)} style={{ color: T.muted }}
@@ -7530,68 +8181,225 @@ function InventoryView({ profile, isAdmin = false }) {
                     Үлдэгдэл: {p.stock} {p.unit} · Мин: {p.min_stock} {p.unit}
                   </div>
                 </div>
-                <button onClick={() => setMovementFor({ product: p, type: "in" })}
-                  className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold">
-                  📥 Орлого
-                </button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button onClick={() => setWarehouseStockPopup({ product: p })}
+                    className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: T.surfaceAlt, color: "#0ea5e9", fontFamily: FS, border: `1px solid ${T.border}` }}>
+                    🏬 Агуулах
+                  </button>
+                  <button onClick={() => setMovementFor({ product: p, type: "in" })}
+                    className="glow-primary press-btn px-3 py-1.5 rounded-full text-xs font-semibold">
+                    📥 Орлого
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )
       ) : (
-        // History
-        movements.length === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="text-4xl mb-2">📜</div>
-            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Хөдөлгөөн хараахан байхгүй байна
+        // History — 📦 Бөөн орлогын түүх + нэг бараатай орлогууд
+        (() => {
+          // Бүх орлогуудыг нэгтгэх
+          const bulkReceivings = receivings.map((r) => ({
+            type: "bulk",
+            id: r.id,
+            created_at: r.received_at, // 🔧 received_at column ашиглах
+            receiving_number: r.receiving_number,
+            warehouse_id: r.warehouse_id,
+            supplier_name: r.supplier_name,
+            supplier_phone: r.supplier_phone,
+            notes: r.notes,
+            total_amount: r.total_amount,
+            item_count: r.total_items, // 🔧 total_items column ашиглах
+          }));
+          // Нэг бараатай орлого (receiving_id-гүй "in")
+          const singleIns = movements
+            .filter((m) => m.movement_type === "in" && !m.receiving_id)
+            .map((m) => ({
+              type: "single",
+              id: m.id,
+              created_at: m.created_at,
+              receiving_number: m.reference_number,
+              warehouse_id: m.warehouse_id,
+              supplier_name: null,
+              supplier_phone: null,
+              notes: m.notes,
+              total_amount: m.total_amount,
+              product_id: m.product_id,
+              quantity: m.quantity,
+              unit_price: m.unit_price,
+              reason: m.reason,
+            }));
+          // Огнооор эрэмбэлэх
+          const allIncomes = [...bulkReceivings, ...singleIns]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+          if (allIncomes.length === 0) {
+            return (
+              <div className="glass rounded-2xl p-8 text-center">
+                <div className="text-4xl mb-2">📦</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                  Орлого хараахан байхгүй байна
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              {allIncomes.map((rec) => {
+                const wh = warehouses.find((w) => w.id === rec.warehouse_id);
+                const isBulk = rec.type === "bulk";
+                const isOpen = expandedReceiving === rec.id;
+                const items = receivingItems[rec.id] || [];
+                // Нэг бараатай нь — шууд барааны нэр
+                const product = !isBulk ? products.find((p) => p.id === rec.product_id) : null;
+                return (
+                  <div key={rec.type + ":" + rec.id} className="glass rounded-xl overflow-hidden">
+                    {/* Header */}
+                    <button onClick={async () => {
+                      if (!isBulk) return; // Single — өргөтгөх хэрэггүй
+                      if (isOpen) {
+                        setExpandedReceiving(null);
+                        return;
+                      }
+                      setExpandedReceiving(rec.id);
+                      if (!receivingItems[rec.id]) {
+                        try {
+                          const { data } = await supabase.from("inv_movements")
+                            .select("*")
+                            .eq("receiving_id", rec.id)
+                            .order("created_at", { ascending: true });
+                          setReceivingItems((prev) => ({ ...prev, [rec.id]: data || [] }));
+                        } catch (e) { logErr("[receiving items]", e); }
+                      }
+                    }}
+                      className={`w-full p-3 text-left flex items-center gap-3 ${isBulk ? "press-btn" : ""}`}
+                      style={{ borderLeft: `3px solid ${isBulk ? T.ok : "#3b82f6"}`, cursor: isBulk ? "pointer" : "default" }}>
+                      <div style={{
+                        background: isBulk ? "rgba(16,185,129,0.1)" : "rgba(59,130,246,0.1)",
+                        color: isBulk ? T.ok : "#3b82f6",
+                      }}
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0">
+                        {isBulk ? "📦" : "📥"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{
+                            background: isBulk ? T.okSoft : "rgba(59,130,246,0.1)",
+                            color: isBulk ? T.ok : "#3b82f6",
+                            fontFamily: FS, fontWeight: 700,
+                          }} className="text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                            {isBulk ? "🛒 Бөөн орлого" : "📥 Нэг бараатай"}
+                          </span>
+                          <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
+                            {rec.receiving_number || `#${rec.id.slice(0, 8)}`}
+                          </span>
+                          {wh && (
+                            <span style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                              className="text-[10px] px-1.5 py-0.5 rounded">
+                              {wh.type === "main" ? "🏢" : "🚚"} {wh.name}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-2 flex-wrap mt-0.5">
+                          <span>📅 {new Date(rec.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                          {rec.supplier_name && <span>· 🏪 {rec.supplier_name}</span>}
+                          {rec.supplier_phone && <span>· 📞 {rec.supplier_phone}</span>}
+                          {!isBulk && product && <span>· 🛍 {product.name} ×{rec.quantity}</span>}
+                        </div>
+                        {rec.notes && (
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                            💬 {rec.notes}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: isBulk ? T.ok : "#3b82f6" }} className="text-base tabular-nums">
+                          {Number(rec.total_amount || 0).toLocaleString()}₮
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1 justify-end">
+                          {isBulk ? (
+                            <>
+                              <span>{rec.item_count || items.length || "—"} бараа</span>
+                              <span>{isOpen ? "▲" : "▼"}</span>
+                            </>
+                          ) : (
+                            <span>×{rec.quantity}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Дэлгэрэнгүй (зөвхөн bulk-руу) */}
+                    {isBulk && isOpen && (
+                      <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }} className="px-3 py-2">
+                        {items.length === 0 ? (
+                          <div className="py-3 text-center">
+                            <Loader2 className="spin mx-auto" size={14} style={{ color: T.muted }} />
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="grid grid-cols-[1fr_60px_80px_80px] gap-2 pb-1 mb-1"
+                              style={{ borderBottom: `1px solid ${T.border}` }}>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Бараа</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Тоо</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Нэгж үнэ</div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider text-right">Дүн</div>
+                            </div>
+                            {items.map((m) => {
+                              const prod = products.find((p) => p.id === m.product_id);
+                              return (
+                                <div key={m.id}
+                                  className="grid grid-cols-[1fr_60px_80px_80px] gap-2 py-1 items-center text-xs">
+                                  <div style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="truncate">
+                                    {prod?.name || `(устсан бараа)`}
+                                  </div>
+                                  <div style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-right tabular-nums">
+                                    ×{Number(m.quantity).toLocaleString()}
+                                  </div>
+                                  <div style={{ fontFamily: FM, color: T.muted }} className="text-right tabular-nums">
+                                    {Number(m.unit_price || 0).toLocaleString()}₮
+                                  </div>
+                                  <div style={{ fontFamily: FD, color: T.ok, fontWeight: 700 }} className="text-right tabular-nums">
+                                    {Number(m.total_amount || 0).toLocaleString()}₮
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        ) : (
-          <div className="glass rounded-2xl p-3 overflow-x-auto">
-            <table className="w-full" style={{ minWidth: 600 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Огноо</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "left" }} className="text-[10px] uppercase tracking-wider pb-2">Бараа</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "center" }} className="text-[10px] uppercase tracking-wider pb-2">Төрөл</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Тоо ширхэг</th>
-                  <th style={{ fontFamily: FM, color: T.muted, fontWeight: 500, textAlign: "right" }} className="text-[10px] uppercase tracking-wider pb-2">Дүн</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.slice(0, 50).map((m) => {
-                  const product = products.find((p) => p.id === m.product_id);
-                  return (
-                    <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-                      <td style={{ fontFamily: FM, color: T.muted }} className="text-[10px] py-2">
-                        {new Date(m.created_at).toLocaleString("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                      <td style={{ fontFamily: FS, color: T.ink, fontWeight: 500 }} className="text-xs py-2">
-                        {product?.name || "—"}
-                      </td>
-                      <td className="text-xs py-2 text-center">
-                        <span style={{
-                          background: m.movement_type === "in" ? "rgba(16,185,129,0.1)" : m.movement_type === "out" ? T.errSoft : T.surfaceAlt,
-                          color: m.movement_type === "in" ? T.ok : m.movement_type === "out" ? T.err : T.muted,
-                          fontFamily: FS, fontWeight: 600,
-                        }} className="px-2 py-0.5 rounded text-[10px]">
-                          {m.movement_type === "in" ? "📥 Орлого" : m.movement_type === "out" ? "📤 Борлуулалт" : "⚙ Засвар"}
-                        </span>
-                      </td>
-                      <td style={{ fontFamily: FM, color: T.ink, fontWeight: 600 }} className="text-xs py-2 text-right tabular-nums">
-                        {Number(m.quantity).toLocaleString()}
-                      </td>
-                      <td style={{ fontFamily: FM, color: T.muted }} className="text-xs py-2 text-right tabular-nums">
-                        {m.total_amount ? Number(m.total_amount).toLocaleString() + "₮" : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+          );
+        })()
+      )}
+
+      {showCatManager && createPortal(
+        <CategoryManagerModal
+          categories={categories}
+          products={products}
+          onAdd={async (name) => {
+            try {
+              await supabase.from("inv_categories").insert({ name });
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onDelete={async (cat) => {
+            try {
+              await supabase.from("inv_products").update({ category_id: null }).eq("category_id", cat.id);
+              const { error } = await supabase.from("inv_categories").delete().eq("id", cat.id);
+              if (error) { alert("Устгахад алдаа: " + error.message); return; }
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+          }}
+          onClose={() => setShowCatManager(false)}
+        />,
+        document.body
       )}
 
       {editing && (
@@ -7602,9 +8410,26 @@ function InventoryView({ profile, isAdmin = false }) {
           onSave={async (data) => {
             try {
               if (editing.id) {
-                await supabase.from("inv_products").update({ ...data, updated_at: new Date().toISOString() }).eq("id", editing.id);
+                const { data: updated, error } = await supabase
+                  .from("inv_products")
+                  .update({ ...data, updated_at: new Date().toISOString() })
+                  .eq("id", editing.id)
+                  .select();
+                if (error) throw error;
+                if (!updated || updated.length === 0) {
+                  alert("⚠ Хадгалах боломжгүй байна.\n\nТанд энэ барааг засах эрх байхгүй байж магадгүй (RLS).\nAdmin-руу хандана уу.");
+                  return;
+                }
               } else {
-                await supabase.from("inv_products").insert({ ...data, created_by: profile.id });
+                const { data: inserted, error } = await supabase
+                  .from("inv_products")
+                  .insert({ ...data, created_by: profile.id })
+                  .select();
+                if (error) throw error;
+                if (!inserted || inserted.length === 0) {
+                  alert("⚠ Бараа нэмэх боломжгүй байна.\n\nТанд эрх байхгүй байж магадгүй (RLS).\nAdmin-руу хандана уу.");
+                  return;
+                }
               }
               setEditing(null);
               await loadAll();
@@ -7619,6 +8444,80 @@ function InventoryView({ profile, isAdmin = false }) {
           }}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {/* 🏬 Агуулах бүрийн нөөц popup */}
+      {warehouseStockPopup && createPortal(
+        <div
+          onClick={() => setWarehouseStockPopup(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: 18, width: "100%", maxWidth: 380,
+              maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                🏬 Агуулах бүрийн нөөц
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-0.5">
+                {warehouseStockPopup.product.name}
+              </div>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {(() => {
+                const pStock = stockByWarehouse[warehouseStockPopup.product.id] || {};
+                // Зөвхөн НӨӨЦТЭЙ (qty > 0) агуулахыг харуулна
+                const rows = warehouses.map((w) => ({
+                  name: w.name,
+                  type: w.type,
+                  qty: pStock[w.id] || 0,
+                })).filter((r) => r.qty > 0).sort((a, b) => b.qty - a.qty);
+                const total = rows.reduce((s, r) => s + r.qty, 0);
+                if (rows.length === 0) {
+                  return <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">Энэ бараа аль ч агуулахад үлдэгдэлгүй байна</div>;
+                }
+                return (
+                  <>
+                    {rows.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
+                        style={{ background: r.qty > 0 ? "rgba(14,165,233,0.06)" : T.surfaceAlt }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{r.type === "main" ? "🏢" : "🚚"}</span>
+                          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-sm">{r.name}</span>
+                        </div>
+                        <span style={{ fontFamily: FD, fontWeight: 700, color: r.qty > 0 ? "#0ea5e9" : T.muted }}
+                          className="text-base tabular-nums">
+                          {r.qty} <span className="text-[10px]" style={{ color: T.muted }}>{warehouseStockPopup.product.unit}</span>
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-lg mt-1"
+                      style={{ background: "rgba(14,156,142,0.1)", borderTop: `2px solid ${T.highlight}` }}>
+                      <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Нийт</span>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
+                        {total} <span className="text-[10px]" style={{ color: T.muted }}>{warehouseStockPopup.product.unit}</span>
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="px-3 pb-3">
+              <button onClick={() => setWarehouseStockPopup(null)}
+                className="press-btn w-full py-2.5 rounded-xl text-sm"
+                style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+                Хаах
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {movementFor && (
@@ -7729,6 +8628,70 @@ function WarehousesView({ profile }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // 🆕 Driver (агуулах) сонгоход бараа автомат тооцох (driver-ийн логиктой ижил)
+  //   • receive (Бараа авах) → тэр driver-ийн захиалгаас хэрэгтэй бараа
+  //   • transfer (Бараа өгөх) → үндсэн агуулахын бүх бараа
+  useEffect(() => {
+    if (!showActionModal || !actionWarehouse) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const selWh = warehouses.find((w) => w.id === actionWarehouse);
+        const mainWh = warehouses.find((w) => w.type === "main");
+        if (!selWh) return;
+
+        if (showActionModal === "transfer") {
+          // 🔄 Бараа өгөх → үндсэн агуулахад байгаа бүх бараа (admin гараар тоо оруулна)
+          const srcStock = stock.filter((s) => s.warehouse_id === mainWh?.id && Number(s.quantity) > 0);
+          const items = srcStock.map((s) => {
+            const product = products.find((p) => p.id === s.product_id);
+            if (!product) return null;
+            return {
+              product_id: s.product_id, product_name: product.name, product_sku: product.sku,
+              product_image: product.image_url || null, quantity: 0, maxQty: Number(s.quantity),
+            };
+          }).filter(Boolean);
+          if (!cancelled) setActionItems(items);
+        } else if (showActionModal === "receive") {
+          // 📥 Бараа авах → сонгосон driver-ийн захиалгаас хэрэгтэй (дутуу) бараа
+          const driverId = selWh.driver_id;
+          if (!driverId) { if (!cancelled) setActionItems([]); return; }
+          const { data: ordData } = await supabase
+            .from("biz_orders").select("id")
+            .eq("driver_id", driverId).in("status", ["new", "pending", "assigned"]);
+          const orderIds = (ordData || []).map((o) => o.id);
+          if (orderIds.length === 0) { if (!cancelled) setActionItems([]); return; }
+          const itemData = await fetchInChunks("biz_order_items", orderIds, {
+            select: "product_id, product_name, quantity",
+            filterColumn: "order_id", chunkSize: 200,
+          });
+          const requiredMap = {};
+          (itemData || []).forEach((it) => {
+            if (!it.product_id) return;
+            if (!requiredMap[it.product_id]) requiredMap[it.product_id] = { product_id: it.product_id, qty: 0 };
+            requiredMap[it.product_id].qty += Number(it.quantity || 0);
+          });
+          const items = Object.values(requiredMap).map((r) => {
+            const product = products.find((p) => p.id === r.product_id);
+            if (!product) return null;
+            const drStock = stock.find((s) => s.warehouse_id === selWh.id && s.product_id === r.product_id);
+            const missing = Math.max(0, r.qty - Number(drStock?.quantity || 0));
+            if (missing <= 0) return null;
+            const mainStock = stock.find((s) => s.warehouse_id === mainWh?.id && s.product_id === r.product_id);
+            const avail = Number(mainStock?.quantity || 0);
+            return {
+              product_id: r.product_id, product_name: product.name, product_sku: product.sku,
+              product_image: product.image_url || null,
+              quantity: Math.min(missing, avail), maxQty: avail,
+            };
+          }).filter(Boolean);
+          if (!cancelled) setActionItems(items);
+        }
+      } catch (e) { console.error("[warehouse auto-calc]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [actionWarehouse, showActionModal, warehouses, stock, products]);
 
   // Тус агуулахын stock тоо (зөвхөн идэвхтэй бараа)
   const getWarehouseStock = (whId) => {
@@ -8308,6 +9271,69 @@ function WarehousesView({ profile }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  SEARCHABLE SELECT — Нэрээ бичиж хайж сонгох dropdown
+// ═══════════════════════════════════════════════════════════════════════════
+function SearchableSelect({ value, onChange, options, placeholder = "Бүгд", allLabel = "Бүгд" }) {
+  // options: [{ value, label }]
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(""); } };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selected = options.find((o) => o.value === value);
+  const selectedLabel = value === "all" ? allLabel : (selected?.label || allLabel);
+  const filtered = query.trim()
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full px-2 py-1.5 rounded-lg text-xs text-left flex items-center justify-between gap-1"
+        style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+        <span className="truncate">{selectedLabel}</span>
+        <span style={{ color: T.muted }}>▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg overflow-hidden"
+          style={{ background: "white", border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxHeight: 260 }}>
+          <div className="p-1.5" style={{ borderBottom: `1px solid ${T.border}` }}>
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔎 Нэрээ бичих..."
+              className="w-full px-2 py-1.5 rounded text-xs outline-none"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            <button type="button"
+              onClick={() => { onChange("all"); setOpen(false); setQuery(""); }}
+              className="press-btn w-full px-3 py-2 text-left text-xs"
+              style={{ background: value === "all" ? T.surfaceAlt : "transparent", color: T.ink, fontFamily: FS, fontWeight: value === "all" ? 600 : 400 }}>
+              {allLabel}
+            </button>
+            {filtered.map((o) => (
+              <button key={o.value} type="button"
+                onClick={() => { onChange(o.value); setOpen(false); setQuery(""); }}
+                className="press-btn w-full px-3 py-2 text-left text-xs truncate"
+                style={{ background: value === o.value ? "rgba(14,156,142,0.1)" : "transparent", color: T.ink, fontFamily: FS, fontWeight: value === o.value ? 600 : 400 }}>
+                {o.label}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-3 py-3 text-center text-xs" style={{ color: T.muted, fontFamily: FS }}>Олдсонгүй</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  MOVEMENTS VIEW — Барааны хөдөлгөөнийг хянах хэсэг (Admin)
 // ═══════════════════════════════════════════════════════════════════════════
 function MovementsView({ profile }) {
@@ -8331,7 +9357,9 @@ function MovementsView({ profile }) {
     setLoading(true);
     try {
       const [{ data: mv }, { data: prd }, { data: wh }, { data: prf }, { data: stk }] = await Promise.all([
-        supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("inv_movements")
+          .select("id, product_id, warehouse_id, to_warehouse_id, movement_type, quantity, notes, created_at, created_by")
+          .order("created_at", { ascending: false }).limit(500),
         supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("inv_warehouses").select("id, name, driver_id"),
         supabase.from("profiles").select("id, name, role"),
@@ -8557,40 +9585,34 @@ function MovementsView({ profile }) {
           {/* Агуулах */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Агуулах</label>
-            <select value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterWarehouse}
+              onChange={setFilterWarehouse}
+              allLabel="Бүгд"
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
           </div>
 
           {/* Бараа */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Бараа</label>
-            <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ""}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterProduct}
+              onChange={setFilterProduct}
+              allLabel="Бүгд"
+              options={products.map((p) => ({ value: p.id, label: `${p.name}${p.sku ? ` (${p.sku})` : ""}` }))}
+            />
           </div>
 
           {/* Ажилтан */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">Ажилтан</label>
-            <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
-              <option value="all">Бүгд</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={filterUser}
+              onChange={setFilterUser}
+              allLabel="Бүгд"
+              options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </div>
 
           {/* Огноо — Эхлэх */}
@@ -8777,7 +9799,10 @@ function TransferRequestsView({ profile }) {
   const [activeReq, setActiveReq] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("pending");
+  const [empFilter, setEmpFilter] = useState("all"); // 🆕 Ажилтнаар шүүх
+  const [monthFilter, setMonthFilter] = useState("all"); // 🆕 Он-сараар шүүх (YYYY-MM)
   const [editedQty, setEditedQty] = useState({}); // Засагдсан тоо: { itemId: quantity }
+  const [approving, setApproving] = useState(false); // 🆕 Давхар батлахаас сэргийлэх
 
   const loadAll = async () => {
     setLoading(true);
@@ -8834,6 +9859,12 @@ function TransferRequestsView({ profile }) {
 
   // Зөвшөөрөх
   const approveRequest = async (req) => {
+    if (approving) return; // 🛡 Аль хэдийн батлах явцад байна — давхар даралтаас сэргийлнэ
+    // 🛡 Хүсэлт аль хэдийн боловсруулагдсан бол дахин батлахгүй
+    if (req.status !== "pending") {
+      alert("⚠ Энэ хүсэлт аль хэдийн боловсруулагдсан байна.");
+      return;
+    }
     const reqItems = items[req.id] || [];
     if (reqItems.length === 0) {
       alert("Хүсэлтэд бараа байхгүй");
@@ -8843,18 +9874,30 @@ function TransferRequestsView({ profile }) {
     if (!confirm(`Хүсэлтийг зөвшөөрөх үү?\n\nХэрэглэгч: ${profiles[req.requester_id]?.name || "—"}\n${reqItems.length} төрлийн бараа\n\n${req.is_return ? "БУЦААГДАХ" : "ШИЛЖҮҮЛЭГДЭХ"}`)) return;
 
    try {
+      setApproving(true); // 🛡 Эхэлсэн гэж тэмдэглэх
+      // 🛡 DB-ээс хүсэлтийн одоогийн статусыг дахин шалгах (race condition сэргийлэх)
+      const { data: freshReq } = await supabase
+        .from("inv_transfer_requests").select("status").eq("id", req.id).single();
+      if (freshReq && freshReq.status !== "pending") {
+        alert("⚠ Энэ хүсэлт аль хэдийн боловсруулагдсан байна.");
+        setApproving(false);
+        await loadAll();
+        return;
+      }
       const fromWhId = req.from_warehouse_id;
       const toWhId = req.to_warehouse_id;
 
       // Зөвхөн movement бичнэ — trigger автоматаар inv_stock шинэчилнэ
       for (const it of reqItems) {
         const finalQty = Number(editedQty[it.id] ?? it.quantity);
-        if (finalQty <= 0) continue; // 0 болгосон барааг алгасах
 
-        // Тоо өөрчлөгдсөн бол items хүснэгтэд бас хадгалах
+        // Тоо өөрчлөгдсөн бол items хүснэгтэд бас хадгалах (0 болгосон ч)
+        //   ⚠ 0 болгосон барааг хадгалахгүй бол дэлгэцэд хуучин тоо (×2) буруу харагдана.
         if (finalQty !== Number(it.quantity)) {
           await supabase.from("inv_transfer_items").update({ quantity: finalQty }).eq("id", it.id);
         }
+
+        if (finalQty <= 0) continue; // 0 болгосон бараанд movement бичихгүй (нөөц орохгүй)
 
         await supabase.from("inv_movements").insert({
           product_id: it.product_id,
@@ -8886,6 +9929,8 @@ function TransferRequestsView({ profile }) {
       } else {
         alert("Алдаа: " + e.message);
       }
+    } finally {
+      setApproving(false); // 🛡 Дуусгах
     }
   };
 
@@ -8903,7 +9948,20 @@ function TransferRequestsView({ profile }) {
   };
 
   // Filter
-  const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  let filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
+  // 🆕 Ажилтнаар шүүх
+  if (empFilter !== "all") {
+    filtered = filtered.filter((r) => r.requester_id === empFilter);
+  }
+  // 🆕 Он-сараар шүүх
+  if (monthFilter !== "all") {
+    filtered = filtered.filter((r) => {
+      if (!r.created_at) return false;
+      const d = new Date(r.created_at);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return ym === monthFilter;
+    });
+  }
 
   const counts = {
     pending: requests.filter((r) => r.status === "pending").length,
@@ -9077,9 +10135,10 @@ function TransferRequestsView({ profile }) {
               ✕ Татгалзах
             </button>
             <button onClick={() => approveRequest(activeReq)}
+              disabled={approving}
               className="press-btn py-3 rounded-xl text-sm font-semibold"
-              style={{ background: T.ok, color: "white", fontFamily: FS }}>
-              ✓ Зөвшөөрөх
+              style={{ background: approving ? T.muted : T.ok, color: "white", fontFamily: FS, opacity: approving ? 0.6 : 1, cursor: approving ? "wait" : "pointer" }}>
+              {approving ? "⏳ Боловсруулж байна..." : "✓ Зөвшөөрөх"}
             </button>
           </div>
         )}
@@ -9113,6 +10172,49 @@ function TransferRequestsView({ profile }) {
             )}
           </button>
         ))}
+      </div>
+
+      {/* 🆕 Ажилтан + Он-сар шүүлт */}
+      <div className="glass rounded-2xl p-2 flex gap-2 flex-wrap items-center">
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider pl-1">Шүүх:</span>
+        {(() => {
+          // Ажилчдын жагсаалт (хүсэлт гаргасан)
+          const empIds = [...new Set(requests.map((r) => r.requester_id).filter(Boolean))];
+          const empOptions = empIds.map((id) => ({ id, name: profiles[id]?.name || "—" }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          // Он-сарын жагсаалт
+          const months = [...new Set(requests.map((r) => {
+            if (!r.created_at) return null;
+            const d = new Date(r.created_at);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          }).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+          return (
+            <>
+              <select value={empFilter} onChange={(e) => setEmpFilter(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs outline-none"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+                <option value="all">👤 Бүх ажилтан</option>
+                {empOptions.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs outline-none"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+                <option value="all">🗓 Бүх сар</option>
+                {months.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {(empFilter !== "all" || monthFilter !== "all") && (
+                <button onClick={() => { setEmpFilter("all"); setMonthFilter("all"); }}
+                  className="press-btn px-2 py-1.5 rounded-lg text-xs"
+                  style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+                  ✕ Цэвэрлэх
+                </button>
+              )}
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto pr-1">
+                {filtered.length} хүсэлт
+              </span>
+            </>
+          );
+        })()}
       </div>
 
       {loading ? (
@@ -9193,6 +10295,8 @@ function StockCountView({ profile }) {
   const [counts, setCounts] = useState([]);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [allStock, setAllStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCount, setActiveCount] = useState(null); // open detail
   const [showNewModal, setShowNewModal] = useState(false);
@@ -9200,23 +10304,52 @@ function StockCountView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: countsData }, { data: prodData }, { data: catData }] = await Promise.all([
+      const [{ data: countsData }, { data: prodData }, { data: catData }, { data: whData }, { data: stkData }] = await Promise.all([
         supabase.from("inv_stock_counts").select("*").order("started_at", { ascending: false }),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("inv_categories").select("*").order("display_order"),
+        supabase.from("inv_warehouses").select("id, name, type"),
+        supabase.from("inv_stock").select("product_id, warehouse_id, quantity"),
       ]);
+      // Төв агуулах
+      const mainWh = (whData || []).find((w) => w.type === "main");
+      // Бараа тус бүрийн ТӨВ агуулах дахь үлдэгдэл (default харагдац)
+      const stockByProduct = {};
+      (stkData || []).forEach((s) => {
+        if (mainWh && s.warehouse_id === mainWh.id) {
+          stockByProduct[s.product_id] = Number(s.quantity || 0);
+        }
+      });
+      const productsWithStock = (prodData || []).map((p) => ({
+        ...p,
+        stock: stockByProduct[p.id] || 0,  // Төв агуулахын үлдэгдэл
+      }));
       setCounts(countsData || []);
-      setProducts(prodData || []);
+      setProducts(productsWithStock);
       setCategories(catData || []);
+      setWarehouses(whData || []);
+      setAllStock(stkData || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadAll(); }, []);
 
-  // Шинэ тооллого нээх (категориор шүүх боломжтой)
-  const handleStartNew = async ({ notes, categoryId }) => {
+  // Шинэ тооллого нээх (категори + агуулах сонгох боломжтой)
+  const handleStartNew = async ({ notes, categoryId, warehouseId }) => {
     try {
+      // Сонгосон агуулах (байхгүй бол Төв агуулах)
+      const wh = warehouseId
+        ? warehouses.find((w) => w.id === warehouseId)
+        : warehouses.find((w) => w.type === "main");
+      if (!wh) { alert("⚠ Агуулах олдсонгүй"); return; }
+
+      // Тухайн агуулах дахь барааны үлдэгдэл
+      const stockInWh = {};
+      allStock.forEach((s) => {
+        if (s.warehouse_id === wh.id) stockInWh[s.product_id] = Number(s.quantity || 0);
+      });
+
       // Категориор шүүж бараа авах
       const filteredProducts = categoryId
         ? products.filter((p) => p.category_id === categoryId)
@@ -9236,19 +10369,20 @@ function StockCountView({ profile }) {
         .insert({
           count_number: countNumber,
           status: "in_progress",
-          notes: cat ? `[${cat.name}] ${notes || ""}`.trim() : notes,
+          notes: `[${wh.name}] ${cat ? `[${cat.name}] ` : ""}${notes || ""}`.trim(),
           total_products: filteredProducts.length,
+          warehouse_id: wh.id,
           created_by: profile.id,
         })
         .select()
         .single();
       if (error) throw error;
 
-      // Шүүгдсэн барааг snapshot хийх
+      // Шүүгдсэн барааг snapshot хийх (тухайн агуулахын тоогоор)
       const items = filteredProducts.map((p) => ({
         count_id: newCount.id,
         product_id: p.id,
-        system_qty: p.stock,
+        system_qty: stockInWh[p.id] || 0,
       }));
       const { error: itemErr } = await supabase.from("inv_stock_count_items").insert(items);
       if (itemErr) throw itemErr;
@@ -9349,6 +10483,7 @@ function StockCountView({ profile }) {
         <NewStockCountModal
           products={products}
           categories={categories}
+          warehouses={warehouses}
           onSave={handleStartNew}
           onClose={() => setShowNewModal(false)}
         />
@@ -9357,9 +10492,11 @@ function StockCountView({ profile }) {
   );
 }
 
-function NewStockCountModal({ products, categories, onSave, onClose }) {
+function NewStockCountModal({ products, categories, warehouses = [], onSave, onClose }) {
   const [notes, setNotes] = useState("");
   const [categoryId, setCategoryId] = useState(""); // "" = бүх
+  const mainWh = warehouses.find((w) => w.type === "main");
+  const [warehouseId, setWarehouseId] = useState(mainWh?.id || (warehouses[0]?.id || ""));
   const [busy, setBusy] = useState(false);
 
   // Сонгосон категорийн бараа тоо
@@ -9391,6 +10528,22 @@ function NewStockCountModal({ products, categories, onSave, onClose }) {
         </div>
 
         <div className="space-y-3">
+          {/* Агуулах сонгох */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block">
+              Аль агуулахыг тоолох вэ?
+            </label>
+            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2.5 rounded-xl text-sm">
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.type === "main" ? "🏢" : "🚚"} {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Категори сонгох */}
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2 block">
@@ -9492,6 +10645,7 @@ function NewStockCountModal({ products, categories, onSave, onClose }) {
               await onSave({
                 notes: notes.trim() || null,
                 categoryId: categoryId || null,
+                warehouseId: warehouseId || null,
               });
               setBusy(false);
             }}
@@ -9560,18 +10714,54 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       const totalDiff = items.reduce((sum, i) => sum + (Number(i.diff_amount) || 0), 0);
       const countedItems = items.filter((i) => i.actual_qty !== null && i.actual_qty !== undefined);
 
+      // Тооллогын агуулах (count.warehouse_id) — байхгүй бол Төв агуулах
+      let targetWhId = count.warehouse_id;
+      if (!targetWhId) {
+        const { data: mainWh } = await supabase.from("inv_warehouses")
+          .select("id").eq("type", "main").limit(1).maybeSingle();
+        targetWhId = mainWh?.id;
+      }
+      if (!targetWhId) {
+        alert("⚠ Агуулах олдсонгүй.");
+        setBusy(false);
+        return;
+      }
+
       for (const item of countedItems) {
+        const actualQty = Number(item.actual_qty);
+
+        // Зөвхөн тухайн агуулахын inv_stock мөрийг шинэчлэх
+        const { data: stockRow } = await supabase.from("inv_stock")
+          .select("id")
+          .eq("product_id", item.product_id)
+          .eq("warehouse_id", targetWhId)
+          .maybeSingle();
+
+        if (stockRow) {
+          await supabase.from("inv_stock")
+            .update({ quantity: actualQty })
+            .eq("id", stockRow.id);
+        } else {
+          await supabase.from("inv_stock").insert({
+            product_id: item.product_id,
+            warehouse_id: targetWhId,
+            quantity: actualQty,
+          });
+        }
+
+        // Зөрүүтэй бол adjustment movement бичлэг (түүх)
         if (Number(item.diff_qty) !== 0) {
           await supabase.from("inv_movements").insert({
             product_id: item.product_id,
             movement_type: "adjust",
-            quantity: Number(item.actual_qty), // adjust set нөөц to actual
+            quantity: actualQty,
             unit_price: 0,
             total_amount: Number(item.diff_amount) || 0,
             reason: "manual",
             notes: `Тооллого ${count.count_number}`,
             reference_number: count.count_number,
             created_by: profile.id,
+            warehouse_id: targetWhId,
           });
         }
       }
@@ -9619,7 +10809,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       // Header
       pdf.setFontSize(20);
       pdf.setTextColor(236, 72, 153);
-      pdf.text("ORGOO", 20, 20);
+      pdf.text("CoreLink", 20, 20);
       pdf.setFontSize(11);
       pdf.setTextColor(60, 60, 60);
       pdf.text("Toollogiin tailan", 20, 27);
@@ -9692,9 +10882,9 @@ function StockCountDetail({ countId, products, profile, onClose }) {
       pdf.setFontSize(8);
       pdf.setTextColor(150, 150, 150);
       pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
-      pdf.text("ORGOO", 180, 285);
+      pdf.text("CoreLink", 180, 285);
 
-      pdf.save(`ORGOO-${count.count_number}.pdf`);
+      pdf.save(`CoreLink-${count.count_number}.pdf`);
     } catch (e) {
       alert("PDF алдаа: " + e.message);
     }
@@ -9894,6 +11084,100 @@ function StockCountDetail({ countId, products, profile, onClose }) {
   );
 }
 
+function CategoryManagerModal({ categories, products, onAdd, onDelete, onClose }) {
+  const [newName, setNewName] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const productCount = (catId) => (products || []).filter((p) => p.category_id === catId).length;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}>
+      <div className="glass rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+        style={{ background: T.surfaceStrong, border: `1px solid ${T.border}` }}
+        onClick={(e) => e.stopPropagation()}>
+
+        <div className="flex items-center justify-between p-5 pb-3">
+          <h2 style={{ fontFamily: FD, color: T.ink }} className="text-lg font-semibold">
+            🏷 Категори удирдах
+          </h2>
+          <button onClick={onClose} style={{ color: T.muted }} className="p-1 rounded-lg hover:bg-black/5">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Шинэ категори нэмэх */}
+        <div className="px-5 pb-3 flex gap-2">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)}
+            placeholder="Шинэ категори нэр..."
+            onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) { onAdd(newName.trim()); setNewName(""); } }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-lg text-sm" />
+          <button onClick={() => { if (newName.trim()) { onAdd(newName.trim()); setNewName(""); } }}
+            disabled={!newName.trim()}
+            className="press-btn px-3 py-2 rounded-lg text-sm font-semibold"
+            style={{ background: T.highlight, color: "white", fontFamily: FS, opacity: newName.trim() ? 1 : 0.5 }}>
+            <Plus size={15} />
+          </button>
+        </div>
+
+        {/* Категори жагсаалт */}
+        <div className="px-5 pb-5 overflow-y-auto scrollbar-thin flex-1">
+          {(!categories || categories.length === 0) ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-6">
+              Категори алга
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {categories.map((cat) => {
+                const cnt = productCount(cat.id);
+                const isConfirming = confirmDel === cat.id;
+                return (
+                  <div key={cat.id}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg"
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}>
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
+                      {cat.name}
+                      {cnt > 0 && (
+                        <span style={{ color: T.muted }} className="text-xs ml-2">({cnt} бараа)</span>
+                      )}
+                    </span>
+                    {isConfirming ? (
+                      <span className="flex items-center gap-1.5">
+                        <span style={{ color: T.err, fontFamily: FS }} className="text-xs">Устгах уу?</span>
+                        <button onClick={() => { onDelete(cat); setConfirmDel(null); }}
+                          className="press-btn px-2 py-1 rounded-md text-xs font-semibold"
+                          style={{ background: T.err, color: "white", fontFamily: FS }}>
+                          Тийм
+                        </button>
+                        <button onClick={() => setConfirmDel(null)}
+                          className="press-btn px-2 py-1 rounded-md text-xs"
+                          style={{ background: T.surface, color: T.muted, fontFamily: FS }}>
+                          Үгүй
+                        </button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setConfirmDel(cat.id)}
+                        style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10"
+                        title="Категори устгах">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p style={{ color: T.mutedSoft, fontFamily: FS }} className="text-[11px] mt-3 leading-relaxed">
+            ⚠ Категори устгахад түүнд хамаарах бараанууд "категоригүй" болно (бараа устахгүй).
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProductFormModal({ product, categories, profile, onSave, onAddCategory, onClose }) {
   const [name, setName] = useState(product?.name || "");
   const [sku, setSku] = useState(product?.sku || "");
@@ -9911,6 +11195,14 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
   const [busy, setBusy] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const fileInputRef = useRef(null);
+  // 🔗 FB Page холболт
+  const [fbPageId, setFbPageId] = useState(product?.fb_page_id || "");
+  const [fbPages, setFbPages] = useState([]);
+
+  useEffect(() => {
+    supabase.from("biz_fb_pages").select("id, name").eq("is_active", true).order("display_order")
+      .then(({ data }) => setFbPages(data || []));
+  }, []);
 
   // File сонгох
   const handleFileSelect = (e) => {
@@ -10145,6 +11437,28 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
             </div>
           </div>
 
+          {/* 🔗 FB Page холбоо */}
+          <div className="rounded-xl p-3" style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)" }}>
+            <label style={{ color: "#1d4ed8", fontFamily: FM, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
+              🔗 FB Page холбоо (заавал биш)
+            </label>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+              Хэрэв энэ барааг тодорхой FB Page-аас л зарагдуулах бол сонгоно уу
+            </div>
+            <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
+              style={inputStyle} className={inputClass}>
+              <option value="">— Холбохгүй (бүх Page-аас зарагдана) —</option>
+              {fbPages.map((p) => (
+                <option key={p.id} value={p.id}>📘 {p.name}</option>
+              ))}
+            </select>
+            {fbPageId && (
+              <div style={{ color: "#1d4ed8", fontFamily: FM }} className="text-[11px] mt-1.5">
+                ✅ Энэ бараа зөвхөн "<b>{fbPages.find(p => p.id === fbPageId)?.name}</b>" Page-аас захиалга авна
+              </div>
+            )}
+          </div>
+
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
               Тэмдэглэл
@@ -10171,6 +11485,7 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
                   min_stock: Number(minStock) || 0,
                   description: description.trim() || null,
                   image_url: finalImageUrl || null,
+                  fb_page_id: fbPageId || null, // 🔗 FB Page холбоо
                 });
               } catch (e) {
                 alert("Зураг хадгалахад алдаа: " + e.message);
@@ -10340,6 +11655,8 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
   ]);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState({});
+  // 🔍 ProductSearchSelect аль мөр-руу нээх (1 удаа 1 мөр)
+  const [openSearchRow, setOpenSearchRow] = useState(null);
 
   // Load warehouses
   useEffect(() => {
@@ -10491,15 +11808,14 @@ function BulkReceivingModal({ products, profile, onSave, onClose }) {
               const product = products.find((p) => p.id === it.productId);
               return (
                 <div key={it.id} className="grid grid-cols-[1fr_70px_85px_85px_30px] gap-1.5 items-center">
-                  <select value={it.productId} onChange={(e) => selectProduct(it.id, e.target.value)}
-                    style={inputStyle} className={inputClass}>
-                    <option value="">— Сонгох —</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.stock} {p.unit})
-                      </option>
-                    ))}
-                  </select>
+                  <ProductSearchSelect
+                    products={products}
+                    value={it.productId}
+                    onChange={(pid) => selectProduct(it.id, pid)}
+                    isOpen={openSearchRow === it.id}
+                    onOpen={() => setOpenSearchRow(it.id)}
+                    onClose={() => setOpenSearchRow(null)}
+                  />
                   <input type="number" value={it.quantity}
                     onChange={(e) => updateRow(it.id, "quantity", e.target.value)}
                     placeholder="0"
@@ -10626,6 +11942,37 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
       editOrder={order}
       onSave={async (data) => {
         try {
+          // 🔗 FB Page тодорхойлох
+          // Дараалал: (1) Бараанд хуваарилагдсан page ДАВАМГАЙ → захиалгын page-ийг солино
+          //           (2) Бараанд page байхгүй бол → захиалгын хуучин page хэвээр
+          //           (3) Тэр ч байхгүй бол → дуудлагаас нөхөх
+          let editFbPageId = order.fb_page_id || null;
+
+          // (1) Сонгосон бараануудаас page (хамгийн их давтагдсан) — ДАВАМГАЙ
+          if (data.items && data.items.length > 0) {
+            const pids = data.items.map((it) => it.product_id).filter(Boolean);
+            if (pids.length > 0) {
+              const { data: prods } = await supabase
+                .from("inv_products").select("id, fb_page_id").in("id", pids);
+              const pc = {};
+              (prods || []).forEach((p) => { if (p.fb_page_id) pc[p.fb_page_id] = (pc[p.fb_page_id] || 0) + 1; });
+              const top = Object.entries(pc).sort((a, b) => b[1] - a[1])[0];
+              if (top) editFbPageId = top[0];  // ⭐ Барааны page-аар солих
+            }
+          }
+
+          // (3) Хэрэв page одоо ч NULL бол дуудлагаас нөхөх
+          if (!editFbPageId) {
+            const { data: callRows } = await supabase
+              .from("biz_calls")
+              .select("fb_page_id")
+              .eq("phone", order.customer_phone)
+              .not("fb_page_id", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(1);
+            if (callRows && callRows.length > 0) editFbPageId = callRows[0].fb_page_id;
+          }
+
           // Order шинэчлэх
           await supabase.from("biz_orders").update({
             customer_name: data.name,
@@ -10634,6 +11981,8 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             notes: data.notes,
             total_amount: data.totalAmount,
             paid_amount: data.paidAmount,
+            balance_due: Math.max(0, Number(data.totalAmount || 0) - Number(data.paidAmount || 0)), // 💰 Үлдэгдэл дахин тооцох
+            fb_page_id: editFbPageId,  // 🔗 FB Page (нөхөж тавьсан)
           }).eq("id", orderId);
 
           // Order items — бүгдийг устгаад дахин insert
@@ -10657,6 +12006,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
             customer_id: order.customer_id || null,
             notes: "[Захиалга засварласан]",
             call_status: "ordered",
+            fb_page_id: editFbPageId || order.fb_page_id || null, // 🔗 Захиалгын FB Page
             created_by: profile.id,
             created_at: new Date().toISOString(),
             interested_products: data.items.map((it) => ({
@@ -10686,11 +12036,24 @@ function LowStockAlertBanner() {
 
   const load = async () => {
     try {
-      const { data } = await supabase.from("inv_products")
-        .select("id, name, sku, stock, min_stock, image_url")
-        .gt("min_stock", 0);
-      
-      const low = (data || []).filter((p) => p.stock <= p.min_stock);
+      const [{ data }, { data: stockRows }] = await Promise.all([
+        supabase.from("inv_products")
+          .select("id, name, sku, min_stock, image_url")
+          .gt("min_stock", 0),
+        supabase.from("inv_stock").select("product_id, quantity"),
+      ]);
+
+      // 🆕 ЖИНХЭНЭ нөөц — inv_stock нийлбэр (inv_products.stock хуучирсан тул ашиглахгүй).
+      //    "Бараа нөөц" хэсэгтэй ижил эх үүсвэр.
+      const stockByProduct = {};
+      (stockRows || []).forEach((s) => {
+        if (!s.product_id) return;
+        stockByProduct[s.product_id] = (stockByProduct[s.product_id] || 0) + Number(s.quantity || 0);
+      });
+
+      const low = (data || [])
+        .map((p) => ({ ...p, stock: stockByProduct[p.id] || 0 }))
+        .filter((p) => p.stock <= p.min_stock);
       // Хамгийн бага үлдэгдлээр sort
       low.sort((a, b) => a.stock - b.stock);
       setLowProducts(low);
@@ -10796,19 +12159,27 @@ function CallCenterView({ profile }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null); // Засварлах захиалга
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
+  const [productsByPhoneAll, setProductsByPhoneAll] = useState({}); // утас→бараанууд (бүх бараатай дуудлагаас)
+  const [callsByPhoneAll, setCallsByPhoneAll] = useState({}); // утас→бүх дуудлага (түүх limit-гүй харуулахад)
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [fbPages, setFbPages] = useState([]);
+  const [activeFbPageId, setActiveFbPageId] = useState(() => {
+    try { return localStorage.getItem("orgoo-active-fbpage") || ""; } catch { return ""; }
+  }); // 🔗 Дуудлага бүртгэх идэвхтэй FB Page
   const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(false); // ⚡ давхар loadAll дуудлагаас хамгаалах guard
   const [stats, setStats] = useState({ today: 0, week: 0, total: 0 });
   const [orderTotal, setOrderTotal] = useState(0);
   const [copiedPhone, setCopiedPhone] = useState("");
+  const processingPhonesRef = useRef(new Set()); // 🛡 Хурдан давхар дарахаас сэргийлэх (race condition)
   const [productNotePopup, setProductNotePopup] = useState(null); // { product, calls } — Барааны тэмдэглэл popup
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product info
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
   const [page, setPage] = useState(1); // Дугаарын pagination
-  const PAGE_SIZE = 30;
+  const PAGE_SIZE = 100; // Дуудлагын pagination — нэг хуудсанд 100 дугаар
+  const [expandedCallCards, setExpandedCallCards] = useState(() => new Set()); // 🆕 Бүх дуудлага харуулсан card-ууд (cycle key)
 
   // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
@@ -10904,17 +12275,132 @@ function CallCenterView({ profile }) {
   }, [period, customStart, customEnd]);
 
   const loadAll = async () => {
+    // ⚡ ГАЦАА ЗАСВАР: давхар дуудлагаас хамгаалах — хэрэв аль хэдийн ачаалж байвал алгасна.
+    //    (StrictMode эсвэл re-mount-аас болж loadAll 2 удаа зэрэг ажиллаж, бүх дата давхар
+    //     татагдаж байсныг (biz_calls/orders/customers ×2) зогсооно.)
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
-      const [callData, { data: prodData }, custData, { data: profData }, { data: fbData }, ordData] = await Promise.all([
-        fetchAllRows(supabase.from("biz_calls").select("*").order("created_at", { ascending: false })),
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
-        fetchAllRows(supabase.from("biz_customers").select("*")),
+      // 🏪 Merchant горим — зөвхөн өөрийн FB Page-ээр шүүх
+      const isMerchant = profile.role === "merchant";
+      const allowedPageIds = isMerchant ? (profile.fb_page_ids || []) : null;
+
+      // ⚡ ГАЦАА ЗАСВАР: biz_calls-ийг сүүлийн 60 хоногоор хязгаарлах + interested_products ХАСах.
+      //    (interested_products — том jsonb зурагтай — бараа нь productsByPhoneAll-аас тусдаа
+      //     ирдэг тул үндсэн дуудлагын жагсаалтад хэрэггүй. Энэ нь 356kB → ~60kB болгоно.)
+      const calls60Days = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const callCols = "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id";
+      const callsQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("biz_calls").select(callCols).in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000)
+        : supabase.from("biz_calls").select(callCols).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000);
+      const ordersQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(5000)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").order("created_at", { ascending: false }).limit(5000);
+      const productsQuery = isMerchant && allowedPageIds.length > 0
+        ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
+        : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
+
+      const [callRes, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
+        callsQuery,
+        productsQuery,
+        // ⚡ ГАЦАА ЗАСВАР: бүх 6,400 хэрэглэгч (олон хуудас) татахын оронд зөвхөн сүүлийн
+        //    90 хоногт захиалгатай идэвхтэй хэрэглэгчийг татна. (customers нь зөвхөн картан дээр
+        //    нэр харуулахад ашиглагддаг — хуучин идэвхгүй хэрэглэгч хэрэггүй.)
+        supabase.from("biz_customers").select("phone, name, created_at, last_order_at")
+          .gte("last_order_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+          .limit(5000),
         supabase.from("profiles").select("id, name").limit(200),
         supabase.from("biz_fb_pages").select("*"),
-        fetchAllRows(supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at")),
+        ordersQuery,
       ]);
-      setRecentCalls(callData || []);
+      const callData = callRes.data;
+      const ordData = ordRes.data;
+
+      // 🛍 ЗАСВАР: зөвхөн PENDING дуудлагуудын барааг ТУСДАА татах (limit-гүй бүх түүх биш!)
+      //    ⚡ ГАЦАА ЗАСВАР: өмнө бүх interested_products-той дуудлага (~10K+ том jsonb) татаж
+      //    байсан → 5-10 сек гацаа. Pending нь хэдэн зуу л байдаг тул хурдан.
+      if (!isMerchant) {
+        try {
+          const withProducts = await fetchAllRows(
+            supabase.from("biz_calls")
+              .select("phone, interested_products, call_status, created_at")
+              .eq("call_status", "pending")
+              .not("interested_products", "is", null)
+          );
+          // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
+          //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
+          //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
+          //    хуучин шийдэгдээгүй pending эсвэл захиалгын бараа шинэ дуудлагын картад
+          //    буруугаар нэмэгдэхгүй.)
+          const latestPendingByPhone = {}; // phone → {created_at, products}
+          (withProducts || []).forEach((c) => {
+            if (!c.interested_products || !Array.isArray(c.interested_products)) return;
+            if (c.call_status !== "pending" && c.call_status) return; // зөвхөн pending (эсвэл статусгүй)
+            const prev = latestPendingByPhone[c.phone];
+            if (!prev || new Date(c.created_at) > new Date(prev.created_at)) {
+              latestPendingByPhone[c.phone] = { created_at: c.created_at, products: c.interested_products };
+            }
+          });
+          const pmap = {};
+          Object.entries(latestPendingByPhone).forEach(([phone, v]) => {
+            pmap[phone] = [...v.products];
+          });
+          setProductsByPhoneAll(pmap);
+        } catch (e) { console.error("[products calls fetch]", e); }
+
+        // 📋 ЗАСВАР: "Залгах дугаар"-т харагдах утаснуудын БҮХ дуудлагыг түүх харуулахад
+        //    тусдаа татах (limit 3000-аас гадуур хуучин pending/дунд дуудлага түүхэд орохгүй
+        //    байсныг засна). recentCalls-д НЭМЭХГҮЙ тул cycle/count цэвэр хэвээр.
+        try {
+          // Calling утаснууд = сүүлийн дуудлага нь ordered/cancelled БИШ
+          const lastStatusByPhone = {};
+          (callData || []).forEach((c) => {
+            if (!lastStatusByPhone[c.phone]) lastStatusByPhone[c.phone] = c.call_status; // callData нь desc sort
+          });
+          const callingPhones = Object.keys(lastStatusByPhone).filter(
+            (ph) => lastStatusByPhone[ph] !== "ordered" && lastStatusByPhone[ph] !== "cancelled"
+          );
+          if (callingPhones.length > 0) {
+            // ⚡ ГАЦАА ЗАСВАР: interested_products (том jsonb, зурагтай) ХАСав —
+            //    бараа productsByPhoneAll-аас ирдэг тул түүхэнд хэрэггүй. Энэ нь
+            //    дата хэмжээг эрс багасгаж гацаа арилгана.
+            const allCallsForPhones = await fetchInChunks("biz_calls", callingPhones, {
+              select: "id, phone, call_status, created_at, created_by, notes, fb_page_id",
+              filterColumn: "phone",
+            });
+            const cmap = {};
+            (allCallsForPhones || []).forEach((c) => {
+              if (!cmap[c.phone]) cmap[c.phone] = [];
+              cmap[c.phone].push(c);
+            });
+            setCallsByPhoneAll(cmap);
+          }
+        } catch (e) { console.error("[history calls fetch]", e); }
+      }
+
+      // 🏪 Merchant үед: захиалгаас утсаар бас calls татах (хуучин fb_page_id-гүй calls)
+      let allCalls = callData || [];
+      if (isMerchant && allowedPageIds.length > 0 && (ordData || []).length > 0) {
+        const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
+        if (customerPhones.length > 0) {
+          try {
+            const phoneCalls = await fetchAllRows(
+              supabase.from("biz_calls").select("*").in("phone", customerPhones)
+            );
+            const existingIds = new Set(allCalls.map(c => c.id));
+            (phoneCalls || []).forEach(c => {
+              if (!existingIds.has(c.id)) allCalls.push(c);
+            });
+            allCalls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          } catch (e) {
+            console.error("[Merchant phone calls]", e);
+          }
+        }
+        console.log("[Merchant CallCenter] Page calls:", (callData || []).length, "Phone-matched:", allCalls.length - (callData || []).length, "Total:", allCalls.length);
+      }
+
+      setRecentCalls(allCalls);
       setOrders(ordData || []);
       setProducts(prodData || []);
       setCustomers(custData || []);
@@ -10926,18 +12412,22 @@ function CallCenterView({ profile }) {
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       setStats({
-        today: (callData || []).filter((c) => new Date(c.created_at) >= today).length,
-        week: (callData || []).filter((c) => new Date(c.created_at) >= weekAgo).length,
-        total: (callData || []).length,
+        today: allCalls.filter((c) => new Date(c.created_at) >= today).length,
+        week: allCalls.filter((c) => new Date(c.created_at) >= weekAgo).length,
+        total: allCalls.length,
       });
 
       // Захиалгын тоо
-      const { count: orderCount } = await supabase
-        .from("biz_orders")
-        .select("*", { count: "exact", head: true });
-      setOrderTotal(orderCount || 0);
+      if (isMerchant && allowedPageIds.length > 0) {
+        setOrderTotal((ordData || []).length);
+      } else {
+        const { count: orderCount } = await supabase
+          .from("biz_orders")
+          .select("*", { count: "exact", head: true });
+        setOrderTotal(orderCount || 0);
+      }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); loadingRef.current = false; }
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -10945,8 +12435,22 @@ function CallCenterView({ profile }) {
   // 🔔 Badge + Realtime
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ хуримтлуулах (render бүрд биш)
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ ГАЦАА ЗАСВАР: олон оператор зэрэг ажиллахад realtime өөрчлөлт бүрд setPendingChanges
+    //    дуудагдаж, бүр CallCenter render (3,333 дуудлагын cycle тооцоо) дахин ажилладаг байсан.
+    //    Одоо өөрчлөлтийг хуримтлуулж, 1.5 секунд тутамд НЭГ л удаа setState (render багасна).
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return; // аль хэдийн төлөвлөгдсөн
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     const channel = supabase
       .channel("callcenter-badge")
       .on(
@@ -10955,7 +12459,7 @@ function CallCenterView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .on(
@@ -10964,11 +12468,14 @@ function CallCenterView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -10981,7 +12488,27 @@ function CallCenterView({ profile }) {
 
   // Дугаар click — calling lock + захиалга нээх
   const handlePhoneClick = async (phone, customerName, callNotes, callProducts, callId) => {
+    // 🛡 Хурдан давхар дарах хамгаалалт — энэ дугаар одоо боловсруулагдаж байвал зогсоох
+    //    (DB query async тул, түгжээгүй бол хоёр клик зэрэг давхар pending үүсгэж магадгүй)
+    if (processingPhonesRef.current.has(phone)) return;
+    processingPhonesRef.current.add(phone);
     try {
+      try {
+      // 0. 🚫 Зөвхөн "new" (дөнгөж үүссэн, хараахан хуваарилагдаагүй) захиалгатай дугаарыг хориглох.
+      //    assigned/delivered/cancelled бол шинэ захиалга авахыг зөвшөөрнө (хэрэглэгч дахин захиалж болно).
+      const { data: activeOrd } = await supabase
+        .from("biz_orders")
+        .select("id, order_number, status")
+        .eq("customer_phone", phone)
+        .eq("status", "new")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (activeOrd) {
+        alert(`🚫 Энэ дугаар аль хэдийн ЗАХИАЛГА БОЛСОН байна!\n\n📦 Захиалга: #${activeOrd.order_number || "—"}\n\nЗахиалга болсон (хараахан хуваарилагдаагүй) дугаар руу дахин залгах боломжгүй.`);
+        return;
+      }
+
       // 1. Lock шалгах
       const { data: existingLock } = await supabase
         .from("biz_call_locks")
@@ -11023,17 +12550,85 @@ function CallCenterView({ profile }) {
       setCopiedPhone(phone);
       setTimeout(() => setCopiedPhone(""), 1500);
 
+      // 4. 🆕 Шинэ "pending" биз_calls бичлэг үүсгэх — энэ оператор залгасан гэж бүртгэх
+      // (Хэрэв уг утсаар бусад operator-ийн "pending" call байгаа бол ч)
+      let activeCallId = callId; // Default - existing call
+      try {
+        // Уг operator-ийн өмнө залгасан "pending" call байгаа эсэхийг шалгах
+        const { data: myPendingCall } = await supabase
+          .from("biz_calls")
+          .select("id")
+          .eq("phone", phone)
+          .eq("created_by", profile.id)
+          .eq("call_status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (myPendingCall) {
+          // Аль хэдийн нээлттэй call бий — тэр call ашиглана
+          activeCallId = myPendingCall.id;
+        } else {
+          // 🔗 Тэр утсаар ӨӨР хүн аль хэдийн pending бүртгэсэн эсэхийг шалгах
+          // Хэрэв байвал ШИНЭ pending үүсгэхгүй — анх бүртгэсэн хүнд л үлдэнэ
+          const { data: anyPending } = await supabase
+            .from("biz_calls")
+            .select("id")
+            .eq("phone", phone)
+            .eq("call_status", "pending")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (anyPending) {
+            // Өөр операторын бүртгэсэн дугаар — тэр дуудлагыг ашиглана, шинэ үүсгэхгүй
+            activeCallId = anyPending.id;
+          } else {
+          // Шинэ call бүртгэх — энэ оператор залгасан гэж
+          // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page → бараанаас
+          let callPage = activeFbPageId || null;
+          if (!callPage) {
+            const { data: prevCall } = await supabase
+              .from("biz_calls").select("fb_page_id")
+              .eq("phone", phone).not("fb_page_id", "is", null)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (prevCall) callPage = prevCall.fb_page_id;
+          }
+          const { data: newCall } = await supabase.from("biz_calls").insert({
+            phone,
+            customer_id: null, // Дараа CallReceiveModal-аас customer link
+            notes: null, // 🆕 Шинэ дуудлага — өмнөх notes хуулахгүй (утасны дугаар/хуучин тэмдэглэл давтагдахаас сэргийлнэ)
+            interested_products: [], // 🆕 Шинэ дуудлага — өмнөх барааг хуулахгүй (хоосон эхэлнэ)
+            call_status: "pending",
+            fb_page_id: callPage, // 🔗 Resolved page
+            created_by: profile.id,
+            created_at: new Date().toISOString(),
+          }).select("id").single();
+          activeCallId = newCall?.id || callId;
+          }
+        }
+      } catch (e) {
+        console.error("Шинэ call бичлэг үүсгэх алдаа:", e);
+        // Алдаа гарвал ч хуучин call-аар үргэлжилнэ
+      }
+
       setOrderForCall({
         phone,
         name: customerName,
         notes: callNotes,
-        products: callProducts,
-        callId,
+        products: callProducts || [], // ✅ Тухайн дугаарын сонирхсон бараа (хамгийн сүүлийн pending-ийнх).
+                                        //    productsByPhoneAll нь зөвхөн сүүлийн pending дуудлагын
+                                        //    барааг агуулдаг тул хуучин ordered/delivered бараа орохгүй.
+        callId: activeCallId, // 🆕 Шинэ үүсгэгдсэн call-ийн ID
       });
       await loadAll();
     } catch (e) {
       console.error("Error:", e);
-      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts, callId });
+      setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts || [], callId });
+    }
+    } finally {
+      // 🛡 Боловсруулалт дууссан — дугаарыг чөлөөлөх (дараа дахин дарж болно)
+      processingPhonesRef.current.delete(phone);
     }
   };
 
@@ -11050,7 +12645,12 @@ function CallCenterView({ profile }) {
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
   });
-  const [searchPhone, setSearchPhone] = useState(""); // дугаар хайх
+  const [searchPhone, setSearchPhone] = useState(""); // дугаар хайх (input value)
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // ⚡ Хойшлуулсан хайлт (жагсаалт шүүхэд)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchPhone), 250);
+    return () => clearTimeout(t);
+  }, [searchPhone]);
 
   useEffect(() => {
     try { localStorage.setItem("orgoo-call-tab", activeTab); } catch {}
@@ -11072,11 +12672,47 @@ function CallCenterView({ profile }) {
   const handleStatusSelect = async (status, statusLabel) => {
     if (!statusPopupCall) return;
     try {
+      // 🔗 Page олох: идэвхтэй шүүлт → statusPopupCall.fbPageId → өмнөх дуудлага → захиалга
+      let stPage = activeFbPageId || statusPopupCall.fbPageId || null;
+      if (!stPage) {
+        const { data: prevCall } = await supabase
+          .from("biz_calls").select("fb_page_id")
+          .eq("phone", statusPopupCall.phone).not("fb_page_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (prevCall) stPage = prevCall.fb_page_id;
+      }
+      if (!stPage) {
+        const { data: ord } = await supabase
+          .from("biz_orders").select("fb_page_id")
+          .eq("customer_phone", statusPopupCall.phone).not("fb_page_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (ord) stPage = ord.fb_page_id;
+      }
+
+      // 🔧 ЗААВАЛ: статус тавихаас өмнө "Дугаар бүртгэл" (pending) байх ёстой
+      // Хэрэв тэр утсаар pending огт байхгүй бол эхлээд pending үүсгэнэ
+      const { data: existingPending } = await supabase
+        .from("biz_calls").select("id")
+        .eq("phone", statusPopupCall.phone).eq("call_status", "pending")
+        .limit(1).maybeSingle();
+      if (!existingPending) {
+        await supabase.from("biz_calls").insert({
+          phone: statusPopupCall.phone,
+          customer_id: statusPopupCall.customerId || null,
+          notes: null,
+          call_status: "pending",
+          fb_page_id: stPage,
+          created_by: profile.id,
+          created_at: new Date(Date.now() - 1000).toISOString(), // статусаас 1 сек өмнө
+        });
+      }
+
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
         notes: `[${statusLabel}]`,
         call_status: status,
+        fb_page_id: stPage, // 🔗 Resolved page
         created_by: profile.id,
         created_at: new Date().toISOString(),
       });
@@ -11199,15 +12835,24 @@ function CallCenterView({ profile }) {
                   filteredCalls.forEach((c) => {
                     if (!c.created_by) return;
                     if (!opMap[c.created_by]) return;
-                    opMap[c.created_by].uniquePhones.add(c.phone);
-                    opMap[c.created_by].totalCalls++;
+                    // 🆕 "Бүртгэсэн дугаар" — анхдагч дуудлага (самбартай ижил)
+                    if (c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status)) {
+                      opMap[c.created_by].uniquePhones.add(c.phone);
+                    }
+                    // ☎ "Нийт залгалт" — бодит залгалт (pending хасна)
+                    if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+                        c.call_status === "callback" || c.call_status === "ordered" ||
+                        c.call_status === "cancelled") {
+                      opMap[c.created_by].totalCalls++;
+                    }
                   });
 
                   // Захиалгуудыг тоолох
                   filteredOrders.forEach((o) => {
                     if (!o.taken_by) return;
                     if (!opMap[o.taken_by]) return;
-                    opMap[o.taken_by].totalOrders++;
+                    // "Захиалга" = цуцлагдаагүй (идэвхтэй + хүргэсэн), цуцлагдсаныг тусад нь
+                    if (o.status !== "cancelled") opMap[o.taken_by].totalOrders++;
                     if (o.status === "delivered") {
                       opMap[o.taken_by].delivered++;
                       opMap[o.taken_by].revenue += Number(o.total_amount || 0);
@@ -11303,21 +12948,27 @@ function CallCenterView({ profile }) {
 
       {/* Stats — 4 том карт */}
       {(() => {
+        // 🗓 Сонгосон огнооны мужаар шүүх (Өнөөдөр/Өчигдөр/7 хоног/Энэ сар/Бүх)
+        const periodCalls = recentCalls.filter((c) => {
+          if (period === "all") return true;
+          const d = new Date(c.created_at);
+          return d >= periodRange.start && d < periodRange.end;
+        });
         // ⚠ Stat-уудад зөвхөн анхдагч дугаар бүртгэлийг тоолно
         // ("Дуудаад авахгүй" гэх мэт sub-status-уудыг хасна)
-        const allCallsForStats = recentCalls.filter((c) => 
+        const allCallsForStats = periodCalls.filter((c) => 
           !c.call_status || 
           c.call_status === "pending" || 
           c.call_status === "ordered" || 
           c.call_status === "cancelled"
         );
 
-        // 📞 Нийт дугаар = Анхдагч бүртгэгдсэн дугаарын тоо
-        const uniquePhones = allCallsForStats.length;
+        // 📞 Нийт дугаар = Давхардаагүй (unique) бүртгэгдсэн дугаарын тоо
+        const uniquePhones = new Set(allCallsForStats.map((c) => c.phone)).size;
         
         // ☎ Нийт залгалт = "Залгалт" хийсэн дуудлага
         // (no_answer, unreachable, callback, ordered, cancelled — operator залгасан)
-        const totalCallAttempts = recentCalls.filter((c) => 
+        const totalCallAttempts = periodCalls.filter((c) => 
           c.call_status === "no_answer" ||
           c.call_status === "unreachable" ||
           c.call_status === "callback" ||
@@ -11325,13 +12976,15 @@ function CallCenterView({ profile }) {
           c.call_status === "cancelled"
         ).length;
         
-        // ✅ Захиалга / 🗑 Цуцалсан — call_status-аар тоолно
-        let orderedPhones = 0;
-        let cancelledPhones = 0;
+        // ✅ Захиалга / 🗑 Цуцалсан — давхардаагүй утсаар тоолно
+        const orderedSet = new Set();
+        const cancelledSet = new Set();
         allCallsForStats.forEach((c) => {
-          if (c.call_status === "ordered") orderedPhones++;
-          else if (c.call_status === "cancelled") cancelledPhones++;
+          if (c.call_status === "ordered") orderedSet.add(c.phone);
+          else if (c.call_status === "cancelled") cancelledSet.add(c.phone);
         });
+        const orderedPhones = orderedSet.size;
+        const cancelledPhones = cancelledSet.size;
 
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -11383,10 +13036,31 @@ function CallCenterView({ profile }) {
         );
       })()}
 
+      {/* 🔗 Идэвхтэй FB Page сонгогч */}
+      {fbPages.filter((p) => p.is_active !== false).length > 0 && (
+        <div className="glass rounded-2xl p-3 flex items-center gap-3">
+          <span style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-wider whitespace-nowrap">
+            🔗 Page шүүх
+          </span>
+          <select value={activeFbPageId}
+            onChange={(e) => {
+              setActiveFbPageId(e.target.value);
+              try { localStorage.setItem("orgoo-active-fbpage", e.target.value); } catch {}
+            }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${activeFbPageId ? T.highlight : T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold">
+            <option value="">📋 Бүх page</option>
+            {fbPages.filter((p) => p.is_active !== false).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Big call button */}
       <button onClick={() => setShowCallModal(true)}
         style={{
-          background: "linear-gradient(135deg, #ec4899, #f97316)",
+          background: "linear-gradient(135deg, #0E9C8E, #3FE0C6)",
           color: "white",
           fontFamily: FS,
           boxShadow: "0 8px 24px rgba(236,72,153,0.3)",
@@ -11398,15 +13072,19 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
+          // 🔗 Page шүүлт — Ажиллаж буй page сонгогдсон бол зөвхөн тэр page-ийн дуудлага
+          const pageFilteredCalls = activeFbPageId
+            ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
+            : recentCalls;
           // Period-ээр шүүсэн (ordered, cancelled tab-д)
-          const filteredByPeriod = recentCalls.filter((c) => {
+          const filteredByPeriod = pageFilteredCalls.filter((c) => {
             const d = new Date(c.created_at);
             return d >= periodRange.start && d < periodRange.end;
           });
 
           // Calling tab — period үл хамааран
           const phoneGroupedAll = {};
-          recentCalls.forEach((c) => {
+          pageFilteredCalls.forEach((c) => {
             if (!phoneGroupedAll[c.phone]) phoneGroupedAll[c.phone] = [];
             phoneGroupedAll[c.phone].push(c);
           });
@@ -11420,27 +13098,117 @@ function CallCenterView({ profile }) {
 
           const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
 
-          // Calling — БҮХ дугаарыг тоолно (өмнө захиалга өгсөн ч, шинэ дуудлага байвал залгах ёстой)
-          // Зөвхөн сүүлийн дуудлага нь "ordered" эсвэл "cancelled" биш бол → "calling" tab-руу нэмэгдэнэ
-          Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-            const sorted = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const latestStatus = sorted[0]?.call_status;
-            // Сүүлийн status нь pending бол → calling-руу
-            if (latestStatus !== "ordered" && latestStatus !== "cancelled") {
-              counts.calling++;
+          // ⚡ ГАЦАА ЗАСВАР: захиалгыг утсаар нэг удаа бүлэглэх (өмнө утас бүрд orders.filter
+          //    хийж байсан → O(утас×захиалга) ≈ сая үйлдэл, гацаа үүсгэдэг байсан)
+          const latestOrderByPhone = {};
+          orders.forEach((o) => {
+            if (!o.customer_phone) return;
+            const ex = latestOrderByPhone[o.customer_phone];
+            if (!ex || new Date(o.created_at) > new Date(ex.created_at)) {
+              latestOrderByPhone[o.customer_phone] = o;
             }
           });
+
+          // ⚡ Map-ууд: карт render дотор products.find / customers.find давталтаас сэргийлэх (O(1))
+          const productById = new Map();
+          products.forEach((pr) => productById.set(pr.id, pr));
+          const customerByPhone = new Map();
+          customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
+
+          // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
+          const orderInfoByPhone = {};
+          Object.keys(phoneGroupedAll).forEach((phone) => {
+            const callsArr = phoneGroupedAll[phone];
+            const hasOrderedCall = callsArr.some((c) => c.call_status === "ordered");
+            const sortedC = [...callsArr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestCallStatus = sortedC[0]?.call_status;
+            const ord = latestOrderByPhone[phone]; // ⚡ pre-grouped (filter биш)
+            const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
+            const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
+            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder, latestCallStatus };
+          });
+
+          // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
+          // ⚠ Сүүлийн pending (дугаар бүртгэсэн)-ээс ХОЙШ ordered/cancelled байгаа эсэхээр шийднэ.
+          //    ordered/cancelled болсны дараа дахин залгасан (unreachable г.м) нь "залгах дугаар" БИШ
+          //    — захиалга аль хэдийн болсон/цуцлагдсан. Зөвхөн ДАХИН pending бүртгэсэн бол шинэ cycle.
+          {
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const asc = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              // Сүүлийн pending-ийн индекс олох
+              let lastPendingIdx = -1;
+              asc.forEach((c, i) => {
+                if (c.call_status === "pending" || !c.call_status) lastPendingIdx = i;
+              });
+              // Сүүлийн pending-ээс хойших дуудлагууд (тэр мөчлөг)
+              const cycleCalls = lastPendingIdx >= 0 ? asc.slice(lastPendingIdx) : asc;
+              const hasOrdered = cycleCalls.some((c) => c.call_status === "ordered");
+              const hasCancelled = cycleCalls.some((c) => c.call_status === "cancelled");
+              if (hasOrdered || hasCancelled) return; // захиалга болсон/цуцалсан — calling биш
+              counts.calling++;
+            });
+          }
           
-          // Delivered (амжилттай) — biz_orders.status='delivered' шууд тоо
-          counts.delivered = orders.filter((o) => o.status === "delivered").length;
+          // 🗓 Period шүүлт — ordered/cancelled/delivered-д хэрэглэнэ ("Залгах дугаар" бүх цаг хэвээр)
+          const inPeriod = (dateStr) => {
+            if (period === "all") return true;
+            if (!dateStr) return false;
+            const d = new Date(dateStr);
+            return d >= periodRange.start && d < periodRange.end;
+          };
+
+          // Delivered (амжилттай) — delivered захиалгатай ӨВӨРМӨЦ утас (period-аар шүүсэн)
+          {
+            const delivPhones = new Set();
+            orders.forEach((o) => {
+              if (o.status === "delivered" && o.customer_phone && inPeriod(o.delivered_at || o.created_at)) {
+                delivPhones.add(o.customer_phone);
+              }
+            });
+            counts.delivered = delivPhones.size;
+          }
           
-          // "Захиалга болсон" — biz_orders ширээгээс шууд (OrdersView-тэй ижил)
-          counts.ordered = orders.filter((o) => 
-            o.status !== "delivered" && o.status !== "cancelled"
-          ).length;
-          
-          // "Цуцалсан" — biz_orders.status='cancelled'
-          counts.cancelled = orders.filter((o) => o.status === "cancelled").length;
+          // "Захиалга болсон" / "Цуцалсан" — CYCLE-аар тоолно (жагсаалттай таарах)
+          {
+            let ordC = 0, canC = 0;
+            const seenOrdPhone = new Set();
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const info = orderInfoByPhone[phone];
+              // Cycle хуваах (жагсаалттай ижил логик: pending эсвэл өдөр солигдвол шинэ cycle)
+              const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              const cycles = [];
+              let cur = [];
+              let closed = false;
+              sorted.forEach((c) => {
+                let startNew = false;
+                if (closed) {
+                  if (c.call_status === "pending" || !c.call_status) startNew = true;
+                  else if (cur.length > 0) {
+                    const pd = new Date(cur[cur.length - 1].created_at).toDateString();
+                    const cd = new Date(c.created_at).toDateString();
+                    if (pd !== cd) startNew = true;
+                  }
+                }
+                if (startNew) { cycles.push(cur); cur = []; closed = false; }
+                cur.push(c);
+                if (c.call_status === "ordered" || c.call_status === "cancelled") closed = true;
+              });
+              if (cur.length > 0) cycles.push(cur);
+
+              cycles.forEach((cyCalls) => {
+                const last = cyCalls[cyCalls.length - 1];
+                const cyStatus = last.call_status === "ordered" ? "ordered"
+                              : last.call_status === "cancelled" ? "cancelled" : "calling";
+                if (cyStatus === "cancelled" && inPeriod(last.created_at)) canC++;
+                // Захиалга болсон: ordered cycle БА захиалга идэвхтэй
+                if (cyStatus === "ordered" && info.activeOrder && inPeriod(last.created_at)) {
+                  if (!seenOrdPhone.has(phone)) { seenOrdPhone.add(phone); ordC++; }
+                }
+              });
+            });
+            counts.ordered = ordC;
+            counts.cancelled = canC;
+          }
 
           return (
             <>
@@ -11463,6 +13231,22 @@ function CallCenterView({ profile }) {
               </div>
 
               <div className="glass rounded-2xl p-2 mb-2 flex flex-wrap gap-1">
+              <button onClick={() => setActiveTab("all")}
+                className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
+                style={{
+                  background: activeTab === "all" ? T.ink : T.surfaceAlt,
+                  color: activeTab === "all" ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}>
+                <span>📋</span>
+                <span>Бүгд</span>
+                <span style={{
+                  background: activeTab === "all" ? "rgba(255,255,255,0.25)" : T.surface,
+                  color: activeTab === "all" ? "white" : T.muted,
+                }} className="text-[10px] px-1.5 rounded-full font-bold">
+                  {(counts.calling || 0) + (counts.ordered || 0) + (counts.cancelled || 0) + (counts.delivered || 0)}
+                </span>
+              </button>
               <button onClick={() => setActiveTab("calling")}
                 className="press-btn px-3 py-2 rounded-xl text-xs flex items-center gap-1.5"
                 style={{
@@ -11535,7 +13319,7 @@ function CallCenterView({ profile }) {
           <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
             <Loader2 className="spin mx-auto mb-2" size={20} />
           </div>
-        ) : recentCalls.length === 0 ? (
+        ) : (activeFbPageId ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId) : recentCalls).length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📞</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
@@ -11545,14 +13329,53 @@ function CallCenterView({ profile }) {
         ) : (
           <div className="space-y-1.5">
             {(() => {
-              // Бүх дуудлагуудыг ашиглана (period filter байхгүй)
-              const filteredByPeriod = recentCalls;
+              // Бүх дуудлагуудыг ашиглана (period filter байхгүй), page-аар шүүсэн
+              const filteredByPeriod = activeFbPageId
+                ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
+                : recentCalls;
 
               // Дуудлагуудыг утсаар groupping + cycle-д хувааж массив болгох
               const phoneGrouped = {};
               filteredByPeriod.forEach((c) => {
                 if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
                 phoneGrouped[c.phone].push(c);
+              });
+              // 📋 Calling утаснуудын БҮХ дуудлагыг (limit-гүй татсан) түүхэд ашиглах.
+              //    Хуучин pending/дунд дуудлага limit 3000-аас гадуур үлдэж түүхэд
+              //    харагдахгүй байсныг засна. callsByPhoneAll-д байгаа утсыг бүхэлд нь солино.
+              Object.entries(callsByPhoneAll).forEach(([phone, allC]) => {
+                if (activeFbPageId) {
+                  const filtered = allC.filter((c) => !c.fb_page_id || c.fb_page_id === activeFbPageId);
+                  if (filtered.length > 0) phoneGrouped[phone] = filtered;
+                } else {
+                  if (allC.length > 0) phoneGrouped[phone] = allC;
+                }
+              });
+
+              // ⚡ ГАЦАА ЗАСВАР: O(1) хайлтын Map (карт бүрд products.find/customers.find давталтаас сэргийлэх)
+              const productById = new Map();
+              products.forEach((pr) => productById.set(pr.id, pr));
+              const customerByPhone = new Map();
+              customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
+
+              // 🛍 Утас бүрийн БҮХ дуудлагаас сонирхсон бараа нэгтгэх (period/cycle/limit хамаарахгүй)
+              //    productsByPhoneAll — бүх бараатай дуудлагаас (limit-гүй тусдаа татсан)
+              const productsByPhone = {};
+              Object.entries(productsByPhoneAll).forEach(([phone, prods]) => {
+                const pm = new Map();
+                prods.forEach((p) => {
+                  const productInfo = productById.get(p.id);
+                  const enriched = {
+                    ...p,
+                    image_url: p.image_url || productInfo?.image_url || null,
+                    sku: p.sku || productInfo?.sku || null,
+                    name: p.name || productInfo?.name || "—",
+                  };
+                  const existing = pm.get(p.id);
+                  if (existing) existing.totalQty += (p.qty || 1);
+                  else pm.set(p.id, { ...enriched, totalQty: p.qty || 1 });
+                });
+                productsByPhone[phone] = pm;
               });
 
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
@@ -11562,29 +13385,65 @@ function CallCenterView({ profile }) {
                 const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 let currentCycle = [];
                 let cycleIdx = 0;
+                let cycleClosed = false; // одоогийн cycle хаагдсан эсэх
 
                 sorted.forEach((call) => {
-                  currentCycle.push(call);
-                  // Хэрэв ordered эсвэл cancelled бол цикл хаах
-                  if (call.call_status === "ordered" || call.call_status === "cancelled") {
-                    cycleList.push({
-                      phone,
-                      calls: currentCycle,
-                      status: call.call_status,
-                      latestDate: call.created_at,
-                      cycleIndex: cycleIdx++,
-                    });
+                  // 🆕 Шинэ cycle ЗӨВХӨН шинэ pending (дугаар дахин бүртгэх) дээр эхэлнэ.
+                  //    ⚠ Өдөр солигдох нь cycle хаахгүй — pending→cancelled→дараа өдөр дахин
+                  //    залгасан нь ИЖИЛ ажлын мөчлөг (дугаар бүртгэснээс хойшхи бүх ажиллагаа).
+                  //    Өмнө "өдөр солих" cycle хааж, pending өмнөх cycle-д үлдэж, түүхэд
+                  //    "Дугаар бүртгэсэн" мөр алга болдог байсан.
+                  let startNew = false;
+                  if (cycleClosed) {
+                    if (call.call_status === "pending" || !call.call_status) {
+                      startNew = true;
+                    }
+                  }
+                  if (startNew) {
+                    // Өмнөх хаагдсан cycle-ийг push хийнэ
+                    if (currentCycle.length > 0) {
+                      const lastCall = currentCycle[currentCycle.length - 1];
+                      const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
+                      // ⚠ Cycle статус — cycle ДОТОР ordered/cancelled БАЙСАН эсэхээр (сүүлийн дуудлагаар БИШ).
+                      //    ordered болсны дараа хүргэлт/баталгаажуулах гэж дахин залгасан (unreachable г.м)
+                      //    нь "залгах дугаар" биш — захиалга аль хэдийн болсон.
+                      const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
+                      const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
+                      cycleList.push({
+                        phone,
+                        calls: currentCycle,
+                        status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
+                        latestDate: lastCall.created_at,
+                        firstDate: currentCycle[0].created_at,
+                        registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
+                        cycleIndex: cycleIdx++,
+                      });
+                    }
                     currentCycle = [];
+                    cycleClosed = false;
+                  }
+
+                  currentCycle.push(call);
+
+                  // ordered/cancelled → cycle хаагдсан гэж тэмдэглэнэ
+                  if (call.call_status === "ordered" || call.call_status === "cancelled") {
+                    cycleClosed = true;
                   }
                 });
 
-                // Үлдсэн дуудлагууд (closed status-аар хаагдаагүй) — open cycle
+                // Үлдсэн дуудлагууд — сүүлийн cycle
                 if (currentCycle.length > 0) {
+                  const lastCall = currentCycle[currentCycle.length - 1];
+                  const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
+                  const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
+                  const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
                   cycleList.push({
                     phone,
                     calls: currentCycle,
-                    status: "calling", // open
-                    latestDate: currentCycle[currentCycle.length - 1].created_at,
+                    status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
+                    latestDate: lastCall.created_at,
+                    firstDate: currentCycle[0].created_at,
+                    registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
                     cycleIndex: cycleIdx,
                   });
                 }
@@ -11600,9 +13459,28 @@ function CallCenterView({ profile }) {
                 }
               });
 
-              // Cycles-ыг сүүлчийн өдрөөр sort (шинэ нь эхэнд)
+              // Утас бүрийн ХАМГИЙН СҮҮЛИЙН дуудлагын статус (ordered tab-д ашиглана)
+              const latestCallStatusByPhone = {};
+              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+                const sortedCalls = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                latestCallStatusByPhone[phone] = sortedCalls[0]?.call_status;
+              });
+
+              // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + захиалгын төлөв
+              const orderInfoByPhone = {};
+              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+                const hasOrderedCall = calls.some((c) => c.call_status === "ordered");
+                const sortedC = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                const latestCallStatus = sortedC[0]?.call_status;
+                const ord = orderStatusByPhone[phone];
+                const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
+                const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
+                orderInfoByPhone[phone] = { hasOrderedCall, activeOrder, cancelledOrder, latestCallStatus, ord };
+              });
+
+              // Cycles-ыг ДУГААР БҮРТГЭСЭН (pending) огноогоор sort (шинэ бүртгэсэн нь эхэнд)
               const sortedCycleList = [...cycleList].sort((a, b) =>
-                new Date(b.latestDate) - new Date(a.latestDate)
+                new Date(b.registeredDate) - new Date(a.registeredDate)
               );
 
               // Tab-ийн дагуу filter
@@ -11611,42 +13489,69 @@ function CallCenterView({ profile }) {
               const seenPhones = new Set();
               let filteredCycles = sortedCycleList.filter((cy) => {
                 const order = orderStatusByPhone[cy.phone];
-                
-                if (activeTab === "calling") return cy.status === "calling";
-                
-                // Тус утсаар нэг л card харах (хамгийн сүүлчийн cycle)
-                if (activeTab === "ordered" || activeTab === "cancelled" || activeTab === "delivered") {
+                const info = orderInfoByPhone[cy.phone] || {};
+
+                if (activeTab === "all") {
+                  // Бүгд — хайлт хийж байвал CYCLE бүрийг тусдаа харуулна (бүх түүх),
+                  //   эс бөгөөс утас бүрийн хамгийн сүүлчийн cycle л харуулна (жагсаалт богино).
+                  if (debouncedSearch.trim()) return true; // хайлтад бүх cycle
                   if (seenPhones.has(cy.phone)) return false;
-                  
-                  let matches = false;
-                  if (activeTab === "ordered") {
-                    matches = order && order.status !== "delivered" && order.status !== "cancelled";
-                  } else if (activeTab === "cancelled") {
-                    matches = order && order.status === "cancelled";
-                  } else if (activeTab === "delivered") {
-                    matches = order && order.status === "delivered";
-                  }
-                  
-                  if (matches) {
-                    seenPhones.add(cy.phone);
-                    return true;
-                  }
+                  seenPhones.add(cy.phone);
+                  return true;
+                }
+
+                if (activeTab === "calling") {
+                  // "Залгах дугаар" — дахин залгах ёстой ШИНЭ cycle (calling статустай)
+                  // ⚠ Шалгуур нь CYCLE түвшинд: тухайн cycle өөрөө хаагдаагүй (calling) бол энд орно.
+                  //    Өмнөх cycle-д ordered/cancelled байсан ч ХАМААРАХГҮЙ —
+                  //    cancelled-ийн дараа дугаар ДАХИН бүртгэгдсэн бол шинэ cycle = дахин залгах ёстой.
+                  if (cy.status !== "calling") return false;
+                  // Зөвхөн ЭНЭ cycle нь хамгийн сүүлийн (хамгийн шинэ) cycle мөн эсэхийг шалгах:
+                  //   хэрэв энэ utas-д calling cycle байгаа бол энэ нь хамгийн сүүлийнх (шинэ pending) —
+                  //   идэвхтэй захиалгатай бол ч (ховор) calling cycle давуу.
+                  return true;
+                }
+                
+                // 🗓 Period шүүлт
+                const inListPeriod = (dateStr) => {
+                  if (period === "all") return true;
+                  if (!dateStr) return false;
+                  const d = new Date(dateStr);
+                  return d >= periodRange.start && d < periodRange.end;
+                };
+
+                // Cycle бүрийг ТУСДАА харна (нэг утсаар олон cycle байж болно)
+                if (activeTab === "ordered") {
+                  // Захиалга болсон cycle — ordered дуудлагатай cycle БА захиалга идэвхтэй
+                  if (cy.status !== "ordered") return false;
+                  if (!info.activeOrder) return false;
+                  return inListPeriod(cy.latestDate);
+                }
+                if (activeTab === "cancelled") {
+                  // Цуцлагдсан cycle — cancelled статустай cycle
+                  if (cy.status !== "cancelled") return false;
+                  return inListPeriod(cy.latestDate);
+                }
+                if (activeTab === "delivered") {
+                  if (seenPhones.has(cy.phone)) return false;
+                  const matches = order && order.status === "delivered" && inListPeriod(order.delivered_at || order.created_at);
+                  if (matches) { seenPhones.add(cy.phone); return true; }
                   return false;
                 }
                 return true;
               });
 
               // 🔍 Хайлтын filter
-              if (searchPhone.trim()) {
-                const searchTerm = searchPhone.trim().toLowerCase();
+              if (debouncedSearch.trim()) {
+                const searchTerm = debouncedSearch.trim().toLowerCase();
                 filteredCycles = filteredCycles.filter((cy) => 
                   cy.phone.toLowerCase().includes(searchTerm)
                 );
               }
 
-              // Хамгийн сүүлчээр болсон цикл нь дээр гарна
+              // Хамгийн сүүлд бүртгэсэн дугаар дээр (registeredDate буурахаар)
               const sortedCycles = filteredCycles.sort((a, b) =>
-                new Date(b.latestDate) - new Date(a.latestDate)
+                new Date(b.registeredDate) - new Date(a.registeredDate)
               );
 
               if (sortedCycles.length === 0) {
@@ -11690,39 +13595,30 @@ function CallCenterView({ profile }) {
                     </div>
                   </div>
                   
-                  {pageCycles.map((cycle) => {
+                  {pageCycles.map((cycle, cycleIdx) => {
                 const phone = cycle.phone;
-                const calls = [...cycle.calls].reverse(); // Сүүлийн дуудлага эхэнд
-                const latestCall = calls[0];
-                const customer = customers.find((cu) => cu.phone === phone);
+                // 📋 Дуудлагын түүх — ЭНЭ cycle-ийн дуудлагууд (цагаар: хуучин→шинэ)
+                //    Cancelled/delivered cycle тусдаа card, шинэ cycle тусдаа card болж харагдана.
+                //    (нэг cycle дотор "Дугаар бүртгэсэн" + "Захиалга болсон" 2 мөр харагдана)
+                const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const latestCall = calls[calls.length - 1];
+                // 💬 Операторын бичсэн сэтгэгдэл — статусын "[...]" тэмдэглэгээ биш, бодит notes.
+                //    Сүүлийн дуудлага notes-гүй байж болзошгүй (шинэ pending хоосон), тиймээс
+                //    notes-той хамгийн сүүлийн дуудлагаас авна. "[" -ээр эхэлсэн статус notes-ийг алгасна.
+                const noteCall = [...calls].reverse().find(
+                  (c) => c.notes && c.notes.trim() && !c.notes.trim().startsWith("[")
+                );
+                const cardCallNote = noteCall?.notes || null;
+                const customer = customerByPhone.get(phone);
+                // 📦 Энэ утасны захиалгын дугаар (байвал картан дээр харуулна)
+                const cardOrderInfo = orderInfoByPhone[phone] || {};
+                const cardOrderNumber = cardOrderInfo.ord?.order_number || null;
                 
-                // Card-ийн # тоо = тэр cycle-ийн сүүлийн дуудлагын глобал дугаар
-                // recentCalls нь date desc-аар sort хийгдсэн (хамгийн шинэ нь эхэнд)
-                // Бид ascending дугаарыг хүснэ → length - index гэж тооцоолно
-                const callIndex = latestCall 
-                  ? recentCalls.length - recentCalls.findIndex((c) => c.id === latestCall.id)
-                  : null;
+                // Card-ийн # тоо = жагсаалтын дараалсан дугаар (дээрээс доош 1, 2, 3...)
+                const callIndex = startIdx + cycleIdx + 1;
 
-                // Сонирхсон бараа нэгтгэх
-                const productMap = new Map();
-                calls.forEach((c) => {
-                  if (c.interested_products && Array.isArray(c.interested_products)) {
-                    c.interested_products.forEach((p) => {
-                      // products массиваас бараа олж image_url нэмэх
-                      const productInfo = products.find((pr) => pr.id === p.id);
-                      const enriched = {
-                        ...p,
-                        image_url: p.image_url || productInfo?.image_url || null,
-                        sku: p.sku || productInfo?.sku || null,
-                        name: p.name || productInfo?.name || "—",
-                      };
-                      const existing = productMap.get(p.id);
-                      if (existing) existing.totalQty += (p.qty || 1);
-                      else productMap.set(p.id, { ...enriched, totalQty: p.qty || 1 });
-                    });
-                  }
-                });
-                const allProducts = Array.from(productMap.values());
+                // Сонирхсон бараа — тухайн утасны БҮХ дуудлагаас (period/cycle хамаарахгүй)
+                const allProducts = Array.from((productsByPhone[phone] || new Map()).values());
 
                 // Time ago
                 const timeAgo = (date) => {
@@ -11755,6 +13651,13 @@ function CallCenterView({ profile }) {
                         className="px-2 py-0.5 rounded text-xs">
                         #{callIndex ?? "—"}
                       </span>
+                      {cardOrderNumber && (
+                        <span style={{ background: "rgba(14,156,142,0.12)", color: T.highlight, fontFamily: FD, fontWeight: 700 }}
+                          className="px-2 py-0.5 rounded text-[10px] tabular-nums"
+                          title="Захиалгын дугаар">
+                          📦 {cardOrderNumber}
+                        </span>
+                      )}
                       {customer?.name && (
                         <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm">
                           {customer.name}
@@ -11764,10 +13667,23 @@ function CallCenterView({ profile }) {
                         const lock = callLocks.find((l) => l.phone === phone);
                         const isLockedByOther = lock && lock.locked_by !== profile.id;
                         const isLockedByMe = lock && lock.locked_by === profile.id;
+                        // ⭐ Зөвхөн "Залгах дугаар" таб дээр захиалга үүсгэх боломжтой.
+                        // Захиалга болсон/Устгагдсан/Амжилттай таб дээр зөвхөн дугаар харуулна.
+                        const canCreateOrder = activeTab === "calling";
+
+                        if (!canCreateOrder) {
+                          return (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-md"
+                              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+                              <Phone size={11} style={{ color: T.muted }} />
+                              <span className="text-xs">{phone}</span>
+                            </div>
+                          );
+                        }
 
                         return (
                           <>
-                            <button onClick={() => handlePhoneClick(phone, customer?.name, latestCall.notes, latestCall.interested_products, latestCall.id)}
+                            <button onClick={() => handlePhoneClick(phone, customer?.name, cardCallNote, allProducts.map((p) => ({ ...p, qty: p.totalQty || p.qty || 1 })), latestCall.id)}
                               disabled={isLockedByOther}
                               className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
                               style={{
@@ -11815,20 +13731,24 @@ function CallCenterView({ profile }) {
                         return (
                           <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
                             className="text-[10px] px-2 py-1 rounded-md uppercase tracking-wider">
-                            {fbPage.name}
+                            🔗 {fbPage.name}
                           </span>
                         );
                       })()}
                       <span style={{
-                        background: isActive ? "rgba(168,85,247,0.15)" : "rgba(148,163,184,0.2)",
-                        color: isActive ? "#9333ea" : T.muted,
+                        background: isActive ? "rgba(16,185,129,0.15)" : "rgba(148,163,184,0.2)",
+                        color: isActive ? T.ok : T.muted,
                         fontFamily: FS, fontWeight: 600,
-                      }} className="text-[10px] px-2 py-1 rounded-md">
+                      }} className="text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: isActive ? T.ok : T.muted,
+                        }} />
                         {isActive ? "Идэвхтэй" : "Идэвхгүй"}
                       </span>
                       <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
                         <Clock size={11} />
-                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(latestCall.created_at)}</span>
+                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(cycle.registeredDate || calls[0]?.created_at || latestCall.created_at)}</span>
                       </div>
                       <div className="flex-1" />
                       {(() => {
@@ -11883,53 +13803,100 @@ function CallCenterView({ profile }) {
                           </div>
                         ) : (
                           <div className="space-y-1.5">
-                          {calls.slice(0, 6).map((c) => {
-                            const operator = profiles.find((p) => p.id === c.created_by);
+                          {(() => {
+                            const cardKey = `${phone}-${cycle.cycleIndex ?? 0}`;
+                            const isExpanded = expandedCallCards.has(cardKey);
+                            const visibleCalls = isExpanded ? calls : calls.slice(0, 10);
+                            return visibleCalls.map((c) => {
+                            let operator = profiles.find((p) => p.id === c.created_by);
+                            // 🔧 "ordered" дуудлага — бодит захиалга авсан хүн (taken_by) харуулах
+                            if (c.call_status === "ordered") {
+                              const ord = orderStatusByPhone[phone];
+                              if (ord && ord.taken_by) {
+                                const taker = profiles.find((p) => p.id === ord.taken_by);
+                                if (taker) operator = taker;
+                              }
+                            }
                             const isCancelled = c.notes?.startsWith("[ЦУЦАЛСАН]");
                             const cleanNotes = c.notes?.replace("[ЦУЦАЛСАН] ", "");
 
                             // Status from call_status field or notes fallback
                             let status = null;
-                            if (c.call_status === "ordered") {
-                              status = { label: "Захиалга өгсөн", color: T.ok, bg: "rgba(16,185,129,0.1)" };
+                            if (c.call_status === "pending") {
+                              status = { label: "📝 Дугаар бүртгэсэн", color: T.highlight, bg: T.highlightSoft };
+                            } else if (c.call_status === "ordered") {
+                              status = { label: "🛒 Захиалга болгосон", color: T.ok, bg: "rgba(16,185,129,0.1)" };
                             } else if (c.call_status === "no_answer") {
-                              status = { label: "Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
+                              status = { label: "📵 Дуудаад авахгүй", color: T.warn, bg: T.warnSoft };
                             } else if (c.call_status === "unreachable") {
-                              status = { label: "Холбогдох боломжгүй", color: T.err, bg: T.errSoft };
+                              status = { label: "🚫 Холбогдох боломжгүй", color: T.err, bg: T.errSoft };
                             } else if (c.call_status === "callback") {
-                              status = { label: "Эргэн холбогдох", color: T.highlight, bg: T.highlightSoft };
-                            } else if (isCancelled) {
-                              status = { label: "Цуцалсан", color: T.err, bg: T.errSoft };
+                              status = { label: "🔄 Эргэн холбогдох", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" };
+                            } else if (c.call_status === "cancelled" || isCancelled) {
+                              status = { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft };
                             }
 
+                            // Тэмдэглэл (статусын шошго биш, жинхэнэ notes)
+                            const noteText = cleanNotes && !cleanNotes.startsWith("[") ? cleanNotes : null;
+
                             return (
-                              <div key={c.id} className="flex items-center gap-2 flex-wrap">
-                                <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
+                              <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
+                                <div className="flex items-center gap-1 flex-shrink-0" style={{ color: T.muted, fontFamily: FM }}>
                                   <Clock size={10} />
-                                  <span className="text-[11px]">{timeAgo(c.created_at)}</span>
+                                  <span className="text-[11px] whitespace-nowrap">
+                                    {(() => {
+                                      const d = new Date(c.created_at);
+                                      const now = new Date();
+                                      const hhmm = d.toLocaleTimeString("mn-MN", { hour: "2-digit", minute: "2-digit", hour12: false });
+                                      const sameDay = d.toDateString() === now.toDateString();
+                                      if (sameDay) return hhmm;
+                                      const md = d.toLocaleDateString("mn-MN", { month: "2-digit", day: "2-digit" });
+                                      return `${md} ${hhmm}`;
+                                    })()}
+                                  </span>
                                 </div>
-                                <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                                  {operator?.name || "—"}
-                                </span>
-                                {status && (
-                                  <span style={{ background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600 }}
-                                    className="text-[10px] px-2 py-0.5 rounded">
-                                    {status.label}
+                                <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                                  <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
+                                    {operator?.name || "—"}
                                   </span>
-                                )}
-                                {!status && cleanNotes && (
-                                  <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] italic">
-                                    "{cleanNotes.slice(0, 40)}{cleanNotes.length > 40 ? '...' : ''}"
-                                  </span>
-                                )}
+                                  {status && (
+                                    <span style={{ background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600 }}
+                                      className="text-[10px] px-2 py-0.5 rounded">
+                                      {status.label}
+                                    </span>
+                                  )}
+                                  {noteText && (
+                                    <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] italic">
+                                      "{noteText.slice(0, 40)}{noteText.length > 40 ? '...' : ''}"
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             );
-                          })}
-                          {calls.length > 6 && (
-                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] italic">
-                              + {calls.length - 6} илүү
-                            </div>
-                          )}
+                          });
+                          })()}
+                          {calls.length > 10 && (() => {
+                            const cardKey = `${phone}-${cycle.cycleIndex ?? 0}`;
+                            const isExpanded = expandedCallCards.has(cardKey);
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedCallCards((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cardKey)) next.delete(cardKey);
+                                    else next.add(cardKey);
+                                    return next;
+                                  });
+                                }}
+                                className="press-btn w-full text-center pt-1"
+                                style={{ color: T.highlight, fontFamily: FM, fontWeight: 600 }}>
+                                <span className="text-[10px]">
+                                  {isExpanded ? "▲ Хураах" : `▼ + ${calls.length - 10} илүү дуудлага харах`}
+                                </span>
+                              </button>
+                            );
+                          })()}
                         </div>
                         )}
                       </div>
@@ -12084,32 +14051,57 @@ function CallCenterView({ profile }) {
           profile={profile}
           onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
             try {
-              // 0. Эхлээд утсуудаар "Шинэ" статустай захиалга байгаа эсэхийг шалгах
-              for (const phoneEntry of phoneList) {
-                const { phone } = phoneEntry;
-                const { data: existingNewOrders } = await supabase
-                  .from("biz_orders")
-                  .select("id, customer_phone, customer_name, total_amount, status, created_at")
-                  .eq("customer_phone", phone)
-                  .eq("status", "new")
-                  .order("created_at", { ascending: false })
-                  .limit(1);
-                
-                if (existingNewOrders && existingNewOrders.length > 0) {
-                  // Шинэ захиалгатай — анхааруулга гарга + засварлах руу шилжих
-                  setShowCallModal(false);
-                  setExistingOrderAlert({
-                    phone,
-                    orderId: existingNewOrders[0].id,
-                    orderInfo: existingNewOrders[0],
-                  });
-                  return; // Хадгалахгүй, цаашаа орохгүй
+              // 🛍 Заавал бараа сонгосон байх ёстой
+              if (!interested_products || interested_products.length === 0) {
+                alert("⚠ Дугаар бүртгэхийн тулд хамгийн багадаа нэг бараа сонгоно уу.");
+                return;
+              }
+              // 🔗 БАРАА → FB PAGE АВТОМАТ ОНОЛТ
+              // Хэрэв сонгосон бараа FB Page-руу холбогдсон бол FB Page-ийг автомат тавина
+              let effectiveFbPageId = fb_page_id || activeFbPageId;
+              const requiredFbPages = new Set();
+              for (const ip of (interested_products || [])) {
+                const prod = products.find((p) => p.id === ip.id);
+                if (prod?.fb_page_id) requiredFbPages.add(prod.fb_page_id);
+              }
+              // Хэрэв холбогдсон бараа байгаа бол:
+              if (requiredFbPages.size > 1) {
+                alert("⚠ Сонгосон бараанууд өөр FB Page-руу холбогдсон байна. Нэг FB Page-ийн бараа л оруулна уу.");
+                return;
+              }
+              if (requiredFbPages.size === 1) {
+                const requiredId = [...requiredFbPages][0];
+                if (fb_page_id && fb_page_id !== requiredId) {
+                  alert("⚠ Сонгосон бараа өөр FB Page-руу холбогдсон байна. FB Page автомат солигдсон.");
                 }
+                effectiveFbPageId = requiredId;
+              }
+              // ⚡ Дуудлага бүртгэх үед давхар шалгахгүй (Дуудаад авлаа товч даргахад л шалгана)
+
+              // 🔗 Page заавал байх ёстой — эс бөгөөс "Тодорхойгүй"-д орно
+              if (!effectiveFbPageId) {
+                alert("⚠ FB Page сонгоно уу.\n\nДугаар бүртгэхийн тулд аль FB Page-ийн захиалга болохыг сонгоно уу.");
+                return;
               }
               
               // Тус утсаар customer + call бичих
+              const skippedPhones = [];
               for (const phoneEntry of phoneList) {
                 const { phone, notes } = phoneEntry;
+
+                // 🚫 "new" (дөнгөж үүссэн, хараахан хуваарилагдаагүй) захиалгатай дугаарыг алгасах.
+                //    assigned/delivered/cancelled бол шинэ захиалга авахыг зөвшөөрнө.
+                const { data: newOrd } = await supabase
+                  .from("biz_orders")
+                  .select("order_number")
+                  .eq("customer_phone", phone)
+                  .eq("status", "new")
+                  .limit(1)
+                  .maybeSingle();
+                if (newOrd) {
+                  skippedPhones.push(`${phone} (#${newOrd.order_number || "—"})`);
+                  continue;
+                }
 
                 // 1. Customer find or create
                 let customerId = null;
@@ -12132,21 +14124,34 @@ function CallCenterView({ profile }) {
 
                 // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
                 // Үргэлж pending — Залгах дугаар tab-руу орно
-                await supabase.from("biz_calls").insert({
+                const { error: callErr } = await supabase.from("biz_calls").insert({
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
-                  fb_page_id: fb_page_id || null,
+                  fb_page_id: effectiveFbPageId || null, // 🔗 Автомат тавигдсан FB Page
                   interested_products,
                   call_status: "pending",
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
                 });
+                // ⚠ Insert амжилтгүй бол хэрэглэгчид мэдэгдэх (чимээгүй алгасахгүй)
+                if (callErr) {
+                  console.error("[Дугаар бүртгэх] biz_calls insert алдаа:", callErr);
+                  throw new Error(`${phone} дугаар бүртгэхэд алдаа: ${callErr.message}`);
+                }
+              }
+
+              // 🚫 "new" захиалгатай тул алгассан дугааруудыг мэдэгдэх
+              if (skippedPhones.length > 0) {
+                alert(`🚫 Дараах дугаар(ууд) аль хэдийн ЗАХИАЛГА БОЛСОН тул бүртгэгдсэнгүй:\n\n${skippedPhones.join("\n")}\n\n(Захиалга хараахан хуваарилагдаагүй байгаа дугаарт дахин захиалга авах боломжгүй.)`);
               }
 
               setShowCallModal(false);
               await loadAll();
-            } catch (e) { alert("Алдаа: " + e.message); }
+            } catch (e) {
+              console.error("[Дугаар бүртгэх] Алдаа:", e);
+              alert("⚠ Дугаар бүртгэхэд алдаа гарлаа:\n\n" + (e.message || JSON.stringify(e)) + "\n\nДахин оролдоно уу.");
+            }
           }}
           onClose={() => setShowCallModal(false)}
         />
@@ -12236,12 +14241,25 @@ function CallCenterView({ profile }) {
           profile={profile}
           initialPhone={orderForCall.phone}
           initialName={orderForCall.name}
-          initialNotes={orderForCall.notes}
+          initialNotes={orderForCall.notes || ""}
           initialProducts={orderForCall.products}
-          onCallback={(phone) => {
+          onCallback={async (phone) => {
             // Захиалга modal-аас status popup-руу шилжих
+            // 🔗 Тухайн утасны page-ийг олж дамжуулах
+            let cbPage = activeFbPageId || null;
+            if (!cbPage && phone) {
+              const { data: pc } = await supabase
+                .from("biz_calls").select("fb_page_id")
+                .eq("phone", phone).not("fb_page_id", "is", null)
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              if (pc) cbPage = pc.fb_page_id;
+            }
             setOrderForCall(null);
-            setStatusPopupCall({ phone, callId: orderForCall.callId });
+            setStatusPopupCall({ phone, callId: orderForCall.callId, fbPageId: cbPage });
+          }}
+          onExistingOrderFound={({ phone, orderId, orderInfo }) => {
+            setOrderForCall(null);
+            setExistingOrderAlert({ phone, orderId, orderInfo });
           }}
           onSave={async (data) => {
             try {
@@ -12261,12 +14279,22 @@ function CallCenterView({ profile }) {
 
               // ─── ACTION: cancelled (цуцлах + дугаар устгах) ──────
               if (data.action === "cancelled") {
+                // 🔗 Page: идэвхтэй шүүлт → тэр утасны өмнөх дуудлагын page
+                let cnPage = activeFbPageId || null;
+                if (!cnPage) {
+                  const { data: prevCall } = await supabase
+                    .from("biz_calls").select("fb_page_id")
+                    .eq("phone", data.phone).not("fb_page_id", "is", null)
+                    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                  if (prevCall) cnPage = prevCall.fb_page_id;
+                }
                 // Шинэ дуудлагын бүртгэл — cancelled status
                 await supabase.from("biz_calls").insert({
                   phone: data.phone,
                   customer_id: null,
                   notes: `[ЦУЦАЛСАН] ${data.notes}`,
                   call_status: "cancelled",
+                  fb_page_id: cnPage, // 🔗 Resolved page
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
                 });
@@ -12318,6 +14346,36 @@ function CallCenterView({ profile }) {
                 }
               }
 
+              // 🔗 Захиалгын FB Page — дуудлагаас (эсвэл бараанаас) автомат тодорхойлох
+              let orderFbPageId = data.fb_page_id || null;
+              // 1) Дуудлагын page-ээс авах (хамгийн найдвартай)
+              if (!orderFbPageId && data.phone) {
+                const { data: callRows } = await supabase
+                  .from("biz_calls")
+                  .select("fb_page_id, created_at")
+                  .eq("phone", data.phone)
+                  .not("fb_page_id", "is", null)
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+                if (callRows && callRows.length > 0) orderFbPageId = callRows[0].fb_page_id;
+              }
+              // 2) Дуудлагад байхгүй бол бараануудаас авах
+              if (!orderFbPageId && data.items && data.items.length > 0) {
+                const productIds = data.items.map((it) => it.product_id).filter(Boolean);
+                if (productIds.length > 0) {
+                  const { data: prods } = await supabase
+                    .from("inv_products")
+                    .select("id, fb_page_id")
+                    .in("id", productIds);
+                  const pageCounts = {};
+                  (prods || []).forEach((p) => {
+                    if (p.fb_page_id) pageCounts[p.fb_page_id] = (pageCounts[p.fb_page_id] || 0) + 1;
+                  });
+                  const topPage = Object.entries(pageCounts).sort((a, b) => b[1] - a[1])[0];
+                  if (topPage) orderFbPageId = topPage[0];
+                }
+              }
+
               // 2. Order create — давхардсан тохиолдолд retry хийнэ
               let order = null;
               let lastError = null;
@@ -12349,6 +14407,7 @@ function CallCenterView({ profile }) {
                     balance_due: data.balanceDue,
                     notes: data.notes,
                     taken_by: profile.id,
+                    fb_page_id: orderFbPageId, // 🔗 FB Page (бараанаас автомат тодорхойлсон)
                   })
                   .select()
                   .single();
@@ -12385,13 +14444,46 @@ function CallCenterView({ profile }) {
               }));
               await supabase.from("biz_order_items").insert(orderItems);
 
-              // Захиалга үүссэний дараа lock release + дуудлагын status шинэчлэх
+              // Захиалга үүссэний дараа lock release
               await releaseLock(data.phone);
-              if (orderForCall.callId) {
-                await supabase.from("biz_calls").update({
-                  call_status: "ordered",
-                }).eq("id", orderForCall.callId);
+              // 🆕 Дуудлагын түүхэнд 2 мөр харагдуулна:
+              //    1) Анхны "Дугаар бүртгэсэн" (pending) мөр ХЭВЭЭР үлдэнэ
+              //    2) Шинэ "Захиалга болсон" (ordered) мөр НЭМЖ үүсгэнэ
+              //    (Захиалга заавал дугаар бүртгэснээр үүсдэг тул хамгийн багадаа 2 мөр)
+              {
+                // Анхны pending дуудлагын мэдээллийг авах (page, customer, products хадгалах)
+                let srcCall = null;
+                if (orderForCall.callId) {
+                  const { data: c } = await supabase.from("biz_calls")
+                    .select("*").eq("id", orderForCall.callId).maybeSingle();
+                  srcCall = c;
+                }
+                if (!srcCall && data.phone) {
+                  const { data: c } = await supabase.from("biz_calls")
+                    .select("*").eq("phone", data.phone)
+                    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                  srcCall = c;
+                }
+                // ⚠ Сүүлийн дуудлага аль хэдийн "ordered" бол → давхар нэмэхгүй (нэг захиалга = нэг ordered)
+                const { data: lastCall } = await supabase.from("biz_calls")
+                  .select("call_status").eq("phone", data.phone)
+                  .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                if (lastCall?.call_status !== "ordered") {
+                  // Шинэ "ordered" дуудлага нэмэх (анхны pending мөрийг дарж бичихгүй)
+                  await supabase.from("biz_calls").insert({
+                    phone: data.phone,
+                    customer_id: srcCall?.customer_id || customerId || null,
+                    customer_name: data.name || srcCall?.customer_name || null,
+                    notes: srcCall?.notes || null,
+                    interested_products: srcCall?.interested_products || [],
+                    call_status: "ordered",
+                    fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
+                    created_by: profile.id,
+                    created_at: new Date().toISOString(),
+                  });
+                }
               }
+
 
               setOrderForCall(null);
               await loadAll();
@@ -12677,6 +14769,8 @@ function OperatorKPIReportView({ profile }) {
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-kpi-report-period") || "today"; } catch { return "today"; }
   });
+  const [phonePopup, setPhonePopup] = useState(null); // 🆕 {title, phones[], color}
+  const [phoneSearch, setPhoneSearch] = useState(""); // 🆕 popup хайлт
   const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
 
@@ -12723,9 +14817,12 @@ function OperatorKPIReportView({ profile }) {
           fetchAllRows(supabase.from("biz_orders").select("*")),
           supabase.from("profiles")
             .select("id, name, role, job_title")
-            .in("role", ["admin", "manager", "operator"])
+            .in("role", ["admin", "manager", "operator", "merchant"])
             .order("name"),
         ]);
+        console.log("[KPI Report] Calls:", callData?.length, "Orders:", ordData?.length, "Users:", opData?.length);
+        const merchantCalls = (callData || []).filter(c => (opData || []).find(u => u.id === c.created_by && u.role === "merchant"));
+        console.log("[KPI Report] Merchant calls (matched):", merchantCalls.length);
         setCalls(callData || []);
         setOrders(ordData || []);
         setOperators(opData || []);
@@ -12755,6 +14852,12 @@ function OperatorKPIReportView({ profile }) {
         role: op.role,
         title: op.job_title || "",
         uniquePhonesSet: new Set(), // 🆕 Set ашиглан давхардаагүй утсыг тоологдох
+        registeredPhones: [], // 🆕 Бүртгэсэн дугаарын жагсаалт
+        calledPhones: [], // 🆕 Залгасан дугаарын жагсаалт
+        orderedPhones: [], // 🆕 Захиалгын дугаарын жагсаалт
+        deliveredPhones: [], // 🆕 Хүргэсэн
+        pendingPhones: [], // 🆕 Хүлээгдэж
+        cancelledPhones: [], // 🆕 Цуцалсан
         totalCalls: 0,
         totalOrders: 0,
         delivered: 0,
@@ -12764,22 +14867,53 @@ function OperatorKPIReportView({ profile }) {
       };
     });
 
+    // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн оператор тодорхойлох (давхцалгүй, нийлбэр = нийт)
+    //    ⚠ Зөвхөн pending (жинхэнэ "дугаар бүртгэх") — Operator KPI-тай ижил.
+    //    ordered/cancelled нь "залгах" үйлдэл тул "бүртгэсэн дугаар"-т тооцохгүй.
+    const phoneFirstOp = {};
+    filteredCalls
+      .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        if (!phoneFirstOp[c.phone]) phoneFirstOp[c.phone] = c.created_by;
+      });
+
     filteredCalls.forEach((c) => {
       if (!c.created_by || !opMap[c.created_by]) return;
-      if (c.phone) opMap[c.created_by].uniquePhonesSet.add(c.phone); // 🆕 Уникаль утас
-      opMap[c.created_by].totalCalls++;
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн оператор тоолно
+      if (c.phone && phoneFirstOp[c.phone] === c.created_by) {
+        opMap[c.created_by].uniquePhonesSet.add(c.phone);
+        if (!opMap[c.created_by].registeredPhones.includes(c.phone)) {
+          opMap[c.created_by].registeredPhones.push(c.phone);
+        }
+      }
+      // ☎ "Нийт залгалт" — оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна)
+      if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+          c.call_status === "callback" || c.call_status === "ordered" ||
+          c.call_status === "cancelled") {
+        opMap[c.created_by].totalCalls++;
+        if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
+      }
     });
 
     filteredOrders.forEach((o) => {
       if (!o.taken_by || !opMap[o.taken_by]) return;
-      opMap[o.taken_by].totalOrders++;
+      // ⚠ "Захиалга" (totalOrders) = цуцлагдаагүй захиалга (идэвхтэй + хүргэсэн).
+      //    Цуцлагдсаныг "Цуцалсан" баганад тусад нь тоолно (давхар мэт харагдахгүй).
+      if (o.status !== "cancelled") {
+        opMap[o.taken_by].totalOrders++;
+        if (o.customer_phone) opMap[o.taken_by].orderedPhones.push(o.customer_phone);
+      }
       if (o.status === "delivered") {
         opMap[o.taken_by].delivered++;
         opMap[o.taken_by].revenue += Number(o.total_amount || 0);
+        if (o.customer_phone) opMap[o.taken_by].deliveredPhones.push(o.customer_phone);
       } else if (o.status === "cancelled") {
         opMap[o.taken_by].cancelled++;
+        if (o.customer_phone) opMap[o.taken_by].cancelledPhones.push(o.customer_phone);
       } else {
         opMap[o.taken_by].pending++;
+        if (o.customer_phone) opMap[o.taken_by].pendingPhones.push(o.customer_phone);
       }
     });
 
@@ -12816,7 +14950,7 @@ function OperatorKPIReportView({ profile }) {
           "№": idx + 1,
           "Ажилтны нэр": op.name,
           "Албан тушаал": op.title,
-          "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : "Оператор",
+          "Эрх": op.role === "admin" ? "Админ" : op.role === "manager" ? "Ахлагч" : op.role === "merchant" ? "Merchant" : "Оператор",
           "Бүртгэсэн дугаар": op.uniquePhones,
           "Нийт залгалт": op.totalCalls,
           "Бүртгэсэн захиалга": op.totalOrders,
@@ -12921,7 +15055,7 @@ function OperatorKPIReportView({ profile }) {
       </div>
 
       {/* Нийт стат самбар */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
             👥 Идэвхтэй ажилтан
@@ -12940,6 +15074,14 @@ function OperatorKPIReportView({ profile }) {
         </div>
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
+            🛒 Бүртгэсэн захиалга
+          </div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#8b5cf6" }} className="text-3xl tabular-nums">
+            {totals.totalOrders}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
             ✅ Амжилттай захиалга
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-3xl tabular-nums">
@@ -12948,10 +15090,10 @@ function OperatorKPIReportView({ profile }) {
         </div>
         <div className="glass rounded-2xl p-3">
           <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
-            💰 Нийт орлого
+            💰 Нийт цалин
           </div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-2xl tabular-nums">
-            {totals.revenue.toLocaleString()}₮
+            {((totals.uniquePhones * 300) + (totals.delivered * 600)).toLocaleString()}₮
           </div>
         </div>
       </div>
@@ -12980,9 +15122,11 @@ function OperatorKPIReportView({ profile }) {
 
             const roleColor = op.role === "admin" ? "#9333ea"
               : op.role === "manager" ? "#3b82f6"
-              : "#ec4899";
+              : op.role === "merchant" ? "#0284c7"
+              : "#0E9C8E";
             const roleLabel = op.role === "admin" ? "Админ"
               : op.role === "manager" ? "Ахлагч"
+              : op.role === "merchant" ? "Merchant"
               : "Оператор";
 
             return (
@@ -13015,64 +15159,70 @@ function OperatorKPIReportView({ profile }) {
                   </div>
                   <div className="text-right">
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
-                      {op.revenue.toLocaleString()}₮
+                      {((op.uniquePhones * 300) + (op.delivered * 600)).toLocaleString()}₮
                     </div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                      Амжилт {successRate}%
+                      Цалин ({op.uniquePhones}×300 + {op.delivered}×600)
                     </div>
                   </div>
                 </div>
 
-                {/* Stats grid */}
+                {/* Stats grid — дарахад дугаарын жагсаалт popup нээнэ */}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Бүртгэсэн дугаар`, phones: op.registeredPhones || [], color: T.highlight }); }}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Бүртгэсэн дугаар
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">
                       {op.uniquePhones}
                     </div>
-                  </div>
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Нийт залгалт`, phones: op.calledPhones || [], color: "#3b82f6" }); }}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Нийт залгалт
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-lg tabular-nums">
                       {op.totalCalls}
                     </div>
-                  </div>
-                  <div style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Захиалга`, phones: op.orderedPhones || [], color: "#9333ea" }); }}
+                    style={{ background: T.surfaceAlt }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       Захиалга
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#9333ea" }} className="text-lg tabular-nums">
                       {op.totalOrders}
                     </div>
-                  </div>
-                  <div style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Хүргэсэн`, phones: op.deliveredPhones || [], color: T.ok }); }}
+                    style={{ background: "rgba(16,185,129,0.1)" }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ✓ Хүргэсэн
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg tabular-nums">
                       {op.delivered}
                     </div>
-                  </div>
-                  <div style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Хүлээгдэж`, phones: op.pendingPhones || [], color: T.warn }); }}
+                    style={{ background: T.warnSoft }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ⏳ Хүлээгдэж
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-lg tabular-nums">
                       {op.pending}
                     </div>
-                  </div>
-                  <div style={{ background: T.errSoft }} className="rounded-lg p-2 text-center">
+                  </button>
+                  <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Цуцалсан`, phones: op.cancelledPhones || [], color: T.err }); }}
+                    style={{ background: T.errSoft }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">
                       ✕ Цуцалсан
                     </div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-lg tabular-nums">
                       {op.cancelled}
                     </div>
-                  </div>
+                  </button>
                 </div>
 
                 {/* Conversion progress */}
@@ -13097,12 +15247,98 @@ function OperatorKPIReportView({ profile }) {
           })}
         </div>
       )}
+
+      {/* 🆕 Дугаарын жагсаалт popup */}
+      {phonePopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => { setPhonePopup(null); setPhoneSearch(""); }}>
+          <div className="rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+            style={{ background: T.surface }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: T.borderSoft }}>
+              <div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+                  {phonePopup.title}
+                </div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                  {phonePopup.phones.length} дугаар
+                </div>
+              </div>
+              <button onClick={() => { setPhonePopup(null); setPhoneSearch(""); }}
+                style={{ background: T.surfaceAlt, color: T.ink }}
+                className="w-8 h-8 rounded-full flex items-center justify-center press-btn">
+                <X size={16} />
+              </button>
+            </div>
+            {/* 🔍 Хайлт */}
+            <div className="px-4 pt-3">
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: T.surfaceAlt }}>
+                <Search size={14} style={{ color: T.muted }} />
+                <input
+                  type="tel"
+                  value={phoneSearch}
+                  onChange={(e) => setPhoneSearch(e.target.value)}
+                  placeholder="Дугаараар хайх..."
+                  autoFocus
+                  style={{ background: "transparent", color: T.ink, fontFamily: FD }}
+                  className="flex-1 text-sm outline-none tabular-nums"
+                />
+                {phoneSearch && (
+                  <button onClick={() => setPhoneSearch("")} style={{ color: T.muted }}>
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Phone list */}
+            <div className="overflow-y-auto p-3 flex-1">
+              {(() => {
+                const filtered = phonePopup.phones.filter((ph) =>
+                  !phoneSearch || String(ph).includes(phoneSearch.trim())
+                );
+                if (phonePopup.phones.length === 0) {
+                  return (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-center text-sm py-8">
+                      Дугаар алга
+                    </div>
+                  );
+                }
+                if (filtered.length === 0) {
+                  return (
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-center text-sm py-8">
+                      "{phoneSearch}" олдсонгүй
+                    </div>
+                  );
+                }
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    {filtered.map((ph, i) => (
+                      <div key={`${ph}-${i}`}
+                        style={{ background: T.surfaceAlt }}
+                        className="flex items-center gap-2 rounded-lg px-3 py-2">
+                        <span style={{ background: phonePopup.color + "20", color: phonePopup.color, fontFamily: FD, fontWeight: 700 }}
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0">
+                          {i + 1}
+                        </span>
+                        <a href={`tel:${ph}`}
+                          style={{ fontFamily: FD, fontWeight: 600, color: phonePopup.color }}
+                          className="text-sm tabular-nums hover:underline">
+                          {ph}
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  SALES DASHBOARD — Борлуулалтын самбар (FB page-аар KPI)
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
 //  🚚 DELIVERY DASHBOARD — Хүргэлтийн самбар (admin/manager-руу)
@@ -13125,9 +15361,11 @@ function DeliveryDashboardView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
+      // ⚡ ГАЦАА ЗАСВАР: сүүлийн 60 хоногийн driver-тэй захиалга (өмнө бүх 879+ татдаг)
+      const ord60 = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
       const [{ data: drvData }, ordData] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).order("created_at", { ascending: false })),
+        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).gte("created_at", ord60).order("created_at", { ascending: false })),
       ]);
       setDrivers(drvData || []);
       setOrders(ordData || []);
@@ -13137,8 +15375,9 @@ function DeliveryDashboardView({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Realtime — debounced
-  const debouncedReload = useDebouncedCallback(loadAll, 800);
+  // Realtime — debounced (2.5 сек): олон өөрчлөлт зэрэг ирэхэд нэг л удаа loadAll.
+  //    (optimistic хувилбар гацаа үүсгэсэн тул найдвартай debounced-руу буцаасан)
+  const debouncedReload = useDebouncedCallback(loadAll, 2500);
   useEffect(() => {
     const ch = supabase.channel("delivery-dashboard-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
@@ -13633,7 +15872,9 @@ function DeliveryDashboardView({ profile }) {
 }
 
 
-function SalesDashboardView({ profile }) {
+function SalesDashboardView({ profile, allowedPageIds = null }) {
+  // allowedPageIds: null = бүх page (admin), массив = зөвхөн тэр page-ууд (merchant)
+  const isMerchant = Array.isArray(allowedPageIds);
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState([]);
@@ -13641,7 +15882,11 @@ function SalesDashboardView({ profile }) {
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
+  // 🔄 Захиалгын FB Page-ийг солих modal
+  const [reassignModal, setReassignModal] = useState(null); // { orderId, currentPageId }
+  const [refreshKey, setRefreshKey] = useState(0); // Дахин ачаалах trigger
   const [productsPopup, setProductsPopup] = useState(null); // { page, status, products }
+  const [loadError, setLoadError] = useState(null); // ⚠ Ачаалалт алдаа state
 
   const [period, setPeriod] = useState(() => {
     try { return localStorage.getItem("orgoo-sales-period") || "month"; } catch { return "month"; }
@@ -13686,23 +15931,43 @@ function SalesDashboardView({ profile }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setLoadError(null);
       try {
+        // Merchant бол зөвхөн өөрийн page-уудын өгөгдөл; admin бол бүгд
+        let callQ = supabase.from("biz_calls").select("*");
+        let ordQ = supabase.from("biz_orders").select("*");
+        let fbQ = supabase.from("biz_fb_pages").select("*");
+        if (isMerchant) {
+          if (allowedPageIds.length === 0) {
+            // Page оноогоогүй merchant → хоосон
+            setCalls([]); setOrders([]); setItems([]); setProducts([]); setFbPages([]);
+            setLoading(false);
+            return;
+          }
+          callQ = supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds);
+          ordQ = supabase.from("biz_orders").select("*").in("fb_page_id", allowedPageIds);
+          fbQ = supabase.from("biz_fb_pages").select("*").in("id", allowedPageIds);
+        }
         const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
-          fetchAllRows(supabase.from("biz_calls").select("*")),
-          fetchAllRows(supabase.from("biz_orders").select("*")),
+          fetchAllRows(callQ),
+          fetchAllRows(ordQ),
           fetchAllRows(supabase.from("biz_order_items").select("*")),
           supabase.from("inv_products").select("id, name, image_url, sku"),
-          supabase.from("biz_fb_pages").select("*"),
+          fbQ,
         ]);
         setCalls(callData || []);
         setOrders(ordData || []);
         setItems(itmData || []);
         setProducts(prodData || []);
         setFbPages(fbData || []);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        setLoadError(e.message || "Тодорхойгүй алдаа");
+        alert(`⚠ Самбар ачаалахад алдаа гарлаа\n${e.message || "Тодорхойгүй алдаа"}\nДахин оролдоно уу.`);
+      }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : "all"]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
@@ -13728,6 +15993,7 @@ function SalesDashboardView({ profile }) {
         is_active: p.is_active,
         uniquePhones: 0, // Бүх дуудлагын тоо
         totalCalls: 0,
+        phoneSet: new Set(), // өвөрмөц утас тоолох
         totalOrders: 0,
         delivered: 0,
         cancelled: 0,
@@ -13748,6 +16014,7 @@ function SalesDashboardView({ profile }) {
       is_active: true,
       uniquePhones: 0,
       totalCalls: 0,
+      phoneSet: new Set(),
       totalOrders: 0,
       delivered: 0,
       cancelled: 0,
@@ -13759,26 +16026,47 @@ function SalesDashboardView({ profile }) {
       cancelledOrders: [],
     };
 
-    // Дуудлагууд — Дуудлагын самбартай ижил logic (бүх дуудлагыг тоолно)
+    // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн page тодорхойлох (давхцалгүй)
+    const phoneFirstPage = {};
+    filteredCalls
+      .filter((c) => c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => {
+        const k = c.fb_page_id || "__null__";
+        if (!phoneFirstPage[c.phone]) phoneFirstPage[c.phone] = k;
+      });
+
+    // Дуудлагууд — "Дугаар" = анх бүртгэсэн page, "Залгалт" = бодит залгалт
     filteredCalls.forEach((c) => {
       const key = c.fb_page_id || "__null__";
       if (!map[key]) return;
-      map[key].uniquePhones++; // Тус дуудлагыг тоолно (давхардсан ч)
-      map[key].totalCalls++;
+      // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн page тоолно
+      if (c.phone && phoneFirstPage[c.phone] === key) {
+        map[key].phoneSet.add(c.phone);
+      }
+      // ☎ "Нийт залгалт" — оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна)
+      //    (Дуудлагын самбартай ижил логик)
+      if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
+          c.call_status === "callback" || c.call_status === "ordered" ||
+          c.call_status === "cancelled") {
+        map[key].totalCalls++;
+      }
     });
 
-    // Захиалгууд — fb_page_id call дотор хадгалагдсан, тиймээс утсаар хайх
-    // Эсвэл call_id-аар холбогдсон бол. Энд утсаар тооцно.
+    // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
+    // Хэрэв захиалга өөрөө таглагдаагүй бол утсаар хайх (fallback)
     const phoneToFbPage = {};
     filteredCalls.forEach((c) => {
       if (c.fb_page_id) phoneToFbPage[c.phone] = c.fb_page_id;
     });
 
     filteredOrders.forEach((o) => {
-      const fbPageId = phoneToFbPage[o.customer_phone] || "__null__";
-      const key = fbPageId || "__null__";
+      // 🎯 ЗӨВ ЛОГИК: эхлээд захиалгын өөрийн fb_page_id, дараа нь утсаар
+      const fbPageId = o.fb_page_id || phoneToFbPage[o.customer_phone] || "__null__";
+      const key = fbPageId;
       if (!map[key]) return;
-      map[key].totalOrders++;
+      // "Захиалга" = цуцлагдаагүй (идэвхтэй + хүргэсэн), цуцлагдсаныг тусад нь
+      if (o.status !== "cancelled") map[key].totalOrders++;
       if (o.status === "delivered") {
         map[key].delivered++;
         map[key].revenue += Number(o.total_amount || 0);
@@ -13794,6 +16082,7 @@ function SalesDashboardView({ profile }) {
     });
 
     return Object.values(map)
+      .map((p) => ({ ...p, uniquePhones: p.phoneSet ? p.phoneSet.size : p.uniquePhones }))
       .filter((p) => p.totalCalls > 0 || p.totalOrders > 0)
       .sort((a, b) => b.revenue - a.revenue);
   }, [filteredCalls, filteredOrders, fbPages]);
@@ -13824,13 +16113,56 @@ function SalesDashboardView({ profile }) {
   }, [filteredOrders, items, products]);
 
   // Нийт стат
-  const totals = useMemo(() => ({
-    revenue: filteredOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0),
-    delivered: filteredOrders.filter((o) => o.status === "delivered").length,
-    totalOrders: filteredOrders.length,
-    avgOrder: 0,
-  }), [filteredOrders]);
-  totals.avgOrder = totals.delivered > 0 ? totals.revenue / totals.delivered : 0;
+  const totals = useMemo(() => {
+    const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered");
+    const revenue = deliveredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+    const delivered = deliveredOrders.length;
+    const cancelled = filteredOrders.filter((o) => o.status === "cancelled").length; // 🆕 Цуцалсан тоо
+    const totalOrders = filteredOrders.length;
+    const avgOrder = delivered > 0 ? revenue / delivered : 0;
+    // 🆕 Бүх page-ээс нийт: дугаар бүртгэсэн, залгалт, захиалга бүртгэсэн
+    const totalPhones = fbReport.reduce((s, p) => s + (p.uniquePhones || 0), 0);
+    const totalCalls = fbReport.reduce((s, p) => s + (p.totalCalls || 0), 0);
+    const totalRegOrders = fbReport.reduce((s, p) => s + (p.totalOrders || 0), 0);
+    return { revenue, delivered, cancelled, totalOrders, avgOrder, totalPhones, totalCalls, totalRegOrders };
+  }, [filteredOrders, fbReport]);
+
+  // 🆕 Барааны задаргаа popup — захиалгын статусаар (delivered/cancelled/all) барааг нэгтгэнэ
+  const [breakdownModal, setBreakdownModal] = useState(null); // { title, statusFilter } | null
+  const productBreakdown = useMemo(() => {
+    if (!breakdownModal) return null;
+    const { statusFilter } = breakdownModal;
+    // Шүүсэн захиалгууд (статусаар)
+    const ordIds = new Set(
+      filteredOrders
+        .filter((o) => statusFilter === "all" ? true : o.status === statusFilter)
+        .map((o) => o.id)
+    );
+    // Тэдгээр захиалгын бараа нэгтгэх
+    const prodMap = {}; // product_id → { name, sku, image_url, qty, amount }
+    (items || []).forEach((it) => {
+      if (!ordIds.has(it.order_id)) return;
+      const pid = it.product_id;
+      if (!prodMap[pid]) {
+        const p = products.find((x) => x.id === pid);
+        prodMap[pid] = {
+          name: it.product_name || p?.name || "—",
+          sku: p?.sku || "",
+          image_url: p?.image_url || null,
+          qty: 0, amount: 0,
+        };
+      }
+      prodMap[pid].qty += Number(it.quantity || 0);
+      prodMap[pid].amount += Number(it.quantity || 0) * Number(it.price || it.unit_price || 0);
+    });
+    const list = Object.values(prodMap).sort((a, b) => b.qty - a.qty);
+    return {
+      list,
+      totalProducts: list.length,
+      totalQty: list.reduce((s, p) => s + p.qty, 0),
+      totalAmount: list.reduce((s, p) => s + p.amount, 0),
+    };
+  }, [breakdownModal, filteredOrders, items, products]);
 
   // Excel export
   const exportExcel = () => {
@@ -13922,6 +16254,28 @@ function SalesDashboardView({ profile }) {
         </div>
       </div>
 
+      {/* ⚠ Алдааны banner — Sales самбар ачаалал амжилтгүй */}
+      {loadError && !loading && (
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `4px solid ${T.err}`, background: "rgba(239,68,68,0.05)" }}>
+          <div className="flex items-start gap-3">
+            <div style={{ fontSize: 24 }}>⚠</div>
+            <div className="flex-1">
+              <div style={{ color: T.err, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-1">
+                Самбар ачаалахад алдаа гарлаа
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mb-2">
+                {loadError}
+              </div>
+              <button onClick={() => setRefreshKey((k) => k + 1)}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                🔄 Дахин оролдох
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center">
           <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
@@ -13942,7 +16296,8 @@ function SalesDashboardView({ profile }) {
                 Нийт орлого
               </div>
             </div>
-            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+            <button onClick={() => setBreakdownModal({ title: "Хүргэгдсэн захиалгын бараа", statusFilter: "delivered" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid ${T.highlight}` }}>
               <div style={{ background: T.highlightSoft, color: T.highlight }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
                 <ShoppingBag size={16} />
@@ -13951,9 +16306,9 @@ function SalesDashboardView({ profile }) {
                 {totals.delivered}
               </div>
               <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
-                Хүргэгдсэн захиалга
+                Хүргэгдсэн захиалга <span style={{ color: T.muted }}>›</span>
               </div>
-            </div>
+            </button>
             <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #3b82f6` }}>
               <div style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
@@ -13978,7 +16333,119 @@ function SalesDashboardView({ profile }) {
                 Идэвхтэй FB Page
               </div>
             </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0ea5e9` }}>
+              <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Phone size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#0ea5e9" }} className="text-2xl tabular-nums">
+                {totals.totalPhones}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Бүртгэсэн дугаар
+              </div>
+            </div>
+            <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #f59e0b` }}>
+              <div style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <Headphones size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#f59e0b" }} className="text-2xl tabular-nums">
+                {totals.totalCalls}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Нийт залгалт
+              </div>
+            </div>
+            <button onClick={() => setBreakdownModal({ title: "Бүртгэсэн захиалгын бараа", statusFilter: "all" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid #14b8a6` }}>
+              <div style={{ background: "rgba(20,184,166,0.1)", color: "#14b8a6" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                <ShoppingBag size={16} />
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#14b8a6" }} className="text-2xl tabular-nums">
+                {totals.totalRegOrders}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Бүртгэсэн захиалга <span style={{ color: T.muted }}>›</span>
+              </div>
+            </button>
+            <button onClick={() => setBreakdownModal({ title: "Цуцалсан захиалгын бараа", statusFilter: "cancelled" })}
+              className="glass rounded-2xl p-4 text-left transition-transform active:scale-95 cursor-pointer hover:shadow-md" style={{ borderLeft: `3px solid #ef4444` }}>
+              <div style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center mb-2">
+                ✕
+              </div>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: "#ef4444" }} className="text-2xl tabular-nums">
+                {totals.cancelled}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mt-1">
+                Цуцалсан захиалга <span style={{ color: T.muted }}>›</span>
+              </div>
+            </button>
           </div>
+
+          {/* 🆕 Барааны задаргаа popup — карт дээр дарахад */}
+          {breakdownModal && productBreakdown && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center p-3 overflow-y-auto"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+              onClick={() => setBreakdownModal(null)}>
+              <div className="rounded-2xl w-full max-w-2xl my-6"
+                style={{ background: T.bg, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}
+                onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: T.line }}>
+                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-base flex items-center gap-2">
+                    🛍 {breakdownModal.title} <span style={{ color: T.muted }} className="text-sm">({productBreakdown.totalProducts})</span>
+                  </div>
+                  <button onClick={() => setBreakdownModal(null)}
+                    style={{ color: T.muted }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5">✕</button>
+                </div>
+                {/* Нийт стат */}
+                <div className="grid grid-cols-3 gap-2 p-4">
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Бараа</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">{productBreakdown.totalProducts}</div>
+                  </div>
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт ширхэг</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">{productBreakdown.totalQty}</div>
+                  </div>
+                  <div className="rounded-xl p-3 text-center" style={{ background: T.highlightSoft }}>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт дүн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">{productBreakdown.totalAmount.toLocaleString()}₮</div>
+                  </div>
+                </div>
+                {/* Барааны grid */}
+                {productBreakdown.list.length === 0 ? (
+                  <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Бараа байхгүй</div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 pt-0">
+                    {productBreakdown.list.map((p, idx) => (
+                      <div key={idx} className="rounded-xl overflow-hidden border" style={{ borderColor: T.line, background: T.card }}>
+                        <div className="text-center pt-2">
+                          <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">Гарсан тоо</div>
+                          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                            {p.qty}<span style={{ color: T.muted }} className="text-xs"> ×</span>
+                          </div>
+                        </div>
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name} className="w-full h-28 object-cover" />
+                        ) : (
+                          <div className="w-full h-28 flex items-center justify-center text-3xl" style={{ background: T.highlightSoft }}>📦</div>
+                        )}
+                        <div className="p-2">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs line-clamp-2">{p.name}</div>
+                          {p.sku && <div style={{ color: T.highlight, fontFamily: FM }} className="text-[10px] mt-0.5">#{p.sku}</div>}
+                          <div style={{ color: T.ok, fontFamily: FD, fontWeight: 600 }} className="text-xs mt-1 tabular-nums">{p.amount.toLocaleString()}₮</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* FB Pages report */}
           <div>
@@ -14285,6 +16752,24 @@ function SalesDashboardView({ profile }) {
                             }} className="text-base tabular-nums">
                               {Number(o.total_amount || 0).toLocaleString()}₮
                             </div>
+                            {/* 🔄 FB Page солих товч — зөвхөн admin */}
+                            {!isMerchant && (
+                            <button onClick={(e) => {
+                              e.stopPropagation();
+                              setReassignModal({ orderId: o.id, currentPageId: o.fb_page_id });
+                            }}
+                              className="press-btn rounded-full flex items-center justify-center flex-shrink-0"
+                              style={{
+                                width: 28, height: 28,
+                                background: T.surfaceAlt,
+                                color: T.muted,
+                                border: `1px solid ${T.border}`,
+                                cursor: "pointer",
+                              }}
+                              title="FB Page солих">
+                              ⋮
+                            </button>
+                            )}
                           </div>
 
                           {/* Items */}
@@ -14334,6 +16819,113 @@ function SalesDashboardView({ profile }) {
                     })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── 🔄 FB Page солих modal ─── */}
+      {reassignModal && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }} onClick={() => setReassignModal(null)}>
+          <div style={{
+            background: "white", borderRadius: 18, width: "100%", maxWidth: 420,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.2)",
+            overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              background: `linear-gradient(135deg, ${T.highlight}15, ${T.highlight}25)`,
+              padding: "18px 20px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 36, lineHeight: 1, marginBottom: 6 }}>🔄</div>
+              <div style={{ fontFamily: FD, fontWeight: 700, fontSize: 15, color: T.ink }}>
+                Захиалгын FB Page солих
+              </div>
+            </div>
+            <div style={{ padding: "16px 20px" }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] uppercase tracking-wider mb-2">
+                Шинэ FB Page сонгох
+              </div>
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                {/* "Алга" сонголт */}
+                <button onClick={async () => {
+                  try {
+                    // Захиалгын мэдээлэл олох
+                    const order = orders.find((o) => o.id === reassignModal.orderId);
+                    // 1. Захиалгын fb_page_id шинэчлэх
+                    const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
+                    if (orderErr) throw orderErr;
+                    // 2. Тухайн утсаар бүртгэгдсэн calls-ийн fb_page_id-ийг бас шинэчлэх
+                    if (order?.customer_phone) {
+                      await supabase.from("biz_calls").update({ fb_page_id: null })
+                        .eq("phone", order.customer_phone)
+                        .eq("fb_page_id", reassignModal.currentPageId);
+                    }
+                    setRefreshKey((k) => k + 1);
+                    setReassignModal(null);
+                    setOrdersPopup(null);
+                    alert("✅ Захиалгаас FB Page арилгасан");
+                  } catch (e) { alert("Алдаа: " + e.message); }
+                }}
+                  className="press-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-2"
+                  style={{
+                    background: !reassignModal.currentPageId ? T.warnSoft : T.surfaceAlt,
+                    border: `1px solid ${!reassignModal.currentPageId ? T.warn : T.border}`,
+                    color: T.ink, fontFamily: FS, fontSize: 13, fontWeight: 600,
+                  }}>
+                  <span style={{ fontSize: 16 }}>—</span>
+                  <span>FB Page алга (холбохгүй)</span>
+                  {!reassignModal.currentPageId && <span style={{ marginLeft: "auto", color: T.warn }}>✓ Одоогийн</span>}
+                </button>
+                {/* FB Pages жагсаалт */}
+                {fbPages.map((p) => (
+                  <button key={p.id}
+                    onClick={async () => {
+                      try {
+                        // Захиалгын мэдээлэл олох
+                        const order = orders.find((o) => o.id === reassignModal.orderId);
+                        // 1. Захиалгын fb_page_id шинэчлэх
+                        const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
+                        if (orderErr) throw orderErr;
+                        // 2. Тухайн утсаар бүртгэгдсэн calls-ийн fb_page_id-ийг бас шинэчлэх
+                        if (order?.customer_phone) {
+                          await supabase.from("biz_calls").update({ fb_page_id: p.id })
+                            .eq("phone", order.customer_phone)
+                            .eq("fb_page_id", reassignModal.currentPageId);
+                        }
+                        setRefreshKey((k) => k + 1);
+                        setReassignModal(null);
+                        setOrdersPopup(null);
+                        alert(`✅ Захиалгыг "${p.name}" Page-руу шилжүүлсэн`);
+                      } catch (e) { alert("Алдаа: " + e.message); }
+                    }}
+                    className="press-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-2"
+                    style={{
+                      background: reassignModal.currentPageId === p.id ? T.okSoft : T.surface,
+                      border: `1px solid ${reassignModal.currentPageId === p.id ? T.ok : T.border}`,
+                      color: T.ink, fontFamily: FS, fontSize: 13, fontWeight: 600,
+                    }}>
+                    <span style={{ fontSize: 16 }}>📘</span>
+                    <span>{p.name}</span>
+                    {reassignModal.currentPageId === p.id && <span style={{ marginLeft: "auto", color: T.ok }}>✓ Одоогийн</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: "0 20px 18px" }}>
+              <button onClick={() => setReassignModal(null)}
+                className="w-full press-btn py-2.5 rounded-lg"
+                style={{
+                  background: T.surfaceAlt, color: T.muted,
+                  border: `1px solid ${T.border}`,
+                  fontFamily: FS, fontWeight: 600, fontSize: 13,
+                }}>
+                Хаах
+              </button>
             </div>
           </div>
         </div>,
@@ -14474,6 +17066,7 @@ function SalesDashboardView({ profile }) {
 function DriverSettlementView({ profile }) {
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [itemsByOrder, setItemsByOrder] = useState({}); // order_id → [items] (бараа харуулахад)
   const [loading, setLoading] = useState(true);
   const [activeDriver, setActiveDriver] = useState(null);
   const [confirmingDriverId, setConfirmingDriverId] = useState(null); // Тооцоо нээх баталгаажуулалт
@@ -14564,6 +17157,22 @@ function DriverSettlementView({ profile }) {
       setDrivers(drvData || []);
       setOrders(ordData || []);
       setOpenSettlements(openSettleData || []);
+      // 🛍 Захиалгын бараа татах (картад харуулах) — driver-ийн захиалгуудынх
+      try {
+        const driverOrderIds = (ordData || []).map((o) => o.id);
+        if (driverOrderIds.length > 0) {
+          const allItems = await fetchInChunks("biz_order_items", driverOrderIds, {
+            select: "order_id, product_name, quantity",
+            filterColumn: "order_id",
+          });
+          const grouped = {};
+          (allItems || []).forEach((it) => {
+            if (!grouped[it.order_id]) grouped[it.order_id] = [];
+            grouped[it.order_id].push(it);
+          });
+          setItemsByOrder(grouped);
+        }
+      } catch (e) { console.error("[settlement items]", e); }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -14571,8 +17180,15 @@ function DriverSettlementView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
   // Period-аар шүүх
+  // ⚡ ЗАСВАР: тооцоо нь ХҮРГЭГДСЭН/ЦУЦЛАГДСАН огноогоор шүүнэ (created_at биш).
+  //   (Захиалга 6-11-нд бүртгэгдээд 6-14-нд хүргэгдвэл, 6-13-нд хаагдсан тооцоонд
+  //    created_at-аар буруугаар багтаж байсныг засна. Тооцоо = хүргэлтийн огноогоор.)
   const filteredOrders = useMemo(() => orders.filter((o) => {
-    const d = new Date(o.created_at);
+    // delivered бол delivered_at, cancelled бол cancelled_at, бусад үед created_at (fallback)
+    const dateStr = o.status === "delivered" ? (o.delivered_at || o.created_at)
+      : o.status === "cancelled" ? (o.cancelled_at || o.created_at)
+      : o.created_at;
+    const d = new Date(dateStr);
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
 
@@ -14597,7 +17213,7 @@ function DriverSettlementView({ profile }) {
     
     const delivered = dOrders.filter((o) => o.status === "delivered");
     const cancelled = dOrders.filter((o) => o.status === "cancelled");
-    const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending");
+    const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned");
 
     const deliveredTotal = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
     const paidAlready = delivered.reduce((s, o) => s + Number(o.paid_amount || 0), 0);
@@ -14824,7 +17440,7 @@ function DriverSettlementView({ profile }) {
               alert("⚠ Тооцоо нээх захиалга алга");
               return;
             }
-            if (!confirm(`Тооцоо нээх үү?\n\nХүргэгч: ${driver.name}\nЗахиалга: ${driver.delivered}ш\nТушаах ёстой: ${driver.owed.toLocaleString()}₮\n\nЗахиалгууд "Тооцоонд орсон" болно. Дараа нь "Тооцоо хаах" даргаж дуусгана.`)) return;
+            if (!confirm(`Тооцоо нээх үү?\n\nХүргэгч: ${driver.name}\nЗахиалга: ${driver.delivered}ш\nТушаах ёстой: ${driver.owed.toLocaleString()}₮\n\nЗахиалгууд "Тооцоонд орсон" болно. Дараа нь "Тооцоо хаах" дарж дуусгана.`)) return;
 
             setOpeningSettlement(true);
             try {
@@ -14882,14 +17498,21 @@ function DriverSettlementView({ profile }) {
                   bank_amount: bank, bank_notes: bankNotes.trim() || null,
                   expense_amount: expense, expense_notes: expenseNotes.trim() || null,
                   total_submitted: totalSubmitted,
+                  // 🔧 Бүх тоонуудыг шинэчлэх (open үед хадгалснаас өөрчлөгдсөн магадгүй)
+                  paid_already: driver.paidAlready,
+                  delivered_total: driver.deliveredTotal,
+                  settlement_amount: driver.owed,
+                  order_count: driver.delivered,
                   settled_at: new Date().toISOString(),
                   status: "closed", // ⭐ Хаах
                 }).eq("id", driver.openSettle.id);
                 if (updErr) throw updErr;
 
                 // Захиалгуудын paid_amount шинэчлэх (delivered)
+                // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
+                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -14916,6 +17539,7 @@ function DriverSettlementView({ profile }) {
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
                     settlement_id: stData.id,
+                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -15097,6 +17721,26 @@ function DriverSettlementView({ profile }) {
                           {o.notes.split("\n").pop()}
                         </div>
                       )}
+                      {/* 🛍 Бараа жагсаалт */}
+                      {(() => {
+                        const orderItems = itemsByOrder[o.id] || [];
+                        if (orderItems.length === 0) return null;
+                        return (
+                          <div className="mt-1 space-y-0.5">
+                            {orderItems.map((it, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5">
+                                <span style={{ background: T.highlight, color: "white", fontFamily: FD, fontWeight: 700 }}
+                                  className="text-[8px] px-1 py-0.5 rounded tabular-nums flex-shrink-0">
+                                  ×{it.quantity}
+                                </span>
+                                <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px] truncate">
+                                  {it.product_name || "—"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div style={{ fontFamily: FD, fontWeight: 700, color: isDelivered ? T.ink : T.muted }}
@@ -15115,6 +17759,7 @@ function DriverSettlementView({ profile }) {
                       order: o,
                       paidAmount: String(paid),
                       status: o.status,
+                      deliveryFee: String(o.delivery_fee || 0),
                     })}
                       className="press-btn p-1.5 rounded-lg flex-shrink-0"
                       style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.border}` }}
@@ -15167,6 +17812,9 @@ function DriverSettlementView({ profile }) {
                     {Number(editOrder.order.total_amount || 0).toLocaleString()}₮
                   </div>
                 </div>
+
+                {/* 📜 Захиалгын түүх — collapsible */}
+                <OrderHistorySection orderId={editOrder.order.id} />
 
                 {/* ⭐ ЗАХИАЛГЫН БАРААНУУД */}
                 <div className="mb-3">
@@ -15245,14 +17893,14 @@ function DriverSettlementView({ profile }) {
                           </button>
                         </div>
                       ))}
-                      {/* Нийт дүн */}
+                      {/* Нийт дүн (бараа + хүргэлт) */}
                       <div className="rounded-lg p-2 flex justify-between items-center"
                         style={{ background: "rgba(245,158,11,0.1)", border: `1px solid ${T.warn}` }}>
                         <span style={{ fontFamily: FS, fontWeight: 600, color: T.warn }} className="text-xs">
-                          Шинэ нийт дүн
+                          Шинэ нийт дүн (бараа + хүргэлт)
                         </span>
                         <span style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base tabular-nums">
-                          {editOrderItems.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0).toLocaleString()}₮
+                          {(editOrderItems.reduce((s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 0) + (Number(editOrder.deliveryFee) || 0)).toLocaleString()}₮
                         </span>
                       </div>
                     </div>
@@ -15286,6 +17934,21 @@ function DriverSettlementView({ profile }) {
                       ✕ Цуцалсан
                     </button>
                   </div>
+                </div>
+
+                {/* 🚚 Хүргэлтийн үнэ */}
+                <div className="mb-3">
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    🚚 Хүргэлтийн үнэ (delivery_fee)
+                  </label>
+                  <input type="number" value={editOrder.deliveryFee ?? ""}
+                    onChange={(e) => setEditOrder({ ...editOrder, deliveryFee: e.target.value })}
+                    placeholder="0"
+                    style={{
+                      background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink,
+                      fontFamily: FD, fontWeight: 600,
+                    }}
+                    className="w-full px-3 py-2.5 rounded-lg text-base tabular-nums" />
                 </div>
 
                 {/* Тушаасан дүн (зөвхөн delivered үед) */}
@@ -15460,13 +18123,17 @@ function DriverSettlementView({ profile }) {
                       }
                       
                       // ─── 6. biz_orders update ───
-                      const newTotal = editOrderItems.reduce(
+                      const itemsTotal = editOrderItems.reduce(
                         (s, it) => s + Number(it.unit_price || 0) * Number(it.quantity || 0), 
                         0
                       );
+                      const deliveryFeeVal = Number(editOrder.deliveryFee) || 0;
+                      // total_amount = бараа дүн + хүргэлтийн үнэ (хүргэлт багтсан)
+                      const newTotal = itemsTotal + deliveryFeeVal;
                       const updates = { 
                         status: newStatus,
                         total_amount: newTotal,
+                        delivery_fee: deliveryFeeVal,
                       };
                       if (newStatus === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
@@ -15851,9 +18518,39 @@ function DriverSettlementView({ profile }) {
           {driverStats.map((d) => (
             <div key={d.id}
               className="glass rounded-2xl p-3"
-              style={{ borderLeft: d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
+              style={{
+                // 🔓 Нээлттэй тооцоо — хязгаар + background өөрчлөх
+                borderLeft: d.isOpenSettlement
+                  ? `4px solid ${T.warn}`
+                  : d.owed > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}`,
+                background: d.isOpenSettlement
+                  ? "rgba(245,158,11,0.08)"           // ⭐ Шар background — нээлттэй
+                  : undefined,
+                border: d.isOpenSettlement
+                  ? `1px solid rgba(245,158,11,0.3)`
+                  : undefined,
+              }}>
+              {/* 🔓 Нээлттэй тооцооны badge */}
+              {d.isOpenSettlement && (
+                <div className="mb-2 px-2 py-1 rounded-md flex items-center gap-1.5"
+                  style={{ background: T.warn, color: "white" }}>
+                  <span className="text-[10px]">⏳</span>
+                  <span style={{ fontFamily: FS, fontWeight: 700 }} className="text-[10px] uppercase tracking-wider">
+                    Тооцоо нээлттэй
+                  </span>
+                  {d.openSettle?.created_at && (
+                    <span style={{ fontFamily: FM, opacity: 0.9 }} className="text-[9px] ml-auto">
+                      {new Date(d.openSettle.created_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mb-2">
-                <div style={{ background: "#0ea5e9", color: "white" }}
+                <div style={{
+                  background: d.isOpenSettlement ? T.warn : "#0ea5e9",
+                  color: "white",
+                }}
                   className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0">
                   {d.name?.charAt(0) || "🚚"}
                 </div>
@@ -15904,12 +18601,23 @@ function DriverSettlementView({ profile }) {
                 </div>
               </div>
 
-              {/* Тооцоо нээх товч */}
+              {/* Тооцоо нээх/үргэлжлүүлэх товч */}
               <button
                 onClick={() => setConfirmingDriverId(d.id)}
-                className="press-btn glow-primary w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-                style={{ fontFamily: FS, fontWeight: 700 }}>
-                📂 Тооцоо нээх
+                className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                style={{
+                  fontFamily: FS, fontWeight: 700,
+                  // 🔓 Нээлттэй бол өөр өнгө + текст
+                  background: d.isOpenSettlement
+                    ? `linear-gradient(135deg, ${T.warn}, #ea580c)`
+                    : undefined,
+                  color: d.isOpenSettlement ? "white" : undefined,
+                  boxShadow: d.isOpenSettlement
+                    ? "0 4px 14px rgba(245,158,11,0.35)"
+                    : undefined,
+                }}
+                {...(!d.isOpenSettlement && { className: "press-btn glow-primary w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" })}>
+                {d.isOpenSettlement ? "✏ Тооцоог үргэлжлүүлэх" : "📂 Тооцоо нээх"}
               </button>
             </div>
           ))}
@@ -15960,19 +18668,483 @@ function DriverSettlementView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SETTLEMENT REPORTS — Тооцооний тайлан (хаагдсан тооцооны түүх)
 // ═══════════════════════════════════════════════════════════════════════════
+function SalesReportView({ profile }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]); // нэгтгэсэн бараа
+  const [period, setPeriod] = useState("month"); // today|yesterday|week|month|custom
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [search, setSearch] = useState("");
+  const [groupBy, setGroupBy] = useState("none"); // none | page | category
+  const [selPages, setSelPages] = useState([]);   // сонгосон Page нэрс ([] = бүгд)
+  const [selCats, setSelCats] = useState([]);     // сонгосон ангилал нэрс ([] = бүгд)
+  const [filterOpen, setFilterOpen] = useState(null); // 'page' | 'category' | null
+
+  // Огнооны хүрээ тооцох
+  const range = useMemo(() => {
+    const now = new Date();
+    const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+    const endOfDay = (d) => { const x = new Date(d); x.setHours(23,59,59,999); return x; };
+    if (period === "today") return { start: startOfDay(now), end: endOfDay(now), label: "Өнөөдөр" };
+    if (period === "yesterday") { const y = new Date(now); y.setDate(y.getDate()-1); return { start: startOfDay(y), end: endOfDay(y), label: "Өчигдөр" }; }
+    if (period === "week") { const w = new Date(now); w.setDate(w.getDate()-7); return { start: startOfDay(w), end: endOfDay(now), label: "Сүүлийн 7 хоног" }; }
+    if (period === "custom" && customStart && customEnd) {
+      return { start: startOfDay(new Date(customStart)), end: endOfDay(new Date(customEnd)), label: `${customStart} – ${customEnd}` };
+    }
+    const m = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: startOfDay(m), end: endOfDay(now), label: "Энэ сар" };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // Хүргэгдсэн захиалгуудыг огнооны хүрээгээр
+        const orders = await fetchAllRows(
+          supabase.from("biz_orders")
+            .select("id, delivered_at, created_at, status, fb_page_id")
+            .eq("status", "delivered")
+            .gte("delivered_at", range.start.toISOString())
+            .lte("delivered_at", range.end.toISOString())
+        );
+        const orderIds = (orders || []).map((o) => o.id);
+        if (orderIds.length === 0) { setRows([]); setLoading(false); return; }
+
+        // Захиалгын fb_page_id map
+        const orderPageMap = {};
+        (orders || []).forEach((o) => { orderPageMap[o.id] = o.fb_page_id || null; });
+
+        // Тэдгээрийн бараанууд + барааны үнэ + категори + FB pages
+        const [items, { data: products }, { data: categories }, { data: pages }] = await Promise.all([
+          fetchAllRows(supabase.from("biz_order_items").select("product_id, product_name, quantity, unit_price, total_amount, order_id")),
+          supabase.from("inv_products").select("id, name, sku, cost_price, sale_price, category_id"),
+          supabase.from("inv_categories").select("id, name"),
+          supabase.from("biz_fb_pages").select("id, name"),
+        ]);
+        const prodMap = {};
+        (products || []).forEach((p) => { prodMap[p.id] = p; });
+        const catMap = {};
+        (categories || []).forEach((c) => { catMap[c.id] = c.name; });
+        const pageMap = {};
+        (pages || []).forEach((p) => { pageMap[p.id] = p.name; });
+        const orderIdSet = new Set(orderIds);
+
+        // Бараагаар нэгтгэх (page бүрээр тусад нь — нэг бараа өөр page-аар зарагдсан бол салгана)
+        const agg = {};
+        (items || []).forEach((it) => {
+          if (!orderIdSet.has(it.order_id)) return; // зөвхөн хүрээний захиалга
+          const prod = prodMap[it.product_id] || {};
+          const pageId = orderPageMap[it.order_id] || null;
+          const pageName = pageId ? (pageMap[pageId] || "—") : "Page-гүй";
+          const catName = prod.category_id ? (catMap[prod.category_id] || "—") : "Ангилалгүй";
+          // Бараа + page хослолоор key (group хийхэд тус тусдаа гарна)
+          const key = `${it.product_id || it.product_name}__${pageId || "none"}`;
+          if (!agg[key]) {
+            agg[key] = {
+              name: it.product_name || prod.name || "—",
+              sku: prod.sku || "",
+              cost_price: Number(prod.cost_price || 0),
+              sale_price: Number(prod.sale_price || it.unit_price || 0),
+              pageName, categoryName: catName,
+              qty: 0,
+              revenue: 0,
+            };
+          }
+          agg[key].qty += Number(it.quantity || 0);
+          agg[key].revenue += Number(it.total_amount || 0);
+        });
+
+        const list = Object.values(agg).map((r) => {
+          const costTotal = r.cost_price * r.qty;
+          const saleTotal = r.sale_price * r.qty;
+          const profit = r.revenue - costTotal;
+          return { ...r, costTotal, saleTotal, profit };
+        }).sort((a, b) => b.revenue - a.revenue);
+
+        setRows(list);
+      } catch (e) { console.error(e); setRows([]); }
+      finally { setLoading(false); }
+    })();
+  }, [range.start.getTime(), range.end.getTime()]);
+
+  // Боломжит Page / ангилал нэрс (rows-аас)
+  const allPageNames = useMemo(() => [...new Set(rows.map((r) => r.pageName))].sort(), [rows]);
+  const allCatNames = useMemo(() => [...new Set(rows.map((r) => r.categoryName))].sort(), [rows]);
+
+  const filtered = rows.filter((r) => {
+    if (search && !(r.name.toLowerCase().includes(search.toLowerCase()) || r.sku.toLowerCase().includes(search.toLowerCase()))) return false;
+    if (selPages.length > 0 && !selPages.includes(r.pageName)) return false;
+    if (selCats.length > 0 && !selCats.includes(r.categoryName)) return false;
+    return true;
+  });
+
+  // Бараагаар нэгтгэх туслах (Page хослолыг нэгтгэнэ)
+  const mergeByProduct = (list) => {
+    const m = {};
+    list.forEach((r) => {
+      const key = `${r.name}__${r.sku}`;
+      if (!m[key]) {
+        m[key] = { ...r };
+      } else {
+        m[key].qty += r.qty;
+        m[key].revenue += r.revenue;
+        m[key].costTotal += r.costTotal;
+        m[key].saleTotal += r.saleTotal;
+        m[key].profit += r.profit;
+      }
+    });
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue);
+  };
+
+  const totals = useMemo(() => ({
+    qty: filtered.reduce((s, r) => s + r.qty, 0),
+    cost: filtered.reduce((s, r) => s + r.costTotal, 0),
+    revenue: filtered.reduce((s, r) => s + r.revenue, 0),
+    profit: filtered.reduce((s, r) => s + r.profit, 0),
+  }), [filtered]);
+
+  // Бүлэглэсэн бүтэц (groupBy: none|page|category)
+  const grouped = useMemo(() => {
+    // "Бараагаар" — бараагаар нэгтгэж нэг мөр болгоно (давхардахгүй)
+    if (groupBy === "none") return [{ key: null, label: null, rows: mergeByProduct(filtered) }];
+    const map = {};
+    filtered.forEach((r) => {
+      const label = groupBy === "page" ? r.pageName : r.categoryName;
+      if (!map[label]) map[label] = [];
+      map[label].push(r);
+    });
+    return Object.entries(map)
+      .map(([label, rs]) => {
+        // Page-ээр бол хослол хэвээр, Ангиллаар бол бараагаар нэгтгэнэ
+        const displayRows = groupBy === "category" ? mergeByProduct(rs) : rs;
+        return {
+          key: label, label,
+          rows: displayRows,
+          subtotal: {
+            qty: rs.reduce((s, r) => s + r.qty, 0),
+            cost: rs.reduce((s, r) => s + r.costTotal, 0),
+            revenue: rs.reduce((s, r) => s + r.revenue, 0),
+            profit: rs.reduce((s, r) => s + r.profit, 0),
+          },
+        };
+      })
+      .sort((a, b) => b.subtotal.revenue - a.subtotal.revenue);
+  }, [filtered, groupBy]);
+
+  const exportExcel = () => {
+    if (filtered.length === 0) { alert("Татах өгөгдөл алга"); return; }
+    const src = groupBy === "page" ? filtered : mergeByProduct(filtered);
+    const data = src.map((r) => ({
+      "Бараа": r.name,
+      "SKU": r.sku || "",
+      "FB Page": r.pageName,
+      "Ангилал": r.categoryName,
+      "Зарагдсан тоо": r.qty,
+      "Авсан үнэ (нэгж)": r.cost_price,
+      "Зарах үнэ (нэгж)": r.sale_price,
+      "Авсан нийт": r.costTotal,
+      "Зарсан нийт": r.revenue,
+      "Ашиг": r.profit,
+    }));
+    // Нийлбэр мөр
+    data.push({
+      "Бараа": "НИЙТ",
+      "SKU": "",
+      "FB Page": "",
+      "Ангилал": "",
+      "Зарагдсан тоо": totals.qty,
+      "Авсан үнэ (нэгж)": "",
+      "Зарах үнэ (нэгж)": "",
+      "Авсан нийт": totals.cost,
+      "Зарсан нийт": totals.revenue,
+      "Ашиг": totals.profit,
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Борлуулалт");
+    const fname = `Борлуулалт_${range.label.replace(/[ –]/g, "_")}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  };
+
+  const periods = [
+    { id: "today", label: "Өнөөдөр" },
+    { id: "yesterday", label: "Өчигдөр" },
+    { id: "week", label: "7 хоног" },
+    { id: "month", label: "Энэ сар" },
+    { id: "custom", label: "Хугацаа сонгох" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Огноо сонгох */}
+      <div className="glass rounded-2xl p-3 relative" style={{ zIndex: 30 }}>
+        <div className="flex flex-wrap gap-2 items-center">
+          {periods.map((p) => (
+            <button key={p.id} onClick={() => setPeriod(p.id)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{
+                background: period === p.id ? T.highlight : T.surfaceAlt,
+                color: period === p.id ? "white" : T.ink,
+                fontFamily: FS, border: `1px solid ${period === p.id ? T.highlight : T.border}`,
+              }}>
+              {p.label}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex gap-2 items-center">
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="px-2 py-1 rounded-lg text-xs" />
+              <span style={{ color: T.muted }}>–</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="px-2 py-1 rounded-lg text-xs" />
+            </div>
+          )}
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Бараа хайх..."
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="px-3 py-1.5 rounded-lg text-xs ml-auto w-40" />
+
+          {/* Page checklist */}
+          <div className="relative">
+            <button onClick={() => setFilterOpen(filterOpen === "page" ? null : "page")}
+              className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: selPages.length > 0 ? T.highlight : T.surfaceAlt, color: selPages.length > 0 ? "white" : T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+              🔗 Page {selPages.length > 0 ? `(${selPages.length})` : ""} ▾
+            </button>
+            {filterOpen === "page" && (
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 100 }}
+                className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
+                <div className="flex justify-between items-center mb-1 px-1">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">FB Page сонгох</span>
+                  {selPages.length > 0 && (
+                    <button onClick={() => setSelPages([])} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">Цэвэрлэх</button>
+                  )}
+                </div>
+                {allPageNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-black/5 cursor-pointer">
+                    <input type="checkbox" checked={selPages.includes(name)}
+                      onChange={() => setSelPages((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name])} />
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-xs">{name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Ангилал checklist */}
+          <div className="relative">
+            <button onClick={() => setFilterOpen(filterOpen === "category" ? null : "category")}
+              className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: selCats.length > 0 ? T.highlight : T.surfaceAlt, color: selCats.length > 0 ? "white" : T.ink, fontFamily: FS, border: `1px solid ${T.border}` }}>
+              🏷 Ангилал {selCats.length > 0 ? `(${selCats.length})` : ""} ▾
+            </button>
+            {filterOpen === "category" && (
+              <div style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, zIndex: 100 }}
+                className="absolute right-0 mt-1 rounded-xl p-2 shadow-lg max-h-64 overflow-y-auto w-52">
+                <div className="flex justify-between items-center mb-1 px-1">
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ангилал сонгох</span>
+                  {selCats.length > 0 && (
+                    <button onClick={() => setSelCats([])} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">Цэвэрлэх</button>
+                  )}
+                </div>
+                {allCatNames.map((name) => (
+                  <label key={name} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-black/5 cursor-pointer">
+                    <input type="checkbox" checked={selCats.includes(name)}
+                      onChange={() => setSelCats((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name])} />
+                    <span style={{ fontFamily: FS, color: T.ink }} className="text-xs">{name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-1 items-center">
+            {[
+              { id: "none", label: "Бараагаар" },
+              { id: "page", label: "Page-ээр" },
+              { id: "category", label: "Ангиллаар" },
+            ].map((g) => (
+              <button key={g.id} onClick={() => setGroupBy(g.id)}
+                className="press-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                style={{
+                  background: groupBy === g.id ? T.highlight : T.surfaceAlt,
+                  color: groupBy === g.id ? "white" : T.ink,
+                  fontFamily: FS, border: `1px solid ${groupBy === g.id ? T.highlight : T.border}`,
+                }}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={exportExcel}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+            style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
+            📊 Excel татах
+          </button>
+        </div>
+      </div>
+
+      {/* Нийлбэр картууд */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">📦 Зарагдсан тоо</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-2xl tabular-nums">{totals.qty}</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">🛒 Авсан үнэ (нийт)</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">{totals.cost.toLocaleString()}₮</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">💰 Зарсан (борлуулалт)</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xl tabular-nums">{totals.revenue.toLocaleString()}₮</div>
+        </div>
+        <div className="glass rounded-2xl p-3">
+          <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">📈 Ашиг</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: totals.profit >= 0 ? T.ok : T.err }} className="text-xl tabular-nums">{totals.profit.toLocaleString()}₮</div>
+        </div>
+      </div>
+
+      {/* Барааны хүснэгт */}
+      <div className="glass rounded-2xl p-3 overflow-x-auto">
+        {loading ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-8">Ачааллаж байна...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-8">
+            {range.label} хугацаанд хүргэгдсэн бараа алга
+          </div>
+        ) : (
+          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "left" }} className="text-[10px] uppercase">Бараа</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Тоо</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Авсан үнэ</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Зарах үнэ</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Авсан нийт</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Зарсан нийт</th>
+                <th style={{ color: T.muted, fontFamily: FM, fontWeight: 500, padding: "8px", textAlign: "right" }} className="text-[10px] uppercase">Ашиг</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.map((g) => (
+                <React.Fragment key={g.key || "all"}>
+                  {g.label && (
+                    <tr style={{ background: T.surfaceAlt }}>
+                      <td colSpan={7} style={{ padding: "8px", fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-xs">
+                        {groupBy === "page" ? "🔗 " : "🏷 "}{g.label}
+                        <span style={{ color: T.muted, fontWeight: 400 }} className="text-[10px] ml-2">
+                          ({g.rows.length} бараа · {g.subtotal.revenue.toLocaleString()}₮ · Ашиг {g.subtotal.profit.toLocaleString()}₮)
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  {g.rows.map((r, i) => (
+                    <tr key={(g.key || "") + i} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
+                      <td style={{ padding: "8px", fontFamily: FS, color: T.ink }}>
+                        {g.label && <span style={{ color: T.muted }}>· </span>}
+                        {r.name}
+                        {r.sku && <span style={{ color: T.muted }} className="text-[10px] ml-1">({r.sku})</span>}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.ink }} className="tabular-nums">{r.qty}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.cost_price.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.muted }} className="tabular-nums">{r.sale_price.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, color: T.warn }} className="tabular-nums">{r.costTotal.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: T.ink }} className="tabular-nums">{r.revenue.toLocaleString()}₮</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontFamily: FM, fontWeight: 600, color: r.profit >= 0 ? T.ok : T.err }} className="tabular-nums">{r.profit.toLocaleString()}₮</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SettlementReportsView({ profile }) {
   const [reports, setReports] = useState([]);
   const [drivers, setDrivers] = useState({});
   const [profiles_, setProfilesData] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
+  // ✏️ Admin засвар (хаагдсан тооцоо засах)
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({ cash: "", bank: "", expense: "", cashNotes: "", bankNotes: "", expenseNotes: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
+  // ✏️ Захиалга засах
+  const [editOrderId, setEditOrderId] = useState(null);
+  const [orderForm, setOrderForm] = useState({ total: "", paid: "", status: "" });
+  const [savingOrder, setSavingOrder] = useState(false);
+  // ✏️ Барааны тоо засах
+  const [editItemId, setEditItemId] = useState(null);
+  const [itemQty, setItemQty] = useState("");
+  const [savingItem, setSavingItem] = useState(false);
+
+  // 📦 Тооцооны дэлгэрэнгүй захиалгууд (toggle харагдах)
+  const [showOrdersList, setShowOrdersList] = useState(false);
+  const [settlementOrders, setSettlementOrders] = useState([]);
+  const [settlementItems, setSettlementItems] = useState({}); // 🆕 order_id => items[]
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  // activeReport өөрчлөгдөхөд харагдалт хааж зурна
+  useEffect(() => {
+    setShowOrdersList(false);
+    setSettlementOrders([]);
+    setSettlementItems({}); // 🆕 reset
+  }, [activeReport?.id]);
+
+  // showOrdersList-ийг идэвхжүүлэхэд захиалгуудыг татах
+  useEffect(() => {
+    if (!showOrdersList || !activeReport) return;
+    if (settlementOrders.length > 0) return; // Аль хэдийн татсан
+    (async () => {
+      setLoadingOrders(true);
+      try {
+        const { data, error } = await supabase.from("biz_orders")
+          .select("id, order_number, customer_name, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivery_fee, status, delivered_at, cancelled_at, created_at, driver_id")
+          .eq("settlement_id", activeReport.id)
+          .order("delivered_at", { ascending: false, nullsFirst: false });
+        if (error) throw error;
+        setSettlementOrders(data || []);
+
+        // 🆕 Бүх захиалгын item-уудыг chunked татах
+        if (data && data.length > 0) {
+          const orderIds = data.map(o => o.id);
+          const items = await fetchInChunks("biz_order_items", orderIds, {
+            select: "id, order_id, product_id, product_name, quantity, unit_price, total_amount",
+            filterColumn: "order_id",
+          });
+          // Group by order_id
+          const grouped = {};
+          for (const it of items) {
+            if (!grouped[it.order_id]) grouped[it.order_id] = [];
+            grouped[it.order_id].push(it);
+          }
+          setSettlementItems(grouped);
+        }
+      } catch (e) {
+        logErr("[settlementOrders fetch]", e);
+        alert("Захиалгын мэдээлэл татахад алдаа гарлаа: " + e.message);
+      } finally {
+        setLoadingOrders(false);
+      }
+    })();
+  }, [showOrdersList, activeReport]);
 
   // Шүүлтүүр
   const [filterYear, setFilterYear] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
   const [filterDriver, setFilterDriver] = useState("all");
+  // 📅 Гар огнооны хязгаар (date range)
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
+
+  const [prepaidBySettlement, setPrepaidBySettlement] = useState({}); // { settlement_id: total_prepaid }
 
   const loadAll = async () => {
     setLoading(true);
@@ -15990,11 +19162,199 @@ function SettlementReportsView({ profile }) {
       });
       setDrivers(dMap);
       setProfilesData(pMap);
+
+      // 🆕 Settlement тус бүрийн нийт урьдчилгаа (prepaid) — захиалгуудаас тооцоолно
+      //    (biz_settlements-д prepaid багана байхгүй тул biz_orders-аас нийлбэрлэнэ)
+      const settlementIds = (rData || []).map((r) => r.id);
+      if (settlementIds.length > 0) {
+        const ordRows = await fetchInChunks("biz_orders", settlementIds, {
+          select: "settlement_id, prepaid_amount, status",
+          filterColumn: "settlement_id",
+        });
+        const ppMap = {};
+        (ordRows || []).forEach((o) => {
+          if (o.status !== "delivered") return;
+          if (!o.settlement_id) return;
+          ppMap[o.settlement_id] = (ppMap[o.settlement_id] || 0) + Number(o.prepaid_amount || 0);
+        });
+        setPrepaidBySettlement(ppMap);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // ✏️ Засвар эхлүүлэх — одоогийн утгаар form дүүргэх
+  const startEdit = (r) => {
+    setEditForm({
+      cash: String(r.cash_amount || 0),
+      bank: String(r.bank_amount || 0),
+      expense: String(r.expense_amount || 0),
+      cashNotes: r.cash_notes || "",
+      bankNotes: r.bank_notes || "",
+      expenseNotes: r.expense_notes || "",
+    });
+    setEditMode(true);
+  };
+
+  // 💾 Засвар хадгалах — biz_settlements шинэчлэх
+  const saveEdit = async () => {
+    if (!activeReport) return;
+    const cash = Number(editForm.cash || 0);
+    const bank = Number(editForm.bank || 0);
+    const expense = Number(editForm.expense || 0);
+    const totalSubmitted = cash + bank + expense;
+    // ⚠ БАТАЛГААЖУУЛАЛТ: Бэлэн + Данс + Борлуулалт = Тушаах ёстой дүн байх ёстой
+    const owed = Number(activeReport.settlement_amount || 0);
+    const diff = owed - totalSubmitted;
+    if (Math.abs(diff) >= 0.01) {
+      alert(
+        `⚠ Нийлбэр тушаах дүнтэй тохирохгүй байна!\n\n` +
+        `Тушаах ёстой: ${owed.toLocaleString()}₮\n` +
+        `💵 Бэлэн: ${cash.toLocaleString()}₮\n` +
+        `🏦 Данс: ${bank.toLocaleString()}₮\n` +
+        `📤 Борлуулалт: ${expense.toLocaleString()}₮\n` +
+        `Нийлбэр: ${totalSubmitted.toLocaleString()}₮\n\n` +
+        `Зөрүү: ${diff > 0 ? "+" : ""}${diff.toLocaleString()}₮\n\n` +
+        `Бэлэн + Данс + Борлуулалт = Тушаах ёстой дүн байх ёстой.`
+      );
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const { data, error } = await supabase
+        .from("biz_settlements")
+        .update({
+          cash_amount: cash,
+          bank_amount: bank,
+          expense_amount: expense,
+          total_submitted: totalSubmitted,
+          cash_notes: editForm.cashNotes || null,
+          bank_notes: editForm.bankNotes || null,
+          expense_notes: editForm.expenseNotes || null,
+        })
+        .eq("id", activeReport.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setActiveReport(data);
+      setReports((prev) => prev.map((x) => (x.id === data.id ? data : x)));
+      setEditMode(false);
+      alert("✅ Тооцоо засагдлаа");
+    } catch (e) {
+      alert("❌ Засвар хадгалахад алдаа гарлаа\n" + e.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // ✏️ Захиалга засах эхлүүлэх
+  const startEditOrder = (o) => {
+    setOrderForm({ total: String(o.total_amount || 0), paid: String(o.paid_amount || 0), status: o.status || "delivered" });
+    setEditOrderId(o.id);
+  };
+
+  // 💾 Захиалга засвар хадгалах
+  const saveOrderEdit = async (orderId) => {
+    setSavingOrder(true);
+    try {
+      const { data, error } = await supabase
+        .from("biz_orders")
+        .update({
+          total_amount: Number(orderForm.total || 0),
+          paid_amount: Number(orderForm.paid || 0),
+          status: orderForm.status,
+        })
+        .eq("id", orderId)
+        .select()
+        .single();
+      if (error) throw error;
+      // Локал жагсаалт шинэчлэх
+      setSettlementOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...data } : o)));
+      setEditOrderId(null);
+      alert("✅ Захиалга засагдлаа");
+    } catch (e) {
+      alert("❌ Захиалга засахад алдаа гарлаа\n" + e.message);
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
+  // 💾 Барааны тоо засвар хадгалах + агуулахын нөөц залруулах
+  const saveItemQty = async (item, order) => {
+    const orderId = order.id;
+    const newQty = Number(itemQty || 0);
+    if (newQty <= 0) { alert("⚠ Тоо 0-ээс их байх ёстой"); return; }
+    const oldQty = Number(item.quantity || 0);
+    const diff = newQty - oldQty; // + бол нэмэгдсэн (агуулахаас нэмж хасна), - бол хасагдсан (буцаана)
+    if (diff === 0) { setEditItemId(null); return; }
+
+    setSavingItem(true);
+    try {
+      // 1. biz_order_items тоо + дүн шинэчлэх
+      const newTotal = newQty * Number(item.unit_price || 0);
+      const { data, error } = await supabase
+        .from("biz_order_items")
+        .update({ quantity: newQty, total_amount: newTotal })
+        .eq("id", item.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      // 2. Захиалга delivered БА product_id, driver_id байгаа бол → агуулахын нөөц залруулах
+      let stockMsg = "";
+      if (order.status === "delivered" && item.product_id && order.driver_id) {
+        // Driver-ийн агуулах олох
+        const { data: wh } = await supabase
+          .from("inv_warehouses")
+          .select("id")
+          .eq("driver_id", order.driver_id)
+          .eq("type", "driver")
+          .maybeSingle();
+        if (wh?.id) {
+          // diff > 0: нэмж хүргэсэн → агуулахаас нэмж хасах (out)
+          // diff < 0: бага хүргэсэн → агуулахад буцааж нэмэх (in)
+          const mvType = diff > 0 ? "out" : "in";
+          const mvQty = Math.abs(diff);
+          const { error: mvErr } = await supabase.from("inv_movements").insert({
+            product_id: item.product_id,
+            warehouse_id: wh.id,
+            movement_type: mvType,
+            quantity: mvQty,
+            reason: "adjustment",
+            created_by: profile.id,
+            notes: `Тооцоо засвар #${orderId.slice(0, 8)}: ${item.product_name || ""} ${oldQty}→${newQty}ш`,
+          });
+          if (mvErr) {
+            // Нөөц хүрэлцэхгүй г.м → тоог буцаах
+            await supabase.from("biz_order_items")
+              .update({ quantity: oldQty, total_amount: oldQty * Number(item.unit_price || 0) })
+              .eq("id", item.id);
+            throw new Error(`Агуулахын нөөц залруулж чадсангүй:\n${mvErr.message}\n(Барааны тоо буцаагдлаа)`);
+          }
+          stockMsg = diff > 0
+            ? `\n📦 Агуулахаас ${mvQty}ш нэмж хасагдлаа`
+            : `\n📦 Агуулахад ${mvQty}ш буцаагдлаа`;
+        } else {
+          stockMsg = "\n⚠ Driver-ийн агуулах олдсонгүй — нөөц залруулаагүй";
+        }
+      }
+
+      // Локал items шинэчлэх
+      setSettlementItems((prev) => {
+        const copy = { ...prev };
+        copy[orderId] = (copy[orderId] || []).map((it) => (it.id === item.id ? { ...it, ...data } : it));
+        return copy;
+      });
+      setEditItemId(null);
+      alert(`✅ Барааны тоо засагдлаа (${oldQty}→${newQty}ш)${stockMsg}`);
+    } catch (e) {
+      alert("❌ " + e.message);
+    } finally {
+      setSavingItem(false);
+    }
+  };
 
   // Шүүсэн жагсаалт
   const filteredReports = reports.filter((r) => {
@@ -16002,14 +19362,26 @@ function SettlementReportsView({ profile }) {
     if (filterYear !== "all" && d.getFullYear() !== Number(filterYear)) return false;
     if (filterMonth !== "all" && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterDriver !== "all" && r.driver_id !== filterDriver) return false;
+    // 📅 Date range filter
+    if (filterStartDate) {
+      const [y, m, day] = filterStartDate.split("-").map(Number);
+      const startD = new Date(y, m - 1, day, 0, 0, 0);
+      if (d < startD) return false;
+    }
+    if (filterEndDate) {
+      const [y, m, day] = filterEndDate.split("-").map(Number);
+      const endD = new Date(y, m - 1, day, 23, 59, 59);
+      if (d > endD) return false;
+    }
     return true;
   });
 
   // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
-  useEffect(() => { setPage(1); }, [filterYear, filterMonth, filterDriver]);
+  useEffect(() => { setPage(1); }, [filterYear, filterMonth, filterDriver, filterStartDate, filterEndDate]);
 
   // Тооцоолол (filter-ийн хүрээнд)
   const totalSubmitted = filteredReports.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
+  const totalPrepaid = filteredReports.reduce((s, r) => s + Number(prepaidBySettlement[r.id] || 0), 0);
   const totalExpense = filteredReports.reduce((s, r) => s + Number(r.expense_amount || 0), 0);
   const totalCash = filteredReports.reduce((s, r) => s + Number(r.cash_amount || 0), 0);
   const totalBank = filteredReports.reduce((s, r) => s + Number(r.bank_amount || 0), 0);
@@ -16081,9 +19453,98 @@ function SettlementReportsView({ profile }) {
 
         {/* Дэлгэрэнгүй */}
         <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">
-            💰 Тушаалтын задаргаа
+          <div className="flex items-center justify-between mb-3">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+              💰 Тушаалтын задаргаа
+            </div>
+            {!editMode && (
+              <button onClick={() => startEdit(r)}
+                style={{ background: T.accentSoft || T.surfaceAlt, color: T.accent || T.ink, fontFamily: FS, fontWeight: 600 }}
+                className="press-btn text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1">
+                ✏️ Засах
+              </button>
+            )}
           </div>
+
+          {editMode ? (
+            /* ✏️ Засвар хийх form */
+            <div className="space-y-2">
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">💵 Бэлэн (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.cash}
+                  onChange={(e) => setEditForm((p) => ({ ...p, cash: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.cashNotes} placeholder="Бэлэн тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, cashNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">🏦 Данс (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.bank}
+                  onChange={(e) => setEditForm((p) => ({ ...p, bank: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.bankNotes} placeholder="Данс тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, bankNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">📤 Борлуулалт (₮)</label>
+                <input type="number" inputMode="numeric" value={editForm.expense}
+                  onChange={(e) => setEditForm((p) => ({ ...p, expense: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none mt-0.5" />
+                <input type="text" value={editForm.expenseNotes} placeholder="Борлуулалт тэмдэглэл..."
+                  onChange={(e) => setEditForm((p) => ({ ...p, expenseNotes: e.target.value }))}
+                  style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                  className="w-full px-3 py-1.5 rounded-lg text-xs outline-none mt-1" />
+              </div>
+              <div className="py-1 px-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                {(() => {
+                  const c = Number(editForm.cash || 0), b = Number(editForm.bank || 0), e = Number(editForm.expense || 0);
+                  const sum = c + b + e;
+                  const owed = Number(activeReport.settlement_amount || 0);
+                  const diff = owed - sum;
+                  const ok = Math.abs(diff) < 0.01;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">Тушаах ёстой</span>
+                        <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums">{owed.toLocaleString()}₮</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">Нийлбэр (бэлэн+данс+борл.)</span>
+                        <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums">{sum.toLocaleString()}₮</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5 pt-0.5" style={{ borderTop: `1px solid ${T.border}` }}>
+                        <span style={{ color: ok ? T.ok : T.err, fontFamily: FS, fontWeight: 600 }} className="text-[10px]">
+                          {ok ? "✓ Тохирч байна" : "✗ Зөрүү"}
+                        </span>
+                        <span style={{ color: ok ? T.ok : T.err, fontFamily: FD, fontWeight: 700 }} className="text-[11px] tabular-nums">
+                          {ok ? "0₮" : `${diff > 0 ? "+" : ""}${diff.toLocaleString()}₮`}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditMode(false)} disabled={savingEdit}
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                  className="press-btn flex-1 py-2 rounded-lg text-sm">
+                  Болих
+                </button>
+                <button onClick={saveEdit} disabled={savingEdit}
+                  style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600, opacity: savingEdit ? 0.6 : 1 }}
+                  className="press-btn flex-1 py-2 rounded-lg text-sm flex items-center justify-center gap-1">
+                  {savingEdit ? <Loader2 className="spin" size={14} /> : "💾"} Хадгалах
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-2">
             <div className="flex items-start justify-between p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
               <div className="flex-1">
@@ -16133,6 +19594,7 @@ function SettlementReportsView({ profile }) {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Бусад мэдээлэл */}
@@ -16147,6 +19609,19 @@ function SettlementReportsView({ profile }) {
             </span>
           </div>
           <div className="flex items-center justify-between py-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">🚚 Хүргэлтийн төлбөр</span>
+            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
+              {settlementOrders.length > 0
+                ? `${settlementOrders.reduce((s, o) => s + Number(o.delivery_fee || 0), 0).toLocaleString()}₮`
+                : "—"}
+            </span>
+          </div>
+          {settlementOrders.length === 0 && (
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-right -mt-1">
+              (захиалгууд дэлгэхэд тооцогдоно)
+            </div>
+          )}
+          <div className="flex items-center justify-between py-1">
             <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Урьдчилж төлөгдсөн</span>
             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ok }} className="text-sm tabular-nums">
               {Number(r.paid_already).toLocaleString()}₮
@@ -16154,9 +19629,12 @@ function SettlementReportsView({ profile }) {
           </div>
           <div className="flex items-center justify-between py-1">
             <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Захиалгын тоо</span>
-            <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-sm tabular-nums">
-              {r.order_count}
-            </span>
+            <button onClick={() => setShowOrdersList(!showOrdersList)}
+              className="press-btn flex items-center gap-1.5 px-2 py-0.5 rounded-md"
+              style={{ background: showOrdersList ? T.highlight : T.surfaceAlt, color: showOrdersList ? "white" : T.ink, fontFamily: FD, fontWeight: 600 }}>
+              <span className="text-sm tabular-nums">{r.order_count}</span>
+              <span className="text-[10px]">{showOrdersList ? "▲" : "▼"}</span>
+            </button>
           </div>
           {settler && (
             <div className="flex items-center justify-between py-1">
@@ -16167,6 +19645,273 @@ function SettlementReportsView({ profile }) {
             </div>
           )}
         </div>
+
+        {/* 📦 Захиалгуудын дэлгэрэнгүй жагсаалт (toggle) */}
+        {showOrdersList && (
+          <div className="glass rounded-2xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+                📦 Захиалгууд ({settlementOrders.length})
+              </div>
+              <button onClick={() => setShowOrdersList(false)}
+                style={{ color: T.muted }} className="press-btn">
+                <X size={16} />
+              </button>
+            </div>
+
+            {loadingOrders ? (
+              <div className="py-8 text-center">
+                <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-xs mt-2">Татагдаж байна...</div>
+              </div>
+            ) : settlementOrders.length === 0 ? (
+              <div className="py-6 text-center">
+                <div className="text-3xl mb-2">📭</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                  Захиалга олдсонгүй
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Sub-summary */}
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  <div style={{ background: T.okSoft }} className="rounded-lg p-2">
+                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">✓ Хүргэсэн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => o.status === "delivered").length}
+                    </div>
+                  </div>
+                  <div style={{ background: T.errSoft }} className="rounded-lg p-2">
+                    <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">✕ Цуцалсан</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => o.status === "cancelled").length}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-2">
+                    <div style={{ color: "#3b82f6", fontFamily: FM }} className="text-[9px] uppercase">💰 Урьдч.</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-base tabular-nums">
+                      {settlementOrders.filter(o => Number(o.prepaid_amount || 0) > 0).length}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(16,185,129,0.06)" }} className="rounded-lg p-2">
+                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">💸 Урьдч.дүн</div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xs tabular-nums">
+                      {settlementOrders.reduce((s, o) => s + Number(o.prepaid_amount || 0), 0).toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+
+                {/* Order list */}
+                <div className="space-y-1.5" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+                  {settlementOrders.map((o, idx) => {
+                    const isDelivered = o.status === "delivered";
+                    const isCancelled = o.status === "cancelled";
+                    const prepaidAmt = Number(o.prepaid_amount || 0);
+                    const paidAmt = Number(o.paid_amount || 0);
+                    const totalAmt = Number(o.total_amount || 0);
+                    const isPrepaid = prepaidAmt > 0;
+                    const orderItems = settlementItems[o.id] || [];
+                    return (
+                      <div key={o.id}
+                        className="rounded-lg p-2.5"
+                        style={{
+                          background: isPrepaid ? "rgba(59,130,246,0.06)" : T.surfaceAlt,
+                          borderLeft: `3px solid ${
+                            isPrepaid ? "#3b82f6" :
+                            isDelivered ? T.ok :
+                            isCancelled ? T.err : T.muted
+                          }`,
+                        }}>
+                        {/* Header row */}
+                        <div className="flex items-center gap-3">
+                          <div style={{
+                            background: isPrepaid ? "rgba(59,130,246,0.2)" :
+                                        isDelivered ? T.okSoft :
+                                        isCancelled ? T.errSoft : T.surfaceAlt,
+                            color: isPrepaid ? "#3b82f6" :
+                                   isDelivered ? T.ok :
+                                   isCancelled ? T.err : T.muted,
+                            fontFamily: FD, fontWeight: 700,
+                          }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }} className="text-xs tabular-nums">
+                                #{o.order_number || o.id.slice(0, 8)}
+                              </span>
+                              <span style={{
+                                background: isDelivered ? T.ok : isCancelled ? T.err : T.muted,
+                                color: "white", fontFamily: FS, fontWeight: 600,
+                              }} className="text-[9px] px-1.5 py-0.5 rounded-full">
+                                {isDelivered ? "✓ Хүргэсэн" : isCancelled ? "✕ Цуцалсан" : o.status}
+                              </span>
+                              {isPrepaid && (
+                                <span style={{
+                                  background: "#3b82f6", color: "white",
+                                  fontFamily: FS, fontWeight: 700,
+                                }} className="text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                  💰 Урьдчилж {prepaidAmt.toLocaleString()}₮
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex items-center gap-1.5 flex-wrap mt-0.5">
+                              {o.customer_name && <span>👤 {o.customer_name}</span>}
+                              {o.customer_phone && (
+                                <a href={`tel:${o.customer_phone}`}
+                                  style={{ color: T.highlight, fontWeight: 600 }}>
+                                  📞 {o.customer_phone}
+                                </a>
+                              )}
+                            </div>
+                            {o.delivery_address && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                                📍 {o.delivery_address}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div style={{
+                              fontFamily: FD, fontWeight: 700,
+                              color: isDelivered ? T.ok : isCancelled ? T.muted : T.ink,
+                            }} className="text-sm tabular-nums">
+                              {totalAmt.toLocaleString()}₮
+                            </div>
+                            {/* 💵 Төлсөн дүн */}
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                              💵 Төлсөн: {paidAmt.toLocaleString()}₮
+                            </div>
+                            {Number(o.delivery_fee || 0) > 0 && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums">
+                                🚚 Хүргэлт: {Number(o.delivery_fee).toLocaleString()}₮
+                              </div>
+                            )}
+                            {o.delivered_at && (
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                                {new Date(o.delivered_at).toLocaleDateString("mn-MN", { month: "short", day: "numeric" })}
+                              </div>
+                            )}
+                            {editOrderId !== o.id && (
+                              <button onClick={() => startEditOrder(o)}
+                                style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                                className="press-btn text-[9px] mt-1">
+                                ✏️ Засах
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* ✏️ Захиалга засах form */}
+                        {editOrderId === o.id && (
+                          <div className="mt-2 pt-2 ml-10 space-y-2" style={{ borderTop: `1px dashed ${T.border}` }}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт дүн (₮)</label>
+                                <input type="number" inputMode="numeric" value={orderForm.total}
+                                  onChange={(e) => setOrderForm((p) => ({ ...p, total: e.target.value }))}
+                                  style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                                  className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5" />
+                              </div>
+                              <div>
+                                <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Төлсөн (₮)</label>
+                                <input type="number" inputMode="numeric" value={orderForm.paid}
+                                  onChange={(e) => setOrderForm((p) => ({ ...p, paid: e.target.value }))}
+                                  style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
+                                  className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5" />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Төлөв</label>
+                              <select value={orderForm.status}
+                                onChange={(e) => setOrderForm((p) => ({ ...p, status: e.target.value }))}
+                                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                                className="w-full px-2 py-1.5 rounded-lg text-xs outline-none mt-0.5">
+                                <option value="delivered">✓ Хүргэсэн</option>
+                                <option value="cancelled">✕ Цуцалсан</option>
+                                <option value="assigned">Хуваарилагдсан</option>
+                                <option value="new">Шинэ</option>
+                              </select>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => setEditOrderId(null)} disabled={savingOrder}
+                                style={{ background: T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                                className="press-btn flex-1 py-1.5 rounded-lg text-xs">
+                                Болих
+                              </button>
+                              <button onClick={() => saveOrderEdit(o.id)} disabled={savingOrder}
+                                style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600, opacity: savingOrder ? 0.6 : 1 }}
+                                className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1">
+                                {savingOrder ? <Loader2 className="spin" size={12} /> : "💾"} Хадгалах
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 🛍 Бараа жагсаалт */}
+                        {orderItems.length > 0 && (
+                          <div className="mt-2 pt-2 ml-10"
+                            style={{ borderTop: `1px dashed ${T.border}` }}>
+                            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1">
+                              🛍 Бараа ({orderItems.length})
+                            </div>
+                            <div className="space-y-1">
+                              {orderItems.map((it) => (
+                                editItemId === it.id ? (
+                                  <div key={it.id} className="flex items-center gap-1.5 text-[10px]">
+                                    <input type="number" inputMode="numeric" value={itemQty} autoFocus
+                                      onChange={(e) => setItemQty(e.target.value)}
+                                      style={{ background: T.surface, border: `1px solid ${T.highlight}`, color: T.ink, fontFamily: FD }}
+                                      className="w-12 px-1.5 py-0.5 rounded text-[10px] outline-none text-center" />
+                                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="flex-1 truncate">
+                                      {it.product_name || "—"}
+                                    </span>
+                                    <button onClick={() => saveItemQty(it, o)} disabled={savingItem}
+                                      style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
+                                      className="press-btn px-2 py-0.5 rounded text-[9px]">
+                                      {savingItem ? "..." : "💾"}
+                                    </button>
+                                    <button onClick={() => setEditItemId(null)} disabled={savingItem}
+                                      style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}
+                                      className="press-btn px-2 py-0.5 rounded text-[9px]">
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
+                                <div key={it.id} className="flex items-center gap-2 text-[10px]">
+                                  <button
+                                    onClick={() => { setEditItemId(it.id); setItemQty(String(it.quantity || 0)); }}
+                                    style={{
+                                      background: T.highlight, color: "white",
+                                      fontFamily: FD, fontWeight: 700,
+                                    }} className="press-btn px-1.5 py-0.5 rounded text-[9px] tabular-nums flex-shrink-0"
+                                    title="Тоо засах">
+                                    ×{it.quantity} ✏️
+                                  </button>
+                                  <span style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }}
+                                    className="flex-1 truncate">
+                                    {it.product_name || "—"}
+                                  </span>
+                                  <span style={{ color: T.muted, fontFamily: FM }} className="tabular-nums">
+                                    {Number(it.unit_price || 0).toLocaleString()}₮
+                                  </span>
+                                  <span style={{ color: T.ink, fontFamily: FD, fontWeight: 600 }}
+                                    className="tabular-nums w-16 text-right">
+                                    {Number(it.total_amount || it.quantity * it.unit_price || 0).toLocaleString()}₮
+                                  </span>
+                                </div>
+                                )
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -16174,21 +19919,15 @@ function SettlementReportsView({ profile }) {
   // Жагсаалт
   return (
     <div className="space-y-3">
-      {/* Stats — 4 card */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* Stats — 3 card (зарлага доод эгнээнд) */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Нийт тушаасан</div>
           <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl tabular-nums">
-            {totalSubmitted.toLocaleString()}₮
+            {(totalSubmitted + totalPrepaid).toLocaleString()}₮
           </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
-            💵 {totalCash.toLocaleString()} · 🏦 {totalBank.toLocaleString()}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Нийт зарлага</div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
-            {totalExpense.toLocaleString()}₮
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] tabular-nums mt-0.5">
+            Бэлэн+Данс+Зарлага+Урьдчилгаа
           </div>
         </div>
         <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.highlight}` }}>
@@ -16205,25 +19944,140 @@ function SettlementReportsView({ profile }) {
         </div>
       </div>
 
+      {/* Тушаалтын задаргаа — Бэлэн / Данс / Зарлага / Урьдчилгаа */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #10b981` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💵 Бэлэн</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#10b981" }} className="text-xl tabular-nums">
+            {totalCash.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #3b82f6` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">🏦 Данс</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-xl tabular-nums">
+            {totalBank.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">📤 Зарлага</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl tabular-nums">
+            {totalExpense.toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid #6366f1` }}>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">💰 Урьдчилгаа</div>
+          <div style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xl tabular-nums">
+            {totalPrepaid.toLocaleString()}₮
+          </div>
+        </div>
+      </div>
+
       {/* Шүүлтүүр */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
             🔍 Шүүлтүүр
-            {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
+            {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all" || filterStartDate || filterEndDate) && (
               <span style={{ background: T.highlight, color: "white" }} className="text-[10px] px-2 py-0.5 rounded-full">
                 идэвхтэй
               </span>
             )}
           </div>
-          {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all") && (
-            <button onClick={() => { setFilterYear("all"); setFilterMonth("all"); setFilterDriver("all"); }}
+          {(filterYear !== "all" || filterMonth !== "all" || filterDriver !== "all" || filterStartDate || filterEndDate) && (
+            <button onClick={() => {
+              setFilterYear("all"); setFilterMonth("all"); setFilterDriver("all");
+              setFilterStartDate(""); setFilterEndDate("");
+            }}
               className="press-btn text-[11px] px-3 py-1 rounded-lg"
               style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
               ✕ Цэвэрлэх
             </button>
           )}
         </div>
+
+        {/* 🎯 Quick preset товчнууд */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mr-1">
+            ⚡ Хурдан:
+          </span>
+          <button onClick={() => {
+            const today = new Date().toISOString().slice(0, 10);
+            setFilterStartDate(today); setFilterEndDate(today);
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өнөөдөр
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().slice(0, 10);
+            setFilterStartDate(yesterdayStr); setFilterEndDate(yesterdayStr);
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өчигдөр
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 6);
+            setFilterStartDate(weekAgo.toISOString().slice(0, 10));
+            setFilterEndDate(today.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            7 хоног
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            setFilterStartDate(monthStart.toISOString().slice(0, 10));
+            setFilterEndDate(today.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Энэ сар
+          </button>
+          <button onClick={() => {
+            const today = new Date();
+            const monthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            const monthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+            setFilterStartDate(monthStart.toISOString().slice(0, 10));
+            setFilterEndDate(monthEnd.toISOString().slice(0, 10));
+            setFilterYear("all"); setFilterMonth("all");
+          }}
+            className="press-btn text-[10px] px-2.5 py-1 rounded-full"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Өнгөрсөн сар
+          </button>
+        </div>
+
+        {/* 📅 Гар огнооны хязгаар */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">
+              📅 Эхлэх огноо
+            </label>
+            <input type="date" value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider block mb-1">
+              📅 Дуусах огноо
+            </label>
+            <input type="date" value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           {/* Жил */}
           <div>
@@ -16332,6 +20186,15 @@ function SettlementReportsView({ profile }) {
                       </div>
                     </div>
                   </div>
+                  {Number(prepaidBySettlement[r.id] || 0) > 0 && (
+                    <div className="mt-1.5 rounded-lg p-1.5 flex items-center justify-between"
+                      style={{ background: "rgba(99,102,241,0.08)" }}>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💰 Урьдчилгаа</span>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: "#6366f1" }} className="text-xs tabular-nums">
+                        {Number(prepaidBySettlement[r.id]).toLocaleString()}₮
+                      </span>
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -16413,21 +20276,141 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const [items, setItems] = useState([]); // [{ productId, qty, ... }]
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  // 🆕 Бараа бүрийн "захиалга болсон ч хүргэгдээгүй" тоо (идэвхтэй захиалгууд: new/assigned)
+  const [pendingQtyByProduct, setPendingQtyByProduct] = useState({}); // { product_id: total_qty }
+  // 🆕 Бараа бүрийн ЖИНХЭНЭ үлдэгдэл (inv_stock нийлбэр — inv_products.stock хуучирсан байдаг)
+  const [realStockByProduct, setRealStockByProduct] = useState({}); // { product_id: total_stock }
+
+  // Идэвхтэй (хүргэгдээгүй) захиалгуудаас бараа бүрийн нийт тоог татах + жинхэнэ үлдэгдэл
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: activeOrders } = await supabase
+          .from("biz_orders")
+          .select("id")
+          .in("status", ["new", "assigned"])
+          .limit(5000);
+        const orderIds = (activeOrders || []).map((o) => o.id);
+        if (orderIds.length === 0) { if (!cancelled) setPendingQtyByProduct({}); }
+        else {
+          const orderItems = await fetchInChunks("biz_order_items", orderIds, {
+            select: "product_id, quantity, order_id",
+            filterColumn: "order_id",
+          });
+          if (!cancelled) {
+            const qtyMap = {};
+            (orderItems || []).forEach((it) => {
+              if (!it.product_id) return;
+              qtyMap[it.product_id] = (qtyMap[it.product_id] || 0) + Number(it.quantity || 0);
+            });
+            setPendingQtyByProduct(qtyMap);
+          }
+        }
+      } catch (e) { console.error("[pending qty fetch]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ЖИНХЭНЭ үлдэгдэл — inv_stock-аас бараа бүрийн нийлбэр (inv_products.stock хуучирсан тул)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stockRows = await fetchAllRows(
+          supabase.from("inv_stock").select("product_id, quantity")
+        );
+        if (cancelled) return;
+        const stockMap = {};
+        (stockRows || []).forEach((s) => {
+          if (!s.product_id) return;
+          stockMap[s.product_id] = (stockMap[s.product_id] || 0) + Number(s.quantity || 0);
+        });
+        setRealStockByProduct(stockMap);
+      } catch (e) { console.error("[real stock fetch]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [activeProduct, setActiveProduct] = useState(null);
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
+  // 🆕 Картын popup-тай адил: барааны тэмдэглэл + нийт нөөц + агуулах задаргаа
+  const [pdProductInfo, setPdProductInfo] = useState(null); // { product, totalStock }
+  const [pdStockPopup, setPdStockPopup] = useState(null); // { product, stocks }
+
+  // Popup нээгдэх үед барааны description + total stock татах (картын логиктой ижил)
+  useEffect(() => {
+    if (!activeProduct) {
+      setPdProductInfo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const productId = activeProduct.id;
+        if (!productId) {
+          setPdProductInfo({ product: null, totalStock: 0 });
+          return;
+        }
+        const [{ data: p }, { data: stk }] = await Promise.all([
+          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_stock").select("quantity").eq("product_id", productId),
+        ]);
+        if (cancelled) return;
+        const totalStock = (stk || []).reduce((s, x) => s + Number(x.quantity || 0), 0);
+        setPdProductInfo({ product: p, totalStock });
+      } catch (e) { console.error(e); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeProduct]);
+
+  // "Үлдэгдэл харах" — агуулах тус бүрд хуваан үзүүлэх (картын логиктой ижил)
+  const pdOpenStockPopup = async (product) => {
+    try {
+      if (!product?.id) {
+        alert("⚠ Энэ бараа агуулахад бүртгэлгүй");
+        return;
+      }
+      const [{ data: stk }, { data: whs }] = await Promise.all([
+        supabase.from("inv_stock").select("warehouse_id, quantity").eq("product_id", product.id),
+        supabase.from("inv_warehouses").select("id, name, driver_id"),
+      ]);
+      const whMap = Object.fromEntries((whs || []).map((w) => [w.id, w]));
+      const stocks = (stk || []).map((s) => ({
+        warehouse: whMap[s.warehouse_id],
+        qty: Number(s.quantity || 0),
+      })).filter((x) => x.warehouse && x.qty > 0);
+      stocks.sort((a, b) => b.qty - a.qty);
+      setPdStockPopup({ product: pdProductInfo?.product || product, stocks });
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  // 🔗 FB Page хязгаарлалтын confirm modal
+  const [pageConflictModal, setPageConflictModal] = useState(null);
+  // pageConflictModal: null | { newProduct, removingItems, targetFbPageId, targetPageName }
 
   // FB pages-уудыг ачаалах
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("biz_fb_pages")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-      setFbPages(data || []);
+      // 🏪 Merchant — зөвхөн өөрт оноогдсон Page-уудыг харна
+      const isMerchant = profile?.role === "merchant";
+      const allowedIds = isMerchant ? (profile?.fb_page_ids || []) : null;
+
+      let query = supabase.from("biz_fb_pages").select("*").eq("is_active", true).order("display_order");
+      if (isMerchant && allowedIds.length > 0) {
+        query = query.in("id", allowedIds);
+      }
+
+      const { data } = await query;
+      const pages = data || [];
+      setFbPages(pages);
+
+      // Merchant-руу зөвхөн 1 page бол автомат сонгох
+      if (isMerchant && pages.length === 1) {
+        setFbPageId(pages[0].id);
+      }
     })();
-  }, []);
+  }, [profile?.role, (profile?.fb_page_ids || []).join(",")]);
 
   // Customer auto-search (1-р утсаар)
   useEffect(() => {
@@ -16465,14 +20448,59 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
     const exists = items.find((it) => it.productId === product.id);
     if (exists) {
       setItems(items.filter((it) => it.productId !== product.id));
-    } else {
-      setItems([...items, {
-        productId: product.id,
-        product,
-        qty: 1,
-      }]);
+      return;
     }
+    // 🔗 БАРАА → FB PAGE ХЯЗГААРЛАЛТЫН ШАЛГАЛТ
+    // Хэрэв шинээр сонгох бараа FB Page-руу холбогдсон бол:
+    if (product.fb_page_id) {
+      const conflictingItems = items.filter((it) => 
+        it.product.fb_page_id !== product.fb_page_id
+      );
+      if (conflictingItems.length > 0) {
+        // 🚨 Confirm modal харуулах
+        const targetPage = fbPages.find((p) => p.id === product.fb_page_id);
+        setPageConflictModal({
+          newProduct: product,
+          removingItems: conflictingItems,
+          targetFbPageId: product.fb_page_id,
+          targetPageName: targetPage?.name || "Тодорхойгүй",
+        });
+        return;
+      }
+      // FB Page автомат тавина (анх удаа сонговол)
+      if (!fbPageId) setFbPageId(product.fb_page_id);
+    } else {
+      // Хэрэв одоо байгаа items нь FB Page-руу холбогдсон бол:
+      const linkedItems = items.filter((it) => it.product.fb_page_id);
+      if (linkedItems.length > 0) {
+        const linkedPage = fbPages.find((p) => p.id === linkedItems[0].product.fb_page_id);
+        alert(`⚠ Анхааруулга\nЭнэ захиалга "${linkedPage?.name}" FB Page-руу холбогдсон.\nЗөвхөн тухайн Page-ийн бараа нэмэх боломжтой.`);
+        return;
+      }
+    }
+    setItems([...items, {
+      productId: product.id,
+      product,
+      qty: 1,
+    }]);
   };
+
+  // 🔗 FB Page conflict-ийг шийдвэрлэх (хэрэглэгчийн зөвшөөрөл-тэй)
+  const confirmPageSwitch = () => {
+    if (!pageConflictModal) return;
+    const { newProduct, targetFbPageId } = pageConflictModal;
+    // Зөвхөн target Page-руу холбогдсон item-уудыг үлдээх + шинээр нэмэх
+    const keptItems = items.filter((it) => it.product.fb_page_id === targetFbPageId);
+    setItems([...keptItems, {
+      productId: newProduct.id,
+      product: newProduct,
+      qty: 1,
+    }]);
+    setFbPageId(targetFbPageId);
+    setPageConflictModal(null);
+  };
+
+  const cancelPageSwitch = () => setPageConflictModal(null);
 
   const updateItemQty = (productId, qty) => {
     if (qty <= 0) {
@@ -16485,7 +20513,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const removeItem = (productId) => setItems(items.filter((it) => it.productId !== productId));
 
   const validPhones = phones.filter((p) => p.phone.trim());
-  const canSave = validPhones.length > 0;
+  const canSave = validPhones.length > 0 && !!fbPageId && items.length > 0; // 🔗 FB Page + 🛍 бараа заавал
 
   const inputStyle = { background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS };
 
@@ -16520,6 +20548,11 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               <button
                 disabled={busy || !canSave}
                 onClick={async () => {
+                  // 🔗 FB Page заавал шалгах
+                  if (!fbPageId) {
+                    alert("⚠ FB Page заавал сонгох ёстой!");
+                    return;
+                  }
                   // 8 оронтой шалгах
                   const invalidPhone = validPhones.find((p) => p.phone.trim().length !== 8);
                   if (invalidPhone) {
@@ -16528,7 +20561,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                   }
                   setBusy(true);
                   await onSave({
-                    fb_page_id: fbPageId || null,
+                    fb_page_id: fbPageId,
                     phones: validPhones.map((p) => ({ phone: p.phone.trim(), notes: p.notes.trim() || null })),
                     interested_products: items.length > 0 ? items.map((it) => ({
                       id: it.productId,
@@ -16558,16 +20591,25 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               </h4>
               <div className="flex items-center gap-2">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-xs whitespace-nowrap">
-                  Маркетинг :
+                  Маркетинг <span style={{ color: T.err }}>*</span> :
                 </label>
                 <select value={fbPageId} onChange={(e) => setFbPageId(e.target.value)}
-                  style={inputStyle} className="flex-1 px-3 py-2 rounded-lg text-sm">
-                  <option value="">Маркетинг сонгох</option>
+                  style={{
+                    ...inputStyle,
+                    borderColor: fbPageId ? T.border : T.err,
+                    background: fbPageId ? inputStyle.background : "rgba(239,68,68,0.05)",
+                  }} className="flex-1 px-3 py-2 rounded-lg text-sm">
+                  <option value="">⚠ Маркетинг заавал сонгох</option>
                   {fbPages.map((page) => (
                     <option key={page.id} value={page.id}>{page.name}</option>
                   ))}
                 </select>
               </div>
+              {!fbPageId && fbPages.length > 0 && (
+                <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] mt-2">
+                  ⚠ FB Page заавал сонгох ёстой
+                </div>
+              )}
               {fbPages.length === 0 && (
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 italic">
                   💡 Эхлээд Facebook page нэмнэ үү (Бизнес → Тохиргоо)
@@ -16686,6 +20728,14 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                                 className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
                                 Тайлбар
                               </button>
+                              {pendingQtyByProduct[p.id] > 0 && (
+                                <span
+                                  title="Захиалга болсон ч хүргэгдээгүй тоо"
+                                  style={{ background: T.warnSoft, color: T.warn, fontFamily: FD, fontWeight: 700 }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded tabular-nums ml-auto">
+                                  🚚 {pendingQtyByProduct[p.id]}
+                                </span>
+                              )}
                             </div>
 
                             {/* Image (clickable to add) */}
@@ -16811,7 +20861,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             {Number(p.sale_price || 0).toLocaleString()}₮
                           </td>
                           <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM, textAlign: "right" }} className="tabular-nums">
-                            {p.stock || 0}
+                            {realStockByProduct[p.id] ?? (p.stock || 0)}
                           </td>
                           <td style={{ padding: "10px 8px", textAlign: "center" }}>
                             <input type="number" value={it.qty}
@@ -16836,71 +20886,119 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
         </div>
       </div>
 
-      {/* Барааны popup */}
+      {/* Барааны popup — картын popup-тай адил (тэмдэглэл + нийт нөөц + агуулах задаргаа) */}
       {activeProduct && (
         <div onClick={() => setActiveProduct(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
-          className="flex items-center justify-center p-4">
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          }}>
           <div onClick={(e) => e.stopPropagation()}
-            className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
-            <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
-              {activeProduct.image_url ? (
-                <img src={activeProduct.image_url} alt={activeProduct.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <div style={{
-                  width: "100%", height: "100%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 80,
-                }}>📦</div>
-              )}
-              <button onClick={() => setActiveProduct(null)}
-                style={{
-                  position: "absolute", top: 12, right: 12,
-                  background: "rgba(0,0,0,0.6)", color: "white",
-                  width: 32, height: 32, borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                <X size={16} />
-              </button>
+            style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 520,
+              maxHeight: "85vh", overflowY: "auto",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+
+            {/* Header */}
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {activeProduct.image_url ? (
+                    <img src={activeProduct.image_url} alt=""
+                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                  ) : (
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 8,
+                      background: T.surfaceAlt, display: "flex",
+                      alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>📦</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base truncate">
+                      {activeProduct.name}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {activeProduct.sku && `SKU: ${activeProduct.sku} · `}
+                      {Number(activeProduct.sale_price || 0).toLocaleString()}₮
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setActiveProduct(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
+
+            {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
+              {/* 1. Барааны тэмдэглэл (description) */}
               <div>
-                <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                  {activeProduct.name}
-                </h4>
-                {activeProduct.sku && (
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                    SKU: {activeProduct.sku}
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                  📝 Барааны тэмдэглэл
+                </div>
+                {!pdProductInfo ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+                  </div>
+                ) : !pdProductInfo.product ? (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                      Бараа нөөц бүртгэлд олдсонгүй
+                    </div>
+                  </div>
+                ) : pdProductInfo.product.description ? (
+                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
+                      {pdProductInfo.product.description}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                      Тэмдэглэл оруулаагүй байна
+                    </div>
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between">
-                <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
-                  {Number(activeProduct.sale_price || 0).toLocaleString()}₮
-                </span>
-                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                  Нөөц: {activeProduct.stock} {activeProduct.unit}
-                </span>
-              </div>
-              {activeProduct.description && (
-                <div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
-                    📄 Тайлбар
+
+              {/* 2. Үлдэгдэл card */}
+              {pdProductInfo?.product && (
+                <button
+                  onClick={() => pdOpenStockPopup(pdProductInfo.product)}
+                  className="press-btn w-full rounded-lg p-3 flex items-center justify-between"
+                  style={{
+                    background: pdProductInfo.totalStock > 0 ? "rgba(16,185,129,0.08)" : T.errSoft,
+                    border: `1px solid ${pdProductInfo.totalStock > 0 ? T.ok : T.err}`,
+                  }}>
+                  <div className="text-left">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                      📦 Нийт үлдэгдэл (бүх агуулах)
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: pdProductInfo.totalStock > 0 ? T.ok : T.err }} className="text-2xl tabular-nums">
+                      {pdProductInfo.totalStock.toLocaleString()}ш
+                    </div>
                   </div>
-                  <div className="text-sm whitespace-pre-wrap p-3 rounded-lg"
-                    style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
-                    {activeProduct.description}
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Дэлгэрэнгүй →
                   </div>
-                </div>
+                </button>
               )}
+
+              {/* 3. Сонгогдсон эсэх / сонгох товч */}
               {(() => {
                 const selected = items.find((ip) => ip.productId === activeProduct.id);
                 if (!selected) {
                   return (
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-center text-xs italic">
-                      💡 Зураг дээр дарж сонгоно уу
-                    </div>
+                    <button onClick={() => { toggleProduct(activeProduct); setActiveProduct(null); }}
+                      className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ background: T.highlight, color: "white", fontFamily: FS }}>
+                      🛒 Энэ барааг сонгох
+                    </button>
                   );
                 }
                 return (
@@ -16920,12 +21018,187 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
           </div>
         </div>
       )}
+
+      {/* ─── Агуулахын үлдэгдэл popup (картынхтай адил) ─── */}
+      {pdStockPopup && createPortal(
+        <div onClick={() => setPdStockPopup(null)}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{
+              background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+              maxHeight: "85vh", overflowY: "auto",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3 sticky top-0" style={{
+              borderBottom: `1px solid ${T.border}`,
+              background: T.bg, zIndex: 1,
+            }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                    📦 Агуулахын үлдэгдэл
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    {pdStockPopup.product?.name || "—"}
+                  </div>
+                </div>
+                <button onClick={() => setPdStockPopup(null)} style={{ color: T.muted }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              {pdStockPopup.stocks.length === 0 ? (
+                <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div className="text-3xl mb-2">📭</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                    Үлдэгдэлтэй агуулах алга
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg p-3 mb-3" style={{ background: T.highlightSoft }}>
+                    <div className="flex items-center justify-between">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        Нийт үлдэгдэл
+                      </div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                        {pdStockPopup.stocks.reduce((s, x) => s + x.qty, 0).toLocaleString()}ш
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                    Үлдэгдэлтэй агуулахууд ({pdStockPopup.stocks.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {pdStockPopup.stocks.map((s, idx) => {
+                      const isDriver = !!s.warehouse?.driver_id;
+                      return (
+                        <div key={s.warehouse?.id || idx}
+                          className="flex items-center justify-between rounded-lg p-3"
+                          style={{
+                            background: T.surface,
+                            borderLeft: `3px solid ${s.qty > 0 ? T.ok : T.err}`,
+                            border: `1px solid ${T.border}`,
+                          }}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span style={{ fontSize: 18 }}>
+                              {isDriver ? "🚚" : "🏬"}
+                            </span>
+                            <div className="min-w-0">
+                              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                                {s.warehouse?.name || "—"}
+                              </div>
+                              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                                {isDriver ? "Хүргэгчийн агуулах" : "Үндсэн агуулах"}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{
+                            fontFamily: FD, fontWeight: 700,
+                            color: s.qty > 0 ? T.ok : T.err,
+                          }} className="text-xl tabular-nums">
+                            {s.qty.toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 🔗 FB Page conflict confirm modal */}
+      {pageConflictModal && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100002,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+        }}
+          onClick={cancelPageSwitch}>
+          <div style={{
+            background: "white", borderRadius: 18, width: "100%", maxWidth: 440,
+            boxShadow: "0 24px 60px rgba(245,158,11,0.3)",
+            border: `2px solid ${T.warn}`,
+            overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{
+              background: `linear-gradient(135deg, ${T.warn}15, ${T.warn}25)`,
+              padding: "20px 20px 14px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 8 }}>⚠</div>
+              <div style={{
+                fontFamily: FD, fontWeight: 700, fontSize: 17, color: T.warn,
+              }}>FB Page-руу холбогдсон бараа</div>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "16px 20px" }}>
+              <p style={{ color: T.ink, fontFamily: FS, fontSize: 13, lineHeight: 1.6, margin: "0 0 12px" }}>
+                Та <b>"{pageConflictModal.newProduct.name}"</b> барааг сонгож байна, энэ нь{" "}
+                <b style={{ color: T.warn }}>📘 {pageConflictModal.targetPageName}</b> FB Page-руу холбогдсон байна.
+              </p>
+              <div style={{
+                background: T.surfaceAlt, borderRadius: 10, padding: "10px 12px", marginBottom: 12,
+              }}>
+                <div style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }} className="text-[10px] uppercase mb-1">
+                  Дараах бараанууд хасагдана:
+                </div>
+                <div style={{ fontFamily: FS, fontSize: 12, color: T.ink, lineHeight: 1.6 }}>
+                  {pageConflictModal.removingItems.map((it, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: T.err }}>✕</span>
+                      <span>{it.product.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p style={{ color: T.muted, fontFamily: FS, fontSize: 11, lineHeight: 1.5, margin: 0 }}>
+                💡 Нэг захиалгад зөвхөн нэг FB Page-ийн бараа орох ёстой.
+                Та өөр бараагаар тус тусын захиалга үүсгэх боломжтой.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "10px 20px 18px", display: "flex", gap: 8 }}>
+              <button onClick={cancelPageSwitch}
+                style={{
+                  flex: 1, padding: "11px", borderRadius: 10,
+                  background: T.surfaceAlt, color: T.ink,
+                  fontFamily: FS, fontWeight: 600, fontSize: 13,
+                  border: `1px solid ${T.border}`, cursor: "pointer",
+                }}>
+                Болих
+              </button>
+              <button onClick={confirmPageSwitch}
+                style={{
+                  flex: 2, padding: "11px", borderRadius: 10,
+                  background: T.warn, color: "white",
+                  fontFamily: FS, fontWeight: 700, fontSize: 13,
+                  border: "none", cursor: "pointer",
+                }}>
+                ✓ {pageConflictModal.targetPageName}-руу шилжүүлэх
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound }) {
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
@@ -16936,6 +21209,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [selectedKhoroo, setSelectedKhoroo] = useState("");
   const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
   const [pinLng, setPinLng] = useState(editOrder?.delivery_lng || null);
+  const [showPinMap, setShowPinMap] = useState(false); // 🗺 Map modal-ийг харуулах
   // DB-аас байршлыг татах
   const [dbLocations, setDbLocations] = useState([]);
   useEffect(() => {
@@ -16984,7 +21258,24 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     if (!initialProducts || !Array.isArray(initialProducts) || initialProducts.length === 0) return [];
     return initialProducts.map((ip) => {
       const product = products.find((p) => p.id === ip.id);
-      if (!product) return null;
+      if (!product) {
+        // ⚡ Бараа олдсонгүй — interested_products-ийн өгөгдлөөс үүсгэх
+        console.warn("[CallReceiveModal] Product not found in catalog:", ip);
+        return {
+          productId: ip.id,
+          product: {
+            id: ip.id,
+            name: ip.name || "(Бараа олдсонгүй)",
+            sale_price: ip.price || 0,
+            sku: ip.sku || "",
+            image_url: ip.image_url || null,
+            description: "",
+          },
+          quantity: ip.qty || 1,
+          unitPrice: Number(ip.price || 0),
+          itemNotes: "",
+        };
+      }
       return {
         productId: product.id,
         product,
@@ -17002,6 +21293,57 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [searching, setSearching] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [activeProductDetail, setActiveProductDetail] = useState(null); // popup-ийн бараа
+  const [notesPopup, setNotesPopup] = useState(null); // 📝 тайлбар popup { name, text }
+  // 🆕 Картын popup-тай адил: барааны тэмдэглэл + нийт нөөц + агуулах задаргаа
+  const [pdProductInfo, setPdProductInfo] = useState(null); // { product, totalStock }
+  const [pdStockPopup, setPdStockPopup] = useState(null); // { product, stocks }
+
+  // Popup нээгдэх үед барааны description + total stock татах (картын логиктой ижил)
+  useEffect(() => {
+    if (!activeProductDetail) {
+      setPdProductInfo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const productId = activeProductDetail.id;
+        if (!productId) {
+          setPdProductInfo({ product: null, totalStock: 0 });
+          return;
+        }
+        const [{ data: p }, { data: stk }] = await Promise.all([
+          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_stock").select("quantity").eq("product_id", productId),
+        ]);
+        if (cancelled) return;
+        const totalStock = (stk || []).reduce((s, x) => s + Number(x.quantity || 0), 0);
+        setPdProductInfo({ product: p, totalStock });
+      } catch (e) { console.error(e); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeProductDetail]);
+
+  // "Үлдэгдэл харах" — агуулах тус бүрд хуваан үзүүлэх (картын логиктой ижил)
+  const pdOpenStockPopup = async (product) => {
+    try {
+      if (!product?.id) {
+        alert("⚠ Энэ бараа агуулахад бүртгэлгүй");
+        return;
+      }
+      const [{ data: stk }, { data: whs }] = await Promise.all([
+        supabase.from("inv_stock").select("warehouse_id, quantity").eq("product_id", product.id),
+        supabase.from("inv_warehouses").select("id, name, driver_id"),
+      ]);
+      const whMap = Object.fromEntries((whs || []).map((w) => [w.id, w]));
+      const stocks = (stk || []).map((s) => ({
+        warehouse: whMap[s.warehouse_id],
+        qty: Number(s.quantity || 0),
+      })).filter((x) => x.warehouse && x.qty > 0);
+      stocks.sort((a, b) => b.qty - a.qty);
+      setPdStockPopup({ product: pdProductInfo?.product || product, stocks });
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
 
   // Customer auto-search
   useEffect(() => {
@@ -17199,8 +21541,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     const khoroo = e.target.value;
                     setSelectedKhoroo(khoroo);
                     if (selectedCity && selectedDistrict && khoroo) {
-                      const found = dbKhoroo.find((k) => k.khoroo === khoroo);
-                      if (found) {
+                      // ⚡ dbLocations-аас ШУУД хайх (dbKhoroo memo stale байж болзошгүй async timing)
+                      const found = dbLocations.find(
+                        (l) => l.city === selectedCity && l.district === selectedDistrict && l.khoroo === khoroo
+                      );
+                      if (found && found.lat != null && found.lng != null) {
                         setPinLat(Number(found.lat));
                         setPinLng(Number(found.lng));
                       }
@@ -17220,11 +21565,23 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                   <span>📍</span>
                   <span>Pin: {pinLat.toFixed(4)}, {pinLng.toFixed(4)}</span>
                   {(selectedCity || selectedDistrict || selectedKhoroo) && (
-                    <span className="ml-auto" style={{ fontWeight: 600 }}>
-                      {[selectedCity, selectedDistrict, selectedKhoroo].filter(Boolean).join(" › ")}
+                    <span style={{ fontWeight: 600 }}>
+                      • {[selectedCity, selectedDistrict, selectedKhoroo].filter(Boolean).join(" › ")}
                     </span>
                   )}
+                  <button type="button" onClick={() => setShowPinMap(true)}
+                    className="ml-auto press-btn px-2 py-0.5 rounded text-[10px] flex items-center gap-1"
+                    style={{ background: T.ok, color: "white", fontFamily: FM, fontWeight: 600 }}>
+                    🗺 Газрын зураг дээр сонгох
+                  </button>
                 </div>
+              )}
+              {(!pinLat || !pinLng) && (
+                <button type="button" onClick={() => setShowPinMap(true)}
+                  className="mt-1.5 press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+                  style={{ background: T.highlight, color: "white", fontFamily: FM, fontWeight: 600 }}>
+                  🗺 Газрын зураг дээр pin сонгох
+                </button>
               )}
             </div>
 
@@ -17375,9 +21732,17 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             </button>
                           </div>
                           <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }}
-                            className="text-sm mb-2 line-clamp-2">
+                            className="text-sm mb-1 line-clamp-2">
                             {p.name}
                           </div>
+                          {(p.description || it.itemNotes) && (
+                            <button
+                              onClick={() => setNotesPopup({ name: p.name, text: p.description || it.itemNotes })}
+                              style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
+                              className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
+                              📝 Тайлбар харах
+                            </button>
+                          )}
                           <div className="flex items-center gap-2">
                             <span style={{ fontFamily: FD, fontWeight: 600, color: T.ink }}
                               className="text-sm tabular-nums">
@@ -17509,71 +21874,249 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           </div>
         </div>
 
-        {/* Барааны тайлбар popup */}
-        {activeProductDetail && (
-          <div onClick={() => setActiveProductDetail(null)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 60 }}
+        {/* 📝 Сонгогдсон барааны тайлбар popup */}
+        {notesPopup && (
+          <div onClick={() => setNotesPopup(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 70, backdropFilter: "blur(4px)" }}
             className="flex items-center justify-center p-4">
             <div onClick={(e) => e.stopPropagation()}
-              className="modal-content rounded-2xl w-full max-w-sm overflow-hidden">
-              <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
-                {activeProductDetail.image_url ? (
-                  <img src={activeProductDetail.image_url} alt={activeProductDetail.name}
-                    style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                ) : (
-                  <div style={{
-                    width: "100%", height: "100%",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 80,
-                  }}>📦</div>
-                )}
-                <button onClick={() => setActiveProductDetail(null)}
-                  style={{
-                    position: "absolute", top: 12, right: 12,
-                    background: "rgba(0,0,0,0.6)", color: "white",
-                    width: 32, height: 32, borderRadius: "50%",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                  <X size={16} />
+              style={{ background: T.surfaceStrong, border: `1px solid ${T.border}`, maxWidth: 420, width: "100%" }}
+              className="glass rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 style={{ fontFamily: FD, color: T.ink, fontWeight: 600 }} className="text-base flex items-center gap-2">
+                  📝 Барааны тайлбар
+                </h3>
+                <button onClick={() => setNotesPopup(null)} style={{ color: T.muted }}
+                  className="p-1 rounded-lg hover:bg-black/5">
+                  <X size={18} />
                 </button>
               </div>
+              <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-2">
+                {notesPopup.name}
+              </div>
+              <div style={{ fontFamily: FS, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}
+                className="text-sm p-3 rounded-xl leading-relaxed whitespace-pre-wrap">
+                {notesPopup.text}
+              </div>
+              <button onClick={() => setNotesPopup(null)}
+                style={{ background: T.highlight, color: "white", fontFamily: FS }}
+                className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold press-btn">
+                Хаах
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Барааны тайлбар popup — картын popup-тай адил (тэмдэглэл + нийт нөөц + агуулах задаргаа) */}
+        {activeProductDetail && (
+          <div onClick={() => setActiveProductDetail(null)}
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+              background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+            }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{
+                background: T.bg, borderRadius: 16, width: "100%", maxWidth: 520,
+                maxHeight: "85vh", overflowY: "auto",
+                boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+              }}>
+
+              {/* Header */}
+              <div className="px-4 py-3 sticky top-0" style={{
+                borderBottom: `1px solid ${T.border}`,
+                background: T.bg, zIndex: 1,
+              }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {activeProductDetail.image_url ? (
+                      <img src={activeProductDetail.image_url} alt=""
+                        style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                    ) : (
+                      <div style={{
+                        width: 44, height: 44, borderRadius: 8,
+                        background: T.surfaceAlt, display: "flex",
+                        alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      }}>📦</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base truncate">
+                        {activeProductDetail.name}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                        {activeProductDetail.sku && `SKU: ${activeProductDetail.sku} · `}
+                        {Number(activeProductDetail.sale_price || 0).toLocaleString()}₮
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={() => setActiveProductDetail(null)} style={{ color: T.muted }}>
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
               <div className="p-4 space-y-3">
+                {/* 1. Барааны тэмдэглэл (description) */}
                 <div>
-                  <h4 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-                    {activeProductDetail.name}
-                  </h4>
-                  {activeProductDetail.sku && (
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                      SKU: {activeProductDetail.sku}
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                    📝 Барааны тэмдэглэл
+                  </div>
+                  {!pdProductInfo ? (
+                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                      <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+                    </div>
+                  ) : !pdProductInfo.product ? (
+                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                        Бараа нөөц бүртгэлд олдсонгүй
+                      </div>
+                    </div>
+                  ) : pdProductInfo.product.description ? (
+                    <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                      <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
+                        {pdProductInfo.product.description}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                      <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
+                        Тэмдэглэл оруулаагүй байна
+                      </div>
                     </div>
                   )}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
-                    {Number(activeProductDetail.sale_price || 0).toLocaleString()}₮
-                  </span>
-                  <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
-                    Нөөц: {activeProductDetail.stock} {activeProductDetail.unit}
-                  </span>
-                </div>
-                {activeProductDetail.description && (
-                  <div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1">
-                      📄 Тайлбар
+
+                {/* 2. Үлдэгдэл card */}
+                {pdProductInfo?.product && (
+                  <button
+                    onClick={() => pdOpenStockPopup(pdProductInfo.product)}
+                    className="press-btn w-full rounded-lg p-3 flex items-center justify-between"
+                    style={{
+                      background: pdProductInfo.totalStock > 0 ? "rgba(16,185,129,0.08)" : T.errSoft,
+                      border: `1px solid ${pdProductInfo.totalStock > 0 ? T.ok : T.err}`,
+                    }}>
+                    <div className="text-left">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        📦 Нийт үлдэгдэл (бүх агуулах)
+                      </div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: pdProductInfo.totalStock > 0 ? T.ok : T.err }} className="text-2xl tabular-nums">
+                        {pdProductInfo.totalStock.toLocaleString()}ш
+                      </div>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap p-3 rounded-lg"
-                      style={{ background: T.surfaceAlt, fontFamily: FS, color: T.ink }}>
-                      {activeProductDetail.description}
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                      Дэлгэрэнгүй →
                     </div>
-                  </div>
+                  </button>
                 )}
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-center text-xs italic">
-                  💡 Зураг дээр дарж сонгоно уу
-                </div>
+
+                {/* 3. Сонгох товч */}
+                <button onClick={() => { addItem(activeProductDetail); setActiveProductDetail(null); }}
+                  className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: T.highlight, color: "white", fontFamily: FS }}>
+                  🛒 Энэ барааг сонгох
+                </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* ─── Агуулахын үлдэгдэл popup (картынхтай адил) ─── */}
+        {pdStockPopup && (
+          <div onClick={() => setPdStockPopup(null)}
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+              background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+            }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{
+                background: T.bg, borderRadius: 16, width: "100%", maxWidth: 480,
+                maxHeight: "85vh", overflowY: "auto",
+                boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+              }}>
+              <div className="px-4 py-3 sticky top-0" style={{
+                borderBottom: `1px solid ${T.border}`,
+                background: T.bg, zIndex: 1,
+              }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
+                      📦 Агуулахын үлдэгдэл
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {pdStockPopup.product?.name || "—"}
+                    </div>
+                  </div>
+                  <button onClick={() => setPdStockPopup(null)} style={{ color: T.muted }}>
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4">
+                {pdStockPopup.stocks.length === 0 ? (
+                  <div className="text-center py-6 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div className="text-3xl mb-2">📭</div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
+                      Үлдэгдэлтэй агуулах алга
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-lg p-3 mb-3" style={{ background: T.highlightSoft }}>
+                      <div className="flex items-center justify-between">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                          Нийт үлдэгдэл
+                        </div>
+                        <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-2xl tabular-nums">
+                          {pdStockPopup.stocks.reduce((s, x) => s + x.qty, 0).toLocaleString()}ш
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
+                      Үлдэгдэлтэй агуулахууд ({pdStockPopup.stocks.length})
+                    </div>
+                    <div className="space-y-1.5">
+                      {pdStockPopup.stocks.map((s, idx) => {
+                        const isDriver = !!s.warehouse?.driver_id;
+                        return (
+                          <div key={s.warehouse?.id || idx}
+                            className="flex items-center justify-between rounded-lg p-3"
+                            style={{
+                              background: T.surface,
+                              borderLeft: `3px solid ${s.qty > 0 ? T.ok : T.err}`,
+                              border: `1px solid ${T.border}`,
+                            }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span style={{ fontSize: 18 }}>
+                                {isDriver ? "🚚" : "🏬"}
+                              </span>
+                              <div className="min-w-0">
+                                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                                  {s.warehouse?.name || "—"}
+                                </div>
+                                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                                  {isDriver ? "Хүргэгчийн агуулах" : "Үндсэн агуулах"}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{
+                              fontFamily: FD, fontWeight: 700,
+                              color: s.qty > 0 ? T.ok : T.err,
+                            }} className="text-xl tabular-nums">
+                              {s.qty.toLocaleString()}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Action buttons */}
         <div className="space-y-2 mt-4">
@@ -17689,6 +22232,29 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               if (!address.trim()) {
                 alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                 return;
+              }
+
+              // ⚡ ШИНЭ ДЭЭР ЗАХИАЛГА ШАЛГАХ — Хэрэв шинэ статустай захиалга бий бол
+              if (!isEditMode) {
+                try {
+                  const { data: existingNew } = await supabase
+                    .from("biz_orders")
+                    .select("id, order_number, customer_name, total_amount, created_at, fb_page_id")
+                    .eq("customer_phone", phone.trim())
+                    .eq("status", "new")
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+                  
+                  if (existingNew && existingNew.length > 0) {
+                    const ex = existingNew[0];
+                    if (onExistingOrderFound) {
+                      onExistingOrderFound({ phone: phone.trim(), orderId: ex.id, orderInfo: ex });
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  console.error("Existing order check error:", e);
+                }
               }
               
               // 🔴 ДАВТАН ЗАХИАЛГА ШАЛГАХ — Сүүлийн 1 цагт тус утсаар захиалга бий эсэх
@@ -17813,7 +22379,160 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           )}
         </div>
       </div>
+
+      {/* 🗺 Pin Map Modal — Газрын зураг дээр дарж pin сонгох */}
+      {showPinMap && (
+        <PinMapModal
+          initialLat={pinLat || 47.918873}
+          initialLng={pinLng || 106.917701}
+          onSelect={(lat, lng) => {
+            setPinLat(lat);
+            setPinLng(lng);
+            setShowPinMap(false);
+          }}
+          onClose={() => setShowPinMap(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── 🗺 Pin Map Modal — Map дээр pin сонгох ──────────────────────────
+function PinMapModal({ initialLat, initialLng, onSelect, onClose }) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const [currentLat, setCurrentLat] = useState(initialLat);
+  const [currentLng, setCurrentLng] = useState(initialLng);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const L = (await import("leaflet")).default;
+
+      // Leaflet CSS load (хэрэв байхгүй бол)
+      if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+
+      if (cancelled || !containerRef.current || mapRef.current) return;
+
+      const map = L.map(containerRef.current).setView([initialLat, initialLng], 14);
+      mapRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OSM",
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Container хэмжээг зөв тооцох (modal-аас болж)
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 100);
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 300);
+
+      // 📍 Эхний pin
+      const customIcon = L.divIcon({
+        html: `<div style="background:#0E9C8E;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:14px;">📍</span></div>`,
+        className: "",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+      const marker = L.marker([initialLat, initialLng], {
+        icon: customIcon,
+        draggable: true, // ⭐ Pin-ийг чирж зөөж болно
+      }).addTo(map);
+      markerRef.current = marker;
+
+      // Marker-ийг чирэхэд lat/lng шинэчлэх
+      marker.on("dragend", (e) => {
+        const { lat, lng } = e.target.getLatLng();
+        setCurrentLat(lat);
+        setCurrentLng(lng);
+      });
+
+      // Map дээр дарахад pin тэр газар луу шилжих
+      map.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        marker.setLatLng([lat, lng]);
+        setCurrentLat(lat);
+        setCurrentLng(lng);
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, []);
+
+  return createPortal(
+    <div onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 100,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "1rem",
+      }}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="modal-content rounded-2xl overflow-hidden"
+        style={{
+          width: "100%", maxWidth: "640px",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+        }}>
+        {/* Header */}
+        <div style={{ borderBottom: `1px solid ${T.border}` }}
+          className="px-4 py-3 flex items-center justify-between">
+          <div>
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🗺 Хүргэх хаягийг сонгох
+            </h3>
+            <p style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+              Map дээр дарах эсвэл pin-г чирэх
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Map */}
+        <div style={{ position: "relative", flex: 1, minHeight: "400px" }}>
+          <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "400px" }} />
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: `1px solid ${T.border}`, background: T.surfaceAlt }}
+          className="px-4 py-3">
+          <div className="flex items-center gap-2 mb-3 text-[11px]"
+            style={{ color: T.muted, fontFamily: FM }}>
+            <span>📍 Сонгосон цэг:</span>
+            <span style={{ color: T.ink, fontWeight: 600 }} className="tabular-nums">
+              {currentLat.toFixed(6)}, {currentLng.toFixed(6)}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onClose}
+              className="glass-soft press-btn py-2.5 rounded-xl text-sm font-medium"
+              style={{ fontFamily: FS, color: T.ink }}>
+              Болих
+            </button>
+            <button onClick={() => onSelect(currentLat, currentLng)}
+              className="glow-primary press-btn py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ fontFamily: FS }}>
+              <CheckCircle2 size={14} />
+              ✓ Сонгох
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -17941,7 +22660,7 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
-function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [] }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
     pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
@@ -17958,22 +22677,50 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const menuButtonRef = useRef(null);
 
+  // 🔧 Scroll хийхэд эсвэл page resize-ийг menu автомат хаагдана
+  // (position:fixed-аас болж menu өөр захиалга дээр харагдахаас сэргийлэх)
+  useEffect(() => {
+    if (!showMenu) return;
+    const close = () => setShowMenu(false);
+    window.addEventListener("scroll", close, true); // capture: scrollable container-уудыг бас барих
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [showMenu]);
+
   // Items-аас нийт тоо ширхэг + эхний барааны зураг
   const totalQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
   const firstItem = items[0];
   const firstProduct = firstItem ? null : null; // image_url-ийг items-аас авах
   const firstImage = firstItem?.product_image || null;
 
+  const [isHovered, setIsHovered] = useState(false);
+  const [phoneAction, setPhoneAction] = useState(null); // 📞 { phone } — Залгах/Мессеж сонголт
+
   return (
     <div className="glass rounded-xl p-3 relative"
       onContextMenu={(e) => e.preventDefault()}
-      style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
-      <div className="flex items-center gap-3">
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+        transition: "transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, border-color 0.18s ease",
+        transform: isHovered ? "translateY(-5px) scale(1.015)" : "translateY(0) scale(1)",
+        boxShadow: isHovered
+          ? `0 16px 40px rgba(14, 156, 142, 0.35), 0 0 0 1px ${T.highlight}`
+          : undefined,
+        border: isHovered ? `2px solid ${T.highlight}` : "2px solid transparent",
+        cursor: onClick ? "pointer" : "default",
+        zIndex: isHovered ? 5 : 1,
+      }}>
+      <div className="flex items-start gap-2 sm:gap-3">
         {/* Index badge */}
         <div style={{
           background: "rgba(59,130,246,0.1)", color: "#3b82f6",
           fontFamily: FD, fontWeight: 700,
-        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0">
+        }} className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 mt-0.5">
           {index + 1}
         </div>
 
@@ -17981,12 +22728,12 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {order.customer_phone ? (
-              <a href={`tel:${order.customer_phone}`}
+              <button
+                onClick={(e) => { e.stopPropagation(); setPhoneAction({ phone: order.customer_phone }); }}
                 style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }}
-                className="text-sm tabular-nums hover:underline"
-                onClick={(e) => e.stopPropagation()}>
-                {order.customer_phone}
-              </a>
+                className="text-sm tabular-nums hover:underline">
+                📞 {order.customer_phone}
+              </button>
             ) : (
               <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
                 —
@@ -17995,19 +22742,45 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
             {order.customer_phone2 && (
               <>
                 <span style={{ color: T.muted }}>·</span>
-                <a href={`tel:${order.customer_phone2}`}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPhoneAction({ phone: order.customer_phone2 }); }}
                   style={{ fontFamily: FD, fontWeight: 600, color: T.highlight }}
-                  className="text-sm tabular-nums hover:underline"
-                  onClick={(e) => e.stopPropagation()}>
+                  className="text-sm tabular-nums hover:underline">
                   {order.customer_phone2}
-                </a>
+                </button>
               </>
             )}
+            {/* 🔗 FB Page badges — Бүх pages (order + items) */}
+            {(() => {
+              const itemPages = items.map(it => it.fb_page_id).filter(Boolean);
+              const allPageIds = [...new Set([order.fb_page_id, ...itemPages].filter(Boolean))];
+              return allPageIds.map(pageId => {
+                if (!fbPagesMap[pageId]) return null;
+                const isMerchant = merchantPageIds.includes(pageId);
+                return (
+                  <span key={pageId} style={{
+                    background: isMerchant ? "rgba(14,165,233,0.15)" : "rgba(168,85,247,0.1)",
+                    color: isMerchant ? "#0284c7" : "#9333ea",
+                    fontFamily: FS,
+                    fontWeight: 600,
+                    border: isMerchant ? "1px solid rgba(14,165,233,0.3)" : "none",
+                  }} className="text-[9px] px-1.5 py-0.5 rounded">
+                    🔗 {fbPagesMap[pageId]}
+                  </span>
+                );
+              });
+            })()}
+            {/* Status pill — утасны хажууд */}
+            <span style={{
+              background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
+            }} className="text-[10px] px-2 py-0.5 rounded-full">
+              {status.label}
+            </span>
           </div>
           {order.delivery_address && (
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5 flex items-start gap-1">
-              <MapPin size={10} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
-              <span className="truncate">{order.delivery_address}</span>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1 flex items-start gap-1">
+              <MapPin size={11} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
+              <span>{order.delivery_address}</span>
             </div>
           )}
           {order.driver_id && (() => {
@@ -18022,65 +22795,74 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               </div>
             ) : null;
           })()}
-        </div>
 
-        {/* Image + qty badge */}
-        {firstImage && (
-          <div className="relative flex-shrink-0">
-            <img src={firstImage} alt=""
-              style={{ width: 40, height: 60, objectFit: "cover", borderRadius: 6 }} />
-            {/* Захиалсан тоо badge — зургийн дээгүүр */}
-            {firstItem && Number(firstItem.quantity) > 0 && (
-              <div style={{
-                position: "absolute", top: -6, right: -6,
-                background: "linear-gradient(135deg, #ec4899, #db2777)",
-                color: "white",
-                minWidth: 20, height: 20, borderRadius: 999,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                padding: "0 4px",
-                fontSize: 10, fontWeight: 700,
-                boxShadow: "0 2px 6px rgba(236,72,153,0.4)",
-                border: "1.5px solid white",
-              }}>×{Number(firstItem.quantity)}</div>
+          {/* 🛍 Бараа + үнэ — мэдээллийн доор, эгнээнд */}
+          <div className="flex items-end gap-3 mt-2 flex-wrap">
+            {items.length > 0 && (
+              <div className={`flex items-start gap-1.5 ${items.length > 4 ? "overflow-x-auto pb-1" : ""}`}
+                style={{ maxWidth: items.length > 4 ? 200 : "none", scrollbarWidth: "thin" }}>
+                {items.map((it, idx) => {
+                  const isMerchantItem = it.fb_page_id && merchantPageIds.includes(it.fb_page_id);
+                  return (
+                    <div key={it.id || idx} className="relative flex-shrink-0">
+                      {it.product_image ? (
+                        <img src={it.product_image} alt=""
+                          style={{
+                            width: 38, height: 54, objectFit: "cover", borderRadius: 6,
+                            border: isMerchantItem ? `2px solid #0284c7` : "none",
+                          }} />
+                      ) : (
+                        <div style={{
+                          width: 38, height: 54, borderRadius: 6,
+                          background: T.surfaceAlt,
+                          border: `1px dashed ${T.border}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 16,
+                        }}>📦</div>
+                      )}
+                      {Number(it.quantity) > 0 && (
+                        <div style={{
+                          position: "absolute", top: -6, right: -6,
+                          background: isMerchantItem
+                            ? "linear-gradient(135deg, #0ea5e9, #0284c7)"
+                            : "linear-gradient(135deg, #0E9C8E, #0B7D72)",
+                          color: "white",
+                          minWidth: 18, height: 18, borderRadius: 999,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          padding: "0 4px",
+                          fontSize: 9, fontWeight: 700,
+                          border: "1.5px solid white",
+                        }}>×{Number(it.quantity)}</div>
+                      )}
+                      <div style={{
+                        color: isMerchantItem ? "#0284c7" : T.muted,
+                        fontFamily: FM,
+                        fontWeight: isMerchantItem ? 700 : 400,
+                      }} className="text-[9px] text-center mt-0.5 tabular-nums">
+                        {Number(it.unit_price || 0).toLocaleString()}₮
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            {/* Олон төрлийн бараа byne индикатор */}
-            {items.length > 1 && (
+            {/* Нийт дүн */}
+            <div className="ml-auto text-right">
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
+                {total.toLocaleString()}₮
+              </div>
               <div style={{
-                position: "absolute", bottom: -6, right: -6,
-                background: "#3b82f6", color: "white",
-                width: 18, height: 18, borderRadius: "50%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, fontWeight: 700,
-                border: "1.5px solid white",
-                boxShadow: "0 2px 6px rgba(59,130,246,0.4)",
-              }}>+{items.length - 1}</div>
-            )}
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center mt-1 tabular-nums">
-              {firstItem ? Number(firstItem.unit_price || 0).toLocaleString() + "₮" : ""}
+                fontFamily: FD, fontWeight: 600,
+                color: isFullyPaid ? T.ok : (balance > 0 ? T.muted : T.ok),
+              }} className="text-[11px] tabular-nums whitespace-nowrap">
+                {isFullyPaid ? `✓ ${paid.toLocaleString()}₮` : `${paid.toLocaleString()}₮`}
+              </div>
             </div>
           </div>
-        )}
-
-        {/* Status pill */}
-        <span style={{
-          background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
-        }} className="text-[10px] px-2.5 py-1 rounded-full flex-shrink-0">
-          {status.label}
-        </span>
-
-        {/* Amount */}
-        <div className="text-right flex-shrink-0">
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base tabular-nums whitespace-nowrap">
-            {total.toLocaleString()}₮
-          </div>
-          <div style={{
-            fontFamily: FD, fontWeight: 600,
-            color: isFullyPaid ? T.ok : (balance > 0 ? T.muted : T.ok),
-          }} className="text-[11px] tabular-nums whitespace-nowrap">
-            {isFullyPaid ? `✓ ${paid.toLocaleString()}₮` : `${paid.toLocaleString()}₮`}
-          </div>
         </div>
 
+        {/* Баруун талын товчнууд (pin + menu) — босоо */}
+        <div className="flex flex-col items-center gap-2 flex-shrink-0">
         {/* Pin button (Дэлгэрэнгүй харах) */}
         <button onClick={onClick}
           className="press-btn w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 relative"
@@ -18105,6 +22887,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
         </button>
 
         {/* 3-dot menu */}
+        {!hideMenu && (
         <div className="flex-shrink-0">
           <button
             ref={(el) => { if (el) menuButtonRef.current = el; }}
@@ -18112,7 +22895,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
               setMenuPos({
-                top: rect.bottom + window.scrollY + 4,
+                top: rect.bottom + 4,                        // 🔧 viewport-relative (window.scrollY хасав)
                 right: window.innerWidth - rect.right,
               });
               setShowMenu(!showMenu);
@@ -18152,7 +22935,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                     🚚 Delivery хуваарилах
                   </button>
                 )}
-                {onCancel && order.status !== "cancelled" && (
+                {onCancel && order.status !== "cancelled" && order.status !== "delivered" && (
                   <button onClick={() => { setShowMenu(false); onCancel(); }}
                     className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: T.err, fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
@@ -18169,13 +22952,60 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
             document.body
           )}
         </div>
+        )}
+        </div>
       </div>
+
+      {/* 📞 Залгах / Мессеж сонголт popup */}
+      {phoneAction && createPortal(
+        <div
+          onClick={() => setPhoneAction(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: 18, width: "100%", maxWidth: 320,
+              overflow: "hidden", boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3 text-center" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                {phoneAction.phone}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                Юу хийх вэ?
+              </div>
+            </div>
+            <a href={`tel:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,156,142,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">📞</span>
+              <span className="text-sm">Залгах</span>
+            </a>
+            <a href={`sms:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,165,233,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">💬</span>
+              <span className="text-sm">Мессеж илгээх</span>
+            </a>
+            <button
+              onClick={() => setPhoneAction(null)}
+              className="press-btn w-full px-4 py-3 text-center"
+              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+              Болих
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  ORDERS VIEW — Захиалгын жагсаалт
 // ═══════════════════════════════════════════════════════════════════════════
 // ─── Map Picker Modal — Хүргэлтийн байршил pin хийх ──────────────
 function MapPickerModal({ order, onSave, onClose }) {
@@ -18206,8 +23036,13 @@ function MapPickerModal({ order, onSave, onClose }) {
       attribution: "© OpenStreetMap",
     }).addTo(map);
 
+    // 🔧 Modal дотор нээгдэх үед container хэмжээ 0 байж болзошгүй →
+    //    invalidateSize-ээр map-ийг дахин тооцуулна (хоосон/саарал харагдахаас сэргийлнэ)
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 100);
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 300);
+
     const customIcon = L.divIcon({
-      html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+      html: `<div style="background: #0E9C8E; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 24],
       className: "custom-pin-marker",
@@ -18282,7 +23117,7 @@ function MapPickerModal({ order, onSave, onClose }) {
             🔍 Хаягаар хайх
           </button>
           <div ref={mapContainerRef}
-            style={{ width: "100%", height: 400, borderRadius: 12, overflow: "hidden", border: `1px solid ${T.border}` }} />
+            style={{ width: "100%", height: 400, minHeight: 400, borderRadius: 12, overflow: "hidden", border: `1px solid ${T.border}`, background: "#e5e7eb" }} />
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2 text-center">
             💡 Газрын зураг дээр дарж эсвэл pin-ийг чирж байршлыг сонгоно уу
           </div>
@@ -18389,7 +23224,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
           alignItems: "flex-start",
           justifyContent: "center",
           padding: "5rem 0.5rem 0.5rem 0.5rem",
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
         }}
@@ -18399,7 +23234,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
               backdropFilter: "blur(24px) saturate(180%)",
               WebkitBackdropFilter: "blur(24px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.8)",
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
               borderRadius: 16,
               width: "100%",
               maxWidth: 480,
@@ -18443,7 +23278,7 @@ function DriverSearchSelect({ drivers, orders, value, onChange }) {
                 <div className="p-1.5 space-y-1">
                   {filtered.map((d) => {
                     const count = orders.filter((o) => o.driver_id === d.id).length;
-                    const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending")).length;
+                    const activeCount = orders.filter((o) => o.driver_id === d.id && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length;
                     return (
                       <button key={d.id}
                         onClick={() => { onChange(d.id); setOpen(false); setSearch(""); }}
@@ -18493,6 +23328,8 @@ function OrdersView({ profile }) {
   const [items, setItems] = useState({});
   const [products, setProducts] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Pages ID → name
+  const [merchantPageIds, setMerchantPageIds] = useState([]); // 🏪 Merchant page-ууд
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("new");
   const [driverFilter, setDriverFilter] = useState("all"); // all | unassigned | <driverId>
@@ -18503,16 +23340,21 @@ function OrdersView({ profile }) {
   const [assignDriverOrder, setAssignDriverOrder] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // list | map
   const [page, setPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false); // 📦 Архивлагдсан үзэх горим
   const PAGE_SIZE = 100;
 
   // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
-  useEffect(() => { setPage(1); }, [filter, driverFilter, search]);
+  useEffect(() => { setPage(1); }, [filter, driverFilter, search, showArchived]);
 
   const loadAll = async () => {
     setLoading(true);
     try {
+      // 📦 showArchived === true бол зөвхөн архивлагдсан, эс бол идэвхтэй
+      const ordersQuery = showArchived 
+        ? supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false })
+        : supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").order("created_at", { ascending: false });
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
-        fetchAllRows(supabase.from("biz_orders").select("*").order("created_at", { ascending: false })),
+        fetchAllRows(ordersQuery),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
@@ -18531,26 +23373,59 @@ function OrdersView({ profile }) {
         });
 
         const prodMap = {};
-        (prodData || []).forEach((p) => { prodMap[p.id] = p.image_url; });
+        (prodData || []).forEach((p) => { prodMap[p.id] = { image: p.image_url, fb_page_id: p.fb_page_id }; });
 
         const itemMap = {};
         (itemData || []).forEach((it) => {
           if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
-          itemMap[it.order_id].push({ ...it, product_image: prodMap[it.product_id] || null });
+          const prodInfo = prodMap[it.product_id] || {};
+          itemMap[it.order_id].push({ 
+            ...it, 
+            product_image: prodInfo.image || null,
+            fb_page_id: prodInfo.fb_page_id || null,
+          });
         });
         setItems(itemMap);
       }
+
+      // 🔗 FB Pages татах
+      const { data: fbpData } = await supabase.from("biz_fb_pages")
+        .select("id, name");
+      const fbMap = {};
+      (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
+      setFbPagesMap(fbMap);
+
+      // 🏪 Merchant page-уудыг олох (merchant хэрэглэгчдэд оноогдсон бүх page)
+      const { data: merchants } = await supabase.from("profiles")
+        .select("fb_page_ids").eq("role", "merchant");
+      const mPageIds = new Set();
+      (merchants || []).forEach(m => {
+        (m.fb_page_ids || []).forEach(id => mPageIds.add(id));
+      });
+      setMerchantPageIds([...mPageIds]);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [showArchived]);
 
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ throttle: хуримтлуулах
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ Throttle: олон захиалга зэрэг өөрчлөгдөхөд render бүрд биш, 1.5с тутамд нэг л удаа setState
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return;
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     const channel = supabase
       .channel("orders-view-badge")
       .on(
@@ -18559,11 +23434,14 @@ function OrdersView({ profile }) {
         (payload) => {
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
-          setPendingChanges((prev) => prev + 1);
+          bumpBadge();
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -18578,12 +23456,19 @@ function OrdersView({ profile }) {
   let filtered = orders;
   if (filter === "unknown") {
     // ❓ Тодорхойгүй — is_unknown=true ЭСВЭЛ GPS байхгүй шинэ захиалга
-    // ❗ Цуцлагдсан / Хүргэгдсэн захиалга энд харагдахгүй (аль хэдийн шийдэгдсэн)
     filtered = filtered.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     });
+  } else if (filter === "new") {
+    // 🆕 Шинэ — идэвхтэй (new/assigned/pending), driver-гүй, тодорхой
+    filtered = filtered.filter((o) =>
+      (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown);
+  } else if (filter === "assigned") {
+    // 🚚 Хуваарилагдсан — driver оноогдсон, идэвхтэй захиалга
+    filtered = filtered.filter((o) =>
+      o.driver_id && o.status !== "delivered" && o.status !== "cancelled");
   } else if (filter !== "all") {
     filtered = filtered.filter((o) => o.status === filter);
   }
@@ -18599,29 +23484,98 @@ function OrdersView({ profile }) {
     filtered = filtered.filter((o) =>
       o.order_number?.toLowerCase().includes(q) ||
       o.customer_phone?.includes(q) ||
-      o.customer_name?.toLowerCase().includes(q)
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.delivery_address?.toLowerCase().includes(q)
     );
   }
 
   // Counts
+  // Counts — driver шүүлтийг тооцох (tab тоо ба жагсаалт таарна)
+  const countBase = driverFilter === "all"
+    ? orders
+    : (driverFilter === "unassigned"
+        ? orders.filter((o) => !o.driver_id)
+        : orders.filter((o) => o.driver_id === driverFilter));
   const counts = {
-    all: orders.length,
-    new: orders.filter((o) => o.status === "new").length,
-    unknown: orders.filter((o) => {
+    all: countBase.length,
+    new: countBase.filter((o) => (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown).length, // 🔧 driver-гүй идэвхтэй
+    assigned: countBase.filter((o) => o.driver_id && o.status !== "delivered" && o.status !== "cancelled").length, // 🆕 Хуваарилагдсан = driver-той
+    unknown: countBase.filter((o) => {
       if (o.status === "delivered" || o.status === "cancelled") return false;
       return o.is_unknown === true ||
-             (o.status === "new" && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
+             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
     }).length,
-    pending: orders.filter((o) => o.status === "pending").length,
-    delivered: orders.filter((o) => o.status === "delivered").length,
-    cancelled: orders.filter((o) => o.status === "cancelled").length,
+    delivered: countBase.filter((o) => o.status === "delivered").length,
+    cancelled: countBase.filter((o) => o.status === "cancelled").length,
   };
 
   const updateStatus = async (orderId, newStatus) => {
     const updates = { status: newStatus };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
+
+    // 🔄 ЗАСВАР: delivered байсан захиалгыг cancelled/assigned болгоход — өмнө хасагдсан
+    //    барааг хүргэгчийн агуулахад БУЦААЖ нэмэх (in movement). Эс бөгөөс out үлдэж,
+    //    нөөц буруу хасагдсан хэвээр үлддэг (admin/оператор цуцлахад гардаг байсан зөрчил).
+    if (newStatus !== "delivered") {
+      const cur = orders.find((o) => o.id === orderId)
+        || (await supabase.from("biz_orders").select("status, driver_id").eq("id", orderId).maybeSingle()).data;
+      if (cur?.status === "delivered" && cur?.driver_id) {
+        try {
+          const { data: driverWh } = await supabase
+            .from("inv_warehouses").select("id").eq("driver_id", cur.driver_id).maybeSingle();
+          const { data: ordItems } = await supabase
+            .from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
+          // Аль хэдийн буцаагдаагүй эсэхийг шалгах (давхар буцаахаас сэргийлэх)
+          const { data: existingReturns } = await supabase
+            .from("inv_movements").select("product_id")
+            .eq("reason", "return")
+            .ilike("notes", `%${orderId.slice(0, 8)}%`);
+          const returnedSet = new Set((existingReturns || []).map((r) => r.product_id));
+          if (driverWh && ordItems && ordItems.length > 0) {
+            const returnMovements = ordItems
+              .filter((it) => it.product_id && !returnedSet.has(it.product_id))
+              .map((it) => ({
+                product_id: it.product_id,
+                warehouse_id: driverWh.id,
+                movement_type: "in",
+                quantity: Number(it.quantity || 0),
+                reason: "return",
+                created_by: profile.id,
+                notes: `Захиалга #${orderId.slice(0, 8)} ${newStatus === "cancelled" ? "цуцлагдсан" : "буцаагдсан"}: ${it.product_name || ""} (нөөц сэргээв)`,
+              }));
+            if (returnMovements.length > 0) {
+              await supabase.from("inv_movements").insert(returnMovements);
+            }
+          }
+        } catch (e) { console.error("[cancel stock reverse]", e); }
+      }
+    }
+
     await supabase.from("biz_orders").update(updates).eq("id", orderId);
+    // 🆕 Захиалга цуцлагдахад biz_calls-д "cancelled" дуудлага нэмэх →
+    //    дуудлагын cycle хаагдаж, шинэ захиалга тусдаа card болж салагдана.
+    if (newStatus === "cancelled") {
+      try {
+        const ord = orders.find((o) => o.id === orderId)
+          || (await supabase.from("biz_orders").select("customer_phone, fb_page_id, customer_name").eq("id", orderId).maybeSingle()).data;
+        if (ord?.customer_phone) {
+          // Сүүлийн дуудлага аль хэдийн cancelled биш бол л нэмэх (давхар хамгаалалт)
+          const { data: lastC } = await supabase.from("biz_calls")
+            .select("call_status").eq("phone", ord.customer_phone)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (lastC?.call_status !== "cancelled") {
+            await supabase.from("biz_calls").insert({
+              phone: ord.customer_phone,
+              customer_name: ord.customer_name || null,
+              call_status: "cancelled",
+              fb_page_id: ord.fb_page_id || null,
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (e) { console.error("[cancel call insert]", e); }
+    }
     await loadAll();
     if (activeOrder?.id === orderId) {
       const updated = (await supabase.from("biz_orders").select("*").eq("id", orderId).single()).data;
@@ -18690,7 +23644,7 @@ function OrdersView({ profile }) {
                     {drivers.map((d) => {
                       const isSelected = assignDriverOrder.driver_id === d.id;
                       const dOrders = orders.filter((o) => o.driver_id === d.id);
-                      const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                      const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                       return (
                         <button key={d.id}
                           onClick={async () => {
@@ -18700,6 +23654,7 @@ function OrdersView({ profile }) {
                                 status: "pending",
                                 assigned_at: new Date().toISOString(),
                                 assigned_by: profile.id,
+                                is_unknown: false, // 🔧 Driver хуваарилсан → Тодорхойгүй-аас гаргах
                               }).eq("id", assignDriverOrder.id);
                               setAssignDriverOrder(null);
                               await loadAll();
@@ -18794,9 +23749,46 @@ function OrdersView({ profile }) {
         </button>
       </div>
 
+      {/* 📦 Архив горимын банер */}
+      {showArchived && (
+        <div className="rounded-xl px-4 py-3 flex items-center justify-between flex-wrap gap-2"
+          style={{ background: "rgba(146,64,14,0.08)", border: "1px solid rgba(146,64,14,0.3)" }}>
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 18 }}>📦</span>
+            <div>
+              <div style={{ color: "#92400e", fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                Архив горим
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                6 сараас илүү хугацаа өнгөрсөн дууссан/цуцалсан захиалгууд (зөвхөн харах горим)
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setShowArchived(false)}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs"
+            style={{ background: "white", color: "#92400e", fontFamily: FS, fontWeight: 600, border: "1px solid #92400e" }}>
+            🔙 Идэвхтэй захиалга харах
+          </button>
+        </div>
+      )}
+
       {/* Хайлт + active filter pill */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* 📦 Архив toggle — admin/manager only */}
+          {(profile.role === "admin" || profile.role === "manager") && (
+            <button onClick={() => setShowArchived(!showArchived)}
+              className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1 mr-2"
+              style={{
+                background: showArchived ? "#92400e" : T.surfaceAlt,
+                color: showArchived ? "white" : T.ink,
+                border: showArchived ? "none" : `1px dashed ${T.border}`,
+                fontFamily: FS, fontWeight: 700,
+              }}
+              title={showArchived ? "Идэвхтэй захиалгууд харах" : "Архивлагдсан захиалгуудыг харах"}>
+              {showArchived ? "🔙 Идэвхтэй" : "📦 Архив"}
+            </button>
+          )}
           <button onClick={() => setFilter("all")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
             style={{
@@ -18813,7 +23805,16 @@ function OrdersView({ profile }) {
               color: filter === "new" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            🆕 Шинэ ({orders.filter((o) => o.status === "new").length})
+            🆕 Шинэ ({counts.new})
+          </button>
+          <button onClick={() => setFilter("assigned")}
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "assigned" ? "#8b5cf6" : T.surfaceAlt,
+              color: filter === "assigned" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            🚚 Хуваарилагдсан ({counts.assigned})
           </button>
           <button onClick={() => setFilter("unknown")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -18823,15 +23824,6 @@ function OrdersView({ profile }) {
               fontFamily: FS, fontWeight: 600,
             }}>
             ❓ Тодорхойгүй ({counts.unknown})
-          </button>
-          <button onClick={() => setFilter("pending")}
-            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
-            style={{
-              background: filter === "pending" ? T.warn : T.surfaceAlt,
-              color: filter === "pending" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            ⏳ Хүлээгдэж ({orders.filter((o) => o.status === "pending").length})
           </button>
           <button onClick={() => setFilter("delivered")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -18873,7 +23865,7 @@ function OrdersView({ profile }) {
           const dOrders = orders.filter((o) => o.driver_id === driverFilter);
           const delivered = dOrders.filter((o) => o.status === "delivered").length;
           const cancelled = dOrders.filter((o) => o.status === "cancelled").length;
-          const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+          const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
           const revenue = dOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0);
           return (
             <div style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}
@@ -18955,9 +23947,11 @@ function OrdersView({ profile }) {
           {pagedOrders.map((o, idx) => (
             <OrderCard key={o.id} order={o} items={items[o.id] || []} index={(safePage - 1) * PAGE_SIZE + idx}
               drivers={drivers}
+              fbPagesMap={fbPagesMap}
+              merchantPageIds={merchantPageIds}
               onClick={() => setActiveOrder(o)}
               onMap={() => setMapOrder(o)}
-              onEdit={() => setEditOrder(o)}
+              onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
               onCancel={async () => {
                 if (!confirm(`Захиалгыг цуцлах уу?\n\nҮйлчлүүлэгч: ${o.customer_name || o.customer_phone}\nДүн: ${Number(o.total_amount).toLocaleString()}₮`)) return;
@@ -18966,6 +23960,21 @@ function OrdersView({ profile }) {
                     status: "cancelled",
                     cancelled_at: new Date().toISOString(),
                   }).eq("id", o.id);
+                  // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                  if (o.customer_phone) {
+                    const { data: lastC } = await supabase.from("biz_calls")
+                      .select("call_status").eq("phone", o.customer_phone)
+                      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                    if (lastC?.call_status !== "cancelled") {
+                      await supabase.from("biz_calls").insert({
+                        phone: o.customer_phone,
+                        customer_name: o.customer_name || null,
+                        call_status: "cancelled",
+                        fb_page_id: o.fb_page_id || null,
+                        created_at: new Date().toISOString(),
+                      });
+                    }
+                  }
                   await loadAll();
                 } catch (e) { alert("Алдаа: " + e.message); }
               }}
@@ -19139,6 +24148,7 @@ function OrdersView({ profile }) {
               await supabase.from("biz_orders").update({
                 delivery_lat: lat,
                 delivery_lng: lng,
+                is_unknown: false, // 🔧 GPS орсон → Тодорхойгүй-аас гаргах
               }).eq("id", mapOrder.id);
               setMapOrder(null);
               await loadAll();
@@ -19199,7 +24209,7 @@ function OrdersView({ profile }) {
                   {drivers.map((d) => {
                     const isSelected = assignDriverOrder.driver_id === d.id;
                     const dOrders = orders.filter((o) => o.driver_id === d.id);
-                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                     return (
                       <button key={d.id}
                         onClick={async () => {
@@ -19660,7 +24670,7 @@ function OrderDetailMap({ order }) {
 
       // Marker
       const customIcon = L.divIcon({
-        html: `<div style="background: #ec4899; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+        html: `<div style="background: #0E9C8E; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
         className: "",
         iconSize: [24, 24],
         iconAnchor: [12, 24],
@@ -19778,7 +24788,7 @@ function OrderDetailMap({ order }) {
   );
 }
 
-function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim }) {
+function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, isDriver = false, onCancelWithNote, currentDriverId, onClaim, readOnly = false, fbPagesMap = {}, onEdit, onMerchantCancel }) {
   const status = order.status;
   const isUnassigned = isDriver && !order.driver_id && order.status === "new";
   const [activityProfiles, setActivityProfiles] = useState({});
@@ -19868,11 +24878,12 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
     } : {
       new: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
       ],
       pending: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
-        { label: "Хүргэх боломжгүй", action: "cancel-note", color: T.err, icon: "✕" },
+      ],
+      assigned: [
+        { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       ],
       delivered: [],
       cancelled: [],
@@ -19884,6 +24895,11 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
     ],
     pending: [
+      { label: "Хүргэлт өөрчлөх", action: "assign", color: "#0ea5e9", icon: "🚚" },
+      { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
+      { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
+    ],
+    assigned: [
       { label: "Хүргэлт өөрчлөх", action: "assign", color: "#0ea5e9", icon: "🚚" },
       { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       { label: "Цуцлах", action: "cancelled", color: T.err, icon: "✕" },
@@ -19939,6 +24955,17 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               <span style={{ color: T.muted }}>📍</span>
               <span style={{ fontFamily: FS, color: T.ink }} className="text-sm">
                 {order.delivery_address}
+              </span>
+            </div>
+          )}
+          {order.fb_page_id && fbPagesMap[order.fb_page_id] && (
+            <div className="flex items-center gap-2">
+              <span style={{ color: T.muted }}>🔗</span>
+              <span style={{
+                background: "rgba(14,165,233,0.1)", color: "#0284c7",
+                fontFamily: FS, fontWeight: 600,
+              }} className="text-xs px-2 py-0.5 rounded">
+                {fbPagesMap[order.fb_page_id]}
               </span>
             </div>
           )}
@@ -20068,6 +25095,9 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
         </div>
       </div>
 
+      {/* 📜 Засварын дэлгэрэнгүй түүх (audit) — товчоор нээх */}
+      <OrderHistorySection orderId={order.id} />
+
       {/* Items */}
       <div className="glass rounded-2xl p-4">
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-3">
@@ -20159,7 +25189,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       <OrderDetailMap order={order} />
 
       {/* Actions */}
-      {actions.length > 0 && (
+      {!readOnly && actions.length > 0 && (
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${actions.length}, 1fr)` }}>
           {actions.map((a) => (
             <button key={a.action} onClick={() => {
@@ -20187,6 +25217,29 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               <span>{a.label}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 🏪 Merchant үйлдэл — Засах / Цуцлах */}
+      {(onEdit || onMerchantCancel) && order.status !== "cancelled" && order.status !== "delivered" && (
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${(onEdit ? 1 : 0) + (onMerchantCancel ? 1 : 0)}, 1fr)` }}>
+          {onEdit && (
+            <button onClick={onEdit}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS }}>
+              <span>✏</span><span>Засах</span>
+            </button>
+          )}
+          {onMerchantCancel && (
+            <button onClick={() => {
+              if (!confirm("Захиалга цуцлах уу?")) return;
+              onMerchantCancel();
+            }}
+              className="press-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
+              <span>✕</span><span>Цуцлах</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -21424,7 +26477,7 @@ function PollsView({ profile, isAdmin = false }) {
             return (
               <div key={poll.id} className="glass rounded-2xl p-4">
                 <div className="flex items-start gap-2 mb-2">
-                  <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                  <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }}
                     className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0">
                     🗳
                   </div>
@@ -21754,7 +26807,7 @@ function HRPersonalFileView({ employees, profile, isAdmin = false, currentUserId
           <div className="glass-strong rounded-2xl p-5">
             <div className="flex items-start gap-4">
               <div style={{
-                background: "linear-gradient(135deg, #f97316, #ec4899)",
+                background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
                 color: "white",
               }} className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold">
                 {selectedEmp?.name?.[0]}
@@ -22034,10 +27087,22 @@ function HRFileFormModal({ hrFile, employee, currentUserId, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  CALENDAR VIEW — Чөлөөг календар дээр харах
 // ═══════════════════════════════════════════════════════════════════════════
-function CalendarView({ leaves = [], employees = [], scope = "all", currentUserId = null }) {
+function CalendarView({ leaves = [], employees = [], schedules = [], fbPages = [], scope = "all", currentUserId = null }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+  // 🆕 Анх нээхэд өнөөдрийг автомат сонгох
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  });
+
+  // FB Pages ID → name map
+  const fbPagesMap = useMemo(() => {
+    const map = {};
+    fbPages.forEach((p) => { map[p.id] = p.name; });
+    return map;
+  }, [fbPages]);
 
   const filteredLeaves = useMemo(() => {
     let result = leaves.filter((l) => l.status === "approved");
@@ -22046,6 +27111,15 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
     }
     return result;
   }, [leaves, scope, currentUserId]);
+
+  // 📅 Хуваарь — scope-аар шүүх
+  const filteredSchedules = useMemo(() => {
+    let result = schedules || [];
+    if (scope === "self" && currentUserId) {
+      result = result.filter((s) => s.employee_id === currentUserId);
+    }
+    return result;
+  }, [schedules, scope, currentUserId]);
 
   // Build calendar grid
   const firstDay = new Date(year, month, 1);
@@ -22063,6 +27137,20 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
     });
     return map;
   }, [filteredLeaves]);
+
+  // 📅 Group schedules by date — week_start + day_of_week-ээс тооцоолох
+  const schedulesByDate = useMemo(() => {
+    const map = {};
+    filteredSchedules.forEach((s) => {
+      if (!s.week_start || s.day_of_week === null || s.day_of_week === undefined) return;
+      const ws = new Date(s.week_start + "T00:00:00");
+      ws.setDate(ws.getDate() + Number(s.day_of_week));
+      const key = ws.toISOString().slice(0, 10);
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    });
+    return map;
+  }, [filteredSchedules]);
 
   const monthNames = ["1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
                       "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар"];
@@ -22127,22 +27215,70 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
             if (d === null) return <div key={i} />;
             const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
             const dayLeaves = leavesByDate[dateStr] || [];
+            const daySchedules = schedulesByDate[dateStr] || [];
             const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
             const dayOfWeek = new Date(year, month, d).getDay();
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
             return (
-              <div key={i} style={{
-                background: isToday ? T.highlightSoft : "transparent",
-                border: isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`,
-                minHeight: 64,
-              }} className="rounded-lg p-1.5 relative">
+              <div key={i}
+                onClick={() => setSelectedDate(dateStr)}
+                style={{
+                  background: dateStr === selectedDate 
+                    ? "rgba(14,165,233,0.15)" 
+                    : (isToday ? T.highlightSoft : "transparent"),
+                  border: dateStr === selectedDate
+                    ? "2px solid #0284c7"
+                    : (isToday ? `1.5px solid ${T.highlight}` : `1px solid ${T.borderSoft}`),
+                  minHeight: 64,
+                  cursor: "pointer",
+                }} className="rounded-lg p-1.5 relative hover:shadow-sm transition-shadow">
                 <div style={{
                   fontFamily: FS, fontWeight: isToday ? 700 : 500,
                   color: isToday ? T.highlight : isWeekend ? T.err : T.ink,
                 }} className="text-xs">
                   {d}
                 </div>
+                {/* 📅 Хуваарь — цэнхэр тэмдэг */}
+                {daySchedules.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {daySchedules.slice(0, 2).map((s, j) => {
+                      const emp = empById(s.employee_id);
+                      const timeLabel = s.shift_start && s.shift_end
+                        ? `${s.shift_start.slice(0, 5)}-${s.shift_end.slice(0, 5)}`
+                        : "";
+                      const pageNames = (s.fb_page_ids || [])
+                        .map((id) => fbPagesMap[id])
+                        .filter(Boolean);
+                      const titleText = [
+                        emp?.name || "—",
+                        timeLabel,
+                        pageNames.length > 0 ? `🔗 ${pageNames.join(", ")}` : "",
+                      ].filter(Boolean).join(" · ");
+                      return (
+                        <div key={`s-${j}`} style={{
+                          background: "rgba(14,165,233,0.15)",
+                          color: "#0284c7",
+                        }} className="text-[9px] px-1 py-0.5 rounded truncate"
+                          title={titleText}>
+                          🕐 {emp?.name?.split(" ")[0] || "—"}
+                          {timeLabel && (
+                            <span style={{ opacity: 0.7, marginLeft: 2 }}>
+                              {s.shift_start?.slice(0, 5)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {daySchedules.length > 2 && (
+                      <div style={{ color: "#0284c7", fontFamily: FS }}
+                        className="text-[9px] px-1">
+                        +{daySchedules.length - 2}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* ⛱ Чөлөө — ягаан/улаан тэмдэг */}
                 {dayLeaves.length > 0 && (
                   <div className="mt-1 space-y-0.5">
                     {dayLeaves.slice(0, 2).map((l, j) => {
@@ -22185,9 +27321,149 @@ function CalendarView({ leaves = [], employees = [], scope = "all", currentUserI
           <div style={{ background: T.errSoft, color: T.err }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">B</div>
           <span>Өвчтэй</span>
         </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ background: "rgba(14,165,233,0.15)", color: "#0284c7" }} className="w-3 h-3 rounded text-[8px] flex items-center justify-center font-bold">🕐</div>
+          <span>Хуваарь</span>
+        </div>
         <div className="flex-1" />
         <div style={{ color: T.muted }}>{filteredLeaves.length} нийт чөлөө</div>
       </div>
+
+      {/* 📋 Өдрийн дэлгэрэнгүй — Календарын доор шууд харагдана */}
+      {selectedDate && (
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+              📅 {new Date(selectedDate).toLocaleDateString("mn-MN", { 
+                weekday: "long", year: "numeric", month: "long", day: "numeric"
+              })}
+            </h3>
+            <button onClick={() => setSelectedDate(null)}
+              style={{ color: T.muted }}
+              className="press-btn p-1 rounded-lg hover:bg-black/5">
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Хуваарь жагсаалт */}
+          {(schedulesByDate[selectedDate] || []).length > 0 && (
+            <div className="mb-4">
+              <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
+                className="text-[10px] uppercase tracking-wider mb-2">
+                🕐 Хуваарь ({schedulesByDate[selectedDate].length})
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {schedulesByDate[selectedDate].map((s, idx) => {
+                  const emp = empById(s.employee_id);
+                  const pageNames = (s.fb_page_ids || [])
+                    .map((id) => fbPagesMap[id])
+                    .filter(Boolean);
+                  return (
+                    <div key={idx} style={{
+                      background: "rgba(14,165,233,0.05)",
+                      border: "1px solid rgba(14,165,233,0.2)",
+                      borderRadius: 10, padding: 10,
+                    }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div style={{
+                          background: "#0284c7", color: "white",
+                          width: 28, height: 28, borderRadius: "50%",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontFamily: FS, fontWeight: 700, fontSize: 11,
+                          flexShrink: 0,
+                        }}>
+                          {emp?.name?.charAt(0) || "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                            {emp?.name || "Тодорхойгүй"}
+                          </div>
+                          {emp?.job_title && (
+                            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                              {emp.job_title}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {s.shift_start && s.shift_end && (
+                        <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mb-1">
+                          ⏰ {s.shift_start.slice(0, 5)} — {s.shift_end.slice(0, 5)}
+                          {s.break_minutes ? ` (${s.break_minutes}мин завсар)` : ""}
+                        </div>
+                      )}
+                      {pageNames.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {pageNames.map((name, i) => (
+                            <span key={i} style={{
+                              background: "#0284c7", color: "white",
+                              padding: "2px 6px", borderRadius: 6,
+                              fontSize: 10, fontFamily: FS, fontWeight: 600,
+                            }}>
+                              🔗 {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {s.notes && (
+                        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 italic">
+                          💬 {s.notes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Чөлөө жагсаалт */}
+          {(leavesByDate[selectedDate] || []).length > 0 && (
+            <div>
+              <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }}
+                className="text-[10px] uppercase tracking-wider mb-2">
+                ⛱ Чөлөө / Өвчтэй ({leavesByDate[selectedDate].length})
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {leavesByDate[selectedDate].map((l, idx) => {
+                  const emp = empById(l.employee_id);
+                  const isSick = l.leave_type === "sick";
+                  return (
+                    <div key={idx} style={{
+                      background: isSick ? T.errSoft : T.highlightSoft,
+                      border: `1px solid ${isSick ? T.err : T.highlight}`,
+                      borderRadius: 10, padding: 10,
+                    }}>
+                      <div className="flex items-center gap-2">
+                        <span style={{ fontSize: 16 }}>{isSick ? "🤒" : "⛱"}</span>
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                            {emp?.name || "Тодорхойгүй"}
+                          </div>
+                          <div style={{ color: isSick ? T.err : T.highlight, fontFamily: FS }} className="text-xs">
+                            {isSick ? "Өвчтэй" : "Чөлөө"}
+                          </div>
+                        </div>
+                      </div>
+                      {l.reason && (
+                        <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1 italic">
+                          💬 {l.reason}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(schedulesByDate[selectedDate] || []).length === 0 && 
+           (leavesByDate[selectedDate] || []).length === 0 && (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-2">
+              Энэ өдөрт хуваарь/чөлөө байхгүй
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -22444,9 +27720,10 @@ function SkillFormModal({ skill, employees, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SCHEDULE VIEW — Долоо хоногийн ажилтны хуваарь
 // ═══════════════════════════════════════════════════════════════════════════
-function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null }) {
+function ScheduleView({ employees, departments = [], sites, isAdmin = false, currentUserId = null }) {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterDeptId, setFilterDeptId] = useState("all"); // 🆕 Хэлтсээр шүүх
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
     const day = d.getDay() === 0 ? 6 : d.getDay() - 1;
@@ -22454,6 +27731,19 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
     return d.toISOString().slice(0, 10);
   });
   const [editing, setEditing] = useState(null);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Page ID → name
+
+  // FB Pages татах (cell дотор тэмдэг харуулах)
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name");
+      const map = {};
+      (data || []).forEach((p) => { map[p.id] = p.name; });
+      setFbPagesMap(map);
+    })();
+  }, [isAdmin]);
 
   const loadSchedules = async () => {
     setLoading(true);
@@ -22473,6 +27763,45 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
   const visibleEmployees = isAdmin
     ? employees
     : employees.filter((e) => e.id === currentUserId);
+
+  // 🏢 Хэлтсээр шүүх
+  const filteredEmployees = filterDeptId === "all" 
+    ? visibleEmployees 
+    : filterDeptId === "none"
+      ? visibleEmployees.filter((e) => !e.department_id)
+      : visibleEmployees.filter((e) => e.department_id === filterDeptId);
+
+  // 🏢 Хэлтсээр групплэх
+  const employeesByDept = useMemo(() => {
+    const map = {};
+    filteredEmployees.forEach((emp) => {
+      const deptId = emp.department_id || "__none__";
+      if (!map[deptId]) map[deptId] = [];
+      map[deptId].push(emp);
+    });
+    // Дотор нь нэрээр эрэмбэлэх
+    Object.keys(map).forEach((k) => {
+      map[k].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    });
+    return map;
+  }, [filteredEmployees]);
+
+  // Хэлтсүүдийн дараалал
+  const sortedDeptIds = useMemo(() => {
+    const ids = Object.keys(employeesByDept);
+    return ids.sort((a, b) => {
+      if (a === "__none__") return 1;
+      if (b === "__none__") return -1;
+      const da = departments.find((d) => d.id === a)?.name || "";
+      const db = departments.find((d) => d.id === b)?.name || "";
+      return da.localeCompare(db);
+    });
+  }, [employeesByDept, departments]);
+
+  const getDeptName = (deptId) => {
+    if (deptId === "__none__") return "Хэлтэс оноогоогүй";
+    return departments.find((d) => d.id === deptId)?.name || "Тодорхойгүй";
+  };
 
   const dayNames = ["Да", "Мя", "Лх", "Пү", "Ба", "Бя", "Ня"];
 
@@ -22543,6 +27872,51 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
         </button>
       </div>
 
+      {/* 🏢 Хэлтсээр шүүх (зөвхөн admin) */}
+      {isAdmin && departments.length > 0 && (
+        <div className="glass rounded-xl p-2 flex items-center gap-2 overflow-x-auto">
+          <span style={{ fontFamily: FS, color: T.muted, fontWeight: 500 }}
+            className="text-[10px] uppercase tracking-wider px-2 flex-shrink-0">
+            🏢 Хэлтэс
+          </span>
+          <button onClick={() => setFilterDeptId("all")}
+            style={{
+              background: filterDeptId === "all" ? T.highlight : T.surfaceAlt,
+              color: filterDeptId === "all" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs flex-shrink-0">
+            Бүгд ({visibleEmployees.length})
+          </button>
+          {departments.map((d) => {
+            const count = visibleEmployees.filter((e) => e.department_id === d.id).length;
+            if (count === 0) return null;
+            return (
+              <button key={d.id} onClick={() => setFilterDeptId(d.id)}
+                style={{
+                  background: filterDeptId === d.id ? T.highlight : T.surfaceAlt,
+                  color: filterDeptId === d.id ? "white" : T.ink,
+                  fontFamily: FS, fontWeight: 600,
+                }}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+                {d.name} ({count})
+              </button>
+            );
+          })}
+          {visibleEmployees.some((e) => !e.department_id) && (
+            <button onClick={() => setFilterDeptId("none")}
+              style={{
+                background: filterDeptId === "none" ? T.warn : T.surfaceAlt,
+                color: filterDeptId === "none" ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+              ⚠ Оноогоогүй ({visibleEmployees.filter((e) => !e.department_id).length})
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>
           <Loader2 className="spin mx-auto mb-2" size={20} />
@@ -22568,44 +27942,77 @@ function ScheduleView({ employees, sites, isAdmin = false, currentUserId = null 
               </tr>
             </thead>
             <tbody>
-              {visibleEmployees.map((emp) => (
-                <tr key={emp.id}>
-                  <td style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                      className="text-xs py-2 px-1 whitespace-nowrap">
-                    {emp.name}
+              {sortedDeptIds.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ color: T.muted, fontFamily: FS, textAlign: "center", padding: "20px" }}
+                    className="text-xs">
+                    Ажилтан байхгүй
                   </td>
-                  {[1,2,3,4,5,6,7].map((day) => {
-                    const cell = getCell(emp.id, day);
-                    const hasShift = !!cell?.shift_start;
-                    return (
-                      <td key={day} className="px-0.5 py-1 text-center">
-                        <button
-                          onClick={() => isAdmin && setEditing({ employee_id: emp.id, day_of_week: day, ...cell })}
-                          disabled={!isAdmin}
-                          style={{
-                            background: hasShift
-                              ? (cell.status === "absent" ? T.errSoft : cell.status === "leave" ? T.warnSoft : T.highlightSoft)
-                              : T.surfaceAlt,
-                            color: hasShift
-                              ? (cell.status === "absent" ? T.err : cell.status === "leave" ? T.warn : T.highlight)
-                              : T.muted,
-                            fontFamily: FS,
-                            fontWeight: 600,
-                            cursor: isAdmin ? "pointer" : "default",
-                          }}
-                          className={`w-full py-1.5 rounded text-[10px] ${isAdmin ? "hover:opacity-80" : ""}`}>
-                          {hasShift ? `${cell.shift_start.slice(0, 5)}` : "—"}
-                          {hasShift && (
-                            <div className="text-[8px] opacity-75">
-                              {cell.shift_end?.slice(0, 5)}
-                            </div>
-                          )}
+                </tr>
+              ) : (
+                sortedDeptIds.map((deptId) => (
+                  <React.Fragment key={deptId}>
+                    {/* Хэлтсийн гарчиг */}
+                    <tr>
+                      <td colSpan={8} style={{
+                        background: deptId === "__none__" ? T.warnSoft : T.surfaceAlt,
+                        color: deptId === "__none__" ? T.warn : T.ink,
+                        fontFamily: FS, fontWeight: 700,
+                      }} className="text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-md">
+                        🏢 {getDeptName(deptId)} ({employeesByDept[deptId].length})
+                      </td>
+                    </tr>
+                    {employeesByDept[deptId].map((emp) => (
+                      <tr key={emp.id}>
+                        <td style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
+                            className="text-xs py-2 px-1 whitespace-nowrap">
+                          {emp.name}
+                        </td>
+                        {[1,2,3,4,5,6,7].map((day) => {
+                          const cell = getCell(emp.id, day);
+                          const hasShift = !!cell?.shift_start;
+                          return (
+                            <td key={day} className="px-0.5 py-1 text-center">
+                              <button
+                                onClick={() => isAdmin && setEditing({ employee_id: emp.id, day_of_week: day, ...cell })}
+                                disabled={!isAdmin}
+                                style={{
+                                  background: hasShift
+                                    ? (cell.status === "absent" ? T.errSoft : cell.status === "leave" ? T.warnSoft : T.highlightSoft)
+                                    : T.surfaceAlt,
+                                  color: hasShift
+                                    ? (cell.status === "absent" ? T.err : cell.status === "leave" ? T.warn : T.highlight)
+                                    : T.muted,
+                                  fontFamily: FS,
+                                  fontWeight: 600,
+                                  cursor: isAdmin ? "pointer" : "default",
+                                }}
+                                className={`w-full py-1.5 rounded text-[10px] ${isAdmin ? "hover:opacity-80" : ""}`}>
+                                {hasShift ? `${cell.shift_start.slice(0, 5)}` : "—"}
+                                {hasShift && (
+                                  <div className="text-[8px] opacity-75">
+                                    {cell.shift_end?.slice(0, 5)}
+                                  </div>
+                                )}
+                                {hasShift && cell.fb_page_ids && cell.fb_page_ids.length > 0 && (
+                                  <div style={{ color: "#0284c7", fontWeight: 600 }} className="text-[8px] mt-0.5 truncate">
+                                    🔗 {cell.fb_page_ids
+                                      .map((id) => fbPagesMap[id])
+                                      .filter(Boolean)
+                                      .slice(0, 2)
+                                      .join(", ")}
+                                    {cell.fb_page_ids.length > 2 && ` +${cell.fb_page_ids.length - 2}`}
+                                  </div>
+                                )}
                         </button>
                       </td>
                     );
                   })}
                 </tr>
-              ))}
+                    ))}
+                  </React.Fragment>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -22647,9 +28054,32 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
   const [shiftEnd, setShiftEnd] = useState(schedule?.shift_end?.slice(0, 5) || "18:00");
   const [breakMinutes, setBreakMinutes] = useState(schedule?.break_minutes ?? 60);
   const [siteId, setSiteId] = useState(schedule?.site_id || "");
+  // 🔗 Operator-ийн ажиллах FB Page-үүд (олон сонгох)
+  const [fbPageIds, setFbPageIds] = useState(schedule?.fb_page_ids || []);
+  const [fbPages, setFbPages] = useState([]);
   const [status, setStatus] = useState(schedule?.status || "scheduled");
   const [notes, setNotes] = useState(schedule?.notes || "");
   const [busy, setBusy] = useState(false);
+
+  const isOperator = employee?.role === "operator";
+
+  // FB Pages-ийг татах (зөвхөн operator-руу хэрэгтэй)
+  useEffect(() => {
+    if (!isOperator) return;
+    (async () => {
+      const { data } = await supabase.from("biz_fb_pages")
+        .select("id, name").eq("is_active", true).order("display_order");
+      setFbPages(data || []);
+    })();
+  }, [isOperator]);
+
+  const togglePage = (pageId) => {
+    setFbPageIds((prev) => 
+      prev.includes(pageId) 
+        ? prev.filter((id) => id !== pageId)
+        : [...prev, pageId]
+    );
+  };
 
   const dayNames = ["", "Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
 
@@ -22701,6 +28131,59 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
             </select>
           </div>
 
+          {/* 🔗 FB Page сонголт — зөвхөн operator-руу (ОЛОН СОНГОХ) */}
+          {isOperator && (
+            <div style={{ background: "rgba(14,165,233,0.05)", border: `1px solid rgba(14,165,233,0.2)`, borderRadius: 12, padding: 10 }}>
+              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} className="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                <span>🔗 FB Page-ууд</span>
+                <span style={{ color: T.muted, fontWeight: 400 }}>(олон сонгох боломжтой)</span>
+                {fbPageIds.length > 0 && (
+                  <span style={{ background: "#0284c7", color: "white", padding: "1px 6px", borderRadius: 8, fontSize: 9 }}>
+                    {fbPageIds.length}
+                  </span>
+                )}
+              </label>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {fbPages.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs italic">
+                    FB Page алга байна
+                  </div>
+                ) : (
+                  fbPages.map((p) => {
+                    const checked = fbPageIds.includes(p.id);
+                    return (
+                      <button key={p.id} type="button"
+                        onClick={() => togglePage(p.id)}
+                        className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                        style={{
+                          background: checked ? "rgba(14,165,233,0.15)" : T.surface,
+                          border: `1px solid ${checked ? "#0284c7" : T.border}`,
+                          fontFamily: FS,
+                          fontWeight: 500,
+                          color: T.ink,
+                          textAlign: "left",
+                        }}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4,
+                          background: checked ? "#0284c7" : "transparent",
+                          border: `1.5px solid ${checked ? "#0284c7" : T.border}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0,
+                        }}>
+                          {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <span className="text-xs flex-1">{p.name}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">
+                Энэ операторт тухайн өдөр ажиллах FB Page-уудыг сонго
+              </div>
+            </div>
+          )}
+
           <div>
             <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Төлөв</label>
             <select value={status} onChange={(e) => setStatus(e.target.value)}
@@ -22732,6 +28215,7 @@ function ScheduleFormModal({ schedule, sites, employee, onSave, onDelete, onClos
                   shift_end: shiftEnd,
                   break_minutes: breakMinutes,
                   site_id: siteId || null,
+                  fb_page_ids: isOperator ? fbPageIds : [], // 🔗 operator-руу олон сонголт
                   status,
                   notes: notes || null,
                 });
@@ -22855,7 +28339,7 @@ function BestEmployeeView({ employees, sessions, kpiEntries, leaves }) {
                 <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }} className="text-sm w-6">
                   {i + 4}
                 </div>
-                <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }}
+                <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold">
                   {stat.employee.name?.[0]}
                 </div>
@@ -23032,8 +28516,8 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
       const lat = Number(s.lat), lng = Number(s.lng);
       const circle = LRef.circle([lat, lng], {
         radius: s.radius_m || 200,
-        color: "#ec4899",
-        fillColor: "#ec4899",
+        color: "#0E9C8E",
+        fillColor: "#0E9C8E",
         fillOpacity: 0.06,
         weight: 1.5,
         dashArray: "4 4",
@@ -23043,7 +28527,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
 
       const siteIcon = LRef.divIcon({
         className: "site-marker",
-        html: `<div style="background: linear-gradient(135deg, #f97316, #ec4899); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(244,114,182,0.4); border: 2px solid white;">🏢</div>`,
+        html: `<div style="background: linear-gradient(135deg, #3FE0C6, #0E9C8E); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(14, 156, 142,0.4); border: 2px solid white;">🏢</div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
       });
@@ -23206,7 +28690,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
       // Since html2canvas not installed, ашиглах backup arga
       const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       pdf.setFontSize(16);
-      pdf.text("ORGOO Live Map Report", 20, 20);
+      pdf.text("CoreLink Live Map Report", 20, 20);
       pdf.setFontSize(10);
       pdf.text(`Огноо: ${new Date().toLocaleString("mn-MN")}`, 20, 30);
       pdf.text(`Идэвхтэй: ${Object.keys(activeSessions).length} ажилтан`, 20, 40);
@@ -23224,7 +28708,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
         if (y > 190) { pdf.addPage(); y = 20; }
       });
 
-      pdf.save(`ORGOO-livemap-${new Date().toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`CoreLink-livemap-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (e) {
       alert("PDF тайлан үүсгэхэд алдаа гарлаа: " + e.message);
     }
@@ -23342,7 +28826,7 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
             </div>
           )}
           <div className="flex items-center gap-1">
-            <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)" }} className="w-2.5 h-2.5 rounded-full" />
+            <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)" }} className="w-2.5 h-2.5 rounded-full" />
             <span style={{ color: T.inkSoft }}>Байр ({filteredSites.length})</span>
           </div>
         </div>
@@ -23407,12 +28891,12 @@ function LiveMap({ employees, activeSessions, sites, sessions, departments = [],
 
 function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" }) {
   const iconBg = {
-    pink: "linear-gradient(135deg, #f97316, #ec4899)",
+    pink: "linear-gradient(135deg, #3FE0C6, #0E9C8E)",
     success: "linear-gradient(135deg, #10b981, #14b8a6)",
     warn: "linear-gradient(135deg, #f59e0b, #f97316)",
     info: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
     purple: "linear-gradient(135deg, #8b5cf6, #ec4899)",
-  }[iconColor] || "linear-gradient(135deg, #f97316, #ec4899)";
+  }[iconColor] || "linear-gradient(135deg, #3FE0C6, #0E9C8E)";
 
   return (
     <div className="glass lift rounded-2xl px-5 py-4">
@@ -23422,7 +28906,7 @@ function BigStat({ label, value, suffix, accent, icon: Icon, iconColor = "pink" 
           <div style={{
             background: iconBg,
             color: "white",
-            boxShadow: "0 4px 12px rgba(244,114,182,0.25)",
+            boxShadow: "0 4px 12px rgba(14, 156, 142,0.25)",
           }} className="w-9 h-9 rounded-xl flex items-center justify-center">
             <Icon size={16} strokeWidth={2.2} />
           </div>
@@ -24205,6 +29689,2254 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  OPERATOR DASHBOARD — Зөвхөн дуудлага + захиалга
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR CALENDAR WRAPPER — leaves+employees өгөгдөл татаад CalendarView-руу
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorCalendarView({ profile }) {
+  const [leaves, setLeaves] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [fbPages, setFbPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [{ data: leavesData }, { data: empData }, { data: schedData }, { data: fbpData }] = await Promise.all([
+          supabase.from("hrm_leaves").select("*").order("start_date", { ascending: false }),
+          supabase.from("profiles").select("id, name, avatar_url, role, job_title"),
+          supabase.from("work_schedules").select("*"),
+          supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
+        ]);
+        setLeaves(leavesData || []);
+        setEmployees(empData || []);
+        setSchedules(schedData || []);
+        setFbPages(fbpData || []);
+      } catch (e) {
+        console.error("[OperatorCalendarView] load error:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center">
+        <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <CalendarView
+      leaves={leaves}
+      employees={employees}
+      schedules={schedules}
+      fbPages={fbPages}
+      scope="all"
+      currentUserId={profile.id}
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  🏪 MERCHANT DASHBOARD — FB Page-аар хязгаарлагдсан хувийн самбар
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  📜 ORDER HISTORY SECTION — Захиалгын засварын түүх (collapsible)
+// ═══════════════════════════════════════════════════════════════════════════
+function OrderHistorySection({ orderId }) {
+  const [history, setHistory] = useState([]);
+  const [users, setUsers] = useState({});
+  const [pages, setPages] = useState({});
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!orderId) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: hData } = await supabase.from("biz_order_history")
+          .select("*").eq("order_id", orderId)
+          .order("changed_at", { ascending: false });
+        const histories = hData || [];
+        setHistory(histories);
+
+        // Хэрэглэгч + Page нэрс татах
+        const userIds = [...new Set(histories.map(h => h.changed_by).filter(Boolean))];
+        const pageIds = [...new Set(
+          histories.filter(h => h.field_name === "fb_page_id")
+            .flatMap(h => [h.old_value, h.new_value])
+            .filter(Boolean)
+            .filter(v => v !== "null")
+        )];
+
+        if (userIds.length > 0) {
+          const { data: usersData } = await supabase.from("profiles")
+            .select("id, name").in("id", userIds);
+          const map = {};
+          (usersData || []).forEach(u => { map[u.id] = u.name; });
+          setUsers(map);
+        }
+
+        if (pageIds.length > 0) {
+          const { data: pagesData } = await supabase.from("biz_fb_pages")
+            .select("id, name").in("id", pageIds);
+          const map = {};
+          (pagesData || []).forEach(p => { map[p.id] = p.name; });
+          setPages(map);
+        }
+      } catch (e) { console.error("[OrderHistory]", e); }
+      finally { setLoading(false); }
+    })();
+  }, [orderId]);
+
+  const fieldLabels = {
+    status: "Төлөв",
+    delivery_address: "Хаяг",
+    customer_phone: "Утас",
+    customer_name: "Нэр",
+    total_amount: "Нийт дүн",
+    paid_amount: "Төлсөн",
+    delivery_fee: "Хүргэлт",
+    driver_id: "Жолооч",
+    fb_page_id: "FB Page",
+    notes: "Тэмдэглэл",
+  };
+
+  const formatValue = (fieldName, value) => {
+    if (value === null || value === undefined || value === "null") return "—";
+    if (fieldName === "fb_page_id") return pages[value] || value.substring(0, 8);
+    if (fieldName === "driver_id") return users[value] || value.substring(0, 8);
+    if (fieldName === "status") {
+      const map = {
+        new: "🆕 Шинэ",
+        delivered: "✓ Хүргэгдсэн",
+        cancelled: "✕ Цуцалсан",
+        in_progress: "🚚 Замд",
+      };
+      return map[value] || value;
+    }
+    if (fieldName === "total_amount" || fieldName === "paid_amount" || fieldName === "delivery_fee") {
+      return Number(value).toLocaleString() + "₮";
+    }
+    return value;
+  };
+
+  if (loading || history.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg mb-3" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+      <button onClick={() => setExpanded(!expanded)}
+        className="press-btn w-full p-2.5 flex items-center justify-between"
+        style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+        <span className="flex items-center gap-2 text-xs">
+          📜 Түүх ({history.length} өөрчлөлт)
+        </span>
+        <ChevronDown size={14} style={{ 
+          color: T.muted, 
+          transform: expanded ? "rotate(180deg)" : "rotate(0)",
+          transition: "transform 0.2s",
+        }} />
+      </button>
+
+      {expanded && (
+        <div className="px-2.5 pb-2.5 space-y-1.5">
+          {history.map((h, idx) => {
+            const userName = h.changed_by ? (users[h.changed_by] || "?") : "Систем";
+            const isStatus = h.field_name === "status";
+            return (
+              <div key={h.id || idx} style={{
+                background: T.surface,
+                borderLeft: `2px solid ${
+                  h.action === "created" ? T.highlight :
+                  h.action === "status_changed" ? T.ok :
+                  h.action === "driver_assigned" ? "#0284c7" :
+                  h.action === "item_added" ? "#16a34a" :
+                  h.action === "item_removed" ? T.err :
+                  h.action === "item_qty_changed" ? "#8b5cf6" :
+                  h.action === "item_price_changed" ? "#8b5cf6" :
+                  T.warn
+                }`,
+                borderRadius: 6, padding: 8,
+              }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px]">
+                      {h.action === "created" && "🆕 Захиалга үүсгэгдсэн"}
+                      {h.action === "status_changed" && (
+                        <>📊 Төлөв: {formatValue("status", h.old_value)} → {formatValue("status", h.new_value)}</>
+                      )}
+                      {h.action === "driver_assigned" && (
+                        <>🚚 Жолооч {h.old_value && h.old_value !== "null" ? `${formatValue("driver_id", h.old_value)} →` : ""} {formatValue("driver_id", h.new_value)}</>
+                      )}
+                      {h.action === "edited" && (
+                        <>✏ {fieldLabels[h.field_name] || h.field_name}: {formatValue(h.field_name, h.old_value)} → {formatValue(h.field_name, h.new_value)}</>
+                      )}
+                      {h.action === "item_added" && (
+                        <>➕ Бараа нэмсэн: {h.new_value}</>
+                      )}
+                      {h.action === "item_removed" && (
+                        <>➖ Бараа хассан: {h.old_value}</>
+                      )}
+                      {h.action === "item_qty_changed" && (
+                        <>🔢 Тоо: {h.notes || `${h.old_value}ш → ${h.new_value}ш`}</>
+                      )}
+                      {h.action === "item_price_changed" && (
+                        <>💲 Үнэ: {h.notes || `${h.old_value}₮ → ${h.new_value}₮`}</>
+                      )}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-0.5">
+                      👤 {userName} · {new Date(h.changed_at).toLocaleString("mn-MN")}
+                    </div>
+                    {h.notes && (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] italic mt-0.5">
+                        💬 {h.notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MerchantDashboard({ profile }) {
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("orgoo-merchant-view") || "dashboard"; } catch { return "dashboard"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-merchant-view", view); } catch {}
+  }, [view]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [fbPages, setFbPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Merchant-руу оноогдсон FB Page-ийн ID массив
+  const allowedPageIds = profile.fb_page_ids || [];
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        if (allowedPageIds.length === 0) {
+          setFbPages([]);
+        } else {
+          const { data } = await supabase.from("biz_fb_pages")
+            .select("id, name, is_active")
+            .in("id", allowedPageIds);
+          setFbPages(data || []);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.length]);
+
+  // 🚫 Page онооцоогүй бол хариу
+  if (!loading && allowedPageIds.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6"
+        style={{ background: T.bg }}>
+        <div className="glass rounded-3xl p-8 max-w-md w-full text-center">
+          <div className="text-5xl mb-3">🏪</div>
+          <h2 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg mb-2">
+            FB Page оноогдоогүй байна
+          </h2>
+          <p style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-4">
+            Танд харах эрхтэй FB Page оноогдоогүй учир дэлгэц харуулах боломжгүй.
+            <br /><br />
+            Admin-руу хандаж FB Page оноолгоно уу.
+          </p>
+          <button onClick={() => supabase.auth.signOut()}
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+            className="press-btn w-full py-2.5 rounded-lg text-sm">
+            Гарах
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: T.bg }}>
+        <Loader2 className="spin" size={24} style={{ color: T.muted }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex" style={{ background: T.bg }}>
+      {/* ─── Sidebar ─────────────────────────────────────────────────────── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+      <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        style={{ background: T.surface, borderRight: `1px solid ${T.border}` }}>
+        <div className="p-4 border-b" style={{ borderColor: T.border }}>
+          <div className="flex items-center gap-2">
+            <div style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm">
+              🏪
+            </div>
+            <div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">CoreLink</div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Merchant</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 space-y-3">
+          {/* Оноогдсон FB Pages — мэдээллийн зорилгоор */}
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+            className="rounded-xl p-2.5">
+            <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }}
+              className="text-[9px] uppercase tracking-wider mb-1.5">
+              🔗 Таны FB Page ({fbPages.length})
+            </div>
+            <div className="space-y-0.5">
+              {fbPages.map((p) => (
+                <div key={p.id} style={{ color: T.ink, fontFamily: FS }} className="text-xs">
+                  • {p.name}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
+            <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
+          </SidebarSection>
+
+          <SidebarSection label="Бизнес" icon={ShoppingBag}>
+            <SidebarTab active={view === "calls"} onClick={() => { setView("calls"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
+            <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалт</SidebarTab>
+            <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+            <SidebarTab active={view === "stock"} onClick={() => { setView("stock"); setSidebarOpen(false); }} icon={Package}>Бараа, нөөц</SidebarTab>
+          </SidebarSection>
+
+          <div className="pt-3 border-t" style={{ borderColor: T.border }}>
+            <button onClick={() => supabase.auth.signOut()}
+              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}
+              className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-2 hover:bg-black/5">
+              <LogOut size={14} />
+              Гарах
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── Гол хэсэг ───────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-auto" style={{ background: T.bg }}>
+        <header style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}
+          className="sticky top-0 z-30 p-4">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1">
+              <Inbox size={20} style={{ color: T.ink }} />
+            </button>
+            <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
+              {view === "dashboard" && "📊 Хяналтын самбар"}
+              {view === "calls" && "📞 Дуудлага"}
+              {view === "sales" && "📈 Борлуулалт"}
+              {view === "orders" && "🛍 Захиалга"}
+              {view === "stock" && "📦 Бараа, нөөц"}
+            </h1>
+          </div>
+        </header>
+
+        <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
+          {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
+          {view === "calls" && <CallCenterView profile={profile} />}
+          {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
+          {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
+          {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─── Merchant Overview — нийт стат ─────────────────────────────────────
+function MerchantOverview({ allowedPageIds, fbPages }) {
+  const [stats, setStats] = useState({ orders: 0, delivered: 0, revenue: 0, calls: 0 });
+  const [loading, setLoading] = useState(true);
+  const [debugInfo, setDebugInfo] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        console.log("[Merchant] Loading with allowedPageIds:", allowedPageIds);
+        const [ordRes, callRes] = await Promise.all([
+          supabase.from("biz_orders").select("status, total_amount, fb_page_id").in("fb_page_id", allowedPageIds),
+          supabase.from("biz_calls").select("id, fb_page_id").in("fb_page_id", allowedPageIds),
+        ]);
+        const orders = ordRes.data || [];
+        const calls = callRes.data || [];
+        const delivered = orders.filter(o => o.status === "delivered");
+        const revenue = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+        
+        console.log("[Merchant] Orders fetched:", orders.length, "Calls:", calls.length);
+        if (ordRes.error) console.error("[Merchant] Orders error:", ordRes.error);
+        if (callRes.error) console.error("[Merchant] Calls error:", callRes.error);
+        
+        setStats({
+          orders: orders.length,
+          delivered: delivered.length,
+          revenue,
+          calls: calls.length,
+        });
+        setDebugInfo({
+          ordersErr: ordRes.error?.message,
+          callsErr: callRes.error?.message,
+          pageCount: allowedPageIds.length,
+        });
+      } catch (e) { 
+        console.error("[Merchant] Exception:", e);
+        setDebugInfo({ exception: e.message });
+      }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+          <div className="text-2xl mb-1">💰</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Орлого</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {Number(stats.revenue).toLocaleString()}₮
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
+          <div className="text-2xl mb-1">✅</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Хүргэгдсэн</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.delivered}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div className="text-2xl mb-1">🛍</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Нийт захиалга</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.orders}
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
+          <div className="text-2xl mb-1">📞</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Дуудлага</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.calls}
+          </div>
+        </div>
+      </div>
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+          💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой өгөгдлөөс тооцоологдсон.
+        </div>
+        {/* Debug info — асуудалтай үед харагдана */}
+        {(stats.orders === 0 && stats.calls === 0) && (
+          <div style={{ background: T.warnSoft, border: `1px solid ${T.warn}`, borderRadius: 8, padding: 10, marginTop: 8 }}>
+            <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1">
+              ⚠ Мэдээлэл олдсонгүй
+            </div>
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] space-y-1">
+              <div>• Оноогдсон Page: {allowedPageIds.length}</div>
+              {debugInfo?.ordersErr && <div style={{ color: T.err }}>• Захиалгын алдаа: {debugInfo.ordersErr}</div>}
+              {debugInfo?.callsErr && <div style={{ color: T.err }}>• Дуудлагын алдаа: {debugInfo.callsErr}</div>}
+              <div className="pt-1">
+                <strong>Шалтгаан:</strong> Хуучин захиалга/дуудлагуудад FB Page тогтоогдоогүй байж магадгүй.
+                Admin-руу хандаж <code>backfill-fb-pages.sql</code> ажиллуулна уу.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Merchant Calls View ─────────────────────────────────────────────────
+function MerchantCallsView({ allowedPageIds }) {
+  const [calls, setCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNewCallModal, setShowNewCallModal] = useState(false);
+  const [orderForCall, setOrderForCall] = useState(null); // { call }
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // FB Pages болон бараа татах
+  const [fbPages, setFbPages] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: pgData }, { data: prodData }] = await Promise.all([
+        supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
+        supabase.from("inv_products").select("id, name, sale_price, image_url, sku")
+          .in("fb_page_id", allowedPageIds),
+      ]);
+      setFbPages(pgData || []);
+      setProducts(prodData || []);
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // 1. Merchant-ийн Page-руу холбогдсон захиалгуудыг татах
+        const { data: ordersData } = await supabase.from("biz_orders")
+          .select("id, customer_phone, customer_name, status, total_amount, created_at, fb_page_id")
+          .in("fb_page_id", allowedPageIds)
+          .order("created_at", { ascending: false });
+        const orders = ordersData || [];
+        
+        // 2. Утаснуудыг цуглуулах
+        const phonesFromOrders = [...new Set(orders.map(o => o.customer_phone).filter(Boolean))];
+        console.log("[MerchantCalls] Phones from orders:", phonesFromOrders.length);
+        
+        // 3. Дуудлагуудыг олох — Page-руу таглагдсан + customer утсаар
+        let allCalls = [];
+        
+        const { data: pageCalls } = await supabase.from("biz_calls")
+          .select("*").in("fb_page_id", allowedPageIds);
+        allCalls = pageCalls || [];
+        
+        if (phonesFromOrders.length > 0) {
+          const { data: phoneCalls } = await supabase.from("biz_calls")
+            .select("*").in("phone", phonesFromOrders);
+          const existingIds = new Set(allCalls.map(c => c.id));
+          (phoneCalls || []).forEach(c => {
+            if (!existingIds.has(c.id)) allCalls.push(c);
+          });
+        }
+        console.log("[MerchantCalls] All calls:", allCalls.length);
+        
+        // 4. Утсаар нэгтгэх — бүх "бүртгэгдсэн утас" жагсаалт үүсгэх
+        const phoneMap = new Map();
+        
+        // Захиалгуудаас утас нэмэх
+        orders.forEach(o => {
+          if (!o.customer_phone) return;
+          if (!phoneMap.has(o.customer_phone)) {
+            phoneMap.set(o.customer_phone, {
+              phone: o.customer_phone,
+              customer_name: o.customer_name,
+              orders: [],
+              calls: [],
+              latest_date: o.created_at,
+            });
+          }
+          phoneMap.get(o.customer_phone).orders.push(o);
+        });
+        
+        // Дуудлагуудаас утас нэмэх (захиалгад байхгүй ч байх боломжтой)
+        allCalls.forEach(c => {
+          if (!c.phone) return;
+          if (!phoneMap.has(c.phone)) {
+            phoneMap.set(c.phone, {
+              phone: c.phone,
+              customer_name: null,
+              orders: [],
+              calls: [],
+              latest_date: c.created_at,
+            });
+          }
+          const entry = phoneMap.get(c.phone);
+          entry.calls.push(c);
+          // Хамгийн сүүлийн огноог шинэчлэх
+          if (new Date(c.created_at) > new Date(entry.latest_date)) {
+            entry.latest_date = c.created_at;
+          }
+        });
+        
+        // 5. Огноогоор эрэмбэлж массив болгох
+        const phoneList = Array.from(phoneMap.values())
+          .sort((a, b) => new Date(b.latest_date) - new Date(a.latest_date));
+        
+        console.log("[MerchantCalls] Unique phones registered:", phoneList.length);
+        setCalls(phoneList);
+      } catch (e) {
+        console.error("[MerchantCalls] Error:", e);
+      }
+      setLoading(false);
+    })();
+  }, [allowedPageIds.join(","), refreshKey]);
+
+  // Filter by status — захиалгын status болон calls-аас аль ч таарах
+  const filtered = calls.filter((entry) => {
+    if (filterStatus === "all") return true;
+    if (filterStatus === "pending") {
+      return entry.orders.some(o => o.status === "new") || 
+             entry.calls.some(c => (c.call_status || "pending") === "pending");
+    }
+    if (filterStatus === "ordered") {
+      return entry.orders.some(o => o.status === "delivered");
+    }
+    if (filterStatus === "no_answer") {
+      return entry.calls.some(c => c.call_status === "no_answer") && 
+             entry.orders.length === 0;
+    }
+    return true;
+  });
+
+  const counts = {
+    all: calls.length,
+    pending: calls.filter(e => 
+      e.orders.some(o => o.status === "new") || 
+      e.calls.some(c => (c.call_status || "pending") === "pending")
+    ).length,
+    ordered: calls.filter(e => e.orders.some(o => o.status === "delivered")).length,
+    no_answer: calls.filter(e => 
+      e.calls.some(c => c.call_status === "no_answer") && e.orders.length === 0
+    ).length,
+  };
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  return (
+    <div className="space-y-3">
+      {/* Шинэ дуудлага товч */}
+      {/* 📞 ЗАЛГАХ ДУГААРУУД — Хурдан бүртгэл */}
+      <PhonesToCallSection 
+        fbPages={fbPages} 
+        products={products}
+        onChanged={() => setRefreshKey(k => k + 1)}
+      />
+
+      <button onClick={() => setShowNewCallModal(true)}
+        className="press-btn w-full py-3 rounded-xl flex items-center justify-center gap-2"
+        style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}>
+        <Plus size={18} /> Шинэ дуудлага бүртгэх (дэлгэрэнгүй)
+      </button>
+
+      {/* Filter tabs */}
+      <div className="glass rounded-xl p-2 flex gap-2 overflow-x-auto">
+        {[
+          { id: "all", label: "Бүгд", color: T.highlight },
+          { id: "pending", label: "⏳ Хүлээгдэж", color: T.warn },
+          { id: "ordered", label: "✓ Захиалсан", color: T.ok },
+          { id: "no_answer", label: "✕ Хариулаагүй", color: T.muted },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setFilterStatus(t.id)}
+            style={{
+              background: filterStatus === t.id ? t.color : T.surfaceAlt,
+              color: filterStatus === t.id ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}
+            className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+            {t.label} ({counts[t.id] || 0})
+          </button>
+        ))}
+      </div>
+
+      {/* Үйлчлүүлэгчийн жагсаалт (утсаар групплэсэн) */}
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>
+          {filterStatus === "all" ? "Утас байхгүй. Дээрх товчоор шинэ дуудлага бүртгэнэ үү." : "Энэ ангилалд утас алга"}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((entry) => {
+            const latestCall = entry.calls.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const latestOrder = entry.orders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            const orderCounts = {
+              delivered: entry.orders.filter(o => o.status === "delivered").length,
+              new: entry.orders.filter(o => o.status === "new").length,
+              cancelled: entry.orders.filter(o => o.status === "cancelled").length,
+            };
+            const totalRevenue = entry.orders
+              .filter(o => o.status === "delivered")
+              .reduce((s, o) => s + Number(o.total_amount || 0), 0);
+            const pendingCall = entry.calls.find(c => (c.call_status || "pending") === "pending");
+            
+            return (
+              <div key={entry.phone} className="glass rounded-xl p-3">
+                {/* Header — утас + нэр */}
+                <div className="flex items-center gap-3 mb-2">
+                  <div style={{ fontSize: 20 }}>📞</div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                      {entry.phone}
+                      {entry.customer_name && (
+                        <span style={{ color: T.muted, fontWeight: 400, marginLeft: 8 }}>
+                          · {entry.customer_name}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      Сүүлийн үйл хөдлөл: {new Date(entry.latest_date).toLocaleString("mn-MN")}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Статусын badges */}
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {orderCounts.delivered > 0 && (
+                    <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      ✓ {orderCounts.delivered} хүргэгдсэн
+                    </span>
+                  )}
+                  {orderCounts.new > 0 && (
+                    <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      🆕 {orderCounts.new} шинэ захиалга
+                    </span>
+                  )}
+                  {orderCounts.cancelled > 0 && (
+                    <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      ✕ {orderCounts.cancelled} цуцалсан
+                    </span>
+                  )}
+                  {pendingCall && (
+                    <span style={{ background: "rgba(14,165,233,0.1)", color: "#0284c7", fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      📞 Хүлээгдэж буй дуудлага
+                    </span>
+                  )}
+                  {entry.calls.length > 0 && !pendingCall && (
+                    <span style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}
+                      className="text-[10px] px-2 py-0.5 rounded">
+                      📞 {entry.calls.length} дуудлага
+                    </span>
+                  )}
+                </div>
+
+                {/* Орлогын дүн */}
+                {totalRevenue > 0 && (
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-1">
+                    💰 {totalRevenue.toLocaleString()}₮
+                  </div>
+                )}
+
+                {/* Сүүлийн дуудлагын тэмдэглэл */}
+                {latestCall?.notes && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] italic mb-1">
+                    💬 {latestCall.notes}
+                  </div>
+                )}
+
+                {/* Үйлдэлүүд */}
+                <div className="flex gap-2 mt-2">
+                  {pendingCall && (
+                    <button onClick={() => setOrderForCall(pendingCall)}
+                      className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1"
+                      style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      <ShoppingBag size={12} /> Захиалга үүсгэх
+                    </button>
+                  )}
+                  {!pendingCall && entry.orders.length === 0 && (
+                    <button onClick={async () => {
+                      // Шинэ дуудлага үүсгээд шууд захиалга үүсгэх руу шилжих
+                      const { data: { user } } = await supabase.auth.getUser();
+                      const { data: newCall } = await supabase.from("biz_calls").insert({
+                        phone: entry.phone,
+                        fb_page_id: allowedPageIds[0],
+                        call_status: "pending",
+                        created_by: user?.id || null,
+                      }).select().single();
+                      if (newCall) setOrderForCall(newCall);
+                    }}
+                      className="press-btn flex-1 py-1.5 rounded-lg text-xs flex items-center justify-center gap-1"
+                      style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 600 }}>
+                      <Plus size={12} /> Шинэ захиалга авах
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Шинэ дуудлага modal */}
+      {showNewCallModal && (
+        <MerchantNewCallModal
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => { setShowNewCallModal(false); setRefreshKey(k => k + 1); }}
+          onClose={() => setShowNewCallModal(false)}
+        />
+      )}
+
+      {/* Захиалга үүсгэх modal */}
+      {orderForCall && (
+        <MerchantOrderModal
+          call={orderForCall}
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => { setOrderForCall(null); setRefreshKey(k => k + 1); }}
+          onClose={() => setOrderForCall(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── 📞 Шинэ дуудлага бүртгэх modal ─────────────────────────────────────
+// ─── 📞 ЗАЛГАХ ДУГААРУУД — Хурдан бүртгэл секц ────────────────────────────
+function PhonesToCallSection({ fbPages, products, onChanged }) {
+  const [phone, setPhone] = useState("");
+  const [pendingPhones, setPendingPhones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [orderForCall, setOrderForCall] = useState(null);
+  const [selectedPageId, setSelectedPageId] = useState(fbPages[0]?.id || "");
+
+  // Хүлээгдэж буй дуудлагуудыг татах
+  const loadPending = async () => {
+    if (fbPages.length === 0) return;
+    setLoading(true);
+    const pageIds = fbPages.map(p => p.id);
+    const { data } = await supabase.from("biz_calls")
+      .select("*")
+      .in("fb_page_id", pageIds)
+      .eq("call_status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setPendingPhones(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadPending();
+  }, [fbPages.map(p => p.id).join(",")]);
+
+  // FB page-ийн default тохируулах
+  useEffect(() => {
+    if (!selectedPageId && fbPages[0]) setSelectedPageId(fbPages[0].id);
+  }, [fbPages]);
+
+  // Хурдан утас нэмэх
+  const quickAdd = async () => {
+    if (!phone.trim()) return;
+    if (!selectedPageId) { alert("FB Page сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("biz_calls").insert({
+        phone: cleanPhone,
+        fb_page_id: selectedPageId,
+        call_status: "pending",
+        created_at: new Date().toISOString(),
+        created_by: user?.id || null,  // 👤 Merchant хэрэглэгчийн id
+      });
+      if (error) throw error;
+      setPhone("");
+      await loadPending();
+      if (onChanged) onChanged();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  // Дуудлагыг тэмдэглэх
+  const markCalled = async (call) => {
+    await supabase.from("biz_calls").update({ call_status: "no_answer" }).eq("id", call.id);
+    await loadPending();
+    if (onChanged) onChanged();
+  };
+
+  const removePhone = async (call) => {
+    if (!confirm("Энэ дугаарыг устгах уу?")) return;
+    await supabase.from("biz_calls").delete().eq("id", call.id);
+    await loadPending();
+    if (onChanged) onChanged();
+  };
+
+  return (
+    <div className="glass rounded-2xl p-3 space-y-3"
+      style={{ borderLeft: `3px solid #f59e0b` }}>
+      <div className="flex items-center justify-between">
+        <div style={{ color: "#d97706", fontFamily: FS, fontWeight: 700 }} className="text-sm">
+          📞 ЗАЛГАХ ДУГААРУУД ({pendingPhones.length})
+        </div>
+      </div>
+
+      {/* Хурдан нэмэх форм */}
+      <div className="space-y-2">
+        {/* FB Page сонголт (хэрэв олон бол) */}
+        {fbPages.length > 1 && (
+          <select value={selectedPageId} onChange={e => setSelectedPageId(e.target.value)}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2 rounded-lg text-xs">
+            {fbPages.map(p => <option key={p.id} value={p.id}>🔗 {p.name}</option>)}
+          </select>
+        )}
+        <div className="flex gap-2">
+          <input value={phone} onChange={e => setPhone(e.target.value)}
+            placeholder="Утасны дугаар (жнь: 99999999)"
+            onKeyDown={(e) => { if (e.key === "Enter" && !busy) quickAdd(); }}
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-lg text-sm" />
+          <button onClick={quickAdd} disabled={busy || !phone.trim()}
+            style={{
+              background: T.ok, color: "white", fontFamily: FS, fontWeight: 700,
+              opacity: (busy || !phone.trim()) ? 0.5 : 1,
+            }}
+            className="press-btn px-4 py-2 rounded-lg text-sm whitespace-nowrap">
+            {busy ? "..." : "+ Нэмэх"}
+          </button>
+        </div>
+      </div>
+
+      {/* Хүлээгдэж буй жагсаалт */}
+      {loading ? (
+        <div className="text-center py-2"><Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} /></div>
+      ) : pendingPhones.length === 0 ? (
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-2 italic">
+          Залгах дугаар алга. Дээрх талбараар нэмнэ үү.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {pendingPhones.map((c) => {
+            const page = fbPages.find(p => p.id === c.fb_page_id);
+            return (
+              <div key={c.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
+                className="p-2.5 flex items-center gap-2">
+                <div style={{ fontSize: 16 }}>📞</div>
+                <div className="flex-1 min-w-0">
+                  <a href={`tel:${c.phone}`}
+                    style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}
+                    className="text-sm hover:underline">
+                    {c.phone}
+                  </a>
+                  {page && (
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      🔗 {page.name} · {new Date(c.created_at).toLocaleString("mn-MN", { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setOrderForCall(c)}
+                    title="Захиалга үүсгэх"
+                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2.5 py-1.5 rounded text-[11px] flex items-center gap-1">
+                    🛍 Захиалга
+                  </button>
+                  <button onClick={() => markCalled(c)}
+                    title="Хариулаагүй гэж тэмдэглэх"
+                    style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2 py-1.5 rounded text-[11px]">
+                    ✕
+                  </button>
+                  <button onClick={() => removePhone(c)}
+                    title="Устгах"
+                    style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                    className="press-btn px-2 py-1.5 rounded text-[11px]">
+                    🗑
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Захиалга үүсгэх modal */}
+      {orderForCall && (
+        <MerchantOrderModal
+          call={orderForCall}
+          fbPages={fbPages}
+          products={products}
+          onSaved={() => {
+            setOrderForCall(null);
+            loadPending();
+            if (onChanged) onChanged();
+          }}
+          onClose={() => setOrderForCall(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function MerchantNewCallModal({ fbPages, products, onSaved, onClose }) {
+  const [phone, setPhone] = useState("");
+  const [fbPageId, setFbPageId] = useState(fbPages[0]?.id || "");
+  const [notes, setNotes] = useState("");
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const toggleProduct = (p) => {
+    setSelectedProducts(prev => 
+      prev.find(x => x.product_id === p.id)
+        ? prev.filter(x => x.product_id !== p.id)
+        : [...prev, { product_id: p.id, name: p.name, sale_price: p.sale_price }]
+    );
+  };
+
+  const save = async () => {
+    if (!phone.trim()) { alert("Утасны дугаар оруулна уу"); return; }
+    if (!fbPageId) { alert("FB Page сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("biz_calls").insert({
+        phone: cleanPhone,
+        fb_page_id: fbPageId,
+        notes: notes.trim() || null,
+        interested_products: selectedProducts,
+        call_status: "pending",
+        created_at: new Date().toISOString(),
+        created_by: user?.id || null,  // 👤 Merchant хэрэглэгчийн id
+      });
+      if (error) throw error;
+      onSaved();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              📞 Шинэ дуудлага
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          {/* Утас */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Утас *</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)}
+              placeholder="99999999"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* FB Page */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🔗 FB Page *</label>
+            <select value={fbPageId} onChange={e => setFbPageId(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm">
+              {fbPages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {/* Сонирхсон бараа */}
+          {products.length > 0 && (
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                🛍 Сонирхсон бараа ({selectedProducts.length})
+              </label>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {products.map(p => {
+                  const checked = selectedProducts.some(x => x.product_id === p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => toggleProduct(p)}
+                      className="press-btn w-full px-2.5 py-2 rounded-lg flex items-center gap-2"
+                      style={{
+                        background: checked ? "rgba(14,165,233,0.15)" : T.surfaceAlt,
+                        border: `1px solid ${checked ? "#0284c7" : T.border}`,
+                        fontFamily: FS, fontWeight: 500, color: T.ink, textAlign: "left",
+                      }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: 4,
+                        background: checked ? "#0284c7" : "transparent",
+                        border: `1.5px solid ${checked ? "#0284c7" : T.border}`,
+                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      }}>
+                        {checked && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <span className="text-xs flex-1">{p.name}</span>
+                      <span style={{ color: T.muted, fontSize: 10 }}>
+                        {Number(p.sale_price || 0).toLocaleString()}₮
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Тэмдэглэл */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Жнь: Үд маргааш залгана"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: busy ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── 🛍 Захиалга үүсгэх modal ────────────────────────────────────────────
+function MerchantOrderModal({ call, fbPages, products, onSaved, onClose }) {
+  const [customerName, setCustomerName] = useState("");
+  const [address, setAddress] = useState("");
+  const [items, setItems] = useState(() => {
+    // Дуудлагаас сонирхсон бараа автомат нэмэх
+    const ip = call.interested_products || [];
+    return ip.map(p => {
+      const product = products.find(x => x.id === (p.product_id || p.id));
+      return {
+        product_id: p.product_id || p.id,
+        name: p.name || product?.name || "—",
+        quantity: 1,
+        unit_price: Number(p.sale_price || product?.sale_price || 0),
+      };
+    });
+  });
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const addItem = (p) => {
+    if (items.find(x => x.product_id === p.id)) return;
+    setItems([...items, {
+      product_id: p.id,
+      name: p.name,
+      quantity: 1,
+      unit_price: Number(p.sale_price || 0),
+    }]);
+  };
+
+  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+
+  const updateQty = (idx, qty) => {
+    setItems(items.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, qty) } : it));
+  };
+
+  const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
+  const totalAmount = subtotal + Number(deliveryFee || 0);
+
+  const save = async () => {
+    if (items.length === 0) { alert("Бараа сонгоно уу"); return; }
+    if (!address.trim()) { alert("Хүргэлтийн хаяг оруулна уу"); return; }
+    setBusy(true);
+    try {
+      // 0. ⚠ Шинэ дээр давхар захиалга байгаа эсэхийг шалгах
+      const { data: existingNewOrders } = await supabase
+        .from("biz_orders")
+        .select("id, order_number, customer_name, total_amount, subtotal, delivery_fee, status, created_at, fb_page_id, delivery_address")
+        .eq("customer_phone", call.phone)
+        .eq("status", "new")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      
+      if (existingNewOrders && existingNewOrders.length > 0) {
+        const existing = existingNewOrders[0];
+        const existingPageId = existing.fb_page_id || null;
+        const newPageId = call.fb_page_id || null;
+        
+        // Хэрэв ижил page бол → шууд нэмэлт оруулна
+        // Хэрэв өөр page бол → Merchant-ийн page руу солино + нэмэлт оруулна
+        const isSamePage = existingPageId === newPageId;
+        
+        setBusy(false);
+        const dateStr = new Date(existing.created_at).toLocaleDateString("mn-MN");
+        const proceed = confirm(
+          `⚠ Захиалга шинэ дээр байна!\n\n` +
+          `📞 ${call.phone}\n` +
+          (existing.customer_name ? `👤 ${existing.customer_name}\n` : "") +
+          `💰 Хуучин дүн: ${Number(existing.total_amount || 0).toLocaleString()}₮\n` +
+          `📅 ${dateStr}\n` +
+          `🏷 #${existing.order_number}\n\n` +
+          (isSamePage 
+            ? `Энэ захиалга-руу ${items.length} бараа нэмэх үү?`
+            : `⚠ Энэ захиалга өөр FB Page-руу холбогдсон байна!\n` +
+              `Та засвал захиалга таны Page (Merchant)-руу шилжинэ.\n\n` +
+              `Үргэлжлүүлэх үү?`)
+        );
+        if (!proceed) return;
+        setBusy(true);
+
+        // 🔄 Захиалгад нэмэлт бараа оруулах
+        const newItemsToInsert = items.map(it => ({
+          order_id: existing.id,
+          product_id: it.product_id,
+          product_name: it.name,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          total_amount: it.quantity * it.unit_price,
+        }));
+        const { error: itemsErr } = await supabase.from("biz_order_items").insert(newItemsToInsert);
+        if (itemsErr) throw itemsErr;
+
+        // 📊 Дүн дахин тооцох
+        const newSubtotal = Number(existing.subtotal || 0) + subtotal;
+        const newDeliveryFee = Math.max(Number(existing.delivery_fee || 0), Number(deliveryFee || 0));
+        const newTotal = newSubtotal + newDeliveryFee;
+
+        // 🔄 Захиалгыг шинэчлэх: Merchant-ийн page руу шилжүүлж, дүн + хаяг/нэр шинэчлэх
+        const updatePayload = {
+          subtotal: newSubtotal,
+          delivery_fee: newDeliveryFee,
+          total_amount: newTotal,
+          fb_page_id: newPageId,  // ⚡ Merchant-ийн page-руу солих
+          notes: [existing.notes, notes.trim()].filter(Boolean).join(" | ") || null,
+        };
+        // Нэр/хаяг дутуу бол шинэ оруулсныг ашиглах
+        if (!existing.customer_name && customerName.trim()) updatePayload.customer_name = customerName.trim();
+        if (!existing.delivery_address && address.trim()) updatePayload.delivery_address = address.trim();
+
+        const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", existing.id);
+        if (updErr) throw updErr;
+
+        // Дуудлагын түүхэнд "ordered" мөр нэмэх (сүүлийн нь ordered биш бол л)
+        {
+          const { data: lastC } = await supabase.from("biz_calls")
+            .select("call_status").eq("phone", call.phone)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (lastC?.call_status !== "ordered") {
+            await supabase.from("biz_calls").insert({
+              phone: call.phone,
+              customer_id: call.customer_id || null,
+              customer_name: customerName.trim() || call.customer_name || null,
+              notes: call.notes || null,
+              interested_products: call.interested_products || [],
+              call_status: "ordered",
+              fb_page_id: newPageId || call.fb_page_id || null,
+              created_by: call.created_by || null,
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        alert(
+          `✅ Захиалга #${existing.order_number}-руу нэгтгэгдсэн!\n\n` +
+          `📦 ${items.length} шинэ бараа нэмэгдсэн\n` +
+          `💰 Шинэ дүн: ${newTotal.toLocaleString()}₮\n` +
+          (isSamePage ? `` : `🔗 FB Page → Merchant-руу шилжсэн`)
+        );
+        onSaved();
+        return;
+      }
+
+      // 1. Захиалга үүсгэх — retry-тэй (давхар захиалгын дугаараас сэргийлэх)
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      let order = null;
+      let lastError = null;
+      
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const ts = Date.now().toString().slice(-4);
+        const rnd = Math.floor(Math.random() * 9000) + 1000;
+        const orderNumber = `ORD-${dateStr}-${ts}${rnd}`;
+        
+        const { data: newOrder, error: insertErr } = await supabase.from("biz_orders").insert({
+          order_number: orderNumber,
+          customer_phone: call.phone,
+          customer_name: customerName.trim() || null,
+          delivery_address: address.trim(),
+          source: "phone",
+          status: "new",
+          subtotal,
+          delivery_fee: Number(deliveryFee || 0),
+          total_amount: totalAmount,
+          notes: notes.trim() || null,
+          fb_page_id: call.fb_page_id,
+        }).select().single();
+        
+        if (!insertErr) {
+          order = newOrder;
+          break;
+        }
+        
+        lastError = insertErr;
+        
+        // 🛡 DB trigger-аас гарсан давхар захиалгын алдаа
+        if (insertErr.message?.includes("DUPLICATE_PENDING_ORDER")) {
+          alert(`⚠ ${insertErr.message.replace("DUPLICATE_PENDING_ORDER: ", "")}`);
+          return;
+        }
+        
+        // order_number давхарласан → retry
+        if (insertErr.message?.includes("duplicate") || insertErr.code === "23505") {
+          await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
+          continue;
+        }
+        throw insertErr;
+      }
+      
+      if (!order) throw lastError || new Error("Захиалга үүсгэх алдаа");
+
+      // 2. Захиалгын бараа нэмэх
+      const orderItems = items.map(it => ({
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: it.name,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        total_amount: it.quantity * it.unit_price,
+      }));
+      await supabase.from("biz_order_items").insert(orderItems);
+
+      // 3. Дуудлагын түүхэнд "ordered" мөр нэмэх (сүүлийн нь ordered биш бол л)
+      {
+        const { data: lastC } = await supabase.from("biz_calls")
+          .select("call_status").eq("phone", call.phone)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (lastC?.call_status !== "ordered") {
+          await supabase.from("biz_calls").insert({
+            phone: call.phone,
+            customer_id: call.customer_id || null,
+            customer_name: customerName.trim() || call.customer_name || null,
+            notes: call.notes || null,
+            interested_products: call.interested_products || [],
+            call_status: "ordered",
+            fb_page_id: call.fb_page_id || null,
+            created_by: call.created_by || null,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      alert(`✅ Захиалга үүсгэгдсэн!\n#${order.order_number}\nДүн: ${totalAmount.toLocaleString()}₮`);
+      onSaved();
+    } catch (e) { 
+      // DB trigger-аас гарсан алдаа
+      if (e.message?.includes("DUPLICATE_PENDING_ORDER")) {
+        alert(`⚠ ${e.message.replace("DUPLICATE_PENDING_ORDER: ", "")}`);
+      } else {
+        alert("Алдаа: " + e.message);
+      }
+    }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              🛍 Захиалга үүсгэх
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8, padding: 8 }}>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
+              📞 {call.phone}
+            </div>
+          </div>
+
+          {/* Үйлчлүүлэгчийн нэр */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Үйлчлүүлэгчийн нэр</label>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Хаяг */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлтийн хаяг *</label>
+            <textarea value={address} onChange={e => setAddress(e.target.value)}
+              rows={2}
+              placeholder="Жнь: СБД, 5-р хороо, ..."
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Бараа жагсаалт */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🛍 Бараа ({items.length})</label>
+            <div className="space-y-1 mb-2">
+              {items.map((it, i) => (
+                <div key={i} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8 }}
+                  className="p-2 flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{it.name}</div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                    </div>
+                  </div>
+                  <input type="number" value={it.quantity} min={1}
+                    onChange={e => updateQty(i, Number(e.target.value))}
+                    style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="px-2 py-1 rounded text-xs" />
+                  <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            {/* Бараа нэмэх */}
+            <details>
+              <summary style={{ color: T.muted, fontFamily: FS, cursor: "pointer" }} className="text-[11px]">
+                ➕ Бараа нэмэх
+              </summary>
+              <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                {products.filter(p => !items.find(x => x.product_id === p.id)).map(p => (
+                  <button key={p.id} type="button" onClick={() => addItem(p)}
+                    style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                    className="press-btn w-full px-2.5 py-1.5 rounded text-xs flex items-center justify-between">
+                    <span className="truncate">{p.name}</span>
+                    <span style={{ color: T.muted }}>{Number(p.sale_price || 0).toLocaleString()}₮</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+
+          {/* Хүргэлт + нийт */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлт</label>
+              <input type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Нийт</label>
+              <div style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, padding: "8px 12px", borderRadius: 8 }}
+                className="text-sm">
+                {totalAmount.toLocaleString()}₮
+              </div>
+            </div>
+          </div>
+
+          {/* Тэмдэглэл */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy || items.length === 0}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: (busy || items.length === 0) ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Захиалга үүсгэх"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Merchant Sales View ─────────────────────────────────────────────────
+function MerchantSalesView({ allowedPageIds, fbPages }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        console.log("[MerchantSales] Loading for pages:", allowedPageIds);
+        const { data, error: err } = await supabase.from("biz_orders")
+          .select("*").in("fb_page_id", allowedPageIds)
+          .order("created_at", { ascending: false });
+        if (err) {
+          console.error("[MerchantSales] Error:", err);
+          setError(err.message);
+        }
+        console.log("[MerchantSales] Loaded:", data?.length || 0, "orders");
+        setOrders(data || []);
+      } catch (e) {
+        console.error("[MerchantSales] Exception:", e);
+        setError(e.message);
+      }
+      setLoading(false);
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  // Page-аар групплэх
+  const byPage = {};
+  orders.forEach((o) => {
+    const k = o.fb_page_id || "__none__";
+    if (!byPage[k]) byPage[k] = { all: 0, delivered: 0, cancelled: 0, pending: 0, revenue: 0 };
+    byPage[k].all++;
+    if (o.status === "delivered") {
+      byPage[k].delivered++;
+      byPage[k].revenue += Number(o.total_amount || 0);
+    } else if (o.status === "cancelled") {
+      byPage[k].cancelled++;
+    } else {
+      byPage[k].pending++;
+    }
+  });
+
+  const deliveredOrders = orders.filter(o => o.status === "delivered").slice(0, 20);
+  const totalRevenue = orders.filter(o => o.status === "delivered")
+    .reduce((s, o) => s + Number(o.total_amount || 0), 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Алдааны banner */}
+      {error && (
+        <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
+          <div style={{ color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+            ⚠ Алдаа: {error}
+          </div>
+        </div>
+      )}
+
+      {/* Нийт стат */}
+      <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1">
+          💰 Нийт орлого
+        </div>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-2xl">
+          {Number(totalRevenue).toLocaleString()}₮
+        </div>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-1">
+          {orders.filter(o => o.status === "delivered").length} хүргэгдсэн / {orders.length} нийт захиалга
+        </div>
+      </div>
+
+      {/* Page-бүрийн карт */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {fbPages.map((p) => {
+          const stat = byPage[p.id] || { all: 0, delivered: 0, cancelled: 0, pending: 0, revenue: 0 };
+          return (
+            <div key={p.id} className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
+              <div style={{ color: "#0284c7", fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+                🔗 {p.name}
+              </div>
+              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-2xl">
+                {Number(stat.revenue).toLocaleString()}₮
+              </div>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ✓ {stat.delivered}
+                </span>
+                <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ⏳ {stat.pending}
+                </span>
+                <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}
+                  className="text-[10px] px-2 py-0.5 rounded">
+                  ✕ {stat.cancelled}
+                </span>
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">
+                Нийт: {stat.all} захиалга
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Хүргэгдсэн захиалгуудын жагсаалт */}
+      {deliveredOrders.length > 0 && (
+        <div className="glass rounded-2xl p-4">
+          <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }}
+            className="text-[10px] uppercase tracking-wider mb-2">
+            ✅ Сүүлийн хүргэгдсэн захиалгууд
+          </div>
+          <div className="space-y-2">
+            {deliveredOrders.map((o) => {
+              const page = fbPages.find(p => p.id === o.fb_page_id);
+              return (
+                <div key={o.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+                  className="rounded-xl p-2.5 flex items-center gap-2">
+                  <div style={{ fontSize: 18 }}>✅</div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                      #{o.order_number} · {o.customer_phone}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                      {new Date(o.delivered_at || o.created_at).toLocaleString("mn-MN")}
+                      {page && ` · 🔗 ${page.name}`}
+                    </div>
+                  </div>
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 700 }} className="text-sm">
+                    {Number(o.total_amount).toLocaleString()}₮
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Хоосон үед debug */}
+      {orders.length === 0 && !error && (
+        <div className="glass rounded-2xl p-6 text-center" style={{ borderLeft: `3px solid ${T.warn}` }}>
+          <div className="text-4xl mb-2">📭</div>
+          <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+            Захиалга олдсонгүй
+          </div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs space-y-1">
+            <div>Таны FB Page-уудтай холбоотой захиалга байхгүй байна.</div>
+            <div className="pt-2">
+              <strong>Магадлалтай шалтгаан:</strong>
+            </div>
+            <div>• Захиалгууд FB Page-руу тагла<wbr/>гдаагүй (хуучин өгөгдөл)</div>
+            <div>• Admin-руу хандаж <code>backfill-fb-pages.sql</code> ажиллуулах</div>
+            <div className="pt-2">
+              Оноогдсон Page: {fbPages.length} ({fbPages.map(p => p.name).join(", ")})
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant Orders View ────────────────────────────────────────────────
+function MerchantOrdersView({ allowedPageIds, profile }) {
+  const [orders, setOrders] = useState([]);
+  const [items, setItems] = useState({});
+  const [fbPagesMap, setFbPagesMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [activeOrder, setActiveOrder] = useState(null);
+  const [search, setSearch] = useState("");
+  const [editingOrder, setEditingOrder] = useState(null); // 🏪 Засах modal
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [{ data: ordData }, { data: pgData }] = await Promise.all([
+          supabase.from("biz_orders")
+            .select("*").in("fb_page_id", allowedPageIds)
+            .order("created_at", { ascending: false }).limit(300),
+          supabase.from("biz_fb_pages").select("id, name").in("id", allowedPageIds),
+        ]);
+        const orderList = ordData || [];
+        setOrders(orderList);
+
+        const map = {};
+        (pgData || []).forEach(p => { map[p.id] = p.name; });
+        setFbPagesMap(map);
+
+        // Захиалгын бараа татах
+        if (orderList.length > 0) {
+          const orderIds = orderList.map(o => o.id);
+          const { data: itemData, error: itemErr } = await supabase.from("biz_order_items")
+            .select("*").in("order_id", orderIds);
+
+          console.log("[MerchantOrders] Orders:", orderList.length, "Items:", itemData?.length || 0);
+          if (itemErr) {
+            console.error("[MerchantOrders] Items error:", itemErr);
+          }
+
+          // Бараа зураг + page ID
+          const productIds = [...new Set((itemData || []).map(it => it.product_id).filter(Boolean))];
+          let prodMap = {};
+          if (productIds.length > 0) {
+            const { data: prods } = await supabase.from("inv_products")
+              .select("id, image_url, fb_page_id").in("id", productIds);
+            (prods || []).forEach(p => { prodMap[p.id] = { image: p.image_url, fb_page_id: p.fb_page_id }; });
+          }
+
+          const itemMap = {};
+          (itemData || []).forEach(it => {
+            if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
+            const prodInfo = prodMap[it.product_id] || {};
+            itemMap[it.order_id].push({ 
+              ...it, 
+              product_image: prodInfo.image || null,
+              fb_page_id: prodInfo.fb_page_id || null,
+            });
+          });
+          setItems(itemMap);
+        }
+      } catch (e) { console.error("[MerchantOrders]", e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.join(","), refreshKey]);
+
+  const filtered = orders.filter((o) => {
+    // Status filter
+    if (filter === "assigned") {
+      if (!o.driver_id || o.status === "delivered" || o.status === "cancelled") return false;
+    } else if (filter === "unknown") {
+      if (!o.is_unknown || o.status === "delivered" || o.status === "cancelled") return false;
+    } else if (filter === "new") {
+      if (o.status !== "new" || o.driver_id || o.is_unknown) return false;
+    } else if (filter !== "all" && o.status !== filter) {
+      return false;
+    }
+    // Search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return o.order_number?.toLowerCase().includes(q) ||
+        o.customer_phone?.includes(q) ||
+        o.customer_name?.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+
+  // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only + засах/цуцлах)
+  if (activeOrder) {
+    return (
+      <>
+        <OrderDetail
+          order={activeOrder}
+          items={items[activeOrder.id] || []}
+          onClose={() => setActiveOrder(null)}
+          readOnly={true}
+          fbPagesMap={fbPagesMap}
+          onEdit={() => setEditingOrder(activeOrder)}
+          onMerchantCancel={async () => {
+            await supabase.from("biz_orders").update({
+              status: "cancelled",
+              cancelled_at: new Date().toISOString(),
+            }).eq("id", activeOrder.id);
+            // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+            if (activeOrder.customer_phone) {
+              const { data: lastC } = await supabase.from("biz_calls")
+                .select("call_status").eq("phone", activeOrder.customer_phone)
+                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+              if (lastC?.call_status !== "cancelled") {
+                await supabase.from("biz_calls").insert({
+                  phone: activeOrder.customer_phone,
+                  customer_name: activeOrder.customer_name || null,
+                  call_status: "cancelled",
+                  fb_page_id: activeOrder.fb_page_id || null,
+                  created_at: new Date().toISOString(),
+                });
+              }
+            }
+            setActiveOrder(null);
+            setRefreshKey(k => k + 1);
+          }}
+        />
+        {/* Засах modal */}
+        {editingOrder && (
+          <MerchantOrderEditModal
+            order={editingOrder}
+            items={items[editingOrder.id] || []}
+            profile={profile}
+            onSaved={() => {
+              setEditingOrder(null);
+              setActiveOrder(null);
+              setRefreshKey(k => k + 1);
+            }}
+            onClose={() => setEditingOrder(null)}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Хайлт */}
+      <input value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="🔍 Захиалга, утас, нэрээр хайх..."
+        style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+        className="w-full px-3 py-2 rounded-lg text-sm" />
+
+      {/* Filter tabs */}
+      <div className="glass rounded-2xl p-2 flex gap-2 overflow-x-auto">
+        {[
+          { id: "all", label: "Бүгд", color: T.highlight },
+          { id: "new", label: "🆕 Шинэ", color: "#0ea5e9" },
+          { id: "assigned", label: "🚚 Хуваарилагдсан", color: "#f59e0b" },
+          { id: "unknown", label: "❓ Тодорхойгүй", color: "#9333ea" },
+          { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
+          { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
+        ].map((t) => {
+          const count = orders.filter((o) => {
+            if (t.id === "all") return true;
+            if (t.id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
+            return o.status === t.id;
+          }).length;
+          return (
+            <button key={t.id} onClick={() => setFilter(t.id)}
+              style={{
+                background: filter === t.id ? t.color : T.surfaceAlt,
+                color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
+              }}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+              {t.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Захиалгын жагсаалт — үндсэн OrderCard ашиглана */}
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((o, idx) => (
+            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+              fbPagesMap={fbPagesMap}
+              hideMenu={true}
+              merchantPageIds={allowedPageIds}
+              onClick={() => setActiveOrder(o)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant Order Detail Modal — read-only дэлгэрэнгүй ──────────────────
+// ─── 🏪 Merchant захиалга засах modal ────────────────────────────────────
+function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, onClose }) {
+  const [customerName, setCustomerName] = useState(order.customer_name || "");
+  const [phone, setPhone] = useState(order.customer_phone || "");
+  const [address, setAddress] = useState(order.delivery_address || "");
+  const [items, setItems] = useState(() => (initialItems || []).map(it => ({
+    id: it.id,
+    product_id: it.product_id,
+    name: it.product_name,
+    quantity: Number(it.quantity || 1),
+    unit_price: Number(it.unit_price || 0),
+    fb_page_id: null, // Дараа татах
+    isNew: false,
+  })));
+  const [deliveryFee, setDeliveryFee] = useState(Number(order.delivery_fee || 0));
+  const [notes, setNotes] = useState(order.notes || "");
+  const [busy, setBusy] = useState(false);
+  // 🆕 Merchant-ийн бараа
+  const [merchantProducts, setMerchantProducts] = useState([]);
+  const [merchantPages, setMerchantPages] = useState({}); // pageId → name
+  // 🔗 FB Page сонголт — merchant өөрөө өөрчилж болно
+  const [fbPageId, setFbPageId] = useState(order.fb_page_id || null);
+
+  // Merchant-ийн бараа болон page нэрс татах
+  useEffect(() => {
+    console.log("[MerchantEdit] 🔍 INIT — profile:", profile);
+    console.log("[MerchantEdit] 🔍 profile.fb_page_ids:", profile?.fb_page_ids);
+    console.log("[MerchantEdit] 🔍 order.fb_page_id:", order.fb_page_id);
+    
+    if (!profile?.fb_page_ids || profile.fb_page_ids.length === 0) {
+      console.warn("[MerchantEdit] ⚠ profile.fb_page_ids алга байна!");
+      return;
+    }
+    (async () => {
+      const [{ data: prods, error: prodsErr }, { data: pgs, error: pgsErr }] = await Promise.all([
+        supabase.from("inv_products")
+          .select("id, name, sale_price, fb_page_id, image_url, sku")
+          .in("fb_page_id", profile.fb_page_ids)
+          .eq("is_active", true),
+        supabase.from("biz_fb_pages").select("id, name").in("id", profile.fb_page_ids),
+      ]);
+      
+      console.log("[MerchantEdit] 📦 Merchant products:", prods?.length || 0, prodsErr || "OK");
+      console.log("[MerchantEdit] 🏷 Merchant pages:", pgs?.length || 0, pgsErr || "OK", pgs);
+      
+      setMerchantProducts(prods || []);
+      const map = {};
+      (pgs || []).forEach(p => { map[p.id] = p.name; });
+      setMerchantPages(map);
+
+      // Existing items-руу fb_page_id заавал татах
+      const itemProductIds = (initialItems || []).map(it => it.product_id).filter(Boolean);
+      if (itemProductIds.length > 0) {
+        const { data: itemProds } = await supabase.from("inv_products")
+          .select("id, fb_page_id").in("id", itemProductIds);
+        const prodPageMap = {};
+        (itemProds || []).forEach(p => { prodPageMap[p.id] = p.fb_page_id; });
+        setItems(prev => prev.map(it => ({ ...it, fb_page_id: prodPageMap[it.product_id] || null })));
+      }
+    })();
+  }, [profile?.fb_page_ids?.join(",")]);
+
+  const updateQty = (idx, qty) => {
+    setItems(items.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, qty) } : it));
+  };
+  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+
+  const addMerchantProduct = (p) => {
+    console.log("[MerchantEdit] ➕ Adding product:", p.name, "fb_page_id:", p.fb_page_id);
+    if (items.find(x => x.product_id === p.id)) return;
+    setItems([...items, {
+      product_id: p.id,
+      name: p.name,
+      quantity: 1,
+      unit_price: Number(p.sale_price || 0),
+      fb_page_id: p.fb_page_id,
+      isNew: true,
+    }]);
+    // 🔗 Шинэ merchant бараа нэмэхэд → page-ийг автомат шинэчилнэ
+    if (p.fb_page_id && (profile?.fb_page_ids || []).includes(p.fb_page_id)) {
+      console.log("[MerchantEdit] 🔗 Setting fbPageId to:", p.fb_page_id);
+      setFbPageId(p.fb_page_id);
+    }
+  };
+
+  const subtotal = items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
+  const totalAmount = subtotal + Number(deliveryFee || 0);
+
+  const save = async () => {
+    if (items.length === 0) { alert("Бараа сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      // 🔗 FB Page-ийг тодорхойлох:
+      // 1. Хэрэв merchant шинэ merchant-бараа нэмсэн бол → түүний page
+      // 2. Эс бөгөөс fbPageId state ашиглах (merchant өөрөө сонгосон)
+      const merchantPageIds = profile?.fb_page_ids || [];
+      const newMerchantItems = items.filter(it => 
+        it.isNew && it.fb_page_id && merchantPageIds.includes(it.fb_page_id)
+      );
+      
+      let newFbPageId = fbPageId;
+      if (newMerchantItems.length > 0) {
+        // Сүүлийн нэмсэн merchant бараа-аас авна
+        newFbPageId = newMerchantItems[newMerchantItems.length - 1].fb_page_id;
+      }
+
+      console.log("[MerchantEdit] 💾 SAVE START");
+      console.log("[MerchantEdit] 📋 fbPageId state:", fbPageId);
+      console.log("[MerchantEdit] 📋 order.fb_page_id:", order.fb_page_id);
+      console.log("[MerchantEdit] 📋 merchantPageIds:", merchantPageIds);
+      console.log("[MerchantEdit] 📋 All items:", items);
+      console.log("[MerchantEdit] 📋 New merchant items:", newMerchantItems);
+      console.log("[MerchantEdit] Old page:", order.fb_page_id, "→ New:", newFbPageId, 
+        "isMerchantPage:", merchantPageIds.includes(newFbPageId),
+        "newItems:", newMerchantItems.length);
+
+      // 1. Захиалгыг шинэчлэх
+      const updatePayload = {
+        customer_name: customerName.trim() || null,
+        customer_phone: phone.trim(),
+        delivery_address: address.trim(),
+        subtotal,
+        delivery_fee: Number(deliveryFee || 0),
+        total_amount: totalAmount,
+        notes: notes.trim() || null,
+        fb_page_id: newFbPageId,  // ⚡ Үргэлж шинэчилнэ
+      };
+      const { error: updErr } = await supabase.from("biz_orders").update(updatePayload).eq("id", order.id);
+      if (updErr) {
+        console.error("[MerchantEdit] ❌ UPDATE ERROR:", updErr);
+        throw updErr;
+      }
+      console.log("[MerchantEdit] ✅ Order updated, fb_page_id =", newFbPageId);
+
+      // 2. Хуучин барааны тоо/үнэ шинэчлэх
+      for (const it of items) {
+        if (it.id) {
+          await supabase.from("biz_order_items").update({
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            total_amount: it.quantity * it.unit_price,
+          }).eq("id", it.id);
+        }
+      }
+
+      // 3. Шинэ бараа нэмэх
+      const newItemsToInsert = items.filter(it => !it.id).map(it => ({
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: it.name,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        total_amount: it.quantity * it.unit_price,
+      }));
+      if (newItemsToInsert.length > 0) {
+        await supabase.from("biz_order_items").insert(newItemsToInsert);
+      }
+
+      // 4. Устгасан барааг хасах
+      const keepIds = items.map(it => it.id).filter(Boolean);
+      const removedItems = (initialItems || []).filter(it => !keepIds.includes(it.id));
+      for (const it of removedItems) {
+        await supabase.from("biz_order_items").delete().eq("id", it.id);
+      }
+
+      const pageChanged = newFbPageId && newFbPageId !== order.fb_page_id;
+      alert(
+        "✅ Захиалга шинэчлэгдсэн" +
+        (pageChanged ? `\n\n🔗 FB Page → ${merchantPages[newFbPageId] || "Merchant"}-руу шилжсэн` : "")
+      );
+      onSaved();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="modal-content rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h3 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
+              ✏ Захиалга засах
+            </h3>
+            <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
+          </div>
+
+          {/* 🔗 FB Page сонгох — merchant өөрөө өөрчилж болно */}
+          {Object.keys(merchantPages).length > 0 && (
+            <div style={{ background: "rgba(14,165,233,0.05)", border: `1px solid #0284c7`, borderRadius: 8 }}
+              className="p-2.5">
+              <label style={{ color: "#0284c7", fontFamily: FS, fontWeight: 600 }} 
+                className="text-[10px] uppercase tracking-wider mb-1 block">
+                🔗 FB Page (Merchant)
+              </label>
+              <select value={fbPageId || ""} onChange={e => setFbPageId(e.target.value || null)}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm">
+                <option value="">— Сонгоогүй —</option>
+                {/* Merchant-ийн pages */}
+                {Object.entries(merchantPages).map(([id, name]) => (
+                  <option key={id} value={id}>🔗 {name}</option>
+                ))}
+                {/* Хуучин page (merchant-ийн биш бол ч харагдана) */}
+                {order.fb_page_id && !merchantPages[order.fb_page_id] && (
+                  <option value={order.fb_page_id}>⚠ Хуучин page (Merchant биш)</option>
+                )}
+              </select>
+              {fbPageId !== order.fb_page_id && (
+                <div style={{ color: "#0284c7", fontFamily: FS }} className="text-[10px] mt-1">
+                  ⚡ Хадгалбал захиалга энэ Page-руу шилжинэ
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Утас</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Үйлчлүүлэгчийн нэр</label>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлтийн хаяг</label>
+            <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          {/* Бараа */}
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">🛍 Бараа ({items.length})</label>
+            <div className="space-y-1">
+              {items.map((it, i) => {
+                const isMerchantProduct = it.fb_page_id && (profile?.fb_page_ids || []).includes(it.fb_page_id);
+                return (
+                  <div key={i} style={{ 
+                      background: it.isNew ? "rgba(16,185,129,0.08)" : T.surfaceAlt, 
+                      border: `1px solid ${it.isNew ? T.ok : T.border}`, 
+                      borderRadius: 8 
+                    }}
+                    className="p-2 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate flex items-center gap-1">
+                        {it.isNew && <span style={{ color: T.ok }}>🆕</span>}
+                        {it.name}
+                        {isMerchantProduct && merchantPages[it.fb_page_id] && (
+                          <span style={{ 
+                            background: "rgba(14,165,233,0.1)", color: "#0284c7", 
+                            fontFamily: FS, fontWeight: 600 
+                          }} className="text-[8px] px-1 py-0.5 rounded">
+                            🔗 {merchantPages[it.fb_page_id]}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">
+                        {Number(it.unit_price).toLocaleString()}₮ × {it.quantity}
+                      </div>
+                    </div>
+                    <input type="number" value={it.quantity} min={1}
+                      onChange={e => updateQty(i, Number(e.target.value))}
+                      style={{ width: 50, background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="px-2 py-1 rounded text-xs" />
+                    <button onClick={() => removeItem(i)} style={{ color: T.err }}><X size={14} /></button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ➕ Merchant бараа нэмэх */}
+            {merchantProducts.length > 0 && (
+              <details className="mt-2">
+                <summary style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, cursor: "pointer" }} className="text-[11px]">
+                  ➕ Merchant бараа нэмэх
+                </summary>
+                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {merchantProducts.filter(p => !items.find(x => x.product_id === p.id)).map(p => (
+                    <button key={p.id} type="button" onClick={() => addMerchantProduct(p)}
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="press-btn w-full px-2.5 py-1.5 rounded text-xs flex items-center justify-between gap-2">
+                      <span className="truncate flex-1 text-left">{p.name}</span>
+                      {p.fb_page_id && merchantPages[p.fb_page_id] && (
+                        <span style={{ color: "#0284c7", fontWeight: 600 }} className="text-[9px]">
+                          🔗 {merchantPages[p.fb_page_id]}
+                        </span>
+                      )}
+                      <span style={{ color: T.muted }}>{Number(p.sale_price || 0).toLocaleString()}₮</span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+
+          {/* Хүргэлт + нийт */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Хүргэлт</label>
+              <input type="number" value={deliveryFee} onChange={e => setDeliveryFee(e.target.value)}
+                style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                className="w-full px-3 py-2 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Нийт</label>
+              <div style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700, padding: "8px 12px", borderRadius: 8 }}
+                className="text-sm">
+                {totalAmount.toLocaleString()}₮
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mb-1 block">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="w-full px-3 py-2 rounded-lg text-sm" />
+          </div>
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={onClose}
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              Болих
+            </button>
+            <button onClick={save} disabled={busy}
+              style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: busy ? 0.5 : 1 }}
+              className="press-btn flex-1 py-2.5 rounded-lg text-sm">
+              {busy ? "..." : "✓ Хадгалах"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Merchant Stock View ─────────────────────────────────────────────────
+function MerchantStockView({ allowedPageIds }) {
+  const [products, setProducts] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        // Page-руу холбогдсон бараа
+        const { data: prodData } = await supabase.from("inv_products")
+          .select("*").in("fb_page_id", allowedPageIds);
+        const products = prodData || [];
+        setProducts(products);
+        
+        if (products.length > 0) {
+          const productIds = products.map(p => p.id);
+          const { data: stockData } = await supabase.from("inv_stock")
+            .select("*").in("product_id", productIds);
+          setStock(stockData || []);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [allowedPageIds.join(",")]);
+
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+  if (products.length === 0) return (
+    <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>
+      <div className="text-4xl mb-2">📦</div>
+      Танай FB Page-руу холбогдсон бараа алга
+    </div>
+  );
+
+  // Бараа бүрийн нийт нөөц
+  const productStocks = products.map((p) => {
+    const total = stock.filter(s => s.product_id === p.id).reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    return { ...p, totalStock: total };
+  });
+
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+        {productStocks.map((p) => (
+          <div key={p.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
+            className="rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              {p.image_url ? (
+                <img src={p.image_url} alt={p.name}
+                  style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover" }} />
+              ) : (
+                <div style={{ width: 40, height: 40, background: T.surface, borderRadius: 8 }}
+                  className="flex items-center justify-center text-lg">📦</div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">
+                  {p.name}
+                </div>
+                {p.sku && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">{p.sku}</div>
+                )}
+              </div>
+            </div>
+            <div style={{
+              color: p.totalStock <= 5 ? T.err : p.totalStock <= 20 ? T.warn : T.ok,
+              fontFamily: FS, fontWeight: 700,
+            }} className="text-base">
+              {p.totalStock} ширхэг
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OperatorDashboard({ profile }) {
   const [view, setView] = useState(() => {
     try { return localStorage.getItem("orgoo-operator-view") || "dashboard"; } catch { return "dashboard"; }
@@ -24238,7 +31970,7 @@ function OperatorDashboard({ profile }) {
       }} className="lg:!transform-none lg:!relative lg:!w-64 flex flex-col">
         <div className="px-4 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
           <span style={{ fontFamily: FD, fontWeight: 700, fontSize: 18, color: T.ink }}>
-            ORGOO
+            CoreLink
           </span>
           <span style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }}
             className="text-[10px] px-2 py-0.5 rounded-full uppercase">
@@ -24247,10 +31979,11 @@ function OperatorDashboard({ profile }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
-          <SidebarSection label="Хяналт">
+          <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
+            <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
           </SidebarSection>
-          <SidebarSection label="Бизнес">
+          <SidebarSection label="Бизнес" icon={ShoppingBag}>
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
           </SidebarSection>
@@ -24289,17 +32022,19 @@ function OperatorDashboard({ profile }) {
           <div className="flex-1">
             <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
               {view === "dashboard" && "📊 Миний KPI"}
+              {view === "calendar" && "📅 Календар"}
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
             </h1>
           </div>
         </header>
 
-        <div className="p-4 max-w-6xl mx-auto space-y-3">
+        <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
           {/* ⏱ Цаг бүртгэх */}
           <TimeTracker profile={profile} />
           
           {view === "dashboard" && <OperatorKPIView profile={profile} />}
+          {view === "calendar" && <OperatorCalendarView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
         </div>
@@ -24314,6 +32049,7 @@ function OperatorDashboard({ profile }) {
 function OperatorKPIView({ profile }) {
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [phoneFirstOp, setPhoneFirstOp] = useState({}); // утас → анх бүртгэсэн оператор id
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState(() => {
@@ -24366,6 +32102,27 @@ function OperatorKPIView({ profile }) {
         const { data: ordData } = await supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`);
         setCalls(callData || []);
         setOrders(ordData || []);
+
+        // 🔗 "Бүртгэсэн дугаар" Admin-тай ижил болгох: өөрийн pending утаснуудыг
+        //    ӨӨР хэн нэгэн түүнээс өмнө бүртгэсэн эсэхийг шалгах (давхардлаас сэргийлнэ).
+        const myPendingPhones = [...new Set(
+          (callData || [])
+            .filter((c) => (c.call_status === "pending" || !c.call_status) && c.phone)
+            .map((c) => c.phone)
+        )];
+        if (myPendingPhones.length > 0) {
+          const allForPhones = await fetchInChunks("biz_calls", myPendingPhones, {
+            select: "phone, created_by, call_status, created_at",
+            filterColumn: "phone",
+          });
+          // Утас бүрийн анхны pending бүртгэгч
+          const firstOp = {};
+          (allForPhones || [])
+            .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+            .forEach((c) => { if (!firstOp[c.phone]) firstOp[c.phone] = c.created_by; });
+          setPhoneFirstOp(firstOp);
+        }
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -24382,15 +32139,29 @@ function OperatorKPIView({ profile }) {
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
 
-  // Stats
-  const uniquePhones = new Set(filteredCalls.map((c) => c.phone)).size;
-  const totalOrders = filteredOrders.length;
+  // Stats — "Бүртгэсэн дугаар" = өөрийн АНХ бүртгэсэн (pending) дуудлагын unique утас.
+  //   ⚠ Admin-тай ижил: зөвхөн ӨӨР хэн нэгэн өмнө бүртгээгүй (анх би бүртгэсэн) утас.
+  const uniquePhones = new Set(
+    filteredCalls
+      .filter((c) => (c.call_status === "pending" || !c.call_status) && c.phone)
+      .filter((c) => !phoneFirstOp[c.phone] || phoneFirstOp[c.phone] === profile.id)
+      .map((c) => c.phone)
+  ).size;
+  // ☎ "Нийт залгалт" = оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна) — Admin-тай ижил
+  const totalCalls = filteredCalls.filter((c) =>
+    c.call_status === "no_answer" || c.call_status === "unreachable" ||
+    c.call_status === "callback" || c.call_status === "ordered" ||
+    c.call_status === "cancelled"
+  ).length;
+  const totalOrders = filteredOrders.filter((o) => o.status !== "cancelled").length; // Захиалга = цуцлагдаагүй (Admin-тай ижил)
   const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered").length;
-  const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+  const pendingOrders = filteredOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
   const cancelledOrders = filteredOrders.filter((o) => o.status === "cancelled").length;
-  const successRate = totalOrders > 0 ? Math.round((deliveredOrders / totalOrders) * 100) : 0;
-  const cancelRate = totalOrders > 0 ? Math.round((cancelledOrders / totalOrders) * 100) : 0;
-  const pendingRate = totalOrders > 0 ? Math.round((pendingOrders / totalOrders) * 100) : 0;
+  // Хувь тооцоход нийт захиалга (цуцлагдсаныг ОРУУЛНА) ашиглана
+  const allOrdersCount = filteredOrders.length;
+  const successRate = allOrdersCount > 0 ? Math.round((deliveredOrders / allOrdersCount) * 100) : 0;
+  const cancelRate = allOrdersCount > 0 ? Math.round((cancelledOrders / allOrdersCount) * 100) : 0;
+  const pendingRate = allOrdersCount > 0 ? Math.round((pendingOrders / allOrdersCount) * 100) : 0;
   const totalRevenue = filteredOrders
     .filter((o) => o.status === "delivered")
     .reduce((s, o) => s + Number(o.total_amount || 0), 0);
@@ -24584,7 +32355,7 @@ function OperatorKPIView({ profile }) {
             <div className="glass rounded-xl p-3 text-center">
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider">Нийт залгалт</div>
               <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-xl tabular-nums">
-                {filteredCalls.length}
+                {totalCalls}
               </div>
             </div>
             <div className="glass rounded-xl p-3 text-center">
@@ -24733,6 +32504,7 @@ function DriverWarehouseView({ profile }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showZero, setShowZero] = useState(false); // 📦 Үлдэгдэлгүй бараа харуулах эсэх
 
   const loadAll = async () => {
     setLoading(true);
@@ -24762,12 +32534,17 @@ function DriverWarehouseView({ profile }) {
     .map((s) => ({ ...s, product: products.find((p) => p.id === s.product_id) }))
     .filter((x) => x.product);
 
+  // 🎯 Үлдэгдэлтэй бараа л үзүүлэх (default), эс бол бүгд
+  const stockDataVisible = showZero
+    ? stockData
+    : stockData.filter((x) => Number(x.quantity || 0) > 0);
+
   const filtered = search.trim()
-    ? stockData.filter((s) =>
+    ? stockDataVisible.filter((s) =>
         s.product.name?.toLowerCase().includes(search.toLowerCase()) ||
         s.product.sku?.toLowerCase().includes(search.toLowerCase())
       )
-    : stockData;
+    : stockDataVisible;
 
   if (loading) {
     return (
@@ -24838,6 +32615,25 @@ function DriverWarehouseView({ profile }) {
           placeholder="🔍 Бараа хайх..."
           style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
           className="w-full px-3 py-2 rounded-lg text-sm" />
+      )}
+
+      {/* 🎯 Үлдэгдэлгүй бараа toggle */}
+      {stockData.some((x) => Number(x.quantity || 0) <= 0) && (
+        <button onClick={() => setShowZero(!showZero)}
+          className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between"
+          style={{
+            background: showZero ? T.warnSoft : T.surfaceAlt,
+            border: `1px solid ${showZero ? T.warn : T.border}`,
+            color: T.ink, fontFamily: FS, fontWeight: 600,
+          }}>
+          <span className="flex items-center gap-2">
+            <span>{showZero ? "👁" : "🙈"}</span>
+            <span>{showZero ? "Бүх бараа харуулж байна" : "Үлдэгдэлгүй бараа нуусан"}</span>
+          </span>
+          <span style={{ color: T.muted, fontSize: 10 }}>
+            {showZero ? "Нуух →" : "Харуулах →"}
+          </span>
+        </button>
       )}
 
       {/* Stock list */}
@@ -25416,7 +33212,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
           // АВАХ
           const { data: ordData } = await supabase
             .from("biz_orders").select("id")
-            .eq("driver_id", profile.id).in("status", ["new", "pending"]);
+            .eq("driver_id", profile.id).in("status", ["new", "pending", "assigned"]);
           const orderIds = (ordData || []).map((o) => o.id);
 
           if (orderIds.length === 0) {
@@ -25593,12 +33389,12 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
   return createPortal(
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
-      background: "rgba(244, 114, 182, 0.15)", backdropFilter: "blur(8px)",
+      background: "rgba(14, 156, 142, 0.15)", backdropFilter: "blur(8px)",
     }} onClick={onClose}>
       <div style={{
         background: "rgba(255, 255, 255, 0.98)", backdropFilter: "blur(24px)",
         border: "1px solid rgba(255, 255, 255, 0.8)",
-        boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+        boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
         borderRadius: 16,
         position: "absolute", top: 8, left: 8, right: 8, bottom: 8,
         display: "flex", flexDirection: "column",
@@ -26023,6 +33819,8 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeReport, setActiveReport] = useState(null);
+  const [reportOrders, setReportOrders] = useState([]); // тухайн тооцооны захиалгууд
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   const loadReports = async () => {
     setLoading(true);
@@ -26038,6 +33836,44 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   };
 
   useEffect(() => { loadReports(); }, []);
+
+  // 📦 Тухайн тооцоонд хамаарах захиалгуудыг татах (settlement_id-аар)
+  useEffect(() => {
+    if (!activeReport) { setReportOrders([]); return; }
+    let cancelled = false;
+    (async () => {
+      setLoadingOrders(true);
+      try {
+        const { data: ords } = await supabase
+          .from("biz_orders")
+          .select("id, order_number, customer_phone, status, total_amount, delivery_fee, delivered_at, created_at")
+          .eq("settlement_id", activeReport.id)
+          .order("delivered_at", { ascending: false });
+        const ordList = ords || [];
+        // Захиалга бүрийн бараанууд (biz_order_items) — нэр + тоо
+        const ordIds = ordList.map((o) => o.id);
+        const itemsByOrder = {};
+        if (ordIds.length > 0) {
+          const { data: items } = await supabase
+            .from("biz_order_items")
+            .select("order_id, product_name, quantity")
+            .in("order_id", ordIds);
+          (items || []).forEach((it) => {
+            if (!itemsByOrder[it.order_id]) itemsByOrder[it.order_id] = [];
+            itemsByOrder[it.order_id].push({ name: it.product_name || "—", qty: Number(it.quantity || 0) });
+          });
+        }
+        const enriched = ordList.map((o) => {
+          const its = itemsByOrder[o.id] || [];
+          const itemCount = its.reduce((s, x) => s + x.qty, 0);
+          return { ...o, items: its, itemCount };
+        });
+        if (!cancelled) setReportOrders(enriched);
+      } catch (e) { console.error(e); if (!cancelled) setReportOrders([]); }
+      finally { if (!cancelled) setLoadingOrders(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeReport]);
 
   // Detail харах
   if (activeReport) {
@@ -26132,6 +33968,78 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
               {r.order_count}
             </span>
           </div>
+        </div>
+
+        {/* 📦 Хаагдсан захиалгуудын жагсаалт */}
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3 flex items-center gap-2">
+            📦 Хаагдсан захиалгууд ({reportOrders.length})
+          </div>
+          {loadingOrders ? (
+            <div className="py-6 text-center">
+              <Loader2 className="spin mx-auto" size={18} style={{ color: T.muted }} />
+            </div>
+          ) : reportOrders.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">
+              Энэ тооцоонд захиалга алга
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {reportOrders.map((o) => {
+                const st = o.status === "delivered"
+                  ? { label: "Хүргэсэн", color: T.ok, bg: "rgba(16,185,129,0.1)" }
+                  : o.status === "cancelled"
+                  ? { label: "Цуцалсан", color: T.err, bg: T.errSoft }
+                  : { label: o.status, color: T.muted, bg: T.surfaceAlt };
+                return (
+                  <div key={o.id} className="p-2 rounded-lg" style={{ background: T.surfaceAlt }}>
+                    <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
+                        {o.order_number || "—"} · {o.customer_phone || "—"}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span style={{ background: st.bg, color: st.color, fontFamily: FM }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                          {st.label}
+                        </span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                          📦 {o.itemCount}ш
+                        </span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                          🚚 {Number(o.delivery_fee || 0).toLocaleString()}₮
+                        </span>
+                        {o.delivered_at && (
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
+                            {new Date(o.delivered_at).toLocaleString("mn-MN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums flex-shrink-0">
+                      {Number(o.total_amount || 0).toLocaleString()}₮
+                    </div>
+                    </div>
+                    {/* Барааны дэлгэрэнгүй: нэр + тоо */}
+                    {o.items && o.items.length > 0 && (
+                      <div className="mt-1.5 pt-1.5 space-y-0.5" style={{ borderTop: `1px solid ${T.border}` }}>
+                        {o.items.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate flex-1 min-w-0">
+                              • {it.name}
+                            </span>
+                            <span style={{ color: T.muted, fontFamily: FD, fontWeight: 600 }} className="text-[11px] tabular-nums flex-shrink-0 ml-2">
+                              {it.qty}ш
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -26232,11 +34140,21 @@ function DriverDashboard({ profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
   const [loading, setLoading] = useState(true);
+  const [fbPagesMap, setFbPagesMap] = useState({}); // 🔗 FB Pages ID → name
   const [activeOrder, setActiveOrder] = useState(null);
   const [cancelOrder, setCancelOrder] = useState(null);
   const [cancelNote, setCancelNote] = useState("");
-  const [view, setView] = useState("orders"); // orders | warehouse | requests | settlements
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("orgoo-driver-view") || "orders"; } catch { return "orders"; }
+  }); // orders | warehouse | requests | settlements
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-driver-view", view); } catch {}
+  }, [view]);
   const [viewMode, setViewMode] = useState("list"); // list | map (захиалгын дотор)
+  const [driverSearch, setDriverSearch] = useState(""); // 🔍 Дугаар/хаягаар хайх
+  const [hoveredOrderId, setHoveredOrderId] = useState(null); // 🖱 Hover effect
+  const [phoneAction, setPhoneAction] = useState(null); // 📞 { phone } — Залгах/Мессеж сонголт
+  const [assignOrder, setAssignOrder] = useState(null); // 🚚 Өөр driver-т хуваарилах modal
   const [drivers, setDrivers] = useState([]); // Бусад driver-ийг сонгож хуваарилах
   const [assignDriverOrder, setAssignDriverOrder] = useState(null); // driver picker нээх захиалга
   const [insufficientStockOrder, setInsufficientStockOrder] = useState(null); // { orderId, msg }
@@ -26295,6 +34213,13 @@ function DriverDashboard({ profile }) {
 
       setDrivers(driversData || []);
 
+      // 🔗 FB Pages татах
+      const { data: fbpData } = await supabase.from("biz_fb_pages")
+        .select("id, name");
+      const fbMap = {};
+      (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
+      setFbPagesMap(fbMap);
+
       // Хослуулах + давхардлаас сэргийлэх
       const all = [...(ownOrders || [])];
       const ownIds = new Set(all.map((o) => o.id));
@@ -26346,8 +34271,20 @@ function DriverDashboard({ profile }) {
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
+  const pendingChangesRef = useRef(0); // ⚡ throttle
+  const badgeFlushTimer = useRef(null);
 
   useEffect(() => {
+    // ⚡ Throttle: олон өөрчлөлт зэрэг ирэхэд 1.5с тутамд нэг л удаа setState
+    const bumpBadge = () => {
+      pendingChangesRef.current += 1;
+      if (badgeFlushTimer.current) return;
+      badgeFlushTimer.current = setTimeout(() => {
+        setPendingChanges((prev) => prev + pendingChangesRef.current);
+        pendingChangesRef.current = 0;
+        badgeFlushTimer.current = null;
+      }, 1500);
+    };
     // Realtime channel — DB өөрчлөгдөхөд badge counter +1
     const channel = supabase
       .channel(`driver-badge-${profile.id}`)
@@ -26363,22 +34300,22 @@ function DriverDashboard({ profile }) {
           if (!o) return;
           
           // Зөвхөн чухал өөрчлөлтийг тоолох:
-          // - Шинэ захиалга (driver_id=null, status=new)
-          // - Миний захиалгад өөрчлөлт
-          // - Тодорхойгүй захиалга
           const isRelevant = 
             (!o.driver_id && o.status === "new") ||
             o.driver_id === profile.id ||
             o.is_unknown === true;
           
           if (isRelevant) {
-            setPendingChanges((prev) => prev + 1);
+            bumpBadge();
           }
         }
       )
       .subscribe();
     
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (badgeFlushTimer.current) clearTimeout(badgeFlushTimer.current);
+    };
   }, [profile.id]);
 
   // Manual refresh — Badge даргах
@@ -26395,94 +34332,85 @@ function DriverDashboard({ profile }) {
     await supabase.auth.signOut();
   };
 
+  const deliveringRef = useRef(new Set()); // ⚡ Давхар хүргэлтээс сэргийлэх — ажиллаж буй orderId-ууд
   const updateStatus = async (orderId, newStatus) => {
+    // ⚡ ДАВХАР ХҮРГЭЛТ ЗАСВАР: ижил захиалгыг зэрэг/давхар хүргэхээс сэргийлэх.
+    //    (Жолооч "Хүргэсэн" товчийг хоёр дарахад deliver_order 2 удаа зэрэг ажиллаж,
+    //     бараа 2 дахин хасагдаж байсныг (нөөц сөрөг болох гол шалтгаан) зогсооно.)
+    if (deliveringRef.current.has(orderId)) {
+      console.log("[updateStatus] аль хэдийн боловсруулж байна:", orderId);
+      return;
+    }
+    deliveringRef.current.add(orderId);
     const updates = { status: newStatus };
     if (newStatus === "delivered") {
       updates.delivered_at = new Date().toISOString();
       updates.delivered_by = profile.id;
     }
     try {
-      // Хүргэгдсэн үед эхлээд агуулахаас бараа хасах
+      // 🚫 Хүргэгдсэн үед заавал агуулахаас бараа хасах — алгасч болохгүй
       if (newStatus === "delivered") {
-        const debugInfo = [];
+        // ⚡ АТОМИК: захиалга delivered болгох + бараа хасах нэг транзакцид (RPC).
+        //    Сүлжээ тасарсан ч хагас төлөв (movement орсон ч захиалга assigned) үүсэхгүй.
+        //    Аль хэдийн delivered бол давхар хасахгүй (идемпотент).
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("deliver_order", {
+          p_order_id: orderId,
+          p_driver_id: profile.id,
+        });
 
-        // 1. Driver-ийн өөрийн агуулахыг олох
-        const { data: driverWh, error: whErr } = await supabase
-          .from("inv_warehouses")
-          .select("id, name")
-          .eq("driver_id", profile.id)
-          .maybeSingle();
-
-        debugInfo.push(`1️⃣ Агуулах: ${driverWh ? `✓ ${driverWh.name}` : "✗ ОЛДСОНГҮЙ"}`);
-        if (whErr) debugInfo.push(`   Алдаа: ${whErr.message}`);
-
-        if (!driverWh) {
-          alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nАгуулахад driver_id = ${profile.id} тохируулсан агуулах байх ёстой.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
-          if (!confirm("Үргэлжлүүлэх үү?")) return;
+        if (rpcErr) {
+          const isShortStock = rpcErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
+          if (isShortStock) {
+            setInsufficientStockOrder({ orderId, msg: rpcErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
+            return;
+          }
+          // Бусад алдаа (агуулах алга, бараа холбогдоогүй г.м) — RPC-ийн мессежийг шууд харуулна
+          alert(`🚫 Хүргэгдсэн гэж тэмдэглэх боломжгүй\n\n${rpcErr.message}`);
+          return;
         }
 
-        if (driverWh) {
-          // 2. Захиалгын барааг авах
-          const { data: orderItems, error: itemsErr } = await supabase
-            .from("biz_order_items")
-            .select("product_id, quantity, product_name")
-            .eq("order_id", orderId);
-
-          debugInfo.push(`2️⃣ Захиалгын бараа: ${orderItems?.length || 0}ш`);
-          if (itemsErr) debugInfo.push(`   Алдаа: ${itemsErr.message}`);
-
-          const validItems = (orderItems || []).filter((it) => it.product_id);
-          debugInfo.push(`3️⃣ product_id-тай бараа: ${validItems.length}ш`);
-
-          if (validItems.length === 0 && (orderItems?.length || 0) > 0) {
-            alert(`⚠ Барааг хасах боломжгүй\n\n${debugInfo.join("\n")}\n\nЗахиалгын бараанд product_id холбогдоогүй байна (free text). Бараа агуулахаас хасагдахгүй.\n\nҮргэлжлүүлэх үү?`);
-            if (!confirm("Тэгэхээр захиалгыг хүргэгдсэн гэж тэмдэглэх үү?")) return;
-          }
-
-          if (validItems.length > 0) {
-            const movements = validItems.map((it) => ({
-              product_id: it.product_id,
-              warehouse_id: driverWh.id,
-              movement_type: "out",
-              quantity: Number(it.quantity || 0),
-              reason: "delivery",
-              created_by: profile.id,
-              notes: `Захиалга #${orderId.slice(0, 8)} хүргэгдсэн: ${it.product_name || ""}`,
-            }));
-
-            const { data: mvData, error: mvErr } = await supabase
-              .from("inv_movements")
-              .insert(movements)
-              .select();
-
-            debugInfo.push(`4️⃣ Хөдөлгөөн бичсэн: ${mvData?.length || 0}ш`);
-            if (mvErr) {
-              const isShortStock = mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй");
-              if (isShortStock) {
-                setInsufficientStockOrder({ orderId, msg: mvErr.message || "Барааны үлдэгдэл хүрэлцэхгүй" });
-                return;
-              }
-              debugInfo.push(`   Алдаа: ${mvErr.message}`);
-              alert(`⚠ Барааны хөдөлгөөн бичигдсэнгүй\n\n${debugInfo.join("\n")}\n\n💡 Шийдэл: SQL editor-д "driver-stock-rls-fix.sql" ажиллуул.\n\nЗахиалгыг хүргэгдсэн гэж тэмдэглэх үү?`);
-              if (!confirm("Үргэлжлүүлэх үү?")) return;
-            } else {
-              logDev("✓ Stock хасагдсан:", debugInfo.join(" | "));
+        logDev("✓ deliver_order RPC:", rpcData);
+      } else {
+        // 🔄 ЗАСВАР: Захиалга өмнө delivered байсан БА одоо delivered БИШ (cancelled/assigned)
+        //    болж байвал — өмнө хасагдсан барааг агуулахад БУЦААЖ нэмэх (in movement).
+        //    Өмнө: delivered→cancelled үед out movement үлдэж, бараа буруу хасагдсан хэвээр байсан.
+        const currentOrder = orders.find((o) => o.id === orderId);
+        const wasDelivered = currentOrder?.status === "delivered";
+        if (wasDelivered) {
+          // Driver-ийн агуулах
+          const { data: driverWh } = await supabase
+            .from("inv_warehouses").select("id").eq("driver_id", profile.id).maybeSingle();
+          // Захиалгын бараа
+          const { data: orderItems } = await supabase
+            .from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
+          if (driverWh && orderItems && orderItems.length > 0) {
+            const returnMovements = orderItems
+              .filter((it) => it.product_id)
+              .map((it) => ({
+                product_id: it.product_id,
+                warehouse_id: driverWh.id,
+                movement_type: "in",
+                quantity: Number(it.quantity || 0),
+                reason: "return",
+                created_by: profile.id,
+                notes: `Захиалга #${orderId.slice(0, 8)} ${newStatus === "cancelled" ? "цуцлагдсан" : "буцаагдсан"}: ${it.product_name || ""} (нөөц сэргээв)`,
+              }));
+            if (returnMovements.length > 0) {
+              await supabase.from("inv_movements").insert(returnMovements);
             }
           }
         }
+        // Захиалгын статус шинэчлэх
+        const { error: ordErr2 } = await supabase.from("biz_orders").update(updates).eq("id", orderId);
+        if (ordErr2) throw ordErr2;
       }
 
-      const { error, data } = await supabase
-        .from("biz_orders")
-        .update(updates)
-        .eq("id", orderId)
-        .select();
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        alert("⚠ Захиалга шинэчлэх боломжгүй байна.\n\nRLS policies-ийг шалгах:\n1. driver-rls-fix.sql ажиллуулсан эсэх\n2. Тэр захиалга танд оноосон эсэх");
-        return;
-      }
-      await loadAll();
+      // ⚡ Optimistic update — зөвхөн тухайн захиалгын state шинэчилнэ
+      setOrders((prev) => prev.map((o) =>
+        o.id === orderId ? { ...o, ...updates } : o
+      ));
+      // activeOrder нээлттэй бол хаах (хүргэгдсэн/цуцлагдсан захиалга жагсаалтаас гарна)
+      if (activeOrder?.id === orderId) setActiveOrder(null);
     } catch (e) {
       const isShortStock = e.message?.includes("үлдэгдэл хүрэлцэхгүй");
       if (isShortStock) {
@@ -26490,6 +34418,9 @@ function DriverDashboard({ profile }) {
         return;
       }
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
+    } finally {
+      // ⚡ Guard цэвэрлэх — return хийсэн ч ажиллана (давхар-дарах хамгаалалт суллана)
+      deliveringRef.current.delete(orderId);
     }
   };
 
@@ -26566,6 +34497,16 @@ function DriverDashboard({ profile }) {
     if (filter === "delivered") return o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id;
     if (filter === "cancelled") return o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id;
     return true;
+  }).filter((o) => {
+    // 🔍 Дугаар / нэр / хаяг / захиалгын дугаараар хайх
+    if (!driverSearch.trim()) return true;
+    const q = driverSearch.toLowerCase();
+    return (
+      o.customer_phone?.includes(q) ||
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.delivery_address?.toLowerCase().includes(q) ||
+      o.order_number?.toLowerCase().includes(q)
+    );
   });
 
   // Pagination
@@ -26602,7 +34543,7 @@ function DriverDashboard({ profile }) {
         .from("biz_orders")
         .update({
           driver_id: profile.id,
-          status: "new",            // 🆕 "new" — Button 2-той зөрчилгүй болгох
+          status: "assigned",      // 🚚 driver авсан → assigned (Хүргэх tab-д тогтвортой үлдэнэ)
           is_unknown: false,        // 🆕 Тодорхойгүй flag-ийг арилгах
           assigned_at: new Date().toISOString(),
           assigned_by: profile.id,
@@ -26616,16 +34557,14 @@ function DriverDashboard({ profile }) {
         await loadAll();
         return;
       }
-      // 🚚 Хүргэх tab-руу автомат шилжих (UX сайжруулах)
-      setFilter("active");
-      // Optimistic update — UI шууд шинэчлэх
+      // Optimistic update — UI шууд шинэчлэх (одоогийн tab дээр үлдэнэ)
       setOrders((prev) => prev.map((order) =>
         order.id === orderId
-          ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+          ? { ...order, driver_id: profile.id, is_unknown: false, status: "assigned" }
           : order
       ));
       alert("✅ Захиалга 'Хүргэх' хэсэгт орлоо!");
-      await loadAll();
+      // ⚡ loadAll() ажиллуулахгүй — optimistic update хангалттай (scroll position хадгална)
     } catch (e) {
       alert("Алдаа: " + (e.message || JSON.stringify(e)));
     }
@@ -26867,6 +34806,35 @@ function DriverDashboard({ profile }) {
             }}>
             ✓ Хүргэсэн ({counts.delivered})
           </button>
+          <button onClick={() => setFilter("cancelled")}
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{
+              background: filter === "cancelled" ? T.err : T.surfaceAlt,
+              color: filter === "cancelled" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
+            }}>
+            ✕ Цуцалсан ({counts.cancelled})
+          </button>
+        </div>
+
+        {/* 🔍 Хайх — дугаар, нэр, хаяг, захиалгын ID */}
+        <div className="glass rounded-2xl p-2 flex items-center gap-2">
+          <span style={{ color: T.muted }} className="pl-1">🔍</span>
+          <input
+            value={driverSearch}
+            onChange={(e) => { setDriverSearch(e.target.value); setPage(1); }}
+            placeholder="Дугаар, нэр, хаягаар хайх..."
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: T.ink, fontFamily: FS }}
+          />
+          {driverSearch && (
+            <button onClick={() => setDriverSearch("")}
+              className="press-btn px-2 py-1 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Orders list / Map */}
@@ -26893,9 +34861,18 @@ function DriverDashboard({ profile }) {
               const hasPin = o.delivery_lat && o.delivery_lng;
               return (
               <div key={o.id} className="glass rounded-xl p-3"
+                onMouseEnter={() => setHoveredOrderId(o.id)}
+                onMouseLeave={() => setHoveredOrderId(null)}
                 style={{
                   borderLeft: !hasPin ? `4px solid ${T.err}` : "none",
                   background: !hasPin ? "rgba(239,68,68,0.04)" : undefined,
+                  transition: "transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease",
+                  transform: hoveredOrderId === o.id ? "translateY(-5px) scale(1.015)" : "translateY(0) scale(1)",
+                  boxShadow: hoveredOrderId === o.id
+                    ? "0 16px 40px rgba(14, 165, 233, 0.35), 0 0 0 2px #0ea5e9"
+                    : undefined,
+                  zIndex: hoveredOrderId === o.id ? 5 : 1,
+                  position: "relative",
                 }}>
                 {!hasPin && (
                   <div className="flex items-center justify-between mb-1.5">
@@ -26921,14 +34898,26 @@ function DriverDashboard({ profile }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <a href={`tel:${o.customer_phone}`}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPhoneAction({ phone: o.customer_phone }); }}
                         style={{ color: "#0ea5e9", fontFamily: FD, fontWeight: 700 }}
                         className="text-sm tabular-nums hover:underline">
                         📞 {o.customer_phone}
-                      </a>
+                      </button>
                       {o.customer_name && (
                         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">
                           {o.customer_name}
+                        </span>
+                      )}
+                      {/* 🔗 FB Page badge */}
+                      {o.fb_page_id && fbPagesMap[o.fb_page_id] && (
+                        <span style={{
+                          background: "rgba(14,165,233,0.1)",
+                          color: "#0284c7",
+                          fontFamily: FS,
+                          fontWeight: 600,
+                        }} className="text-[9px] px-1.5 py-0.5 rounded">
+                          🔗 {fbPagesMap[o.fb_page_id]}
                         </span>
                       )}
                     </div>
@@ -26942,12 +34931,22 @@ function DriverDashboard({ profile }) {
                       <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-sm tabular-nums">
                         {Number(o.total_amount).toLocaleString()}₮
                       </span>
-                      {Number(o.balance_due || 0) > 0 && (
-                        <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                      {Number(o.paid_amount || 0) > 0 && (
+                        <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 700 }}
                           className="text-[10px] px-1.5 py-0.5 rounded-full">
-                          ⚠ Үлдэгдэл: {Number(o.balance_due).toLocaleString()}₮
+                          💰 Урьдчилж: {Number(o.paid_amount).toLocaleString()}₮
                         </span>
                       )}
+                      {(() => {
+                        // Үлдэгдэл = нийт дүн − төлсөн (статик balance_due биш, бодит тооцоо)
+                        const remaining = Number(o.total_amount || 0) - Number(o.paid_amount || 0);
+                        return remaining > 0 ? (
+                          <span style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600 }}
+                            className="text-[10px] px-1.5 py-0.5 rounded-full">
+                            ⚠ Үлдэгдэл: {remaining.toLocaleString()}₮
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                   {o.delivery_lat && o.delivery_lng && (
@@ -27009,7 +35008,7 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                   </div>
-                ) : (o.status === "new" || o.status === "pending") && (
+                ) : (o.status === "new" || o.status === "pending" || o.status === "assigned") && (
                   <div className="space-y-2 mt-2">
                     {/* "Тодорхойгүй" tab дотор → "Өөртөө авах" товч (БҮХ unknown захиалгад) */}
                     {filter === "unknown" && (
@@ -27019,7 +35018,7 @@ function DriverDashboard({ profile }) {
                           const { error, data } = await supabase.from("biz_orders").update({
                             driver_id: profile.id,
                             is_unknown: false,
-                            status: "new",
+                            status: "assigned",
                           }).eq("id", o.id).select();
                           
                           logDev("[Өөртөө авах] Result:", { error, data });
@@ -27029,15 +35028,13 @@ function DriverDashboard({ profile }) {
                             return;
                           }
                           
-                          // Optimistic update
+                          // Optimistic update (одоогийн tab дээр үлдэнэ)
                           setOrders((prev) => prev.map((order) =>
                             order.id === o.id
-                              ? { ...order, driver_id: profile.id, is_unknown: false, status: "new" }
+                              ? { ...order, driver_id: profile.id, is_unknown: false, status: "assigned" }
                               : order
                           ));
-                          // 🚚 Хүргэх tab-руу автомат шилжих
-                          setFilter("active");
-                          await loadAll();
+                          // ⚡ loadAll() ажиллуулахгүй — optimistic update хангалттай (scroll position хадгална)
                         } catch (e) { 
                           console.error("[Өөртөө авах] Error:", e);
                           alert("Алдаа: " + (e.message || JSON.stringify(e))); 
@@ -27046,6 +35043,14 @@ function DriverDashboard({ profile }) {
                         className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.highlight, color: "white", fontFamily: FS, fontWeight: 700 }}>
                         ✅ Өөртөө авах
+                      </button>
+                    )}
+                    {/* "Тодорхойгүй" tab → "Хүргэлт хуваарилах" (өөр driver-т оноох) */}
+                    {filter === "unknown" && (
+                      <button onClick={() => setAssignOrder(o)}
+                        className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                        style={{ background: "#0ea5e9", color: "white", fontFamily: FS, fontWeight: 600 }}>
+                        🚚 Хүргэлт хуваарилах
                       </button>
                     )}
                     {/* "Хүргэх" tab дотор → "Тодорхойгүй болгох" товч */}
@@ -27082,21 +35087,21 @@ function DriverDashboard({ profile }) {
                         ❓ Тодорхойгүй болгох
                       </button>
                     )}
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн / Цуцлах" товч АЛГА */}
+                    <div className="grid grid-cols-1 gap-2">
+                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн"/"Амжилтгүй" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <>
-                          <button onClick={() => updateStatus(o.id, "delivered")}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => setRatingOrder({ order: o, action: "delivered" })}
                             className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                             style={{ background: T.ok, color: "white", fontFamily: FS }}>
                             ✓ Хүргэсэн
                           </button>
-                          <button onClick={() => { setCancelOrder(o); setCancelNote(""); }}
+                          <button onClick={() => setRatingOrder({ order: o, action: "cancelled" })}
                             className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: T.errSoft, color: T.err, fontFamily: FS }}>
-                            ✕ Хүргэх боломжгүй
+                            style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.err}` }}>
+                            ✕ Амжилтгүй
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -27160,16 +35165,16 @@ function DriverDashboard({ profile }) {
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998,
           display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12,
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
           overflowY: "auto",
         }}
-          onClick={() => { setActiveOrder(null); loadAll(); }}>
+          onClick={() => { setActiveOrder(null); }}>
           <div style={{
               background: T.bg,
               borderRadius: 16, width: "100%", maxWidth: 600,
               padding: 12, marginTop: 12, marginBottom: 12,
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
             }}
             onClick={(e) => e.stopPropagation()}>
             <OrderDetail
@@ -27177,7 +35182,7 @@ function DriverDashboard({ profile }) {
               items={items[activeOrder.id] || []}
               isDriver={true}
               currentDriverId={profile.id}
-              onClose={() => { setActiveOrder(null); loadAll(); }}
+              onClose={() => { setActiveOrder(null); }}
               onUpdateStatus={async (s) => {
                 if (s === "delivered") {
                   // Хүргэсэн → үнэлгээ popup нээх
@@ -27359,7 +35364,25 @@ function DriverDashboard({ profile }) {
                         status: "cancelled",
                         notes: fullNote,
                       }).eq("id", ratingOrder.order.id);
-                      await loadAll();
+                      // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                      if (ratingOrder.order.customer_phone) {
+                        const { data: lastC } = await supabase.from("biz_calls")
+                          .select("call_status").eq("phone", ratingOrder.order.customer_phone)
+                          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                        if (lastC?.call_status !== "cancelled") {
+                          await supabase.from("biz_calls").insert({
+                            phone: ratingOrder.order.customer_phone,
+                            customer_name: ratingOrder.order.customer_name || null,
+                            call_status: "cancelled",
+                            fb_page_id: ratingOrder.order.fb_page_id || null,
+                            created_at: new Date().toISOString(),
+                          });
+                        }
+                      }
+                      // ⚡ Optimistic update (loadAll биш — scroll/page хэвээр)
+                      setOrders((prev) => prev.map((o) =>
+                        o.id === ratingOrder.order.id ? { ...o, status: "cancelled", notes: fullNote } : o
+                      ));
                     }
                     
                     setRatingOrder(null);
@@ -27510,7 +35533,7 @@ function DriverDashboard({ profile }) {
                 <div className="space-y-1.5">
                   {drivers.map((d) => {
                     const dOrders = orders.filter((o) => o.driver_id === d.id);
-                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending").length;
+                    const activeCount = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
                     const isMe = d.id === profile.id;
                     return (
                       <button key={d.id}
@@ -27520,7 +35543,8 @@ function DriverDashboard({ profile }) {
                               .from("biz_orders")
                               .update({
                                 driver_id: d.id,
-                                status: "pending",
+                                status: "assigned",
+                                is_unknown: false,
                                 assigned_at: new Date().toISOString(),
                                 assigned_by: profile.id,
                               })
@@ -27531,12 +35555,16 @@ function DriverDashboard({ profile }) {
                             if (!data || data.length === 0) {
                               alert("⚠ Энэ захиалгыг өөр хүн аль хэдийнэ авсан байна.");
                               setAssignDriverOrder(null);
-                              await loadAll();
                               return;
                             }
+                            // ⚡ Optimistic update (loadAll биш)
+                            setOrders((prev) => prev.map((o) =>
+                              o.id === assignDriverOrder.id
+                                ? { ...o, driver_id: d.id, is_unknown: false, status: "assigned" }
+                                : o
+                            ));
                             alert(`✅ ${d.name}-руу хуваарилагдлаа!`);
                             setAssignDriverOrder(null);
-                            await loadAll();
                           } catch (e) {
                             alert("Алдаа: " + (e.message || JSON.stringify(e)));
                           }
@@ -27587,11 +35615,133 @@ function DriverDashboard({ profile }) {
       )}
 
       {/* Cancel modal — Сэтгэгдэл бичих */}
+      {/* 🚚 Өөр driver-т хуваарилах modal */}
+      {/* 📞 Залгах / Мессеж сонголт popup */}
+      {phoneAction && createPortal(
+        <div
+          onClick={() => setPhoneAction(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: 18, width: "100%", maxWidth: 320,
+              overflow: "hidden", boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
+            }}>
+            <div className="px-4 py-3 text-center" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
+                {phoneAction.phone}
+              </div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                Юу хийх вэ?
+              </div>
+            </div>
+            <a href={`tel:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: T.highlight, fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,156,142,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">📞</span>
+              <span className="text-sm">Залгах</span>
+            </a>
+            <a href={`sms:${(phoneAction.phone || "").replace(/[^0-9+]/g, "")}`}
+              onClick={() => setPhoneAction(null)}
+              className="press-btn flex items-center gap-3 px-4 py-3.5 w-full"
+              style={{ color: "#0ea5e9", fontFamily: FS, fontWeight: 600, borderBottom: `1px solid ${T.border}`, textDecoration: "none" }}>
+              <span style={{ background: "rgba(14,165,233,0.12)" }} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">💬</span>
+              <span className="text-sm">Мессеж илгээх</span>
+            </a>
+            <button
+              onClick={() => setPhoneAction(null)}
+              className="press-btn w-full px-4 py-3 text-center"
+              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}>
+              Болих
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {assignOrder && createPortal(
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
+          background: "rgba(14, 156, 142, 0.15)", backdropFilter: "blur(8px)",
+        }}
+          onClick={() => setAssignOrder(null)}>
+          <div style={{
+            background: "rgba(255, 255, 255, 0.98)", backdropFilter: "blur(24px) saturate(180%)",
+            border: "1px solid rgba(255, 255, 255, 0.8)", boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
+            borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "80vh", overflow: "auto",
+          }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+              <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
+                🚚 Хүргэлт хуваарилах
+              </h3>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-0.5">
+                {assignOrder.customer_name || assignOrder.customer_phone} — {Number(assignOrder.total_amount).toLocaleString()}₮
+              </div>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {drivers.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
+                  Хүргэгч олдсонгүй
+                </div>
+              ) : drivers.filter((d) => d.id !== profile.id).length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-sm text-center py-4">
+                  Өөр хүргэгч олдсонгүй
+                </div>
+              ) : drivers.filter((d) => d.id !== profile.id).map((d) => (
+                <button key={d.id}
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase.from("biz_orders").update({
+                        driver_id: d.id,
+                        is_unknown: false,
+                        status: "assigned",
+                        assigned_at: new Date().toISOString(),
+                        assigned_by: profile.id,
+                      }).eq("id", assignOrder.id);
+                      if (error) { alert("⚠ Алдаа: " + error.message); return; }
+                      setOrders((prev) => prev.map((order) =>
+                        order.id === assignOrder.id
+                          ? { ...order, driver_id: d.id, is_unknown: false, status: "assigned" }
+                          : order
+                      ));
+                      setAssignOrder(null);
+                      alert(`✅ ${d.name}-д хуваарилагдлаа`);
+                    } catch (e) { alert("Алдаа: " + e.message); }
+                  }}
+                  className="press-btn w-full px-3 py-2.5 rounded-lg text-left flex items-center gap-2"
+                  style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 500 }}>
+                  <span style={{ background: "#0ea5e9", color: "white" }}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">
+                    {(d.name || "?")[0]}
+                  </span>
+                  <span className="text-sm">{d.name || "Нэргүй"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-3 pb-3">
+              <button onClick={() => setAssignOrder(null)}
+                className="press-btn w-full py-2 rounded-lg text-sm"
+                style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>
+                Болих
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {cancelOrder && createPortal(
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
           display: "flex", alignItems: "center", justifyContent: "center", padding: 8,
-          background: "rgba(244, 114, 182, 0.15)",
+          background: "rgba(14, 156, 142, 0.15)",
           backdropFilter: "blur(8px)",
         }}
           onClick={() => setCancelOrder(null)}>
@@ -27599,7 +35749,7 @@ function DriverDashboard({ profile }) {
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(24px) saturate(180%)",
               border: "1px solid rgba(255, 255, 255, 0.8)",
-              boxShadow: "0 24px 48px rgba(244, 114, 182, 0.3)",
+              boxShadow: "0 24px 48px rgba(14, 156, 142, 0.3)",
               borderRadius: 16, width: "100%", maxWidth: 400,
             }}
             onClick={(e) => e.stopPropagation()}>
@@ -27646,6 +35796,21 @@ function DriverDashboard({ profile }) {
                       cancelled_by: profile.id,
                       notes: existingNotes + `[Хүргэгч цуцалсан]: ${cancelNote.trim()}`,
                     }).eq("id", cancelOrder.id);
+                    // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
+                    if (cancelOrder.customer_phone) {
+                      const { data: lastC } = await supabase.from("biz_calls")
+                        .select("call_status").eq("phone", cancelOrder.customer_phone)
+                        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                      if (lastC?.call_status !== "cancelled") {
+                        await supabase.from("biz_calls").insert({
+                          phone: cancelOrder.customer_phone,
+                          customer_name: cancelOrder.customer_name || null,
+                          call_status: "cancelled",
+                          fb_page_id: cancelOrder.fb_page_id || null,
+                          created_at: new Date().toISOString(),
+                        });
+                      }
+                    }
                     setCancelOrder(null);
                     setCancelNote("");
                     await loadAll();
@@ -27774,23 +35939,25 @@ function ManagerDashboard({ profile }) {
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
 
-  const upsertKpiEntries = async (deptId, date, entries) => {
+  const upsertKpiEntries = async (deptId, date, entries, keepOpen = false) => {
     try {
+      // entries: [{kpi_id, value, entry_date?, note?}] — entry_date байвал тэрийг, эс бол date ашиглана
       const rows = entries.map((e) => ({
         kpi_id: e.kpi_id,
         department_id: deptId,
-        entry_date: date,
+        entry_date: e.entry_date || date,
         value: e.value,
         note: e.note || null,
         entered_by: profile.id,
         updated_at: new Date().toISOString(),
       }));
+      if (rows.length === 0) { if (!keepOpen) setKpiInputDept(null); return; }
       const { error } = await supabase.from("kpi_entries").upsert(rows, {
         onConflict: "kpi_id,entry_date",
       });
       if (error) throw error;
-      setKpiInputDept(null);
-      setFeedback({ type: "success", msg: "Хадгаллаа" });
+      if (!keepOpen) setKpiInputDept(null);
+      setFeedback({ type: "success", msg: `Хадгаллаа (${rows.length} утга)` });
       await loadAll();
     } catch (e) { setFeedback({ type: "error", msg: e.message }); }
   };
@@ -27802,7 +35969,7 @@ function ManagerDashboard({ profile }) {
         const { error } = await supabase.from("kpi_definitions").update({
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order, is_active: data.is_active ?? true,
-          target: data.target, target_period: data.target_period,
+          target: data.target, target_period: data.target_period, target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -27813,7 +35980,7 @@ function ManagerDashboard({ profile }) {
           department_id: data.department_id,
           name: data.name, unit: data.unit, category: data.category,
           display_order: data.display_order || 0,
-          target: data.target, target_period: data.target_period || 'daily',
+          target: data.target, target_period: data.target_period || 'daily', target_source_kpi_id: data.target_source_kpi_id || null, target_percent: data.target_percent || null,
           kpi_type: data.kpi_type || 'input',
           formula: data.formula || null,
           decimals: data.decimals ?? 0,
@@ -27932,12 +36099,12 @@ function ManagerDashboard({ profile }) {
 
           <div className="px-4 py-4 border-b" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2.5">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-md flex items-center justify-center">
                 <ShieldCheck size={14} />
               </div>
               <div className="flex-1">
                 <div style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-base leading-none">
-                  ORGOO<span style={{ color: T.highlight }}>.</span>
+                  CoreLink<span style={{ color: T.highlight }}>.</span>
                 </div>
                 <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider mt-0.5">
                   Ахлагч
@@ -27950,14 +36117,14 @@ function ManagerDashboard({ profile }) {
           </div>
 
           <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <SidebarSection label="Хяналт">
+            <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
               <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
             </SidebarSection>
 
-            <SidebarSection label="Хүсэлтүүд">
+            <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
             </SidebarSection>
@@ -27965,7 +36132,7 @@ function ManagerDashboard({ profile }) {
 
           <div className="border-t px-2 py-2" style={{ borderColor: T.border }}>
             <div className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-gray-50">
-              <div style={{ background: "linear-gradient(135deg, #f97316, #ec4899)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
+              <div style={{ background: "linear-gradient(135deg, #3FE0C6, #0E9C8E)", color: "white" }} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold">
                 {profile.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -27994,12 +36161,13 @@ function ManagerDashboard({ profile }) {
         <main className="flex-1 min-w-0">
           <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-20" style={{ background: "rgba(255,255,255,0.7)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderColor: T.border }}>
             <button onClick={() => setSidebarOpen(true)} style={{ color: T.ink }}>
-              <Inbox size={18} />
+              <Menu size={20} />
             </button>
-            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">ORGOO<span style={{ color: T.highlight }}>.</span></div>
+            <RippleMark size={22} variant="grad" />
+            <div style={{ fontFamily: FS, fontWeight: 600 }} className="text-sm">CoreLink<span style={{ color: T.highlight }}>.</span></div>
           </div>
 
-          <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6 sm:py-8">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
             <div className="mb-6 slide-up">
               <h1 style={{ fontFamily: FS, fontWeight: 600, letterSpacing: "-0.02em" }} className="text-2xl mb-1">
                 {view === "team" && "Багийн гишүүд"}
@@ -29224,14 +37392,14 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  // ── Header — ORGOO brand
+  // ── Header — CoreLink brand
   doc.setFillColor(99, 102, 241); // indigo
   doc.rect(0, 0, pageW, 32, "F");
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(28);
   doc.setFont("helvetica", "bold");
-  doc.text("ORGOO", 14, 18);
+  doc.text("CoreLink", 14, 18);
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
@@ -29386,7 +37554,7 @@ async function generateSalaryPDF({ employee, sessions, periodStart, periodEnd, p
   // ── Footer
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
-  doc.text(`ORGOO Time Tracking · ${today}`, pageW / 2, pageH - 8, { align: "center" });
+  doc.text(`CoreLink Time Tracking · ${today}`, pageW / 2, pageH - 8, { align: "center" });
 
   // Save
   const filename = `salary_${employee.name?.replace(/\s+/g, "_") || "report"}_${periodLabel.replace(/\s+/g, "_")}.pdf`;
@@ -29476,7 +37644,7 @@ async function exportSalaryPdf(employee, sessions, leaves, year, month) {
   // Header
   pdf.setFontSize(20);
   pdf.setTextColor(236, 72, 153);
-  pdf.text("ORGOO", 20, 20);
+  pdf.text("CoreLink", 20, 20);
   pdf.setFontSize(10);
   pdf.setTextColor(100, 100, 100);
   pdf.text("Tsalingiin tailan", 20, 28);
@@ -29532,9 +37700,9 @@ async function exportSalaryPdf(employee, sessions, leaves, year, month) {
   pdf.setFontSize(8);
   pdf.setTextColor(150, 150, 150);
   pdf.text(`Uusgesen: ${new Date().toLocaleString("mn-MN")}`, 20, 285);
-  pdf.text("ORGOO automatic tailan", 150, 285);
+  pdf.text("CoreLink automatic tailan", 150, 285);
 
-  pdf.save(`ORGOO-${employee.name}-${year}-${String(month).padStart(2, "0")}.pdf`);
+  pdf.save(`CoreLink-${employee.name}-${year}-${String(month).padStart(2, "0")}.pdf`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29604,7 +37772,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
 
   // ============== Хуудас 1: ХУРААНГУЙ ==============
   const summaryRows = [
-    ["ORGOO · KPI Хураангуй тайлан"],
+    ["CoreLink · KPI Хураангуй тайлан"],
     [`Хугацаа: ${periodRange.label}`],
     [`Огноо: ${periodRange.start} → ${periodRange.end}`],
     [],
@@ -29661,7 +37829,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   }
 
   const detailRows = [
-    ["ORGOO · KPI Өдрийн дэлгэрэнгүй"],
+    ["CoreLink · KPI Өдрийн дэлгэрэнгүй"],
     [`Хугацаа: ${periodRange.label}`],
     [],
   ];
@@ -29703,7 +37871,7 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   XLSX.utils.book_append_sheet(wb, ws2, "Өдрийн дэлгэрэнгүй");
 
   // Файл татах
-  const fileName = `ORGOO-KPI-${periodRange.start}-${periodRange.end}.xlsx`;
+  const fileName = `CoreLink-KPI-${periodRange.start}-${periodRange.end}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
 
@@ -29772,7 +37940,45 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
     return kpiEntries.filter((e) => e.entry_date >= periodRange.start && e.entry_date <= periodRange.end);
   }, [kpiEntries, periodRange]);
 
-  const visibleDepts = selectedDept === "all" ? departments : departments.filter(d => d.id === selectedDept);
+  // 🔃 Хэлтсийн дараалал — гар тохиргоо (localStorage)
+  const [deptOrder, setDeptOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem("orgoo-dept-order");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("orgoo-dept-order", JSON.stringify(deptOrder)); } catch {}
+  }, [deptOrder]);
+
+  // Sorted departments
+  const sortedDepartments = useMemo(() => {
+    if (deptOrder.length === 0) return departments;
+    return [...departments].sort((a, b) => {
+      const ia = deptOrder.indexOf(a.id);
+      const ib = deptOrder.indexOf(b.id);
+      if (ia === -1 && ib === -1) return 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [departments, deptOrder]);
+
+  // Дараалал солих (дээш/доош нэг алхам)
+  const moveDept = (deptId, direction) => {
+    const ordered = sortedDepartments.map((d) => d.id);
+    const idx = ordered.indexOf(deptId);
+    if (idx === -1) return;
+    if (direction === "up" && idx > 0) {
+      [ordered[idx], ordered[idx - 1]] = [ordered[idx - 1], ordered[idx]];
+    } else if (direction === "down" && idx < ordered.length - 1) {
+      [ordered[idx], ordered[idx + 1]] = [ordered[idx + 1], ordered[idx]];
+    }
+    setDeptOrder(ordered);
+  };
+
+  const visibleDepts = selectedDept === "all" ? sortedDepartments : sortedDepartments.filter(d => d.id === selectedDept);
 
   // Department-ийн ахлагч мөн үү?
   const isDeptManager = (deptId) => {
@@ -29943,13 +38149,48 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                   </div>
                   <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl">{dept.name}</h3>
                 </div>
-                {canEnter && (
-                  <button onClick={() => onOpenInputForm(dept.id)}
-                    className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
-                    style={{ fontFamily: FM }}>
-                    <Plus size={11} /> Тоо оруулах
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* 🔃 Дараалал солих товч — зөвхөн admin/manager + "Бүх хэлтэс" үед */}
+                  {isAdmin && selectedDept === "all" && visibleDepts.length > 1 && (
+                    <div className="flex flex-col gap-0.5">
+                      <button onClick={() => moveDept(dept.id, "up")}
+                        disabled={deptIdx === 0}
+                        title="Дээш"
+                        className="press-btn rounded text-xs"
+                        style={{
+                          width: 20, height: 16,
+                          background: deptIdx === 0 ? T.surfaceAlt : T.highlight,
+                          color: deptIdx === 0 ? T.muted : "white",
+                          opacity: deptIdx === 0 ? 0.4 : 1,
+                          cursor: deptIdx === 0 ? "not-allowed" : "pointer",
+                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
+                        }}>
+                        ▲
+                      </button>
+                      <button onClick={() => moveDept(dept.id, "down")}
+                        disabled={deptIdx === visibleDepts.length - 1}
+                        title="Доош"
+                        className="press-btn rounded text-xs"
+                        style={{
+                          width: 20, height: 16,
+                          background: deptIdx === visibleDepts.length - 1 ? T.surfaceAlt : T.highlight,
+                          color: deptIdx === visibleDepts.length - 1 ? T.muted : "white",
+                          opacity: deptIdx === visibleDepts.length - 1 ? 0.4 : 1,
+                          cursor: deptIdx === visibleDepts.length - 1 ? "not-allowed" : "pointer",
+                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
+                        }}>
+                        ▼
+                      </button>
+                    </div>
+                  )}
+                  {canEnter && (
+                    <button onClick={() => onOpenInputForm(dept.id)}
+                      className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
+                      style={{ fontFamily: FM }}>
+                      <Plus size={11} /> Тоо оруулах
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* KPI cards or Charts */}
@@ -29995,6 +38236,14 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     chartType={chartType}
                     groupBy={chartGroupBy}
                     anchorDate={deptAnchorDates[dept.id]}
+                    departmentId={dept.id}
+                    initialNote={dept.chart_notes || ""}
+                    canEdit={isAdmin}
+                    onNoteSaved={(deptId, newNote) => {
+                      setDepartments((prev) => prev.map((d) =>
+                        d.id === deptId ? { ...d, chart_notes: newNote } : d
+                      ));
+                    }}
                   />
                 </>
               ) : (
@@ -30241,21 +38490,34 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                         </div>
                       </div>
 
-                      {/* Target progress (хэрэв байвал) */}
-                      {kpi.target && entries.length > 0 ? (() => {
-                        let targetTotal = Number(kpi.target);
-                        if (kpi.target_period === "daily") {
-                          const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
-                          targetTotal = Number(kpi.target) * days;
-                        } else if (kpi.target_period === "weekly") {
-                          const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
-                          targetTotal = Number(kpi.target) * weeks;
+                      {/* Target progress (статик эсвэл динамик) */}
+                      {((kpi.target) || (kpi.target_source_kpi_id && kpi.target_percent)) && entries.length > 0 ? (() => {
+                        let targetTotal = 0;
+                        // 🎯 Динамик зорилт — эх KPI-ийн entries-аас шууд тооцох
+                        if (kpi.target_source_kpi_id && kpi.target_percent) {
+                          const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+                          const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+                          targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
+                        } else if (kpi.target) {
+                          // Статик зорилт
+                          targetTotal = Number(kpi.target);
+                          if (kpi.target_period === "daily") {
+                            const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
+                            targetTotal = Number(kpi.target) * days;
+                          } else if (kpi.target_period === "weekly") {
+                            const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
+                            targetTotal = Number(kpi.target) * weeks;
+                          }
                         }
+                        if (targetTotal <= 0) return null;
                         const percent = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
+                        const isDynamic = kpi.target_source_kpi_id && kpi.target_percent;
                         return (
                           <div className="mt-1.5">
                             <div className="flex items-center justify-between text-[9px] mb-1">
-                              <span style={{ opacity: 0.85, fontFamily: FM }}>🎯 {targetTotal.toLocaleString()}</span>
+                              <span style={{ opacity: 0.85, fontFamily: FM }}>
+                                {isDynamic ? "🎯⚡" : "🎯"} {Math.round(targetTotal).toLocaleString()}
+                              </span>
                               <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }}>
                                 {percent.toFixed(0)}%
                               </span>
@@ -30315,6 +38577,9 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
   const [order, setOrder] = useState(kpi?.display_order || 0);
   const [target, setTarget] = useState(kpi?.target ? String(kpi.target) : "");
   const [targetPeriod, setTargetPeriod] = useState(kpi?.target_period || "daily");
+  // 🎯 Динамик зорилт (өөр KPI-ээс)
+  const [targetSourceKpiId, setTargetSourceKpiId] = useState(kpi?.target_source_kpi_id || "");
+  const [targetPercent, setTargetPercent] = useState(kpi?.target_percent ? String(kpi.target_percent) : "");
   const [kpiType, setKpiType] = useState(kpi?.kpi_type || "input");
   const [numeratorId, setNumeratorId] = useState(
     kpi?.formula?.numerator_id || kpi?.formula?.source_id || ""
@@ -30356,6 +38621,9 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
       display_order: parseInt(order) || 0,
       target: target ? Number(target) : null,
       target_period: targetPeriod,
+      // 🎯 Динамик зорилт
+      target_source_kpi_id: targetSourceKpiId || null,
+      target_percent: targetPercent ? Number(targetPercent) : null,
       kpi_type: kpiType,
       formula: kpiType === "calculated" ? {
         numerator_id: numeratorId,
@@ -30529,6 +38797,45 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
           </Field>
         </div>
 
+        {/* 🎯 Динамик зорилт — өөр KPI-ээс */}
+        <div className="rounded-xl p-3" style={{ background: "rgba(245,158,11,0.06)", border: `1px solid ${T.warn}33` }}>
+          <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-2 flex items-center gap-1.5">
+            🎯 Динамик зорилт (өөр KPI-ээс)
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-2">
+            Зорилтыг өөр KPI-ийн утгаас % хувиар тооцоолно. Жнь: Захиалга = Дуудлагын 30%
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Field label="Эх KPI">
+              <select value={targetSourceKpiId} onChange={(e) => setTargetSourceKpiId(e.target.value)}
+                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none">
+                <option value="">— Сонгох —</option>
+                {Object.entries(kpisByDept).map(([deptName, kpis]) => (
+                  <optgroup key={deptName} label={deptName}>
+                    {kpis.map((k) => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+            <Field label="Хувь (%)">
+              <Input value={targetPercent} onChange={setTargetPercent} type="number" placeholder="30" />
+            </Field>
+          </div>
+          {targetSourceKpiId && targetPercent && (
+            <div style={{ color: T.ok, fontFamily: FM }} className="text-[11px] mt-2">
+              ✅ Зорилт = {allKpis.find((k) => k.id === targetSourceKpiId)?.name || "?"} × {targetPercent}%
+            </div>
+          )}
+          {targetSourceKpiId && !targetPercent && (
+            <div style={{ color: T.err, fontFamily: FM }} className="text-[11px] mt-2">
+              ⚠ Хувийн утга оруулна уу
+            </div>
+          )}
+        </div>
+
         <Field label="Бүлэг (заавал биш)">
           <Input value={category} onChange={setCategory} placeholder="sales, operations" />
         </Field>
@@ -30555,70 +38862,189 @@ function KpiDefFormModal({ mode, kpi, departments, allKpis = [], onSave, onClose
 //  KPI ENTRY FORM (manager / admin daily input)
 // ═══════════════════════════════════════════════════════════════════════════
 function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClose }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
-  const [values, setValues] = useState({});
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [rangeMode, setRangeMode] = useState(7); // 7 | 14 | 30 | "custom"
+  const [customStart, setCustomStart] = useState(todayStr);
+  const [customEnd, setCustomEnd] = useState(todayStr);
+  const [values, setValues] = useState({}); // `${kpi_id}|${date}` → string
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Зөвхөн input KPI-уудыг харуулах (calculated биш)
-  const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated");
+  // Зөвхөн input KPI (calculated/copy биш)
+  const inputKpis = kpiDefs.filter((k) => k.kpi_type !== "calculated" && k.kpi_type !== "copy");
 
-  // Date солигдох тоолон утгуудыг ачаалах
+  // Огнооны жагсаалт (сүүлийн N хоног, эсвэл custom хүрээ) — хуучин→шинэ
+  const dateList = (() => {
+    const out = [];
+    if (rangeMode === "custom") {
+      let d = new Date(customStart + "T00:00:00");
+      const end = new Date(customEnd + "T00:00:00");
+      if (isNaN(d) || isNaN(end) || d > end) return [todayStr];
+      let guard = 0;
+      while (d <= end && guard < 92) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); guard++; }
+    } else {
+      const today = new Date(todayStr + "T00:00:00");
+      for (let i = rangeMode - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        out.push(d.toISOString().slice(0, 10));
+      }
+    }
+    return out;
+  })();
+
+  // Эхлэх утгуудыг existingEntries-ээс дүүргэх
   useEffect(() => {
     const initial = {};
     inputKpis.forEach((k) => {
-      const existing = existingEntries.find(e => e.kpi_id === k.id && e.entry_date === date);
-      initial[k.id] = existing ? String(existing.value) : "";
+      dateList.forEach((dt) => {
+        const ex = existingEntries.find((e) => e.kpi_id === k.id && e.entry_date === dt);
+        if (ex) initial[`${k.id}|${dt}`] = String(ex.value);
+      });
     });
     setValues(initial);
-  }, [date, inputKpis.length]);
+  }, [rangeMode, customStart, customEnd, inputKpis.length]);
+
+  const dayLabel = (dt) => {
+    const d = new Date(dt + "T00:00:00");
+    const days = ["Ня", "Да", "Мя", "Лх", "Пү", "Ба", "Бя"];
+    return { md: dt.slice(5), wd: days[d.getDay()] };
+  };
+
+  const collectEntries = () => {
+    const entries = [];
+    Object.entries(values).forEach(([key, v]) => {
+      if (v === "" || isNaN(Number(v))) return;
+      const [kpi_id, entry_date] = key.split("|");
+      entries.push({ kpi_id, entry_date, value: Number(v) });
+    });
+    return entries;
+  };
 
   const submit = async () => {
     setErr("");
-    const entries = Object.entries(values)
-      .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
-      .map(([kpi_id, v]) => ({ kpi_id, value: Number(v) }));
+    const entries = collectEntries();
     if (entries.length === 0) return setErr("Ядаж нэг тоо оруулна уу");
     setBusy(true);
-    await onSave(department.id, date, entries);
+    await onSave(department.id, todayStr, entries, false);
     setBusy(false);
   };
 
-  return (
-    <Modal onClose={onClose} title={`${department.name} · KPI оруулах`} maxW="max-w-lg">
-      <div className="space-y-4">
-        <Field label="Огноо" required>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none" />
-        </Field>
+  // 🆕 Дундаж утга оруулах — нэг тоог хүрээний бүх өдөрт тавих
+  const fillAverage = () => {
+    const avg = window.prompt("Бүх өдөрт тавих дундаж/нийт утга оруулна уу (KPI бүрд тус тусдаа асууна).\n\nЭхлээд эхний KPI-д:");
+    // Энгийн хувилбар: KPI бүрд асууж, бүх өдөрт тэр утгыг тавина
+    const next = { ...values };
+    inputKpis.forEach((k, i) => {
+      const val = i === 0 && avg !== null ? avg
+        : window.prompt(`"${k.name}" — бүх ${dateList.length} өдөрт тавих утга:`);
+      if (val === null || val === "" || isNaN(Number(val))) return;
+      dateList.forEach((dt) => { next[`${k.id}|${dt}`] = String(Number(val)); });
+    });
+    setValues(next);
+  };
 
-        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-          {inputKpis.length === 0 ? (
-            <div className="glass-soft rounded-xl p-4 text-center">
-              <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
-            </div>
-          ) : (
-            inputKpis.map((k) => (
-              <div key={k.id} className="glass-soft rounded-xl p-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">{k.name}</div>
-                  {k.unit && <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{k.unit}</div>}
-                </div>
-                <input type="number" step="any" value={values[k.id] || ""}
-                  onChange={(e) => setValues({ ...values, [k.id]: e.target.value })}
-                  placeholder="0"
-                  style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                  className="w-32 px-3 py-2 rounded-lg border text-sm outline-none text-right tabular-nums" />
-              </div>
-            ))
-          )}
+  const filledCount = collectEntries().length;
+
+  return (
+    <Modal onClose={onClose} title={`Олон өдрийн тоо оруулах · ${department.name}`} maxW="max-w-4xl">
+      <div className="space-y-3">
+        {/* Хугацааны товчнууд */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] uppercase">Хугацаа:</span>
+          {[{ v: 7, l: "7 хоног" }, { v: 14, l: "14 хоног" }, { v: 30, l: "30 хоног" }, { v: "custom", l: "Тусгай" }].map((opt) => (
+            <button key={opt.v} onClick={() => setRangeMode(opt.v)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={rangeMode === opt.v
+                ? { background: T.highlight, color: "white", fontFamily: FS }
+                : { background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+              {opt.l}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <button onClick={fillAverage}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5"
+            style={{ background: T.ok, color: "white", fontFamily: FS }}>
+            Σ Дундаж утга оруулах
+          </button>
         </div>
+
+        {/* Custom огноо сонгогч */}
+        {rangeMode === "custom" && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customStart} max={todayStr} onChange={(e) => setCustomStart(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-sm outline-none" />
+            <span style={{ color: T.muted }}>→</span>
+            <input type="date" value={customEnd} max={todayStr} onChange={(e) => setCustomEnd(e.target.value)}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-sm outline-none" />
+          </div>
+        )}
+
+        <div style={{ background: T.highlightSoft, color: T.ink, fontFamily: FM }} className="text-[11px] px-3 py-2 rounded-lg">
+          💡 Зөвлөгөө: Tab товчоор дараагийн нүд рүү шилжинэ. Хоосон нүд хадгалагдсан утгыг өөрчлөхгүй.
+        </div>
+
+        {inputKpis.length === 0 ? (
+          <div className="glass-soft rounded-xl p-4 text-center">
+            <p style={{ color: T.muted }} className="text-sm">Энэ хэлтэст KPI тохируулаагүй байна</p>
+          </div>
+        ) : (
+          <div className="overflow-auto max-h-[55vh] rounded-xl border" style={{ borderColor: T.line }}>
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr style={{ background: T.surfaceAlt }}>
+                  <th style={{ color: T.muted, fontFamily: FM, background: T.surfaceAlt }}
+                    className="text-left px-3 py-2 text-[10px] uppercase sticky left-0 z-20 min-w-[120px]">КПИ</th>
+                  {dateList.map((dt) => {
+                    const { md, wd } = dayLabel(dt);
+                    const isToday = dt === todayStr;
+                    return (
+                      <th key={dt} className="px-2 py-2 text-center min-w-[70px]"
+                        style={{ background: isToday ? T.highlightSoft : T.surfaceAlt }}>
+                        <div style={{ color: isToday ? T.highlight : T.ink, fontFamily: FM, fontWeight: 600 }} className="text-[11px] tabular-nums">{md}</div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">{wd}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {inputKpis.map((k) => (
+                  <tr key={k.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                    <td className="px-3 py-2 sticky left-0 z-10" style={{ background: T.bg, borderLeft: `2px solid ${T.highlight}` }}>
+                      <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }} className="text-xs truncate max-w-[110px]">{k.name}</div>
+                      {k.unit && <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">{k.unit}</div>}
+                    </td>
+                    {dateList.map((dt) => (
+                      <td key={dt} className="px-1 py-1 text-center">
+                        <input type="number" step="any"
+                          value={values[`${k.id}|${dt}`] || ""}
+                          onChange={(e) => setValues({ ...values, [`${k.id}|${dt}`]: e.target.value })}
+                          placeholder="—"
+                          style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+                          className="w-16 px-1.5 py-1.5 rounded border text-xs outline-none text-center tabular-nums focus:border-black" />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {err && <ErrorBox>{err}</ErrorBox>}
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex items-center justify-between">
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+            {inputKpis.length} КПИ × {dateList.length} өдөр = <span style={{ color: T.highlight, fontWeight: 700 }}>{filledCount}</span> оруулсан
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] tabular-nums">
+            {dateList[0]} → {dateList[dateList.length - 1]}
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-1">
           <button onClick={onClose}
             className="glass-soft press-btn flex-1 py-3 rounded-xl text-sm font-medium"
             style={{ fontFamily: FS, color: T.ink }}>Цуцлах</button>
@@ -30626,7 +39052,7 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
             className="glow-primary press-btn flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ fontFamily: FS }}>
             {busy && <Loader2 size={13} className="spin" />}
-            Хадгалах
+            💾 Бүгдийг хадгалах
           </button>
         </div>
       </div>
@@ -30637,8 +39063,139 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
 // ═══════════════════════════════════════════════════════════════════════════
 //  KPI CHART VIEW — Чартаар харах
 // ═══════════════════════════════════════════════════════════════════════════
-function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate }) {
+// ─── 📝 KPI Chart-ийн гар тайлбар хэсэг ──────────────────────────────
+function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNote, saveNote, canEdit, singleDayTotals, multiDayTotals, periodLabel, chartType }) {
+  return (
+    <div className="glass-soft rounded-2xl p-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
+          📝 Тайлбар
+        </div>
+        {canEdit && !editingNote && (
+          <button onClick={() => setEditingNote(true)}
+            className="press-btn text-[11px] px-2 py-1 rounded-lg flex items-center gap-1"
+            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+            ✏ {note ? "Засах" : "Бичих"}
+          </button>
+        )}
+      </div>
+
+      {/* Тайлбарын текст эсвэл edit mode */}
+      {editingNote ? (
+        <div className="space-y-2">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Энэ хэлтсийн KPI үзүүлэлтийн талаар тайлбар бичих... (жнь: '5-р сарын зорилго 1000 захиалга', 'Шинээр нэмэгдсэн KPI: Засварын тоо')"
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg text-xs resize-y"
+            style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS, minHeight: 60 }}
+            autoFocus
+          />
+          <div className="flex items-center gap-2">
+            <button onClick={saveNote} disabled={savingNote}
+              className="press-btn glow-primary px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
+              style={{ fontFamily: FS, fontWeight: 600 }}>
+              {savingNote ? (
+                <><Loader2 size={12} className="spin" /> Хадгалж байна...</>
+              ) : (
+                <>💾 Хадгалах</>
+              )}
+            </button>
+            <button onClick={() => setEditingNote(false)} disabled={savingNote}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs"
+              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}>
+              ✕ Болих
+            </button>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
+              {note.length} тэмдэгт
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Гарын тайлбар */}
+          {note ? (
+            <div style={{ color: T.ink, fontFamily: FS, lineHeight: 1.5, whiteSpace: "pre-wrap" }} className="text-xs">
+              {note}
+            </div>
+          ) : (
+            <div style={{ color: T.muted, fontFamily: FM, fontStyle: "italic" }} className="text-[11px]">
+              {canEdit ? "Тайлбар бичээгүй байна — ✏ товчийг дарж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
+            </div>
+          )}
+
+          {/* Доор автомат статистик */}
+          <div style={{ borderTop: `1px dashed ${T.borderSoft}`, color: T.muted, fontFamily: FM }}
+            className="mt-2 pt-2 text-[10px] flex items-center gap-2 flex-wrap">
+            {singleDayTotals && (
+              <>
+                <span>📅 Нэг өдөр</span>
+                <span>·</span>
+                <span>{singleDayTotals.count} үзүүлэлт</span>
+                <span>·</span>
+                <span>Нийт: <b style={{ color: T.ink }}>{singleDayTotals.total.toLocaleString()}</b></span>
+                {singleDayTotals.max?.value > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>🏆 {singleDayTotals.max.name} ({singleDayTotals.max.value.toLocaleString()})</span>
+                  </>
+                )}
+              </>
+            )}
+            {multiDayTotals && (
+              <>
+                <span>📅 {multiDayTotals.periods} {periodLabel}</span>
+                <span>·</span>
+                <span>Нийт: <b style={{ color: T.ink }}>{multiDayTotals.totalSum.toLocaleString()}</b></span>
+                {multiDayTotals.topKpiTotal > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>🏆 {multiDayTotals.topKpiName} ({multiDayTotals.topKpiTotal.toLocaleString()})</span>
+                  </>
+                )}
+                <span>·</span>
+                <span>📈 {chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate, departmentId, initialNote = "", canEdit = false, onNoteSaved }) {
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+  // 📝 Гар тайлбар state
+  const [note, setNote] = useState(initialNote || "");
+  const [editingNote, setEditingNote] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  // initialNote prop өөрчлөгдөхөд state шинэчлэх
+  useEffect(() => {
+    setNote(initialNote || "");
+  }, [initialNote, departmentId]);
+
+  const saveNote = async () => {
+    if (!departmentId) return;
+    setSavingNote(true);
+    try {
+      const { error } = await supabase.from("departments")
+        .update({ chart_notes: note.trim() || null })
+        .eq("id", departmentId);
+      if (error) throw error;
+      setEditingNote(false);
+      if (onNoteSaved) onNoteSaved(departmentId, note.trim() || "");
+    } catch (e) {
+      alert("Хадгалахад алдаа: " + e.message);
+      logErr("[saveNote]", e);
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   // 🗓 Anchor огноо: хэрэв хэлтсийн anchor өгөгдсөн бол түүнийг, эс бол period-ийн төгсгөл
   const effectiveAnchor = useMemo(() => {
@@ -30730,8 +39287,13 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
     return dateList.map((date) => {
       const row = { date: date.slice(5) }; // MM-DD
       deptKpis.forEach((kpi) => {
-        const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
-        row[kpi.name] = entry ? Number(entry.value) : 0;
+        // 🔧 Calculated/copy KPI-руу computeKpiValue ашиглах
+        if (kpi.kpi_type === "calculated" || kpi.kpi_type === "copy") {
+          row[kpi.name] = computeKpiValue(kpi, allEntries || filteredEntries, date, date);
+        } else {
+          const entry = filteredEntries.find(e => e.kpi_id === kpi.id && e.entry_date === date);
+          row[kpi.name] = entry ? Number(entry.value) : 0;
+        }
       });
       return row;
     });
@@ -30766,31 +39328,89 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   // Single day → 1 bar chart with all KPIs as bars
   if (isSingleDay) {
+    const singleDayDate = dateList[0];
     const singleDayData = deptKpis.map((kpi, i) => {
-      const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+      // 🔧 Calculated/copy KPI-руу computeKpiValue ашиглах
+      let kpiValue = 0;
+      if (kpi.kpi_type === "calculated" || kpi.kpi_type === "copy") {
+        kpiValue = computeKpiValue(kpi, allEntries || filteredEntries, singleDayDate, singleDayDate);
+      } else {
+        const entry = filteredEntries.find(e => e.kpi_id === kpi.id);
+        kpiValue = entry ? Number(entry.value) : 0;
+      }
+      // 🎯 Динамик зорилт — эх KPI-ийн entry-аас тооцоолох
+      let dailyTarget = 0;
+      if (kpi.target_source_kpi_id && kpi.target_percent) {
+        const sourceEntry = filteredEntries.find(e => e.kpi_id === kpi.target_source_kpi_id);
+        const sourceValue = sourceEntry ? Number(sourceEntry.value) : 0;
+        dailyTarget = (sourceValue * Number(kpi.target_percent)) / 100;
+      } else if (kpi.target) {
+        const t = Number(kpi.target);
+        if (kpi.target_period === "daily") dailyTarget = t;
+        else if (kpi.target_period === "weekly") dailyTarget = t / 7;
+        else if (kpi.target_period === "monthly") dailyTarget = t / 30;
+      }
       return {
         name: kpi.name,
-        value: entry ? Number(entry.value) : 0,
+        value: kpiValue,
+        target: Math.round(dailyTarget),
         unit: kpi.unit,
         color: COLORS[i % COLORS.length],
       };
     });
 
+    const totalSingleDay = singleDayData.reduce((s, d) => s + d.value, 0);
+    const maxKpi = singleDayData.reduce((m, d) => d.value > m.value ? d : m, singleDayData[0] || { name: "—", value: 0 });
+
     return (
-      <div className="glass-soft rounded-2xl p-4">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={singleDayData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
-            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-              {singleDayData.map((entry, i) => (
-                <Cell key={i} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="space-y-3">
+        {/* 📝 Гар тайлбар хэсэг */}
+        <ChartNoteSection
+          note={note}
+          setNote={setNote}
+          editingNote={editingNote}
+          setEditingNote={setEditingNote}
+          savingNote={savingNote}
+          saveNote={saveNote}
+          canEdit={canEdit}
+          singleDayTotals={{ total: totalSingleDay, max: maxKpi, count: deptKpis.length }}
+        />
+
+        {/* 📈 Chart — Утгуудтай label-тай + Зорилт */}
+        <div className="glass-soft rounded-2xl p-4">
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={singleDayData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip 
+                contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }}
+                formatter={(value, name, props) => {
+                  const target = props.payload?.target || 0;
+                  const pct = target > 0 ? Math.round((value / target) * 100) : 0;
+                  return [
+                    `${value.toLocaleString()}${target > 0 ? ` / ${target.toLocaleString()} (${pct}%)` : ""}`,
+                    "Хэмжээ"
+                  ];
+                }}
+              />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {singleDayData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+                <LabelList dataKey="value" position="top"
+                  style={{ fontSize: 12, fontWeight: 700, fill: T.ink }}
+                  formatter={(v) => v > 0 ? v.toLocaleString() : ""} />
+              </Bar>
+              {/* 🎯 Зорилт reference dot/line — KPI бүрд */}
+              <Bar dataKey="target" fill="transparent" stroke="none" radius={[0, 0, 0, 0]}>
+                <LabelList dataKey="target" position="insideTop"
+                  style={{ fontSize: 9, fontWeight: 700, fill: T.warn }}
+                  formatter={(v) => v > 0 ? `🎯 ${v.toLocaleString()}` : ""} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   }
@@ -30858,17 +39478,119 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
 
   const periodLabel = groupBy === "week" ? "долоо хоног" : groupBy === "month" ? "сар" : "өдөр";
 
+  // 🎯 KPI бүрийн нэг үе (өдөр/долоо хоног/сар)-ийн зорилтыг тооцоолох helper.
+  //    ReferenceLine болон багана дээрх % шошго хоёулаа үүнийг ашиглана (нэг эх).
+  const periodTargetFor = (kpi) => {
+    if (kpi.target_source_kpi_id && kpi.target_percent) {
+      const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
+      const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
+      if ((chartData || []).length > 0 && sourceTotal > 0) {
+        return Math.round((sourceTotal / chartData.length) * Number(kpi.target_percent) / 100);
+      }
+      return 0;
+    }
+    if (kpi.target) {
+      let t = Number(kpi.target);
+      if (kpi.target_period === "daily" && groupBy === "week") t *= 7;
+      else if (kpi.target_period === "daily" && groupBy === "month") t *= 30;
+      else if (kpi.target_period === "weekly" && groupBy === "day") t /= 7;
+      else if (kpi.target_period === "weekly" && groupBy === "month") t *= 4;
+      else if (kpi.target_period === "monthly" && groupBy === "day") t /= 30;
+      else if (kpi.target_period === "monthly" && groupBy === "week") t /= 4;
+      return Math.round(t);
+    }
+    return 0;
+  };
+
+  // 🎯 Зорилтын reference line-ийг багтаахаар Y тэнхлэгийн дээд хязгаарыг тооцоолох.
+  //    (Зорилт өндөр байвал (жнь monthly target долоо хоногт хувирахад) автомат Y тэнхлэгээс
+  //     хэтэрч, шугам график дээр харагдахгүй байсныг засна.)
+  const yAxisMax = useMemo(() => {
+    // Өгөгдлийн max
+    let dataMax = 0;
+    (chartData || []).forEach((row) => {
+      deptKpis.forEach((kpi) => {
+        const v = Number(row[kpi.name]) || 0;
+        if (v > dataMax) dataMax = v;
+      });
+    });
+    // Зорилтын max (helper ашиглана)
+    let targetMax = 0;
+    deptKpis.forEach((kpi) => {
+      const t = periodTargetFor(kpi);
+      if (t > targetMax) targetMax = t;
+    });
+    const overallMax = Math.max(dataMax, targetMax);
+    if (overallMax <= 0) return undefined; // авто
+    // 10% дээш зай үлдээж, зорилт багтаана
+    return Math.ceil((overallMax * 1.1) / 100) * 100;
+  }, [chartData, deptKpis, filteredEntries, groupBy]);
+
+  // 📊 График-ийн тоймийг бэлдэх
+  const chartSummary = useMemo(() => {
+    if (!chartData || chartData.length === 0) return null;
+    const totalsByKpi = {};
+    chartData.forEach((row) => {
+      deptKpis.forEach((kpi) => {
+        totalsByKpi[kpi.name] = (totalsByKpi[kpi.name] || 0) + (Number(row[kpi.name]) || 0);
+      });
+    });
+    const topKpi = Object.entries(totalsByKpi).sort((a, b) => b[1] - a[1])[0];
+    return {
+      periods: chartData.length,
+      topKpiName: topKpi?.[0] || "—",
+      topKpiTotal: topKpi?.[1] || 0,
+      totalSum: Object.values(totalsByKpi).reduce((s, v) => s + v, 0),
+    };
+  }, [chartData, deptKpis]);
+
   return (
     <div className="space-y-3">
+      {/* 📝 Гар тайлбар хэсэг */}
+      <ChartNoteSection
+        note={note}
+        setNote={setNote}
+        editingNote={editingNote}
+        setEditingNote={setEditingNote}
+        savingNote={savingNote}
+        saveNote={saveNote}
+        canEdit={canEdit}
+        multiDayTotals={chartSummary}
+        periodLabel={periodLabel}
+        chartType={chartType}
+      />
+
       {/* Chart */}
       <div className="glass-soft rounded-2xl p-4">
         <ResponsiveContainer width="100%" height={350}>
-          <ChartComponent data={chartData}>
+          <ChartComponent data={chartData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={[0, yAxisMax || "auto"]} />
             <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
+            {/* 🎯 Зорилтын reference line — KPI бүрд (динамик эсвэл статик) */}
+            {deptKpis.map((kpi, i) => {
+              const perPeriodTarget = periodTargetFor(kpi);
+              if (perPeriodTarget <= 0) return null;
+              return (
+                <ReferenceLine
+                  key={`target-${kpi.id}`}
+                  y={perPeriodTarget}
+                  stroke={COLORS[i % COLORS.length]}
+                  strokeDasharray="8 4"
+                  strokeWidth={2.5}
+                  strokeOpacity={0.9}
+                  label={{
+                    value: `🎯 ${kpi.name}: ${perPeriodTarget.toLocaleString()}`,
+                    position: "insideTopRight",
+                    fontSize: 10,
+                    fill: COLORS[i % COLORS.length],
+                    fontWeight: 700,
+                  }}
+                />
+              );
+            })}
             {deptKpis.map((kpi, i) => (
               <DataComponent
                 key={kpi.id}
@@ -30880,7 +39602,28 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
                 radius={chartType === "bar" ? [4, 4, 0, 0] : 0}
                 strokeWidth={chartType === "line" ? 2.5 : 1}
                 dot={chartType === "line" ? { r: 3 } : false}
-              />
+              >
+                {/* 🏷 Тоон утга + зорилтын % харуулна — bar/area chart-руу зөвхөн */}
+                {chartType !== "line" && chartData.length <= 10 && (() => {
+                  const tgt = periodTargetFor(kpi);
+                  return (
+                    <LabelList
+                      dataKey={kpi.name}
+                      position="top"
+                      style={{ fontSize: 10, fontWeight: 700, fill: COLORS[i % COLORS.length] }}
+                      formatter={(v) => {
+                        if (!v || v <= 0) return "";
+                        const valStr = v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString();
+                        if (tgt > 0) {
+                          const pct = Math.round((v / tgt) * 100);
+                          return `${valStr} (${pct}%)`;
+                        }
+                        return valStr;
+                      }}
+                    />
+                  );
+                })()}
+              </DataComponent>
             ))}
           </ChartComponent>
         </ResponsiveContainer>
@@ -31115,7 +39858,7 @@ function TasksView({ tasks, departments, employees, currentUserId, isAdmin, onAd
                         {assignee ? (
                           <div className="flex items-center gap-1">
                             <div style={{
-                              background: "#ec4899",
+                              background: "#0E9C8E",
                               color: "white",
                             }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                               {assignee.name?.[0]}
@@ -31452,7 +40195,7 @@ function MyTasksView({ tasks, currentUserId, colleagues, hasDepartment, onAdd, o
                           {assignee ? (
                             <div className="flex items-center gap-1">
                               <div style={{
-                                background: "#ec4899",
+                                background: "#0E9C8E",
                                 color: "white",
                               }} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold">
                                 {assignee.name?.[0]}
@@ -31807,7 +40550,122 @@ function AnnouncementFormModal({ mode, announcement, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  DEFAULT EXPORT — Sentry ErrorBoundary-аар ороосон App
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔧 MAINTENANCE MODE — Засварын үеэр 502-маягт дэлгэц харуулах
+//
+// ХЭРЭГЛЭХ ЗААВАР:
+//   1. Засвар хийхийн өмнө: MAINTENANCE_MODE_ENABLED = true болгоно
+//   2. Файлыг commit & push → Vercel deploy
+//   3. Засвар дуусаны дараа: MAINTENANCE_MODE_ENABLED = false болгоно
+//   4. Дахин commit & push → буцаагаад нээгдэнэ
+//
+// BYPASS: URL дотор ?bypass=orgooadmin тавихад maintenance дэлгэц алгасах
+//          (Admin засвар хийх явцад өөрөө системд орох боломжтой)
+// ═══════════════════════════════════════════════════════════════════════════
+const MAINTENANCE_MODE_ENABLED = false; // ⚠ ХЭРЭГТЭЙ ҮЕД true БОЛГОНО
+const MAINTENANCE_BYPASS_KEY = "orgooadmin"; // URL: ?bypass=orgooadmin
+
+function MaintenanceScreen() {
+  const [tick, setTick] = useState(0);
+  // Цаг дамжаад refresh товчны label-ийг өөрчилнө
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      background: "#f5f5f5",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      color: "#333",
+    }}>
+      <div style={{
+        maxWidth: 500,
+        width: "100%",
+        textAlign: "center",
+      }}>
+        <div style={{
+          fontSize: 80,
+          fontWeight: 900,
+          color: "#dc2626",
+          lineHeight: 1,
+          marginBottom: 8,
+          fontFamily: "Arial, sans-serif",
+          letterSpacing: -2,
+        }}>
+          502
+        </div>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 600,
+          marginBottom: 24,
+          color: "#1f2937",
+        }}>
+          Bad Gateway
+        </div>
+        <div style={{
+          background: "white",
+          borderRadius: 8,
+          padding: "24px 20px",
+          textAlign: "left",
+          border: "1px solid #e5e7eb",
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: "#4b5563",
+        }}>
+          <div style={{ fontWeight: 600, color: "#1f2937", marginBottom: 8 }}>
+            🔧 Сервер засвар хийгдэж байна
+          </div>
+          <p style={{ margin: "0 0 12px" }}>
+            Системд түр зуурын засвар хийгдэж байна. Удалгүй буцаагаад ажиллана.
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            Хэрэв удсан бол админд хандана уу.
+          </p>
+        </div>
+        <button onClick={() => window.location.reload()}
+          style={{
+            marginTop: 20,
+            padding: "10px 20px",
+            background: "#374151",
+            color: "white",
+            border: "none",
+            borderRadius: 6,
+            fontSize: 14,
+            cursor: "pointer",
+            fontWeight: 500,
+          }}>
+          🔄 Дахин оролдох
+        </button>
+        <div style={{
+          marginTop: 40,
+          fontSize: 11,
+          color: "#9ca3af",
+          fontFamily: "monospace",
+        }}>
+          nginx/1.18.0 · {new Date().toUTCString()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // 🔧 Maintenance Mode шалгалт
+  if (MAINTENANCE_MODE_ENABLED) {
+    // URL bypass шалгах: ?bypass=KEY
+    const urlParams = new URLSearchParams(window.location.search);
+    const bypass = urlParams.get("bypass");
+    if (bypass !== MAINTENANCE_BYPASS_KEY) {
+      return <MaintenanceScreen />;
+    }
+  }
+
   // Хэрэв Sentry тохируулагдсан бол ErrorBoundary-аар ороох, эс бол шууд AppRoot
   if (SENTRY_DSN) {
     return (
