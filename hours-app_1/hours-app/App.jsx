@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Play, Square, Trash2, X, Users, Calendar, MapPin, Edit3,
-  AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock,
+  AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock, Unlock,
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
@@ -828,6 +828,14 @@ function AppRoot() {
         .eq("id", session.user.id)
         .maybeSingle();
       if (error) logErr("profile load:", error);
+      // 🔒 ИДЭВХГҮЙ ХЭРЭГЛЭГЧ: is_active === false бол нэвтрэхийг хориглож, гаргана.
+      //    (Ажлаас гарсан ажилтны эрхийг устгахгүйгээр хаах — түүх/захиалга хадгалагдана.)
+      if (data && data.is_active === false) {
+        await supabase.auth.signOut();
+        setProfile(null);
+        alert("Таны эрх идэвхгүй болсон байна. Админд хандана уу.");
+        return;
+      }
       setProfile(data);
       // 🛡️ Sentry: нэвтэрсэн хэрэглэгчийг context-руу нэмнэ (PII биш — id+role л)
       if (SENTRY_DSN && data) {
@@ -2620,6 +2628,15 @@ function AdminDashboard({ profile }) {
             geoBusyId={geoBusyId} feedback={feedback}
             onEdit={(emp) => { setFormEmp(emp); setFormMode("edit"); }}
             onDelete={(id) => setConfirmDel(id)}
+            onToggleActive={async (emp) => {
+              const newActive = emp.is_active === false; // одоо идэвхгүй бол → идэвхжүүлнэ
+              const actionWord = newActive ? "сэргээх (нэвтрэх боломжтой болгох)" : "хаах (нэвтрэхгүй болгох)";
+              if (!confirm(`${emp.name}-ийн эрхийг ${actionWord} уу?`)) return;
+              const { error } = await supabase.from("profiles").update({ is_active: newActive }).eq("id", emp.id);
+              if (error) { alert("Алдаа: " + error.message); return; }
+              setFeedback?.({ type: "success", msg: newActive ? "Эрх сэргээгдлээ" : "Эрх хаагдлаа (хэрэглэгч нэвтэрч чадахгүй)" });
+              await loadAll();
+            }}
             onClockIn={tryClockIn} onClockOut={tryClockOut}
             onViewPhoto={(data) => setPhotoViewer(data)}
             onAdd={() => { setFormEmp(null); setFormMode("add"); }} />
@@ -3795,7 +3812,7 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], departments = [], geoBusyId, feedback, onEdit, onDelete, onClockIn, onClockOut, onAdd, onViewPhoto }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], departments = [], geoBusyId, feedback, onEdit, onDelete, onToggleActive, onClockIn, onClockOut, onAdd, onViewPhoto }) {
   const [groupBy, setGroupBy] = useState("department"); // department | role | none
   const [filterRole, setFilterRole] = useState("all"); // all | employee | operator | driver
 
@@ -4004,6 +4021,12 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   <FileText size={14} />
                 </button>
                 <button onClick={() => onEdit(emp)} style={{ color: T.muted }} className="p-1.5 rounded-lg hover:bg-black/5"><Edit3 size={14} /></button>
+                <button onClick={() => onToggleActive(emp)}
+                  style={{ color: emp.is_active === false ? T.ok : "#f59e0b" }}
+                  className="p-1.5 rounded-lg hover:bg-black/5"
+                  title={emp.is_active === false ? "Эрх сэргээх (нэвтрэх боломжтой болгох)" : "Эрх хаах (нэвтрэхгүй болгох)"}>
+                  {emp.is_active === false ? <Lock size={14} /> : <Unlock size={14} />}
+                </button>
                 <button onClick={() => onDelete(emp.id)} style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10" title="Ажилтан устгах"><Trash2 size={15} /></button>
               </div>
             </div>
