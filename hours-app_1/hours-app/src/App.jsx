@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Play, Square, Trash2, X, Users, Calendar, MapPin, Edit3,
-  AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock, Unlock,
+  AlertCircle, CheckCircle2, Loader2, Crosshair, LogOut, Lock, Unlock, KeyRound,
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
@@ -1639,6 +1639,7 @@ function AdminDashboard({ profile }) {
   const [formMode, setFormMode] = useState(null);
   const [formEmp, setFormEmp] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [resetPwEmp, setResetPwEmp] = useState(null); // 🔐 нууц үг солих modal-д харагдах ажилтан
   const [feedback, setFeedback] = useState(null);
   const [geoBusyId, setGeoBusyId] = useState(null);
   const [siteFormMode, setSiteFormMode] = useState(null); // null | 'add' | 'edit'
@@ -2638,6 +2639,7 @@ function AdminDashboard({ profile }) {
               await loadAll();
             }}
             onClockIn={tryClockIn} onClockOut={tryClockOut}
+            onResetPassword={(emp) => setResetPwEmp(emp)}
             onViewPhoto={(data) => setPhotoViewer(data)}
             onAdd={() => { setFormEmp(null); setFormMode("add"); }} />
         )}
@@ -2980,6 +2982,12 @@ function AdminDashboard({ profile }) {
           name={employees.find((e) => e.id === confirmDel)?.name}
           onCancel={() => setConfirmDel(null)}
           onConfirm={() => removeEmployee(confirmDel)} />
+      )}
+      {resetPwEmp && (
+        <ResetPasswordModal
+          emp={resetPwEmp}
+          onCancel={() => setResetPwEmp(null)}
+          onDone={() => setResetPwEmp(null)} />
       )}
     </div>
   );
@@ -3812,7 +3820,7 @@ function EmployeeDashboard({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], departments = [], geoBusyId, feedback, onEdit, onDelete, onToggleActive, onClockIn, onClockOut, onAdd, onViewPhoto }) {
+function TeamView({ employees, sessions, activeSessions, sites = [], employeeSites = [], leaves = [], departments = [], geoBusyId, feedback, onEdit, onDelete, onToggleActive, onResetPassword, onClockIn, onClockOut, onAdd, onViewPhoto }) {
   const [groupBy, setGroupBy] = useState("department"); // department | role | none
   const [filterRole, setFilterRole] = useState("all"); // all | employee | operator | driver
 
@@ -4026,6 +4034,9 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   className="p-1.5 rounded-lg hover:bg-black/5"
                   title={emp.is_active === false ? "Эрх сэргээх (нэвтрэх боломжтой болгох)" : "Эрх хаах (нэвтрэхгүй болгох)"}>
                   {emp.is_active === false ? <Lock size={14} /> : <Unlock size={14} />}
+                </button>
+                <button onClick={() => onResetPassword(emp)} style={{ color: T.highlight }} className="p-1.5 rounded-lg hover:bg-black/5" title="Нууц үг солих">
+                  <KeyRound size={14} />
                 </button>
                 <button onClick={() => onDelete(emp.id)} style={{ color: T.err }} className="p-1.5 rounded-lg hover:bg-red-500/10" title="Ажилтан устгах"><Trash2 size={15} /></button>
               </div>
@@ -5235,6 +5246,69 @@ function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
   );
 }
 
+// 🔐 Admin ажилтны нууц үгийг солих modal — admin-reset-password Edge Function-ийг дуудна.
+function ResetPasswordModal({ emp, onCancel, onDone }) {
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (pw1.length < 6) { setErr("Нууц үг доод тал нь 6 тэмдэгт байх ёстой"); return; }
+    if (pw1 !== pw2) { setErr("Нууц үг хоорондоо таарахгүй байна"); return; }
+    setBusy(true);
+    try {
+      // Дуудагч admin-ийн JWT-г авах
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setErr("Нэвтрэлт олдсонгүй. Дахин нэвтэрнэ үү."); setBusy(false); return; }
+
+      const { data, error } = await supabase.functions.invoke("admin-reset-password", {
+        body: { targetUserId: emp.id, newPassword: pw1 },
+      });
+      if (error) { setErr("Алдаа: " + (error.message || "Edge Function амжилтгүй")); setBusy(false); return; }
+      if (data?.error) { setErr(data.error); setBusy(false); return; }
+      setOk(true);
+      setBusy(false);
+      setTimeout(() => onDone?.(), 1500);
+    } catch (e) {
+      setErr("Алдаа: " + (e?.message || String(e)));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onCancel} title="Нууц үг солих" maxW="max-w-sm">
+      <p style={{ color: T.muted }} className="text-sm mb-4">
+        <span style={{ color: T.ink, fontWeight: 500 }}>{emp.name}</span>-ийн шинэ нууц үг тохируулна. Ажилтан энэ нууц үгээр нэвтэрнэ.
+      </p>
+      {ok ? (
+        <div style={{ color: T.ok, fontFamily: FS }} className="text-sm py-3 text-center flex items-center justify-center gap-1.5">
+          <CheckCircle2 size={16} /> Нууц үг амжилттай солигдлоо
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3 mb-4">
+            <PwInput value={pw1} onChange={setPw1} placeholder="Шинэ нууц үг" />
+            <PwInput value={pw2} onChange={setPw2} onEnter={submit} placeholder="Нууц үг давтах" />
+          </div>
+          {err && <p style={{ color: T.err }} className="text-xs mb-3">{err}</p>}
+          <div className="flex gap-3">
+            <button onClick={onCancel} disabled={busy} style={{ fontFamily: FS, color: "#1e1b4b" }}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Цуцлах</button>
+            <button onClick={submit} disabled={busy || !pw1 || !pw2}
+              style={{ background: T.highlight, color: T.surface, fontFamily: FS }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={12} />} Солих
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  REUSABLE UI
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5296,12 +5370,13 @@ function Input({ value, onChange, placeholder, autoFocus, onEnter, id }) {
   );
 }
 
-function PwInput({ value, onChange, onEnter, id }) {
+function PwInput({ value, onChange, onEnter, id, placeholder }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
       <input id={id} type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
+        placeholder={placeholder}
         style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
         className="w-full px-3 py-2.5 pr-10 rounded-lg border text-sm outline-none focus:border-black" />
       <button onClick={() => setShow((v) => !v)} type="button" style={{ color: T.muted }}
@@ -13986,9 +14061,8 @@ function CallCenterView({ profile }) {
                                   )}
                                 </div>
                                 <div className="p-1.5">
-                                  <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink }}
-                                    className="text-[10px] line-clamp-2 mb-0.5"
-                                    style={{ minHeight: 24 }}>
+                                  <div style={{ fontFamily: FS, fontWeight: 500, color: T.ink, minHeight: 24 }}
+                                    className="text-[10px] line-clamp-2 mb-0.5">
                                     {p.name}
                                   </div>
                                   <div className="flex items-center justify-between gap-1">
