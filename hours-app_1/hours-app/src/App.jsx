@@ -12393,8 +12393,8 @@ function CallCenterView({ profile }) {
         ? supabase.from("biz_calls").select(callCols).in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000)
         : supabase.from("biz_calls").select(callCols).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000);
       const ordersQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).order("created_at", { ascending: false }).limit(5000)
-        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").order("created_at", { ascending: false }).limit(5000);
+        ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000)
+        : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000);
       const productsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
         : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
