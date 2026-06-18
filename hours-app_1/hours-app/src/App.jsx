@@ -23447,9 +23447,14 @@ function OrdersView({ profile }) {
     setLoading(true);
     try {
       // 📦 showArchived === true бол зөвхөн архивлагдсан, эс бол идэвхтэй
+      // ⚡ ГАЦАА ЗАСВАР: идэвхтэй харагдацад бүх 10,000+ захиалгыг (+ тэдгээрийн бараа
+      //    biz_order_items-ийг олон chunk-аар) татаж байсныг → сүүлийн 45 хоногоор хязгаарлав.
+      //    (Хүргэгдсэн/цуцлагдсан хуучин захиалга = түүх, идэвхтэй жагсаалтад хэрэггүй.
+      //     Хуучин захиалга хэрэгтэй бол "Архив" таб-аар харна.) 20s гацаа → хэдхэн сек.
+      const ordersDays = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
       const ordersQuery = showArchived 
         ? supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false })
-        : supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").order("created_at", { ascending: false });
+        : supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").gte("created_at", ordersDays).order("created_at", { ascending: false });
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
         fetchAllRows(ordersQuery),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
