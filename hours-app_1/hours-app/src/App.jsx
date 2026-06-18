@@ -23480,14 +23480,14 @@ function OrdersView({ profile }) {
       // ⚡ Tab badge тоонууд — count-only (head:true) хүсэлтүүд, дата татахгүй тул хөнгөн.
       //    (Зөвхөн идэвхтэй харагдацад; архивын горимд хэрэггүй.)
       if (!showArchived) {
-        const notArch = (q) => q.or("is_archived.is.null,is_archived.eq.false");
+        const notArch = () => supabase.from("biz_orders").select("*", { count: "exact", head: true }).or("is_archived.is.null,is_archived.eq.false");
         const C = (q) => q.then(r => r.count || 0);
         Promise.all([
-          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true }))),
-          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).is("driver_id", null).in("status", "(new,assigned,pending)")),
-          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
-          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).eq("status", "delivered")),
-          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).eq("status", "cancelled")),
+          C(notArch()),
+          C(notArch().is("driver_id", null).in("status", ["new", "assigned", "pending"])),
+          C(notArch().not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
+          C(notArch().eq("status", "delivered")),
+          C(notArch().eq("status", "cancelled")),
         ]).then(([all, newC, assigned, delivered, cancelled]) => {
           setTabCounts({ all, new: newC, assigned, unknown: 0, delivered, cancelled });
         }).catch((e) => console.error("[tab counts]", e));
