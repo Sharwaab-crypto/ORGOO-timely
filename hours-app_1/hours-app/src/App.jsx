@@ -23438,6 +23438,7 @@ function OrdersView({ profile }) {
   const [viewMode, setViewMode] = useState("list"); // list | map
   const [page, setPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false); // 📦 Архивлагдсан үзэх горим
+  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, assigned: 0, unknown: 0, delivered: 0, cancelled: 0 }); // ⚡ tab badge тоонууд (тусдаа count query)
   const PAGE_SIZE = 100;
 
   // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
@@ -23446,20 +23447,51 @@ function OrdersView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // 📦 showArchived === true бол зөвхөн архивлагдсан, эс бол идэвхтэй
-      // ⚡ ГАЦАА ЗАСВАР: идэвхтэй харагдацад бүх 10,000+ захиалгыг (+ тэдгээрийн бараа
-      //    biz_order_items-ийг олон chunk-аар) татаж байсныг → сүүлийн 45 хоногоор хязгаарлав.
-      //    (Хүргэгдсэн/цуцлагдсан хуучин захиалга = түүх, идэвхтэй жагсаалтад хэрэггүй.
-      //     Хуучин захиалга хэрэгтэй бол "Архив" таб-аар харна.) 20s гацаа → хэдхэн сек.
+      // ⚡⚡ ГАЦАА ЗАСВАР (lazy-by-tab): өмнө бүх 10,000+ захиалгыг (+ тэдгээрийн бүх бараа
+      //    biz_order_items-ийг 50+ chunk-аар) нэг дор татаж 20s гацдаг байсан.
+      //    Одоо ЗӨВХӨН идэвхтэй tab-ийн (filter) захиалгыг серверт шүүж татна:
+      //      • new/assigned/unknown → driver-гүй эсвэл идэвхтэй (цөөн зуу) — хязгааргүй
+      //      • delivered/cancelled → ТҮҮХ (мянгаар) тул сүүлийн 45 хоногоор хязгаарлана
+      //    Ингэснээр tab бүрд хэдэн зуу л татна → гацаа арилна.
       const ordersDays = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-      const ordersQuery = showArchived 
-        ? supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false })
-        : supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false").gte("created_at", ordersDays).order("created_at", { ascending: false });
+      let base;
+      if (showArchived) {
+        base = supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false });
+      } else {
+        base = supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false");
+        // Tab-ийн дагуу серверт шүүх
+        if (filter === "delivered") {
+          base = base.eq("status", "delivered").gte("delivered_at", ordersDays).order("delivered_at", { ascending: false });
+        } else if (filter === "cancelled") {
+          base = base.eq("status", "cancelled").gte("created_at", ordersDays).order("created_at", { ascending: false });
+        } else {
+          // new / assigned / unknown — идэвхтэй (хүргэгдээгүй/цуцлагдаагүй) захиалгууд.
+          //   Эдгээр цөөн (хэдэн зуу) тул статусаар нь шүүгээд бүгдийг авна.
+          base = base.not("status", "in", "(delivered,cancelled)").order("created_at", { ascending: false });
+        }
+      }
+      const ordersQuery = base;
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
         fetchAllRows(ordersQuery),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
+
+      // ⚡ Tab badge тоонууд — count-only (head:true) хүсэлтүүд, дата татахгүй тул хөнгөн.
+      //    (Зөвхөн идэвхтэй харагдацад; архивын горимд хэрэггүй.)
+      if (!showArchived) {
+        const notArch = (q) => q.or("is_archived.is.null,is_archived.eq.false");
+        const C = (q) => q.then(r => r.count || 0);
+        Promise.all([
+          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true }))),
+          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).is("driver_id", null).in("status", "(new,assigned,pending)")),
+          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
+          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).eq("status", "delivered")),
+          C(notArch(supabase.from("biz_orders").select("*", { count: "exact", head: true })).eq("status", "cancelled")),
+        ]).then(([all, newC, assigned, delivered, cancelled]) => {
+          setTabCounts({ all, new: newC, assigned, unknown: 0, delivered, cancelled });
+        }).catch((e) => console.error("[tab counts]", e));
+      }
       setOrders(ordData || []);
       setProducts(prodData || []);
       setDrivers(drvData || []);
@@ -23509,7 +23541,7 @@ function OrdersView({ profile }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, [showArchived]);
+  useEffect(() => { loadAll(); }, [showArchived, filter]);
 
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
@@ -23593,23 +23625,15 @@ function OrdersView({ profile }) {
 
   // Counts
   // Counts — driver шүүлтийг тооцох (tab тоо ба жагсаалт таарна)
+  // ⚡ Tab тоонууд (badge): orders одоо зөвхөн нэг tab-ийнх тул, бүх tab-ийн тоог
+  //    тусдаа хөнгөн count query-ээр (loadAll дотор) авч tabCounts-д хадгална.
   const countBase = driverFilter === "all"
     ? orders
     : (driverFilter === "unassigned"
         ? orders.filter((o) => !o.driver_id)
         : orders.filter((o) => o.driver_id === driverFilter));
-  const counts = {
-    all: countBase.length,
-    new: countBase.filter((o) => (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown).length, // 🔧 driver-гүй идэвхтэй
-    assigned: countBase.filter((o) => o.driver_id && o.status !== "delivered" && o.status !== "cancelled").length, // 🆕 Хуваарилагдсан = driver-той
-    unknown: countBase.filter((o) => {
-      if (o.status === "delivered" || o.status === "cancelled") return false;
-      return o.is_unknown === true ||
-             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
-    }).length,
-    delivered: countBase.filter((o) => o.status === "delivered").length,
-    cancelled: countBase.filter((o) => o.status === "cancelled").length,
-  };
+  const counts = tabCounts;
+  const _unusedCountBase = countBase; // (driverFilter-тэй үед идэвхтэй tab дотор client-шүүлт хэвээр)
 
   const updateStatus = async (orderId, newStatus) => {
     const updates = { status: newStatus };
