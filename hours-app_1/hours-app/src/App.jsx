@@ -2433,6 +2433,9 @@ function AdminDashboard({ profile }) {
               {(profile.role === "admin" || profile.role === "manager") && (
                 <SidebarTab active={view === "cancel-reasons"} onClick={() => { setView("cancel-reasons"); setSidebarOpen(false); }} icon={X}>🚫 Цуцлах шалтгаан</SidebarTab>
               )}
+              {(profile.role === "admin" || profile.role === "manager") && (
+                <SidebarTab active={view === "cancel-report"} onClick={() => { setView("cancel-report"); setSidebarOpen(false); }} icon={Inbox}>📋 Цуцлалтын тайлан</SidebarTab>
+              )}
             </SidebarSection>
 
             {!isMarketing && (
@@ -2549,6 +2552,7 @@ function AdminDashboard({ profile }) {
                 {view === "sales-report" && "Борлуулалтын тайлан"}
                 {view === "orders" && "Захиалга"}
                 {view === "cancel-reasons" && "Цуцлах шалтгаан"}
+                {view === "cancel-report" && "Цуцлалтын тайлан"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
                 {view === "departments" && "Хэлтсүүд"}
@@ -2587,6 +2591,7 @@ function AdminDashboard({ profile }) {
                 {view === "sales-report" && "Хүргэгдсэн барааны борлуулалт, ашгийн тооцоо"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "cancel-reasons" && "Захиалга цуцлах шалтгаануудыг удирдах"}
+                {view === "cancel-report" && "Цуцлагдсан захиалгын шалтгаан, задаргаа"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
@@ -2849,6 +2854,10 @@ function AdminDashboard({ profile }) {
 
         {view === "cancel-reasons" && (
           <CancelReasonsManager profile={profile} />
+        )}
+
+        {view === "cancel-report" && (
+          <CancelReportView profile={profile} />
         )}
 
         {view === "customers" && (
@@ -5525,6 +5534,188 @@ function CancelReasonsManager({ profile }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// 🚫 Цуцлалтын тайлан — шалтгаанаар бүлэглэх + огноо/жолооч шүүлт + жагсаалт
+function CancelReportView({ profile }) {
+  const [period, setPeriod] = useState("30"); // 7 | 30 | 90 | all
+  const [driverFilter, setDriverFilter] = useState("all"); // all | none | <driverId>
+  const [orders, setOrders] = useState([]);
+  const [profMap, setProfMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      let q = supabase.from("biz_orders")
+        .select("id, order_number, customer_name, customer_phone, total_amount, cancel_reasons, cancel_note, cancelled_at, cancelled_by, driver_id, created_at")
+        .eq("status", "cancelled");
+      if (period !== "all") {
+        const since = new Date(Date.now() - Number(period) * 24 * 60 * 60 * 1000).toISOString();
+        q = q.gte("cancelled_at", since);
+      }
+      q = q.order("cancelled_at", { ascending: false });
+      const rows = await fetchAllRows(q);
+      setOrders(rows || []);
+      const { data: profs } = await supabase.from("profiles").select("id, name");
+      const map = {}; (profs || []).forEach((p) => { map[p.id] = p.name; });
+      setProfMap(map);
+    } catch (e) { console.error("[cancel report]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); setPage(1); }, [period]);
+  useEffect(() => { setPage(1); }, [driverFilter]);
+
+  // Жолоочийн сонголтууд (датанд байгаа)
+  const driverIds = [...new Set(orders.filter((o) => o.driver_id).map((o) => o.driver_id))];
+
+  const filtered = driverFilter === "all"
+    ? orders
+    : (driverFilter === "none" ? orders.filter((o) => !o.driver_id) : orders.filter((o) => o.driver_id === driverFilter));
+
+  // Шалтгааны задаргаа
+  const reasonCounts = {};
+  let noReason = 0;
+  filtered.forEach((o) => {
+    const rs = Array.isArray(o.cancel_reasons) ? o.cancel_reasons : [];
+    if (rs.length === 0) noReason++;
+    rs.forEach((r) => { reasonCounts[r] = (reasonCounts[r] || 0) + 1; });
+  });
+  const reasonList = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
+  const totalOrders = filtered.length;
+  const totalAmount = filtered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+  const maxReason = reasonList.length ? reasonList[0][1] : 1;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageOrders = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const fmtDate = (s) => {
+    if (!s) return "—";
+    const d = new Date(s);
+    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Шүүлт */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        {[["7", "7 хоног"], ["30", "30 хоног"], ["90", "90 хоног"], ["all", "Бүх"]].map(([v, lbl]) => (
+          <button key={v} onClick={() => setPeriod(v)}
+            className="press-btn px-3 py-1.5 rounded-full text-xs"
+            style={{ background: period === v ? T.highlight : T.surfaceAlt, color: period === v ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+            {lbl}
+          </button>
+        ))}
+        <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)}
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="px-3 py-1.5 rounded-full text-xs ml-auto">
+          <option value="all">Бүх жолооч</option>
+          <option value="none">Жолоочгүй</option>
+          {driverIds.map((id) => <option key={id} value={id}>{profMap[id] || id.slice(0, 8)}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} /></div>
+      ) : (
+        <>
+          {/* Нийт */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="glass rounded-2xl p-3">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Нийт цуцлал</div>
+              <div style={{ color: T.err, fontFamily: FD, fontWeight: 700 }} className="text-2xl">{totalOrders}</div>
+            </div>
+            <div className="glass rounded-2xl p-3">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Нийт дүн</div>
+              <div style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-2xl">{totalAmount.toLocaleString()}₮</div>
+            </div>
+          </div>
+
+          {/* Шалтгааны задаргаа */}
+          <div className="glass rounded-2xl p-3">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm mb-2">Шалтгаанаар</div>
+            {reasonList.length === 0 && noReason === 0 ? (
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Дата алга</div>
+            ) : (
+              <div className="space-y-2">
+                {reasonList.map(([label, cnt]) => (
+                  <div key={label}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span style={{ color: T.ink, fontFamily: FS }} className="text-xs">{label}</span>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">
+                        {cnt} · {totalOrders ? Math.round((cnt / totalOrders) * 100) : 0}%
+                      </span>
+                    </div>
+                    <div style={{ background: T.surfaceAlt, borderRadius: 999, height: 6, overflow: "hidden" }}>
+                      <div style={{ width: `${(cnt / maxReason) * 100}%`, height: "100%", background: T.err, borderRadius: 999 }} />
+                    </div>
+                  </div>
+                ))}
+                {noReason > 0 && (
+                  <div className="flex items-center justify-between pt-1">
+                    <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Шалтгаангүй (хуучин)</span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">{noReason}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Жагсаалт */}
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider px-1">
+            {filtered.length} цуцлал{totalPages > 1 && <> · {safePage}/{totalPages} хуудас</>}
+          </div>
+          <div className="space-y-2">
+            {pageOrders.map((o) => (
+              <div key={o.id} className="glass rounded-2xl p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm truncate">
+                      {o.customer_name || o.customer_phone || "—"}
+                    </div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                      {o.order_number || ""} · {fmtDate(o.cancelled_at)}
+                      {o.driver_id && <> · 🚚 {profMap[o.driver_id] || "—"}</>}
+                      {o.cancelled_by && <> · {profMap[o.cancelled_by] || ""}</>}
+                    </div>
+                  </div>
+                  <div style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-sm whitespace-nowrap">
+                    {Number(o.total_amount || 0).toLocaleString()}₮
+                  </div>
+                </div>
+                {Array.isArray(o.cancel_reasons) && o.cancel_reasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {o.cancel_reasons.map((r, i) => (
+                      <span key={i} style={{ background: T.errSoft, color: T.err, fontFamily: FS }} className="text-[11px] px-2 py-0.5 rounded-full">{r}</span>
+                    ))}
+                  </div>
+                )}
+                {o.cancel_note && (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-1.5 whitespace-pre-wrap">💬 {o.cancel_note}</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="glass rounded-2xl p-3 flex items-center justify-center gap-2">
+              <button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1}
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: safePage === 1 ? 0.5 : 1 }}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs">← Өмнөх</button>
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">{safePage}/{totalPages}</span>
+              <button onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages}
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: safePage === totalPages ? 0.5 : 1 }}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs">Дараах →</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
