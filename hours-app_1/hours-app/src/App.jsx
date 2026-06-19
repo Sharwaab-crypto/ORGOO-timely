@@ -38885,6 +38885,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                     deptKpis={deptKpis}
                     filteredEntries={filteredEntries}
                     allEntries={kpiEntries}
+                    allKpis={kpiDefs}
                     periodRange={periodRange}
                     chartType={chartType}
                     groupBy={chartGroupBy}
@@ -39819,7 +39820,7 @@ function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNo
   );
 }
 
-function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, chartType, groupBy = "day", anchorDate, departmentId, initialNote = "", canEdit = false, onNoteSaved }) {
+function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], periodRange, chartType, groupBy = "day", anchorDate, departmentId, initialNote = "", canEdit = false, onNoteSaved }) {
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
   // 📝 Гар тайлбар state
@@ -39899,6 +39900,17 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   const fmtDate = (d) => d.toISOString().slice(0, 10);
 
   const chartData = useMemo(() => {
+    // 🎯 Динамик зорилттой KPI-уудын ЭХ KPI-ийн үе бүрийн утгыг бүх хэлтсийн allEntries-ээс тооцно
+    //    (Эх KPI өөр хэлтэст байж болох тул deptKpis биш, allKpis/allEntries ашиглана.)
+    const dynSrcKpis = deptKpis.filter((k) => k.target_source_kpi_id && k.target_percent);
+    const srcVal = (kpi, start, end) => {
+      const srcId = kpi.target_source_kpi_id;
+      const srcObj = (allKpis || []).find((k) => k.id === srcId);
+      if (srcObj) return computeKpiValue(srcObj, allEntries || [], start, end);
+      return (allEntries || [])
+        .filter((e) => e.kpi_id === srcId && e.entry_date >= start && e.entry_date <= end)
+        .reduce((s, e) => s + Number(e.value || 0), 0);
+    };
     // 📆 СҮҮЛИЙН 5 САР
     if (groupBy === "month") {
       const anchor = effectiveAnchor;
@@ -39911,6 +39923,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         deptKpis.forEach((kpi) => {
           row[kpi.name] = computeKpiValue(kpi, allEntries || [], fmtDate(monthStart), fmtDate(monthEnd));
         });
+        dynSrcKpis.forEach((kpi) => { row["__src_" + kpi.id] = srcVal(kpi, fmtDate(monthStart), fmtDate(monthEnd)); });
         rows.push(row);
       }
       return rows;
@@ -39931,6 +39944,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         deptKpis.forEach((kpi) => {
           row[kpi.name] = computeKpiValue(kpi, allEntries || [], fmtDate(wStart), fmtDate(wEnd));
         });
+        dynSrcKpis.forEach((kpi) => { row["__src_" + kpi.id] = srcVal(kpi, fmtDate(wStart), fmtDate(wEnd)); });
         rows.push(row);
       }
       return rows;
@@ -39948,9 +39962,10 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
           row[kpi.name] = entry ? Number(entry.value) : 0;
         }
       });
+      dynSrcKpis.forEach((kpi) => { row["__src_" + kpi.id] = srcVal(kpi, date, date); });
       return row;
     });
-  }, [dateList, deptKpis, filteredEntries, allEntries, groupBy, effectiveAnchor]);
+  }, [dateList, deptKpis, filteredEntries, allEntries, allKpis, groupBy, effectiveAnchor]);
 
   // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд) — зөвхөн day grouping үед
   const isSingleDay = groupBy === "day" && dateList.length === 1;
@@ -40171,11 +40186,11 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       deptKpis.forEach((kpi) => {
         let t = 0;
         if (kpi.target_source_kpi_id && kpi.target_percent) {
-          const srcName = kpiNameById[kpi.target_source_kpi_id];
-          if (srcName != null && row[srcName] != null) {
-            t = Math.round((Number(row[srcName]) || 0) * Number(kpi.target_percent) / 100); // ← тухайн үеийн эх дата
+          const src = Number(row["__src_" + kpi.id]); // ← бүх хэлтсийн allEntries-ээс тооцсон үеийн утга
+          if (!Number.isNaN(src)) {
+            t = Math.round(src * Number(kpi.target_percent) / 100); // ← тухайн үеийн эх дата (өөр хэлтэс ч ажиллана)
           } else {
-            t = periodTargetFor(kpi); // эх KPI график дээр байхгүй бол дундажаар
+            t = periodTargetFor(kpi); // дундажаар уналт
           }
         } else if (kpi.target) {
           t = periodTargetFor(kpi); // тогтмол → үе бүрт ижил
