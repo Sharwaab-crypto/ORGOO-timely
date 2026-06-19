@@ -23471,9 +23471,25 @@ function OrdersView({ profile }) {
           base = base.not("status", "in", "(delivered,cancelled)").order("created_at", { ascending: false });
         }
       }
-      const ordersQuery = base;
+      // 📋 Бүх tab — идэвхтэй БҮГД + сүүлийн 45 хоногийн delivered/cancelled-ийг нэгтгэнэ.
+      //    (Гацаа сэргийлэх: бүх delivered/cancelled түүхийг биш, зөвхөн 45 хоног татна.)
+      const fetchOrders = async () => {
+        if (!showArchived && filter === "all") {
+          const na = () => supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false");
+          const [act, del, can] = await Promise.all([
+            fetchAllRows(na().not("status", "in", "(delivered,cancelled)").order("created_at", { ascending: false })),
+            fetchAllRows(na().eq("status", "delivered").gte("delivered_at", ordersDays).order("delivered_at", { ascending: false })),
+            fetchAllRows(na().eq("status", "cancelled").gte("created_at", ordersDays).order("created_at", { ascending: false })),
+          ]);
+          const seen = new Set();
+          return [...act, ...del, ...can]
+            .filter((o) => (seen.has(o.id) ? false : seen.add(o.id)))
+            .sort((x, y) => new Date(y.created_at) - new Date(x.created_at));
+        }
+        return fetchAllRows(base);
+      };
       const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
-        fetchAllRows(ordersQuery),
+        fetchOrders(),
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
@@ -23489,8 +23505,8 @@ function OrdersView({ profile }) {
           C(notArch().not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
           C(notArch().eq("status", "delivered").gte("delivered_at", ordersDays)),   // 45 хоног — жагсаалттай таарна
           C(notArch().eq("status", "cancelled").gte("created_at", ordersDays)),
-        ]).then(([all, newC, assigned, delivered, cancelled]) => {
-          setTabCounts({ all, new: newC, assigned, unknown: 0, delivered, cancelled });
+        ]).then(([activeC, newC, assigned, delivered, cancelled]) => {
+          setTabCounts({ all: activeC + delivered + cancelled, new: newC, assigned, unknown: 0, delivered, cancelled });
         }).catch((e) => console.error("[tab counts]", e));
       }
       setOrders(ordData || []);
