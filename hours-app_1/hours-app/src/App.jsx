@@ -35735,20 +35735,13 @@ function DriverDashboard({ profile }) {
                       </button>
                     )}
                     <div className="grid grid-cols-1 gap-2">
-                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн"/"Амжилтгүй" товч АЛГА */}
+                      {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <button onClick={() => setRatingOrder({ order: o, action: "delivered" })}
-                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: T.ok, color: "white", fontFamily: FS }}>
-                            ✓ Хүргэсэн
-                          </button>
-                          <button onClick={() => setRatingOrder({ order: o, action: "cancelled" })}
-                            className="press-btn py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.err}` }}>
-                            ✕ Амжилтгүй
-                          </button>
-                        </div>
+                        <button onClick={() => setRatingOrder({ order: o, action: "delivered" })}
+                          className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                          style={{ background: T.ok, color: "white", fontFamily: FS }}>
+                          ✓ Хүргэсэн
+                        </button>
                       )}
                     </div>
                   </div>
@@ -36006,14 +35999,19 @@ function DriverDashboard({ profile }) {
                       // Cancelled — note + rating
                       const cancelNote = ratingNote.trim();
                       const fullNote = cancelNote ? `[Хүргэх боломжгүй]\n${cancelNote}` : "[Хүргэх боломжгүй]";
-                      await supabase.from("biz_orders").update({
+                      // Үндсэн цуцлалт (заавал байх баганаар) — ЭНЭ амжилттай бол захиалга цуцлагдана
+                      const { error: coreErr } = await supabase.from("biz_orders").update({
                         ...orderUpdates,
                         status: "cancelled",
                         cancelled_at: new Date().toISOString(),
+                        notes: fullNote,
+                      }).eq("id", ratingOrder.order.id);
+                      if (coreErr) throw coreErr;
+                      // Нэмэлт цуцлалтын талбар — шинэ багана байхгүй бол алгасна (цуцлал хэвээр)
+                      await supabase.from("biz_orders").update({
                         cancelled_by: profile?.id || null,
                         cancel_reasons: ["Хүргэх боломжгүй"],
                         cancel_note: cancelNote || null,
-                        notes: fullNote,
                       }).eq("id", ratingOrder.order.id);
                       // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
                       if (ratingOrder.order.customer_phone) {
