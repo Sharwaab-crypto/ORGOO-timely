@@ -23440,125 +23440,162 @@ function OrdersView({ profile }) {
   const [page, setPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false); // 📦 Архивлагдсан үзэх горим
   const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, assigned: 0, unknown: 0, delivered: 0, cancelled: 0 }); // ⚡ tab badge тоонууд (тусдаа count query)
+  const [totalCount, setTotalCount] = useState(0); // 📄 server-side pagination — нийт таарах мөр
+  const [mapOrders, setMapOrders] = useState([]); // 🗺 газрын зураг — хуудаслалтгүй бүх таарах захиалга
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // 🔍 search debounce (серверт хайна)
+  const loadSeq = useRef(0); // ⏱ зэрэг ачаалал — зөвхөн хамгийн сүүлийнх хүчинтэй
   const PAGE_SIZE = 100;
 
-  // Filter өөрчлөгдөх үед хуудсыг 1-д буцаах
-  useEffect(() => { setPage(1); }, [filter, driverFilter, search, showArchived]);
+  // 🔍 Search debounce — 300мс хүлээгээд серверийн хайлт хийнэ
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Filter/хайлт өөрчлөгдөх үед хуудсыг 1-д буцаах
+  useEffect(() => { setPage(1); }, [filter, driverFilter, debouncedSearch, showArchived]);
 
   const loadAll = async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      // ⚡⚡ ГАЦАА ЗАСВАР (lazy-by-tab): өмнө бүх 10,000+ захиалгыг (+ тэдгээрийн бүх бараа
-      //    biz_order_items-ийг 50+ chunk-аар) нэг дор татаж 20s гацдаг байсан.
-      //    Одоо ЗӨВХӨН идэвхтэй tab-ийн (filter) захиалгыг серверт шүүж татна:
-      //      • new/assigned/unknown → driver-гүй эсвэл идэвхтэй (цөөн зуу) — хязгааргүй
-      //      • delivered/cancelled → ТҮҮХ (мянгаар) тул сүүлийн 45 хоногоор хязгаарлана
-      //    Ингэснээр tab бүрд хэдэн зуу л татна → гацаа арилна.
-      const ordersDays = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-      let base;
-      if (showArchived) {
-        base = supabase.from("biz_orders").select("*").eq("is_archived", true).order("archived_at", { ascending: false });
-      } else {
-        base = supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false");
-        // Tab-ийн дагуу серверт шүүх
-        if (filter === "delivered") {
-          base = base.eq("status", "delivered").gte("delivered_at", ordersDays).order("delivered_at", { ascending: false });
-        } else if (filter === "cancelled") {
-          base = base.eq("status", "cancelled").gte("created_at", ordersDays).order("created_at", { ascending: false });
-        } else {
-          // new / assigned / unknown — идэвхтэй (хүргэгдээгүй/цуцлагдаагүй) захиалгууд.
-          //   Эдгээр цөөн (хэдэн зуу) тул статусаар нь шүүгээд бүгдийг авна.
-          base = base.not("status", "in", "(delivered,cancelled)").order("created_at", { ascending: false });
-        }
-      }
-      // 📋 Бүх tab — идэвхтэй БҮГД + сүүлийн 45 хоногийн delivered/cancelled-ийг нэгтгэнэ.
-      //    (Гацаа сэргийлэх: бүх delivered/cancelled түүхийг биш, зөвхөн 45 хоног татна.)
-      const fetchOrders = async () => {
-        if (!showArchived && filter === "all") {
-          const na = () => supabase.from("biz_orders").select("*").or("is_archived.is.null,is_archived.eq.false");
-          const [act, del, can] = await Promise.all([
-            fetchAllRows(na().not("status", "in", "(delivered,cancelled)").order("created_at", { ascending: false })),
-            fetchAllRows(na().eq("status", "delivered").gte("delivered_at", ordersDays).order("delivered_at", { ascending: false })),
-            fetchAllRows(na().eq("status", "cancelled").gte("created_at", ordersDays).order("created_at", { ascending: false })),
-          ]);
-          const seen = new Set();
-          return [...act, ...del, ...can]
-            .filter((o) => (seen.has(o.id) ? false : seen.add(o.id)))
-            .sort((x, y) => new Date(y.created_at) - new Date(x.created_at));
-        }
-        return fetchAllRows(base);
+      const offset = (page - 1) * PAGE_SIZE;
+
+      // 🔧 Tab статус шүүлт (СЕРВЕР талд — зөвхөн идэвхтэй хуудсыг татна)
+      const applyTab = (qb) => {
+        if (showArchived) return qb; // архивын горимд бүх статус
+        if (filter === "delivered") return qb.eq("status", "delivered");
+        if (filter === "cancelled") return qb.eq("status", "cancelled");
+        if (filter === "assigned") return qb.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
+        if (filter === "new") return qb.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
+        if (filter === "unknown") return qb.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+        return qb; // all — статус шүүлтгүй (бүх захиалга, бүх статус)
       };
-      const [ordData, { data: prodData }, { data: drvData }] = await Promise.all([
-        fetchOrders(),
+      const applyDriver = (qb) => {
+        if (driverFilter === "all") return qb;
+        if (driverFilter === "unassigned") return qb.is("driver_id", null);
+        return qb.eq("driver_id", driverFilter);
+      };
+      const applySearch = (qb) => {
+        const s = (debouncedSearch || "").trim();
+        if (!s) return qb;
+        const like = `%${s}%`;
+        return qb.or(`order_number.ilike.${like},customer_phone.ilike.${like},customer_name.ilike.${like},delivery_address.ilike.${like}`);
+      };
+      const archBase = (qb) => showArchived
+        ? qb.eq("is_archived", true)
+        : qb.or("is_archived.is.null,is_archived.eq.false");
+      const orderCol = showArchived ? "archived_at" : (filter === "delivered" ? "delivered_at" : "created_at");
+
+      // Үндсэн query — зөвхөн идэвхтэй хуудасны PAGE_SIZE мөр + нийт count
+      let mainQ = supabase.from("biz_orders").select("*", { count: "exact" });
+      mainQ = archBase(mainQ);
+      mainQ = applyTab(mainQ);
+      mainQ = applyDriver(mainQ);
+      mainQ = applySearch(mainQ);
+      mainQ = mainQ.order(orderCol, { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+
+      const [{ data: ordData, count: totalC, error: ordErr }, { data: prodData }, { data: drvData }] = await Promise.all([
+        mainQ,
         supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
+      if (ordErr) throw ordErr;
+      if (seq !== loadSeq.current) return; // хуучирсан хариу — алгасна
 
-      // ⚡ Tab badge тоонууд — count-only (head:true) хүсэлтүүд, дата татахгүй тул хөнгөн.
-      //    (Зөвхөн идэвхтэй харагдацад; архивын горимд хэрэггүй.)
+      // ⚡ Tab badge тоонууд — count-only (head:true), search/driver харгалзахгүй НИЙТ тоо
       if (!showArchived) {
-        const notArch = () => supabase.from("biz_orders").select("*", { count: "exact", head: true }).or("is_archived.is.null,is_archived.eq.false");
-        const C = (q) => q.then(r => r.count || 0);
-        Promise.all([
-          C(notArch().not("status", "in", "(delivered,cancelled)")), // all = идэвхтэй нийт (Бүх tab жагсаалттай таарна)
-          C(notArch().is("driver_id", null).in("status", ["new", "assigned", "pending"])),
-          C(notArch().not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
-          C(notArch().eq("status", "delivered").gte("delivered_at", ordersDays)),   // 45 хоног — жагсаалттай таарна
-          C(notArch().eq("status", "cancelled").gte("created_at", ordersDays)),
-        ]).then(([activeC, newC, assigned, delivered, cancelled]) => {
-          setTabCounts({ all: activeC + delivered + cancelled, new: newC, assigned, unknown: 0, delivered, cancelled });
-        }).catch((e) => console.error("[tab counts]", e));
+        const cnt = (f) => {
+          let q = supabase.from("biz_orders").select("*", { count: "exact", head: true }).or("is_archived.is.null,is_archived.eq.false");
+          if (f === "delivered") q = q.eq("status", "delivered");
+          else if (f === "cancelled") q = q.eq("status", "cancelled");
+          else if (f === "assigned") q = q.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
+          else if (f === "new") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
+          else if (f === "unknown") q = q.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+          return q.then((r) => r.count || 0);
+        };
+        Promise.all([cnt("all"), cnt("new"), cnt("assigned"), cnt("unknown"), cnt("delivered"), cnt("cancelled")])
+          .then(([all, newC, assigned, unknown, delivered, cancelled]) => {
+            if (seq === loadSeq.current) setTabCounts({ all, new: newC, assigned, unknown, delivered, cancelled });
+          })
+          .catch((e) => console.error("[tab counts]", e));
       }
+
       setOrders(ordData || []);
+      setTotalCount(totalC || 0);
       setProducts(prodData || []);
       setDrivers(drvData || []);
 
-      // Items load
+      // Items — зөвхөн энэ хуудасны ~100 захиалгынх (хөнгөн)
       if (ordData && ordData.length > 0) {
         const orderIds = ordData.map((o) => o.id);
-        // 🧩 Chunk-аар асуух (URL хязгаараас хальдгийг засна)
         const itemData = await fetchInChunks("biz_order_items", orderIds, {
           select: "*",
           filterColumn: "order_id",
           chunkSize: 200,
         });
-
+        if (seq !== loadSeq.current) return;
         const prodMap = {};
         (prodData || []).forEach((p) => { prodMap[p.id] = { image: p.image_url, fb_page_id: p.fb_page_id }; });
-
         const itemMap = {};
         (itemData || []).forEach((it) => {
           if (!itemMap[it.order_id]) itemMap[it.order_id] = [];
           const prodInfo = prodMap[it.product_id] || {};
-          itemMap[it.order_id].push({ 
-            ...it, 
+          itemMap[it.order_id].push({
+            ...it,
             product_image: prodInfo.image || null,
             fb_page_id: prodInfo.fb_page_id || null,
           });
         });
         setItems(itemMap);
+      } else {
+        setItems({});
       }
 
-      // 🔗 FB Pages татах
-      const { data: fbpData } = await supabase.from("biz_fb_pages")
-        .select("id, name");
+      // 🔗 FB Pages
+      const { data: fbpData } = await supabase.from("biz_fb_pages").select("id, name");
       const fbMap = {};
-      (fbpData || []).forEach(p => { fbMap[p.id] = p.name; });
+      (fbpData || []).forEach((p) => { fbMap[p.id] = p.name; });
       setFbPagesMap(fbMap);
 
-      // 🏪 Merchant page-уудыг олох (merchant хэрэглэгчдэд оноогдсон бүх page)
-      const { data: merchants } = await supabase.from("profiles")
-        .select("fb_page_ids").eq("role", "merchant");
+      // 🏪 Merchant page-ууд
+      const { data: merchants } = await supabase.from("profiles").select("fb_page_ids").eq("role", "merchant");
       const mPageIds = new Set();
-      (merchants || []).forEach(m => {
-        (m.fb_page_ids || []).forEach(id => mPageIds.add(id));
-      });
+      (merchants || []).forEach((m) => { (m.fb_page_ids || []).forEach((id) => mPageIds.add(id)); });
       setMerchantPageIds([...mPageIds]);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { if (seq === loadSeq.current) setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, [showArchived, filter]);
+  useEffect(() => { loadAll(); }, [showArchived, filter, page, driverFilter, debouncedSearch]);
+
+  // 🗺 Газрын зураг горим — бүх таарах захиалгыг (хуудаслалтгүй) ачаална.
+  //    Жагсаалтын pagination зөвхөн нэг хуудас татдаг тул газрын зурагт тусад нь бүгдийг авна.
+  useEffect(() => {
+    if (viewMode !== "map") return;
+    let stale = false;
+    (async () => {
+      try {
+        let q = supabase.from("biz_orders").select("*");
+        q = showArchived ? q.eq("is_archived", true) : q.or("is_archived.is.null,is_archived.eq.false");
+        if (!showArchived) {
+          if (filter === "delivered") q = q.eq("status", "delivered");
+          else if (filter === "cancelled") q = q.eq("status", "cancelled");
+          else if (filter === "assigned") q = q.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
+          else if (filter === "new") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
+          else if (filter === "unknown") q = q.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+        }
+        if (driverFilter === "unassigned") q = q.is("driver_id", null);
+        else if (driverFilter !== "all") q = q.eq("driver_id", driverFilter);
+        const s = (debouncedSearch || "").trim();
+        if (s) { const like = `%${s}%`; q = q.or(`order_number.ilike.${like},customer_phone.ilike.${like},customer_name.ilike.${like},delivery_address.ilike.${like}`); }
+        q = q.not("delivery_lat", "is", null).order("created_at", { ascending: false });
+        const rows = await fetchAllRows(q);
+        if (!stale) setMapOrders(rows || []);
+      } catch (e) { console.error("[map orders]", e); }
+    })();
+    return () => { stale = true; };
+  }, [viewMode, filter, driverFilter, debouncedSearch, showArchived]);
 
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
@@ -23603,54 +23640,10 @@ function OrdersView({ profile }) {
     requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
   };
 
-  // Filter
-  let filtered = orders;
-  if (filter === "unknown") {
-    // ❓ Тодорхойгүй — is_unknown=true ЭСВЭЛ GPS байхгүй шинэ захиалга
-    filtered = filtered.filter((o) => {
-      if (o.status === "delivered" || o.status === "cancelled") return false;
-      return o.is_unknown === true ||
-             ((o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && (!o.delivery_lat || !o.delivery_lng));
-    });
-  } else if (filter === "new") {
-    // 🆕 Шинэ — идэвхтэй (new/assigned/pending), driver-гүй, тодорхой
-    filtered = filtered.filter((o) =>
-      (o.status === "new" || o.status === "assigned" || o.status === "pending") && !o.driver_id && !o.is_unknown);
-  } else if (filter === "assigned") {
-    // 🚚 Хуваарилагдсан — driver оноогдсон, идэвхтэй захиалга
-    filtered = filtered.filter((o) =>
-      o.driver_id && o.status !== "delivered" && o.status !== "cancelled");
-  } else if (filter !== "all") {
-    filtered = filtered.filter((o) => o.status === filter);
-  }
-  if (driverFilter !== "all") {
-    if (driverFilter === "unassigned") {
-      filtered = filtered.filter((o) => !o.driver_id);
-    } else {
-      filtered = filtered.filter((o) => o.driver_id === driverFilter);
-    }
-  }
-  if (search.trim()) {
-    const q = search.toLowerCase();
-    filtered = filtered.filter((o) =>
-      o.order_number?.toLowerCase().includes(q) ||
-      o.customer_phone?.includes(q) ||
-      o.customer_name?.toLowerCase().includes(q) ||
-      o.delivery_address?.toLowerCase().includes(q)
-    );
-  }
-
-  // Counts
-  // Counts — driver шүүлтийг тооцох (tab тоо ба жагсаалт таарна)
-  // ⚡ Tab тоонууд (badge): orders одоо зөвхөн нэг tab-ийнх тул, бүх tab-ийн тоог
-  //    тусдаа хөнгөн count query-ээр (loadAll дотор) авч tabCounts-д хадгална.
-  const countBase = driverFilter === "all"
-    ? orders
-    : (driverFilter === "unassigned"
-        ? orders.filter((o) => !o.driver_id)
-        : orders.filter((o) => o.driver_id === driverFilter));
+  // 🔧 Шүүлт/хайлт/хуудаслалт бүгд СЕРВЕР талд хийгдэх болсон тул (loadAll) —
+  //    orders нь зөвхөн идэвхтэй хуудасны мөрүүд. Client талд дахин шүүхгүй.
+  const filtered = orders;
   const counts = tabCounts;
-  const _unusedCountBase = countBase; // (driverFilter-тэй үед идэвхтэй tab дотор client-шүүлт хэвээр)
 
   const updateStatus = async (orderId, newStatus) => {
     const updates = { status: newStatus };
@@ -24066,7 +24059,7 @@ function OrdersView({ profile }) {
         </div>
       ) : viewMode === "map" ? (
         <OrdersMapView 
-          orders={filtered} 
+          orders={mapOrders} 
           drivers={drivers}
           onOrderClick={(o) => setActiveOrder(o)}
         />
@@ -24078,13 +24071,13 @@ function OrdersView({ profile }) {
           </div>
         </div>
       ) : (() => {
-        const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
         const safePage = Math.min(page, totalPages);
-        const pagedOrders = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+        const pagedOrders = filtered; // 🔧 сервер талд хуудаслаж байгаа тул бүгдийг харуулна
         return (
         <>
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-          {filtered.length} захиалга · {safePage}/{totalPages} хуудас
+          {totalCount} захиалга · {safePage}/{totalPages} хуудас
         </div>
         <div className="space-y-2">
           {pagedOrders.map((o, idx) => (
