@@ -2430,6 +2430,9 @@ function AdminDashboard({ profile }) {
                   <SidebarTab active={view === "zones"} onClick={() => { setView("zones"); setSidebarOpen(false); }} icon={MapPin}>🗺 Хүргэлтийн бүс</SidebarTab>
                 </>
               )}
+              {(profile.role === "admin" || profile.role === "manager") && (
+                <SidebarTab active={view === "cancel-reasons"} onClick={() => { setView("cancel-reasons"); setSidebarOpen(false); }} icon={X}>🚫 Цуцлах шалтгаан</SidebarTab>
+              )}
             </SidebarSection>
 
             {!isMarketing && (
@@ -2545,6 +2548,7 @@ function AdminDashboard({ profile }) {
                 {view === "settlement-reports" && "Тооцооний тайлан"}
                 {view === "sales-report" && "Борлуулалтын тайлан"}
                 {view === "orders" && "Захиалга"}
+                {view === "cancel-reasons" && "Цуцлах шалтгаан"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
                 {view === "departments" && "Хэлтсүүд"}
@@ -2582,6 +2586,7 @@ function AdminDashboard({ profile }) {
                 {view === "settlement-reports" && "Хаагдсан тооцооны түүх"}
                 {view === "sales-report" && "Хүргэгдсэн барааны борлуулалт, ашгийн тооцоо"}
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
+                {view === "cancel-reasons" && "Захиалга цуцлах шалтгаануудыг удирдах"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
@@ -2840,6 +2845,10 @@ function AdminDashboard({ profile }) {
 
         {view === "orders" && (
           <OrdersView profile={profile} />
+        )}
+
+        {view === "cancel-reasons" && (
+          <CancelReasonsManager profile={profile} />
         )}
 
         {view === "customers" && (
@@ -5398,6 +5407,126 @@ function CancelReasonModal({ order, byId = null, onClose, onDone }) {
         </>
       )}
     </Modal>
+  );
+}
+
+// 🚫 Цуцлах шалтгаан удирдах (admin/manager) — нэмэх/засах/идэвхгүй/устгах/эрэмбэлэх
+function CancelReasonsManager({ profile }) {
+  const [reasons, setReasons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newLabel, setNewLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const canManage = profile?.role === "admin" || profile?.role === "manager";
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.from("biz_cancel_reasons").select("*").order("sort_order").order("created_at");
+      setReasons(data || []);
+    } catch (e) { console.error("[reasons load]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    setSaving(true);
+    try {
+      const maxSort = reasons.reduce((m, r) => Math.max(m, r.sort_order || 0), 0);
+      await supabase.from("biz_cancel_reasons").insert({ label, sort_order: maxSort + 1, is_active: true });
+      setNewLabel("");
+      await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const toggleActive = async (r) => {
+    try {
+      await supabase.from("biz_cancel_reasons").update({ is_active: !r.is_active }).eq("id", r.id);
+      await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const rename = async (r) => {
+    const label = prompt("Шалтгааны нэр", r.label);
+    if (label == null) return;
+    const t = label.trim();
+    if (!t || t === r.label) return;
+    try {
+      await supabase.from("biz_cancel_reasons").update({ label: t }).eq("id", r.id);
+      await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const remove = async (r) => {
+    if (!confirm(`"${r.label}" шалтгааныг устгах уу?\n\nХуучин захиалгад хадгалагдсан хэвээр үлдэнэ (snapshot).`)) return;
+    try {
+      await supabase.from("biz_cancel_reasons").delete().eq("id", r.id);
+      await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const move = async (r, dir) => {
+    const sorted = [...reasons].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const idx = sorted.findIndex((x) => x.id === r.id);
+    const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx], b = sorted[swapIdx];
+    try {
+      await supabase.from("biz_cancel_reasons").update({ sort_order: b.sort_order || 0 }).eq("id", a.id);
+      await supabase.from("biz_cancel_reasons").update({ sort_order: a.sort_order || 0 }).eq("id", b.id);
+      await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  if (!canManage) {
+    return <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>Зөвхөн админ/менежер хандах эрхтэй</div>;
+  }
+
+  const sorted = [...reasons].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm mb-2">Шинэ шалтгаан нэмэх</div>
+        <div className="flex gap-2">
+          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="Шалтгааны нэр..."
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="flex-1 px-3 py-2 rounded-lg text-sm" />
+          <button onClick={add} disabled={saving || !newLabel.trim()}
+            style={{ background: T.highlight, color: "white", fontFamily: FS }}
+            className="press-btn px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">+ Нэмэх</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>
+      ) : sorted.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>Шалтгаан алга. Дээрээс нэмнэ үү.</div>
+      ) : (
+        <div className="glass rounded-2xl p-2 space-y-1">
+          {sorted.map((r, i) => (
+            <div key={r.id} className="flex items-center gap-2 px-2 py-2 rounded-lg"
+              style={{ background: T.surfaceAlt, opacity: r.is_active ? 1 : 0.55 }}>
+              <div className="flex flex-col leading-none">
+                <button onClick={() => move(r, "up")} disabled={i === 0} style={{ color: T.muted, opacity: i === 0 ? 0.3 : 1 }} className="text-[10px]">▲</button>
+                <button onClick={() => move(r, "down")} disabled={i === sorted.length - 1} style={{ color: T.muted, opacity: i === sorted.length - 1 ? 0.3 : 1 }} className="text-[10px]">▼</button>
+              </div>
+              <div className="flex-1" style={{ color: T.ink, fontFamily: FS }}>
+                <span className="text-sm">{r.label}</span>
+                {!r.is_active && <span style={{ color: T.muted }} className="text-[10px] ml-2">(идэвхгүй)</span>}
+              </div>
+              <button onClick={() => rename(r)} style={{ color: T.muted, fontFamily: FS }} className="press-btn text-xs px-2 py-1">✏</button>
+              <button onClick={() => toggleActive(r)} style={{ color: r.is_active ? T.warn : T.ok, fontFamily: FS }} className="press-btn text-xs px-2 py-1">{r.is_active ? "Идэвхгүй" : "Идэвхжүүл"}</button>
+              <button onClick={() => remove(r)} style={{ color: T.err, fontFamily: FS }} className="press-btn text-xs px-2 py-1">🗑</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
