@@ -1,3 +1,4 @@
+// BUILD: v2026.06.18-perf-fix (gatsaa zasvar: CallCenter+Orders tab-lazy, biz_orders 60 honog, nuuts ug solih)
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
