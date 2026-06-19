@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer, LabelList, ReferenceLine,
 } from "recharts";
@@ -40069,7 +40069,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
   }
 
   // Multi-day — line/bar/area chart with date axis
-  const ChartComponent = chartType === "line" ? LineChart : chartType === "area" ? AreaChart : BarChart;
+  const ChartComponent = ComposedChart;
   const DataComponent = chartType === "line" ? Line : chartType === "area" ? Area : Bar;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -40155,6 +40155,37 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
     return 0;
   };
 
+  // 🆔 KPI id → нэр (эх KPI-ийн үе тус бүрийн утгыг chartData-аас олоход)
+  const kpiNameById = useMemo(() => {
+    const m = {};
+    deptKpis.forEach((k) => { m[k.id] = k.name; });
+    return m;
+  }, [deptKpis]);
+
+  // 🎯 Үе БҮРИЙН зорилтыг тооцоод chartData-д нэмэх (__tgt_<kpiId>).
+  //    Динамик зорилт (эх KPI-ийн %) → тухайн үеийн эх дататай уялдан хэлбэлзэнэ.
+  //    Тогтмол зорилт → үе бүрт ижил (хавтгай).
+  const chartDataWithTargets = useMemo(() => {
+    return (chartData || []).map((row) => {
+      const r = { ...row };
+      deptKpis.forEach((kpi) => {
+        let t = 0;
+        if (kpi.target_source_kpi_id && kpi.target_percent) {
+          const srcName = kpiNameById[kpi.target_source_kpi_id];
+          if (srcName != null && row[srcName] != null) {
+            t = Math.round((Number(row[srcName]) || 0) * Number(kpi.target_percent) / 100); // ← тухайн үеийн эх дата
+          } else {
+            t = periodTargetFor(kpi); // эх KPI график дээр байхгүй бол дундажаар
+          }
+        } else if (kpi.target) {
+          t = periodTargetFor(kpi); // тогтмол → үе бүрт ижил
+        }
+        r["__tgt_" + kpi.id] = t;
+      });
+      return r;
+    });
+  }, [chartData, deptKpis, kpiNameById, filteredEntries, groupBy]);
+
   // 🎯 Зорилтын reference line-ийг багтаахаар Y тэнхлэгийн дээд хязгаарыг тооцоолох.
   //    (Зорилт өндөр байвал (жнь monthly target долоо хоногт хувирахад) автомат Y тэнхлэгээс
   //     хэтэрч, шугам график дээр харагдахгүй байсныг засна.)
@@ -40167,17 +40198,19 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
         if (v > dataMax) dataMax = v;
       });
     });
-    // Зорилтын max (helper ашиглана)
+    // Зорилтын max (үе бүрийн зорилтын дээд утга)
     let targetMax = 0;
-    deptKpis.forEach((kpi) => {
-      const t = periodTargetFor(kpi);
-      if (t > targetMax) targetMax = t;
+    (chartDataWithTargets || []).forEach((row) => {
+      deptKpis.forEach((kpi) => {
+        const t = Number(row["__tgt_" + kpi.id]) || 0;
+        if (t > targetMax) targetMax = t;
+      });
     });
     const overallMax = Math.max(dataMax, targetMax);
     if (overallMax <= 0) return undefined; // авто
     // 10% дээш зай үлдээж, зорилт багтаана
     return Math.ceil((overallMax * 1.1) / 100) * 100;
-  }, [chartData, deptKpis, filteredEntries, groupBy]);
+  }, [chartData, chartDataWithTargets, deptKpis, filteredEntries, groupBy]);
 
   // 📊 График-ийн тоймийг бэлдэх
   const chartSummary = useMemo(() => {
@@ -40216,34 +40249,13 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
       {/* Chart */}
       <div className="glass-soft rounded-2xl p-4">
         <ResponsiveContainer width="100%" height={350}>
-          <ChartComponent data={chartData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
+          <ChartComponent data={chartDataWithTargets} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} domain={[0, yAxisMax || "auto"]} />
             <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            {/* 🎯 Зорилтын reference line — KPI бүрд (динамик эсвэл статик) */}
-            {deptKpis.map((kpi, i) => {
-              const perPeriodTarget = periodTargetFor(kpi);
-              if (perPeriodTarget <= 0) return null;
-              return (
-                <ReferenceLine
-                  key={`target-${kpi.id}`}
-                  y={perPeriodTarget}
-                  stroke={COLORS[i % COLORS.length]}
-                  strokeDasharray="8 4"
-                  strokeWidth={2.5}
-                  strokeOpacity={0.9}
-                  label={{
-                    value: `🎯 ${kpi.name}: ${perPeriodTarget.toLocaleString()}`,
-                    position: "insideTopRight",
-                    fontSize: 10,
-                    fill: COLORS[i % COLORS.length],
-                    fontWeight: 700,
-                  }}
-                />
-              );
-            })}
+            {/* 🎯 Зорилтын шугам нь багануудын ДАРАА (дээр) зурагдана — доороос харна уу */}
             {deptKpis.map((kpi, i) => (
               <DataComponent
                 key={kpi.id}
@@ -40256,28 +40268,51 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, periodRange, char
                 strokeWidth={chartType === "line" ? 2.5 : 1}
                 dot={chartType === "line" ? { r: 3 } : false}
               >
-                {/* 🏷 Тоон утга + зорилтын % харуулна — bar/area chart-руу зөвхөн */}
-                {chartType !== "line" && chartData.length <= 10 && (() => {
-                  const tgt = periodTargetFor(kpi);
-                  return (
-                    <LabelList
-                      dataKey={kpi.name}
-                      position="top"
-                      style={{ fontSize: 10, fontWeight: 700, fill: COLORS[i % COLORS.length] }}
-                      formatter={(v) => {
-                        if (!v || v <= 0) return "";
-                        const valStr = v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString();
-                        if (tgt > 0) {
-                          const pct = Math.round((v / tgt) * 100);
-                          return `${valStr} (${pct}%)`;
-                        }
-                        return valStr;
-                      }}
-                    />
-                  );
-                })()}
+                {/* 🏷 Тоон утга + зорилтын % — % нь ҮЕ БҮРИЙН зорилттой харьцуулна */}
+                {chartType !== "line" && chartData.length <= 10 && (
+                  <LabelList
+                    dataKey={kpi.name}
+                    position="top"
+                    content={(props) => {
+                      const { x, y, width, value, index } = props;
+                      const v = Number(value) || 0;
+                      if (!v || v <= 0) return null;
+                      const valStr = v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toLocaleString();
+                      const tgt = Number(chartDataWithTargets[index]?.["__tgt_" + kpi.id]) || 0;
+                      const txt = tgt > 0 ? `${valStr} (${Math.round((v / tgt) * 100)}%)` : valStr;
+                      const cx = Number(x || 0) + Number(width || 0) / 2;
+                      return (
+                        <text x={cx} y={Number(y || 0) - 4} textAnchor="middle"
+                          fontSize={10} fontWeight={700} fill={COLORS[i % COLORS.length]}>
+                          {txt}
+                        </text>
+                      );
+                    }}
+                  />
+                )}
               </DataComponent>
             ))}
+            {/* 🎯 Зорилтын шугам — үе бүрээр хэлбэлзэнэ (динамик) эсвэл хавтгай (тогтмол) */}
+            {deptKpis.map((kpi, i) => {
+              const hasTarget = (kpi.target_source_kpi_id && kpi.target_percent) || kpi.target;
+              if (!hasTarget) return null;
+              return (
+                <Line
+                  key={`tgt-${kpi.id}`}
+                  type="monotone"
+                  dataKey={`__tgt_${kpi.id}`}
+                  name={`🎯 ${kpi.name} зорилт`}
+                  stroke={COLORS[i % COLORS.length]}
+                  strokeDasharray="8 4"
+                  strokeWidth={2.5}
+                  strokeOpacity={0.95}
+                  dot={{ r: 2.5, fill: COLORS[i % COLORS.length] }}
+                  activeDot={false}
+                  isAnimationActive={false}
+                  legendType="line"
+                />
+              );
+            })}
           </ChartComponent>
         </ResponsiveContainer>
       </div>
