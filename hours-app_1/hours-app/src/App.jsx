@@ -5543,6 +5543,7 @@ function CancelReasonsManager({ profile }) {
 function CancelReportView({ profile }) {
   const [period, setPeriod] = useState("30"); // 7 | 30 | 90 | all
   const [driverFilter, setDriverFilter] = useState("all"); // all | none | <driverId>
+  const [reasonFilter, setReasonFilter] = useState("all"); // all | __none__ | <label>
   const [orders, setOrders] = useState([]);
   const [profMap, setProfMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -5570,6 +5571,7 @@ function CancelReportView({ profile }) {
   };
   useEffect(() => { load(); setPage(1); }, [period]);
   useEffect(() => { setPage(1); }, [driverFilter]);
+  useEffect(() => { setPage(1); }, [reasonFilter]);
 
   // Жолоочийн сонголтууд (датанд байгаа)
   const driverIds = [...new Set(orders.filter((o) => o.driver_id).map((o) => o.driver_id))];
@@ -5587,13 +5589,21 @@ function CancelReportView({ profile }) {
     rs.forEach((r) => { reasonCounts[r] = (reasonCounts[r] || 0) + 1; });
   });
   const reasonList = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
-  const totalOrders = filtered.length;
-  const totalAmount = filtered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
   const maxReason = reasonList.length ? reasonList[0][1] : 1;
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // 🏷 Шалтгааны tab шүүлт — жагсаалт ба нийт самбар сонгосон tab-аар
+  const shown = reasonFilter === "all"
+    ? filtered
+    : (reasonFilter === "__none__"
+        ? filtered.filter((o) => !(Array.isArray(o.cancel_reasons) && o.cancel_reasons.length > 0))
+        : filtered.filter((o) => Array.isArray(o.cancel_reasons) && o.cancel_reasons.includes(reasonFilter)));
+
+  const totalOrders = shown.length;
+  const totalAmount = shown.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageOrders = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageOrders = shown.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const fmtDate = (s) => {
     if (!s) return "—";
@@ -5625,6 +5635,29 @@ function CancelReportView({ profile }) {
         <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} /></div>
       ) : (
         <>
+          {/* 🏷 Шалтгааны tab-ууд (тоотой) — дарвал тухайн шалтгааны захиалга */}
+          <div className="glass rounded-2xl p-2 flex items-center gap-1.5 flex-wrap">
+            <button onClick={() => setReasonFilter("all")}
+              className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{ background: reasonFilter === "all" ? T.highlight : T.surfaceAlt, color: reasonFilter === "all" ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+              Бүх ({filtered.length})
+            </button>
+            {reasonList.map(([label, cnt]) => (
+              <button key={label} onClick={() => setReasonFilter(label)}
+                className="press-btn px-3 py-1.5 rounded-full text-xs"
+                style={{ background: reasonFilter === label ? T.err : T.surfaceAlt, color: reasonFilter === label ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+                {label} ({cnt})
+              </button>
+            ))}
+            {noReason > 0 && (
+              <button onClick={() => setReasonFilter("__none__")}
+                className="press-btn px-3 py-1.5 rounded-full text-xs"
+                style={{ background: reasonFilter === "__none__" ? T.muted : T.surfaceAlt, color: reasonFilter === "__none__" ? "white" : T.muted, fontFamily: FS, fontWeight: 600 }}>
+                Шалтгаангүй ({noReason})
+              </button>
+            )}
+          </div>
+
           {/* Нийт */}
           <div className="grid grid-cols-2 gap-2">
             <div className="glass rounded-2xl p-3">
