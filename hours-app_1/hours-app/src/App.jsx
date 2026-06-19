@@ -5248,6 +5248,159 @@ function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
 }
 
 // 🔐 Admin ажилтны нууц үгийг солих modal — admin-reset-password Edge Function-ийг дуудна.
+// 🚫 Захиалга цуцлах — дундын логик (нөөц буцаах + biz_calls cancel + шалтгаан/тайлбар хадгалах)
+async function applyCancellation(orderId, { reasons = [], note = "", byId = null } = {}) {
+  const { data: cur } = await supabase.from("biz_orders")
+    .select("status, driver_id, customer_phone, customer_name, fb_page_id")
+    .eq("id", orderId).maybeSingle();
+
+  // delivered байсан захиалгыг цуцлахад — хүргэгчийн агуулахад нөөц БУЦААЖ нэмэх
+  if (cur?.status === "delivered" && cur?.driver_id) {
+    try {
+      const { data: driverWh } = await supabase.from("inv_warehouses").select("id").eq("driver_id", cur.driver_id).maybeSingle();
+      const { data: ordItems } = await supabase.from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
+      const { data: existingReturns } = await supabase.from("inv_movements").select("product_id").eq("reason", "return").ilike("notes", `%${orderId.slice(0, 8)}%`);
+      const returnedSet = new Set((existingReturns || []).map((r) => r.product_id));
+      if (driverWh && ordItems && ordItems.length > 0) {
+        const moves = ordItems
+          .filter((it) => it.product_id && !returnedSet.has(it.product_id))
+          .map((it) => ({
+            product_id: it.product_id, warehouse_id: driverWh.id, movement_type: "in",
+            quantity: Number(it.quantity || 0), reason: "return", created_by: byId || null,
+            notes: `Захиалга #${orderId.slice(0, 8)} цуцлагдсан: ${it.product_name || ""} (нөөц сэргээв)`,
+          }));
+        if (moves.length > 0) await supabase.from("inv_movements").insert(moves);
+      }
+    } catch (e) { console.error("[cancel stock reverse]", e); }
+  }
+
+  await supabase.from("biz_orders").update({
+    status: "cancelled",
+    cancelled_at: new Date().toISOString(),
+    cancel_reasons: reasons,
+    cancel_note: note || null,
+    cancelled_by: byId || null,
+  }).eq("id", orderId);
+
+  // biz_calls-д cancelled нэмэх → дуудлагын cycle хаагдана
+  try {
+    if (cur?.customer_phone) {
+      const { data: lastC } = await supabase.from("biz_calls").select("call_status")
+        .eq("phone", cur.customer_phone).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (lastC?.call_status !== "cancelled") {
+        await supabase.from("biz_calls").insert({
+          phone: cur.customer_phone, customer_name: cur.customer_name || null,
+          call_status: "cancelled", fb_page_id: cur.fb_page_id || null, created_at: new Date().toISOString(),
+        });
+      }
+    }
+  } catch (e) { console.error("[cancel call insert]", e); }
+}
+
+// 🚫 Цуцлах шалтгаан сонгох + тайлбар бичих modal (дахин ашиглах — бүх цуцлах цэгээс дуудна)
+function CancelReasonModal({ order, byId = null, onClose, onDone }) {
+  const [reasons, setReasons] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("biz_cancel_reasons")
+          .select("id, label").eq("is_active", true).order("sort_order");
+        setReasons(data || []);
+      } catch (e) { console.error("[cancel reasons load]", e); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  const toggle = (label) =>
+    setSelected((s) => (s.includes(label) ? s.filter((x) => x !== label) : [...s, label]));
+
+  const submit = async () => {
+    if (selected.length === 0 && !note.trim()) {
+      alert("Доод тал нь нэг шалтгаан сонгох эсвэл тайлбар бичнэ үү");
+      return;
+    }
+    setSaving(true);
+    try {
+      await applyCancellation(order.id, { reasons: selected, note: note.trim(), byId });
+      if (onDone) await onDone();
+    } catch (e) {
+      alert("Цуцлахад алдаа: " + (e?.message || String(e)));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Захиалга цуцлах" maxW="max-w-md">
+      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
+        {order?.customer_name || order?.customer_phone || ""}
+        {order?.total_amount != null && <> · {Number(order.total_amount).toLocaleString()}₮</>}
+      </div>
+
+      {loading ? (
+        <div className="py-6 text-center"><Loader2 size={18} className="animate-spin mx-auto" /></div>
+      ) : (
+        <>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-2">
+            Шалтгаан (нэг буюу хэд)
+          </div>
+          <div className="space-y-1.5 mb-3 max-h-60 overflow-y-auto">
+            {reasons.length === 0 && (
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                Шалтгаан бүртгэгдээгүй байна
+              </div>
+            )}
+            {reasons.map((r) => {
+              const on = selected.includes(r.label);
+              return (
+                <button key={r.id} onClick={() => toggle(r.label)}
+                  className="press-btn w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+                  style={{
+                    background: on ? T.errSoft : T.surfaceAlt,
+                    border: `1px solid ${on ? T.err : T.border}`,
+                    color: T.ink, fontFamily: FS,
+                  }}>
+                  <span style={{
+                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                    border: `2px solid ${on ? T.err : T.border}`,
+                    background: on ? T.err : "transparent",
+                    color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11,
+                  }}>{on ? "✓" : ""}</span>
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-1">
+            Тайлбар (заавал биш)
+          </div>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)}
+            rows={3} placeholder="Нэмэлт тайлбар..."
+            style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+            className="w-full px-3 py-2 rounded-lg text-sm mb-4 resize-none" />
+
+          <div className="flex gap-3">
+            <button onClick={onClose} disabled={saving}
+              style={{ fontFamily: FS, color: "#1e1b4b" }}
+              className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm">Болих</button>
+            <button onClick={submit} disabled={saving}
+              style={{ background: T.err, color: "white", fontFamily: FS }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <span>✕</span>} Цуцлах
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function ResetPasswordModal({ emp, onCancel, onDone }) {
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -23442,6 +23595,7 @@ function OrdersView({ profile }) {
   const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, assigned: 0, unknown: 0, delivered: 0, cancelled: 0 }); // ⚡ tab badge тоонууд (тусдаа count query)
   const [totalCount, setTotalCount] = useState(0); // 📄 server-side pagination — нийт таарах мөр
   const [mapOrders, setMapOrders] = useState([]); // 🗺 газрын зураг — хуудаслалтгүй бүх таарах захиалга
+  const [cancelTarget, setCancelTarget] = useState(null); // 🚫 цуцлах шалтгаан modal-д харуулах захиалга
   const [debouncedSearch, setDebouncedSearch] = useState(""); // 🔍 search debounce (серверт хайна)
   const loadSeq = useRef(0); // ⏱ зэрэг ачаалал — зөвхөн хамгийн сүүлийнх хүчинтэй
   const PAGE_SIZE = 100;
@@ -23646,6 +23800,11 @@ function OrdersView({ profile }) {
   const counts = tabCounts;
 
   const updateStatus = async (orderId, newStatus) => {
+    // 🚫 Цуцлах нь шалтгаан/тайлбартай modal-аар явна (шууд биш)
+    if (newStatus === "cancelled") {
+      setCancelTarget(orders.find((o) => o.id === orderId) || { id: orderId });
+      return;
+    }
     const updates = { status: newStatus };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
@@ -23729,6 +23888,22 @@ function OrdersView({ profile }) {
           onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
           onAssignDriver={() => setAssignDriverOrder(activeOrder)}
         />
+        {cancelTarget && (
+          <CancelReasonModal
+            order={cancelTarget}
+            byId={profile?.id}
+            onClose={() => setCancelTarget(null)}
+            onDone={async () => {
+              const cid = cancelTarget?.id;
+              setCancelTarget(null);
+              await loadAll();
+              if (cid && activeOrder?.id === cid) {
+                const { data: upd } = await supabase.from("biz_orders").select("*").eq("id", cid).maybeSingle();
+                setActiveOrder(upd || null);
+              }
+            }}
+          />
+        )}
         {/* Driver picker modal — OrderDetail дотроос дуудагдвал энд харагдана */}
         {assignDriverOrder && (
           <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2"
@@ -24089,31 +24264,7 @@ function OrdersView({ profile }) {
               onMap={() => setMapOrder(o)}
               onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
-              onCancel={async () => {
-                if (!confirm(`Захиалгыг цуцлах уу?\n\nҮйлчлүүлэгч: ${o.customer_name || o.customer_phone}\nДүн: ${Number(o.total_amount).toLocaleString()}₮`)) return;
-                try {
-                  await supabase.from("biz_orders").update({
-                    status: "cancelled",
-                    cancelled_at: new Date().toISOString(),
-                  }).eq("id", o.id);
-                  // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
-                  if (o.customer_phone) {
-                    const { data: lastC } = await supabase.from("biz_calls")
-                      .select("call_status").eq("phone", o.customer_phone)
-                      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-                    if (lastC?.call_status !== "cancelled") {
-                      await supabase.from("biz_calls").insert({
-                        phone: o.customer_phone,
-                        customer_name: o.customer_name || null,
-                        call_status: "cancelled",
-                        fb_page_id: o.fb_page_id || null,
-                        created_at: new Date().toISOString(),
-                      });
-                    }
-                  }
-                  await loadAll();
-                } catch (e) { alert("Алдаа: " + e.message); }
-              }}
+              onCancel={() => setCancelTarget(o)}
             />
           ))}
         </div>
@@ -24184,6 +24335,22 @@ function OrdersView({ profile }) {
       })()}
 
       {/* Edit modal — CallReceiveModal-тай ижил */}
+      {cancelTarget && (
+        <CancelReasonModal
+          order={cancelTarget}
+          byId={profile?.id}
+          onClose={() => setCancelTarget(null)}
+          onDone={async () => {
+            const cid = cancelTarget?.id;
+            setCancelTarget(null);
+            await loadAll();
+            if (cid && activeOrder?.id === cid) {
+              const { data: upd } = await supabase.from("biz_orders").select("*").eq("id", cid).maybeSingle();
+              setActiveOrder(upd || null);
+            }
+          }}
+        />
+      )}
       {editOrder && (
         <CallReceiveModal
           products={products}
