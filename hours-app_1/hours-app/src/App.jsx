@@ -23484,11 +23484,11 @@ function OrdersView({ profile }) {
         const notArch = () => supabase.from("biz_orders").select("*", { count: "exact", head: true }).or("is_archived.is.null,is_archived.eq.false");
         const C = (q) => q.then(r => r.count || 0);
         Promise.all([
-          C(notArch()),
+          C(notArch().not("status", "in", "(delivered,cancelled)")), // all = идэвхтэй нийт (Бүх tab жагсаалттай таарна)
           C(notArch().is("driver_id", null).in("status", ["new", "assigned", "pending"])),
           C(notArch().not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)")),
-          C(notArch().eq("status", "delivered")),
-          C(notArch().eq("status", "cancelled")),
+          C(notArch().eq("status", "delivered").gte("delivered_at", ordersDays)),   // 45 хоног — жагсаалттай таарна
+          C(notArch().eq("status", "cancelled").gte("created_at", ordersDays)),
         ]).then(([all, newC, assigned, delivered, cancelled]) => {
           setTabCounts({ all, new: newC, assigned, unknown: 0, delivered, cancelled });
         }).catch((e) => console.error("[tab counts]", e));
@@ -23923,7 +23923,7 @@ function OrdersView({ profile }) {
               color: filter === "all" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            📋 Бүх ({orders.length})
+            📋 Бүх ({counts.all})
           </button>
           <button onClick={() => setFilter("new")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -23959,7 +23959,7 @@ function OrdersView({ profile }) {
               color: filter === "delivered" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            ✓ Хүргэсэн ({orders.filter((o) => o.status === "delivered").length})
+            ✓ Хүргэсэн ({counts.delivered})
           </button>
           <button onClick={() => setFilter("cancelled")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -23968,7 +23968,7 @@ function OrdersView({ profile }) {
               color: filter === "cancelled" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            ✕ Цуцалсан ({orders.filter((o) => o.status === "cancelled").length})
+            ✕ Цуцалсан ({counts.cancelled})
           </button>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="🔍 Утас, нэрээр..."
