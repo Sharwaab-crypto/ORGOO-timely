@@ -31631,6 +31631,7 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
   const [search, setSearch] = useState("");
   const [editingOrder, setEditingOrder] = useState(null); // 🏪 Засах modal
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cancelTarget, setCancelTarget] = useState(null); // 🚫 цуцлах шалтгаан modal
 
   useEffect(() => {
     (async () => {
@@ -31720,29 +31721,7 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
           readOnly={true}
           fbPagesMap={fbPagesMap}
           onEdit={() => setEditingOrder(activeOrder)}
-          onMerchantCancel={async () => {
-            await supabase.from("biz_orders").update({
-              status: "cancelled",
-              cancelled_at: new Date().toISOString(),
-            }).eq("id", activeOrder.id);
-            // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
-            if (activeOrder.customer_phone) {
-              const { data: lastC } = await supabase.from("biz_calls")
-                .select("call_status").eq("phone", activeOrder.customer_phone)
-                .order("created_at", { ascending: false }).limit(1).maybeSingle();
-              if (lastC?.call_status !== "cancelled") {
-                await supabase.from("biz_calls").insert({
-                  phone: activeOrder.customer_phone,
-                  customer_name: activeOrder.customer_name || null,
-                  call_status: "cancelled",
-                  fb_page_id: activeOrder.fb_page_id || null,
-                  created_at: new Date().toISOString(),
-                });
-              }
-            }
-            setActiveOrder(null);
-            setRefreshKey(k => k + 1);
-          }}
+          onMerchantCancel={() => setCancelTarget(activeOrder)}
         />
         {/* Засах modal */}
         {editingOrder && (
@@ -31756,6 +31735,18 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
               setRefreshKey(k => k + 1);
             }}
             onClose={() => setEditingOrder(null)}
+          />
+        )}
+        {cancelTarget && (
+          <CancelReasonModal
+            order={cancelTarget}
+            byId={profile?.id}
+            onClose={() => setCancelTarget(null)}
+            onDone={() => {
+              setCancelTarget(null);
+              setActiveOrder(null);
+              setRefreshKey(k => k + 1);
+            }}
           />
         )}
       </>
@@ -35665,6 +35656,10 @@ function DriverDashboard({ profile }) {
                       await supabase.from("biz_orders").update({
                         ...orderUpdates,
                         status: "cancelled",
+                        cancelled_at: new Date().toISOString(),
+                        cancelled_by: profile?.id || null,
+                        cancel_reasons: ["Хүргэх боломжгүй"],
+                        cancel_note: cancelNote || null,
                         notes: fullNote,
                       }).eq("id", ratingOrder.order.id);
                       // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
@@ -36097,6 +36092,8 @@ function DriverDashboard({ profile }) {
                       status: "cancelled",
                       cancelled_at: new Date().toISOString(),
                       cancelled_by: profile.id,
+                      cancel_reasons: ["Хүргэгч цуцалсан"],
+                      cancel_note: cancelNote.trim() || null,
                       notes: existingNotes + `[Хүргэгч цуцалсан]: ${cancelNote.trim()}`,
                     }).eq("id", cancelOrder.id);
                     // 🆕 biz_calls-д cancelled дуудлага нэмэх → cycle хаагдана
