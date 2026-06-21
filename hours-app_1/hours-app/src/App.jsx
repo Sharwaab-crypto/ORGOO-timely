@@ -32758,7 +32758,7 @@ function OperatorDashboard({ profile }) {
 function OperatorKPIView({ profile }) {
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [phoneFirstOp, setPhoneFirstOp] = useState({}); // утас → анх бүртгэсэн оператор id
+  const [phoneCalls, setPhoneCalls] = useState([]); // өөрийн утаснуудын хөндлөн (бүх оператор) дуудлагууд — period firstOp тооцоход
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState(() => {
@@ -32805,15 +32805,15 @@ function OperatorKPIView({ profile }) {
     (async () => {
       setLoading(true);
       try {
-        // Дуудлагууд
-        const { data: callData } = await supabase.from("biz_calls").select("*").eq("created_by", profile.id);
+        // Дуудлагууд — fetchAllRows ашиглаж БҮХ мөрийг авна (Supabase 1000 мөрийн default хязгаараас сэргийлнэ)
+        const callData = await fetchAllRows(supabase.from("biz_calls").select("*").eq("created_by", profile.id));
         // Захиалгууд — taken_by ЭСВЭЛ operator_id (driver-аас оноосон)
-        const { data: ordData } = await supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`);
+        const ordData = await fetchAllRows(supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`));
         setCalls(callData || []);
         setOrders(ordData || []);
 
-        // 🔗 "Бүртгэсэн дугаар" Admin-тай ижил болгох: өөрийн pending утаснуудыг
-        //    ӨӨР хэн нэгэн түүнээс өмнө бүртгэсэн эсэхийг шалгах (давхардлаас сэргийлнэ).
+        // 🔗 "Бүртгэсэн дугаар" Admin-тай ижил: өөрийн pending утаснуудын хөндлөн (бүх оператор)
+        //    дуудлагыг татаж хадгална. Period-scoped анхны бүртгэгчийг доор useMemo-д тооцно.
         const myPendingPhones = [...new Set(
           (callData || [])
             .filter((c) => (c.call_status === "pending" || !c.call_status) && c.phone)
@@ -32824,13 +32824,7 @@ function OperatorKPIView({ profile }) {
             select: "phone, created_by, call_status, created_at",
             filterColumn: "phone",
           });
-          // Утас бүрийн анхны pending бүртгэгч
-          const firstOp = {};
-          (allForPhones || [])
-            .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
-            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-            .forEach((c) => { if (!firstOp[c.phone]) firstOp[c.phone] = c.created_by; });
-          setPhoneFirstOp(firstOp);
+          setPhoneCalls(allForPhones || []);
         }
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
@@ -32847,6 +32841,18 @@ function OperatorKPIView({ profile }) {
     const d = new Date(o.created_at);
     return d >= periodRange.start && d < periodRange.end;
   }), [orders, periodRange]);
+
+  // 🔗 Period дотор утас бүрийн АНХ бүртгэсэн (pending) оператор — Admin-тай ИЖИЛ хамрах хүрээ.
+  //    (Admin filteredCalls-аас тооцдог; энд хөндлөн дуудлагыг period-ээр шүүж тооцно.)
+  const phoneFirstOp = useMemo(() => {
+    const firstOp = {};
+    (phoneCalls || [])
+      .filter((c) => c.phone && c.created_by && (c.call_status === "pending" || !c.call_status))
+      .filter((c) => { const d = new Date(c.created_at); return d >= periodRange.start && d < periodRange.end; })
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .forEach((c) => { if (!firstOp[c.phone]) firstOp[c.phone] = c.created_by; });
+    return firstOp;
+  }, [phoneCalls, periodRange]);
 
   // Stats — "Бүртгэсэн дугаар" = өөрийн АНХ бүртгэсэн (pending) дуудлагын unique утас.
   //   ⚠ Admin-тай ижил: зөвхөн ӨӨР хэн нэгэн өмнө бүртгээгүй (анх би бүртгэсэн) утас.
