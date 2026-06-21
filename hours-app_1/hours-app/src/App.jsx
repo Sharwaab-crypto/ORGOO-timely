@@ -9957,29 +9957,95 @@ function MovementsView({ profile }) {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [stats, setStats] = useState({ in: 0, out: 0, transfer: 0, adjust: 0 });
+  const loadSeq = useRef(0);
+  const PAGE_SIZE = 100;
 
-  const loadAll = async () => {
-    setLoading(true);
+  // Лавлах дата (нэг удаа)
+  const loadRefs = async () => {
     try {
-      const [{ data: mv }, { data: prd }, { data: wh }, { data: prf }, { data: stk }] = await Promise.all([
-        supabase.from("inv_movements")
-          .select("id, product_id, warehouse_id, to_warehouse_id, movement_type, quantity, notes, created_at, created_by")
-          .order("created_at", { ascending: false }).limit(500),
+      const [{ data: prd }, { data: wh }, { data: prf }, { data: stk }] = await Promise.all([
         supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("inv_warehouses").select("id, name, driver_id"),
         supabase.from("profiles").select("id, name, role"),
         supabase.from("inv_stock").select("*"),
       ]);
-      setMovements(mv || []);
       setProducts(prd || []);
       setWarehouses(wh || []);
       setProfiles(prf || []);
       setStock(stk || []);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  // Серверийн шүүлтийг query-д хэрэглэх (хайлт: бараа/агуулах/ажилтны нэр → id, + notes/reason)
+  const applyFilters = (q) => {
+    if (filterType !== "all") q = q.eq("movement_type", filterType);
+    if (filterWarehouse !== "all") q = q.eq("warehouse_id", filterWarehouse);
+    if (filterProduct !== "all") q = q.eq("product_id", filterProduct);
+    if (filterUser !== "all") q = q.eq("created_by", filterUser);
+    if (filterDateFrom) q = q.gte("created_at", new Date(filterDateFrom).toISOString());
+    if (filterDateTo) { const t = new Date(filterDateTo); t.setHours(23, 59, 59, 999); q = q.lte("created_at", t.toISOString()); }
+    const s = (debouncedSearch || "").trim().toLowerCase();
+    if (s) {
+      const like = s.replace(/[%,()]/g, "");
+      const pIds = products.filter((p) => p.name?.toLowerCase().includes(s) || p.sku?.toLowerCase().includes(s)).map((p) => p.id);
+      const wIds = warehouses.filter((w) => w.name?.toLowerCase().includes(s)).map((w) => w.id);
+      const uIds = profiles.filter((u) => u.name?.toLowerCase().includes(s)).map((u) => u.id);
+      const ors = [];
+      if (pIds.length) ors.push(`product_id.in.(${pIds.join(",")})`);
+      if (wIds.length) ors.push(`warehouse_id.in.(${wIds.join(",")})`);
+      if (uIds.length) ors.push(`created_by.in.(${uIds.join(",")})`);
+      ors.push(`notes.ilike.%${like}%`);
+      ors.push(`reason.ilike.%${like}%`);
+      q = q.or(ors.join(","));
+    }
+    return q;
+  };
+
+  // Хуудасны хөдөлгөөн + нийт тоо (server-side pagination)
+  const loadMovements = async () => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    try {
+      const offset = (page - 1) * PAGE_SIZE;
+      let mq = supabase.from("inv_movements")
+        .select("id, product_id, warehouse_id, to_warehouse_id, movement_type, quantity, reason, notes, created_at, created_by", { count: "exact" });
+      mq = applyFilters(mq);
+      mq = mq.order("created_at", { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+      const { data: mv, count } = await mq;
+      if (seq !== loadSeq.current) return;
+      setMovements(mv || []);
+      setTotalCount(count || 0);
+    } catch (e) { console.error(e); }
+    finally { if (seq === loadSeq.current) setLoading(false); }
+  };
+
+  // Дээд самбарын тоо — бүх ТААРАХ мөрөөр (хөнгөн: type+quantity). Зөвхөн шүүлт солиход.
+  const loadStats = async () => {
+    try {
+      let sq = supabase.from("inv_movements").select("movement_type, quantity");
+      sq = applyFilters(sq);
+      const rows = await fetchAllRows(sq);
+      const st = { in: 0, out: 0, transfer: 0, adjust: 0 };
+      (rows || []).forEach((m) => {
+        if (m.movement_type === "adjust") st.adjust += 1;
+        else if (st[m.movement_type] != null) st[m.movement_type] += Number(m.quantity || 0);
+      });
+      setStats(st);
+    } catch (e) { console.error("[movements stats]", e); }
+  };
+
+  useEffect(() => { loadRefs(); }, []);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [filterType, filterWarehouse, filterProduct, filterUser, filterDateFrom, filterDateTo, debouncedSearch]);
+  useEffect(() => { loadMovements(); }, [page, filterType, filterWarehouse, filterProduct, filterUser, filterDateFrom, filterDateTo, debouncedSearch]);
+  useEffect(() => { loadStats(); }, [filterType, filterWarehouse, filterProduct, filterUser, filterDateFrom, filterDateTo, debouncedSearch]);
 
   // Map утилит
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
@@ -9987,44 +10053,15 @@ function MovementsView({ profile }) {
   const profileMap = Object.fromEntries(profiles.map((p) => [p.id, p]));
 
   // Filtering
-  const filtered = movements.filter((m) => {
-    if (filterType !== "all" && m.movement_type !== filterType) return false;
-    if (filterWarehouse !== "all" && m.warehouse_id !== filterWarehouse) return false;
-    if (filterProduct !== "all" && m.product_id !== filterProduct) return false;
-    if (filterUser !== "all" && m.created_by !== filterUser) return false;
-    if (filterDateFrom) {
-      const d = new Date(m.created_at);
-      const f = new Date(filterDateFrom);
-      if (d < f) return false;
-    }
-    if (filterDateTo) {
-      const d = new Date(m.created_at);
-      const t = new Date(filterDateTo);
-      t.setHours(23, 59, 59);
-      if (d > t) return false;
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      const p = productMap[m.product_id];
-      const w = whMap[m.warehouse_id];
-      const u = profileMap[m.created_by];
-      const matches =
-        p?.name?.toLowerCase().includes(q) ||
-        p?.sku?.toLowerCase().includes(q) ||
-        w?.name?.toLowerCase().includes(q) ||
-        u?.name?.toLowerCase().includes(q) ||
-        m.notes?.toLowerCase().includes(q) ||
-        m.reason?.toLowerCase().includes(q);
-      if (!matches) return false;
-    }
-    return true;
-  });
+  // 🔧 Шүүлт/хайлт/хуудаслалт бүгд СЕРВЕР талд (loadMovements/applyFilters) тул дахин шүүхгүй.
+  const filtered = movements;
 
-  // Тооцоолол
-  const totalIn = filtered.filter((m) => m.movement_type === "in").reduce((s, m) => s + Number(m.quantity || 0), 0);
-  const totalOut = filtered.filter((m) => m.movement_type === "out").reduce((s, m) => s + Number(m.quantity || 0), 0);
-  const totalTransfer = filtered.filter((m) => m.movement_type === "transfer").reduce((s, m) => s + Number(m.quantity || 0), 0);
-  const totalAdjust = filtered.filter((m) => m.movement_type === "adjust").length;
+  // Тооцоолол — серверийн stats (бүх таарах мөрөөр)
+  const totalIn = stats.in;
+  const totalOut = stats.out;
+  const totalTransfer = stats.transfer;
+  const totalAdjust = stats.adjust;
+
 
   // Үлдэгдэл
   const totalStock = stock.reduce((s, x) => s + Number(x.quantity || 0), 0);
@@ -10057,10 +10094,16 @@ function MovementsView({ profile }) {
   };
 
   // Excel-руу экспортлох (CSV)
-  const exportCsv = () => {
+  const exportCsv = async () => {
+    // Бүх ТААРАХ мөрийг (хуудаслалтгүй) татаж экспортлоно
+    let eq = supabase.from("inv_movements")
+      .select("product_id, warehouse_id, movement_type, quantity, reason, notes, created_at, created_by")
+      .order("created_at", { ascending: false });
+    eq = applyFilters(eq);
+    const allRows = await fetchAllRows(eq);
     const rows = [
       ["Огноо", "Төрөл", "Бараа", "SKU", "Агуулах", "Тоо", "Шалтгаан", "Тэмдэглэл", "Бичсэн ажилтан"],
-      ...filtered.map((m) => {
+      ...(allRows || []).map((m) => {
         const p = productMap[m.product_id];
         const w = whMap[m.warehouse_id];
         const u = profileMap[m.created_by];
@@ -10241,7 +10284,8 @@ function MovementsView({ profile }) {
       {/* Жагсаалт */}
       <div>
         <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-          Хөдөлгөөний түүх ({filtered.length}/{movements.length})
+          Хөдөлгөөний түүх ({totalCount.toLocaleString()})
+          {totalCount > PAGE_SIZE && <> · {Math.min(page, Math.max(1, Math.ceil(totalCount / PAGE_SIZE)))}/{Math.max(1, Math.ceil(totalCount / PAGE_SIZE))} хуудас</>}
         </div>
 
         {filtered.length === 0 ? (
@@ -10253,7 +10297,7 @@ function MovementsView({ profile }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {filtered.slice(0, 500).map((m) => {
+            {filtered.map((m) => {
               const p = productMap[m.product_id];
               const w = whMap[m.warehouse_id];
               const wTo = whMap[m.to_warehouse_id];
@@ -10377,13 +10421,22 @@ function MovementsView({ profile }) {
                 </div>
               );
             })}
-            {filtered.length > 500 && (
-              <div className="glass rounded-xl p-3 text-center">
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                  Эхний 500 мөр харуулсан. Илүү тодорхой шүүлтүүр хэрэглэнэ үү.
+            {(() => {
+              const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+              const safePage = Math.min(page, totalPages);
+              if (totalPages <= 1) return null;
+              return (
+                <div className="glass rounded-xl p-3 flex items-center justify-center gap-2">
+                  <button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1}
+                    style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: safePage === 1 ? 0.5 : 1 }}
+                    className="press-btn px-3 py-1.5 rounded-lg text-xs">← Өмнөх</button>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">{safePage}/{totalPages}</span>
+                  <button onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages}
+                    style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: safePage === totalPages ? 0.5 : 1 }}
+                    className="press-btn px-3 py-1.5 rounded-lg text-xs">Дараах →</button>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
       </div>
