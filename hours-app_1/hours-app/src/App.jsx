@@ -5277,7 +5277,7 @@ async function applyCancellation(orderId, { reasons = [], note = "", byId = null
     try {
       const { data: driverWh } = await supabase.from("inv_warehouses").select("id").eq("driver_id", cur.driver_id).maybeSingle();
       const { data: ordItems } = await supabase.from("biz_order_items").select("product_id, quantity, product_name").eq("order_id", orderId);
-      const { data: existingReturns } = await supabase.from("inv_movements").select("product_id").eq("reason", "return").ilike("notes", `%${orderId.slice(0, 8)}%`);
+      const { data: existingReturns } = await supabase.from("inv_movements").select("product_id").in("reason", ["return", "order_cancelled"]).ilike("notes", `%${orderId.slice(0, 8)}%`);
       const returnedSet = new Set((existingReturns || []).map((r) => r.product_id));
       if (driverWh && ordItems && ordItems.length > 0) {
         const moves = ordItems
@@ -18717,13 +18717,22 @@ function DriverSettlementView({ profile }) {
                         }
                         // Хувилбар B: was delivered → now cancelled — БҮХ items driver-руу буцаах
                         else if (originalStatus === "delivered" && newStatus === "cancelled") {
-                          for (const it of (existingItems || []).filter((x) => x.product_id)) {
-                            movements.push({
-                              product_id: it.product_id, warehouse_id: driverWh.id,
-                              movement_type: "in", quantity: Number(it.quantity || 0),
-                              reason: "order_cancelled", created_by: profile.id,
-                              notes: `Захиалга #${orderId.slice(0,8)} цуцлагдсан: ${it.product_name}`,
-                            });
+                          // 🛡 Давхар буцаалтаас сэргийлэх — энэ захиалгад буцаалт аль хэдийн байгаа эсэх
+                          const { data: priorReturns } = await supabase.from("inv_movements")
+                            .select("id")
+                            .eq("movement_type", "in")
+                            .in("reason", ["order_cancelled", "return"])
+                            .ilike("notes", `%${orderId.slice(0, 8)}%`)
+                            .limit(1);
+                          if (!priorReturns || priorReturns.length === 0) {
+                            for (const it of (existingItems || []).filter((x) => x.product_id)) {
+                              movements.push({
+                                product_id: it.product_id, warehouse_id: driverWh.id,
+                                movement_type: "in", quantity: Number(it.quantity || 0),
+                                reason: "order_cancelled", created_by: profile.id,
+                                notes: `Захиалга #${orderId.slice(0,8)} цуцлагдсан: ${it.product_name}`,
+                              });
+                            }
                           }
                         }
                         // Хувилбар C: was cancelled/new → now delivered — items driver-ээс хасах
