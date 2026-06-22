@@ -24931,8 +24931,15 @@ function OrdersView({ profile }) {
                       onClick={async () => {
                         try {
                           await supabase.from("biz_orders").update({ driver_id: null }).eq("id", assignDriverOrder.id);
+                          const oid = assignDriverOrder.id;
                           setAssignDriverOrder(null);
-                          await loadAll();
+                          // ⚡ Optimistic — бүтэн reload-гүй
+                          lastLoadTime.current = Date.now();
+                          const leavesTab = filter === "assigned";
+                          setOrders((prev) => leavesTab
+                            ? prev.filter((o) => o.id !== oid)
+                            : prev.map((o) => (o.id === oid ? { ...o, driver_id: null } : o)));
+                          setTabCounts((c) => ({ ...c, assigned: Math.max(0, (Number(c.assigned) || 0) - 1), new: (Number(c.new) || 0) + 1 }));
                         } catch (e) { alert("Алдаа: " + e.message); }
                       }}
                       className="press-btn w-full p-3 rounded-xl flex items-center gap-2"
@@ -24954,9 +24961,24 @@ function OrdersView({ profile }) {
                               status: "pending",
                               assigned_at: new Date().toISOString(),
                               assigned_by: profile.id,
+                              is_unknown: false,
                             }).eq("id", assignDriverOrder.id);
+                            const oid = assignDriverOrder.id;
+                            const wasUnknown = !!assignDriverOrder.is_unknown;
                             setAssignDriverOrder(null);
-                            await loadAll();
+                            // ⚡ Бүтэн reload-гүйгээр зөвхөн тухайн захиалгыг шинэчилнэ —
+                            //    жагсаалт эхнээс ачаалагдахгүй, үргэлжлүүлэн хуваарилна.
+                            lastLoadTime.current = Date.now();
+                            const leavesTab = filter === "new" || filter === "unknown";
+                            setOrders((prev) => leavesTab
+                              ? prev.filter((o) => o.id !== oid)
+                              : prev.map((o) => (o.id === oid ? { ...o, driver_id: d.id, status: "pending", is_unknown: false } : o)));
+                            setTabCounts((c) => ({
+                              ...c,
+                              new: !wasUnknown ? Math.max(0, (Number(c.new) || 0) - 1) : c.new,
+                              unknown: wasUnknown ? Math.max(0, (Number(c.unknown) || 0) - 1) : c.unknown,
+                              assigned: (Number(c.assigned) || 0) + 1,
+                            }));
                           } catch (e) { alert("Алдаа: " + e.message); }
                         }}
                         className="press-btn w-full p-3 rounded-xl flex items-center gap-3"
