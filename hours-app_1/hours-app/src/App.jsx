@@ -24389,6 +24389,15 @@ function OrdersView({ profile }) {
                               }).eq("id", assignDriverOrder.id);
                               const oid = assignDriverOrder.id;
                               const wasUnknown = !!assignDriverOrder.is_unknown;
+                              // 🔔 Жолоочид мэдэгдэл — "хүргэлт хуваарилагдлаа"
+                              try {
+                                await supabase.from("notifications").insert({
+                                  user_id: d.id,
+                                  title: "🚚 Шинэ хүргэлт хуваарилагдлаа",
+                                  body: `${assignDriverOrder.order_number ? "#" + assignDriverOrder.order_number + " · " : ""}${assignDriverOrder.customer_name || assignDriverOrder.customer_phone || "Захиалга"}${assignDriverOrder.delivery_address ? " — " + assignDriverOrder.delivery_address : ""}`,
+                                  link: "orders",
+                                });
+                              } catch (notifErr) { console.error("[notify driver]", notifErr); }
                               setAssignDriverOrder(null);
                               // ⚡ Бүтэн reload-гүйгээр зөвхөн тухайн захиалгыг шинэчилнэ —
                               //    жагсаалт эхнээс ачаалагдахгүй, үргэлжлүүлэн хуваарилах боломжтой.
@@ -24965,6 +24974,15 @@ function OrdersView({ profile }) {
                             }).eq("id", assignDriverOrder.id);
                             const oid = assignDriverOrder.id;
                             const wasUnknown = !!assignDriverOrder.is_unknown;
+                            // 🔔 Жолоочид мэдэгдэл — "хүргэлт хуваарилагдлаа"
+                            try {
+                              await supabase.from("notifications").insert({
+                                user_id: d.id,
+                                title: "🚚 Шинэ хүргэлт хуваарилагдлаа",
+                                body: `${assignDriverOrder.order_number ? "#" + assignDriverOrder.order_number + " · " : ""}${assignDriverOrder.customer_name || assignDriverOrder.customer_phone || "Захиалга"}${assignDriverOrder.delivery_address ? " — " + assignDriverOrder.delivery_address : ""}`,
+                                link: "orders",
+                              });
+                            } catch (notifErr) { console.error("[notify driver]", notifErr); }
                             setAssignDriverOrder(null);
                             // ⚡ Бүтэн reload-гүйгээр зөвхөн тухайн захиалгыг шинэчилнэ —
                             //    жагсаалт эхнээс ачаалагдахгүй, үргэлжлүүлэн хуваарилна.
