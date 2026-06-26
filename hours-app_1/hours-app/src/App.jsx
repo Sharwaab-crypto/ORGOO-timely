@@ -202,14 +202,17 @@ async function fetchAllRows(queryBuilder) {
   const PAGE = 1000;
   let all = [];
   let from = 0;
+  // ⚠️ Тогтвортой дараалалгүй (.order) range() хуудаслалт нь мөр алдагдуулж/давхардуулдаг.
+  //    Тиймээс PK-аар эрэмбэлж бүх мөрийг найдвартай авна.
+  const qb = queryBuilder.order("id", { ascending: true });
   while (true) {
-    const { data, error } = await queryBuilder.range(from, from + PAGE - 1);
+    const { data, error } = await qb.range(from, from + PAGE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all = all.concat(data);
     if (data.length < PAGE) break;
     from += PAGE;
-    if (from > 50000) break; // safety: 50K row хүртэл
+    if (from > 100000) break; // safety: 100K row хүртэл
   }
   return all;
 }
