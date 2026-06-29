@@ -13302,6 +13302,7 @@ function CallCenterView({ profile }) {
 
   // Status popup
   const [statusPopupCall, setStatusPopupCall] = useState(null);
+  const [statusComment, setStatusComment] = useState("");
   const [callLocks, setCallLocks] = useState([]);
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
@@ -13329,6 +13330,9 @@ function CallCenterView({ profile }) {
     const interval = setInterval(loadLocks, 10000); // 10 sec бүр
     return () => clearInterval(interval);
   }, []);
+
+  // Popup нээгдэх/хаагдах бүрд тэмдэглэлийг цэвэрлэнэ
+  useEffect(() => { setStatusComment(""); }, [statusPopupCall]);
 
   const handleStatusSelect = async (status, statusLabel) => {
     if (!statusPopupCall) return;
@@ -13371,7 +13375,7 @@ function CallCenterView({ profile }) {
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
-        notes: `[${statusLabel}]`,
+        notes: `[${statusLabel}]${statusComment.trim() ? " " + statusComment.trim() : ""}`,
         call_status: status,
         fb_page_id: stPage, // 🔗 Resolved page
         created_by: profile.id,
@@ -13379,6 +13383,7 @@ function CallCenterView({ profile }) {
       });
       await releaseLock(statusPopupCall.phone);
       setStatusPopupCall(null);
+      setStatusComment("");
       await loadAll();
     } catch (e) { alert("Алдаа: " + e.message); }
   };
@@ -15181,6 +15186,11 @@ function CallCenterView({ profile }) {
             <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
               Шалтгааныг сонгоно уу:
             </div>
+
+            <textarea value={statusComment} onChange={(e) => setStatusComment(e.target.value)}
+              placeholder="Тэмдэглэл (заавал биш)..." rows={2}
+              style={{ background: T.surfaceAlt || T.bg, color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}
+              className="w-full rounded-xl p-2.5 text-sm mb-3 resize-none outline-none" />
 
             <div className="space-y-2">
               <button onClick={() => handleStatusSelect("no_answer", "Дуудаад авахгүй")}
