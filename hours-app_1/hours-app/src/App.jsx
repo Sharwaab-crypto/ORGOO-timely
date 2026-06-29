@@ -14502,8 +14502,17 @@ function CallCenterView({ profile }) {
                               status = { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft };
                             }
 
-                            // Тэмдэглэл (статусын шошго биш, жинхэнэ notes)
-                            const noteText = cleanNotes && !cleanNotes.startsWith("[") ? cleanNotes : null;
+                            // Тэмдэглэл: "[Шалтгаан] комментын текст" хэлбэрээс комментыг гаргана.
+                            //   Бракетгүй бол бүтнээр; зөвхөн "[Шалтгаан]" (комментгүй) бол хоосон.
+                            let noteText = null;
+                            if (cleanNotes) {
+                              if (cleanNotes.startsWith("[")) {
+                                const after = cleanNotes.replace(/^\[[^\]]*\]\s*/, "").trim();
+                                noteText = after || null;
+                              } else {
+                                noteText = cleanNotes;
+                              }
+                            }
 
                             return (
                               <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
