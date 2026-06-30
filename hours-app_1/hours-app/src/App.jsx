@@ -239,6 +239,7 @@ async function fetchInChunks(table, ids, options = {}) {
         .from(table)
         .select(select)
         .in(filterColumn, chunk)
+        .order("id", { ascending: true }) // ⚠️ тогтвортой дараалалгүй бол range() мөр алдагдуулдаг
         .range(from, from + PAGE - 1);
       if (error) {
         console.error(`[fetchInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
@@ -13388,6 +13389,43 @@ function CallCenterView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // Статус popup-аас дугаар ЦУЦЛАХ (тэмдэглэлтэй) — modal-ийн цуцлах логиктой ижил
+  const handleCancelFromPopup = async () => {
+    if (!statusPopupCall) return;
+    if (!statusComment.trim()) {
+      alert("⚠ Цуцлахын тулд тэмдэглэл (шалтгаан) заавал бичнэ үү.");
+      return;
+    }
+    try {
+      let cnPage = activeFbPageId || statusPopupCall.fbPageId || null;
+      if (!cnPage) {
+        const { data: prevCall } = await supabase
+          .from("biz_calls").select("fb_page_id")
+          .eq("phone", statusPopupCall.phone).not("fb_page_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (prevCall) cnPage = prevCall.fb_page_id;
+      }
+      await supabase.from("biz_calls").insert({
+        phone: statusPopupCall.phone,
+        customer_id: statusPopupCall.customerId || null,
+        notes: `[ЦУЦАЛСАН] ${statusComment.trim()}`,
+        call_status: "cancelled",
+        fb_page_id: cnPage,
+        created_by: profile.id,
+        created_at: new Date().toISOString(),
+      });
+      // Тэр утсаар бүх pending/no_answer/unreachable/callback-г cancelled болгох
+      await supabase.from("biz_calls")
+        .update({ call_status: "cancelled" })
+        .eq("phone", statusPopupCall.phone)
+        .or("call_status.is.null,call_status.in.(no_answer,unreachable,callback)");
+      await releaseLock(statusPopupCall.phone);
+      setStatusPopupCall(null);
+      setStatusComment("");
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
   // Дуудлага устгах
   const handleDeleteCall = async (callId) => {
     if (!confirm("Энэ дуудлагын бүртгэлийг устгах уу?")) return;
@@ -15221,6 +15259,13 @@ function CallCenterView({ profile }) {
                 style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
                 <span className="text-lg">🔔</span>
                 <span>Эргэн холбогдох</span>
+              </button>
+
+              <button onClick={handleCancelFromPopup}
+                className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
+                style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 700 }}>
+                <span className="text-lg">✕</span>
+                <span>Цуцлах (тэмдэглэл заавал)</span>
               </button>
             </div>
           </div>
