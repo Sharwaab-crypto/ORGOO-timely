@@ -15605,8 +15605,9 @@ function MarketingView({ profile }) {
   };
   const markDone = async (mp) => {
     const note = prompt("Хийсэн тэмдэглэл (заавал биш):", "") ?? "";
+    const curStock = Number(prodById[mp.product_id]?.stock || 0);
     try {
-      const { data } = await supabase.from("mkt_products").update({ status: "done", note: note.trim(), done_at: new Date().toISOString() }).eq("id", mp.id).select().single();
+      const { data } = await supabase.from("mkt_products").update({ status: "done", note: note.trim(), done_at: new Date().toISOString(), stock_at_done: curStock }).eq("id", mp.id).select().single();
       if (data) setMktProducts((prev) => prev.map((x) => (x.id === mp.id ? data : x)));
     } catch (e) { alert("Алдаа: " + e.message); }
   };
@@ -15777,7 +15778,10 @@ function MarketingView({ profile }) {
                           <div key={mp.id} className="rounded-lg px-2 py-1.5" style={{ background: T.okSoft || "#DCFCE7", border: `1px solid ${T.ok}` }}>
                             <div className="flex items-center justify-between gap-1">
                               <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px] truncate">✓ {p?.name || "—"}</span>
-                              <div className="flex items-center gap-1 shrink-0">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {mp.stock_at_done != null && (
+                                  <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Хийх үед байсан үлдэгдэл">📦 {Number(mp.stock_at_done).toLocaleString()}</span>
+                                )}
                                 <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{mp.done_at ? new Date(mp.done_at).toLocaleDateString() : ""}</span>
                                 {canEdit && <button onClick={() => revertDone(mp)} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">↩</button>}
                                 {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.err, fontFamily: FS }} className="text-[10px]">✕</button>}
