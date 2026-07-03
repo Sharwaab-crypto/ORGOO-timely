@@ -15531,6 +15531,8 @@ function MarketingView({ profile }) {
   const [targets, setTargets] = useState([]); // mkt_reach_targets
   const [targetMonth, setTargetMonth] = useState(todayStr.slice(0, 7)); // YYYY-MM
   const [targetInput, setTargetInput] = useState("");
+  const [donePage, setDonePage] = useState(1);
+  const DONE_PAGE_SIZE = 50;
   const [savingTarget, setSavingTarget] = useState(false);
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
@@ -15702,6 +15704,8 @@ function MarketingView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setSavingTarget(false); }
   };
+
+  useEffect(() => { setDonePage(1); }, [doneFilterEmp, fromDate, toDate]);
 
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
 
@@ -16020,9 +16024,14 @@ function MarketingView({ profile }) {
             .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp) && mp.done_at && mp.done_at.slice(0, 10) >= fromDate && mp.done_at.slice(0, 10) <= toDate)
             .sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0));
           if (doneList.length === 0) return <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хийгдсэн бараа алга.</div>;
+          const totalPages = Math.max(1, Math.ceil(doneList.length / DONE_PAGE_SIZE));
+          const safePage = Math.min(donePage, totalPages);
+          const pageItems = doneList.slice((safePage - 1) * DONE_PAGE_SIZE, safePage * DONE_PAGE_SIZE);
           return (
-            <div className="space-y-1">
-              {doneList.map((mp) => {
+            <>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2">Нийт {doneList.length.toLocaleString()}{totalPages > 1 ? ` · ${safePage}/${totalPages} хуудас` : ""}</div>
+              <div className="space-y-1">
+              {pageItems.map((mp) => {
                 const p = prodById[mp.product_id];
                 return (
                   <div key={mp.id} className="rounded-lg px-2.5 py-1.5" style={{ background: T.okSoft || "#DCFCE7", border: `1px solid ${T.ok}` }}>
@@ -16046,6 +16055,14 @@ function MarketingView({ profile }) {
                 );
               })}
             </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <button onClick={() => setDonePage(Math.max(1, safePage - 1))} disabled={safePage === 1} style={{ background: T.surfaceAlt || "#F8FAFC", color: T.ink, fontFamily: FS, opacity: safePage === 1 ? 0.5 : 1 }} className="press-btn px-3 py-1.5 rounded-lg text-xs">← Өмнөх</button>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">{safePage}/{totalPages}</span>
+                  <button onClick={() => setDonePage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} style={{ background: T.surfaceAlt || "#F8FAFC", color: T.ink, fontFamily: FS, opacity: safePage === totalPages ? 0.5 : 1 }} className="press-btn px-3 py-1.5 rounded-lg text-xs">Дараах →</button>
+                </div>
+              )}
+            </>
           );
         })()}
       </div>
@@ -24690,6 +24707,35 @@ function OrdersView({ profile }) {
   // Filter/хайлт өөрчлөгдөх үед хуудсыг 1-д буцаах
   useEffect(() => { setPage(1); }, [filter, driverFilter, debouncedSearch, showArchived]);
 
+  // 🚚 Сонгосон жолоочийн хураангуй — БҮХ төлөвөөр (тусдаа count query, хуудаслалтаас хамааралгүй)
+  const [driverSummary, setDriverSummary] = useState({ delivered: 0, cancelled: 0, pending: 0, revenue: 0 });
+  useEffect(() => {
+    if (driverFilter === "all" || driverFilter === "none" || driverFilter === "unassigned") {
+      setDriverSummary({ delivered: 0, cancelled: 0, pending: 0, revenue: 0 });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const cnt = (status) => {
+          let q = supabase.from("biz_orders").select("*", { count: "exact", head: true }).eq("driver_id", driverFilter);
+          if (!showArchived) q = q.or("is_archived.is.null,is_archived.eq.false");
+          q = Array.isArray(status) ? q.in("status", status) : q.eq("status", status);
+          return q;
+        };
+        let rq = supabase.from("biz_orders").select("total_amount").eq("driver_id", driverFilter).eq("status", "delivered");
+        if (!showArchived) rq = rq.or("is_archived.is.null,is_archived.eq.false");
+        const [del, can, pen, revRows] = await Promise.all([
+          cnt("delivered"), cnt("cancelled"), cnt(["new", "pending", "assigned"]), fetchAllRows(rq),
+        ]);
+        if (cancelled) return;
+        const revenue = (revRows || []).reduce((s, o) => s + Number(o.total_amount || 0), 0);
+        setDriverSummary({ delivered: del.count || 0, cancelled: can.count || 0, pending: pen.count || 0, revenue });
+      } catch (e) { console.error("[driver summary]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [driverFilter, showArchived]);
+
   const loadAll = async () => {
     const seq = ++loadSeq.current;
     setLoading(true);
@@ -25280,11 +25326,10 @@ function OrdersView({ profile }) {
         {driverFilter !== "all" && driverFilter !== "unassigned" && (() => {
           const d = drivers.find((x) => x.id === driverFilter);
           if (!d) return null;
-          const dOrders = orders.filter((o) => o.driver_id === driverFilter);
-          const delivered = dOrders.filter((o) => o.status === "delivered").length;
-          const cancelled = dOrders.filter((o) => o.status === "cancelled").length;
-          const pending = dOrders.filter((o) => o.status === "new" || o.status === "pending" || o.status === "assigned").length;
-          const revenue = dOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + Number(o.total_amount || 0), 0);
+          const delivered = driverSummary.delivered;
+          const cancelled = driverSummary.cancelled;
+          const pending = driverSummary.pending;
+          const revenue = driverSummary.revenue;
           return (
             <div style={{ background: "rgba(14,165,233,0.05)", border: "1px solid rgba(14,165,233,0.2)" }}
               className="rounded-xl p-3 mt-2">
