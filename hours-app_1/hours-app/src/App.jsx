@@ -39580,7 +39580,7 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
 
                   // 📊 Computed trends — 7 хоног vs өмнөх 7 хоног + Сар vs өмнөх сар
                   // Anchor date нь сонгосон period-ийн төгсгөл (өнөөдөр/өчигдөр/сонгосон огноо)
-                  const fmtDate = (d) => d.toISOString().slice(0, 10);
+                  const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
                   const anchorDate = new Date(periodRange.end);
 
                   // Helper: тухайн KPI-н нийт дүн (date range дотор)
@@ -40543,7 +40543,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
   //   "week"  → сүүлийн 5 долоо хоног (anchor-аас 7-7 хоногоор)
   //   "month" → сүүлийн 5 сар
   // ─────────────────────────────────────────────────────────────────────────
-  const fmtDate = (d) => d.toISOString().slice(0, 10);
+  const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const chartData = useMemo(() => {
     // 🎯 Динамик зорилттой KPI-уудын ЭХ KPI-ийн үе бүрийн утгыг бүх хэлтсийн allEntries-ээс тооцно
