@@ -2423,6 +2423,12 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
 
+            {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") && (
+              <SidebarSection label="Маркетинг" icon={TrendingUp}>
+                <SidebarTab active={view === "marketing"} onClick={() => { setView("marketing"); setSidebarOpen(false); }} icon={BarChart3}>📣 Маркетинг</SidebarTab>
+              </SidebarSection>
+            )}
+
             <SidebarSection label="Delivery" icon={Truck}>
               {!isMarketing && (
                 <SidebarTab active={view === "delivery-dashboard"} onClick={() => { setView("delivery-dashboard"); setSidebarOpen(false); }} icon={BarChart3}>🚚 Хүргэлтийн самбар</SidebarTab>
@@ -2549,6 +2555,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
+                {view === "marketing" && "Маркетинг"}
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
@@ -2830,6 +2837,10 @@ function AdminDashboard({ profile }) {
 
         {view === "operator-kpi" && (
           <OperatorKPIReportView profile={profile} />
+        )}
+
+        {view === "marketing" && (
+          <MarketingView profile={profile} />
         )}
 
         {view === "sales" && (
@@ -15483,6 +15494,208 @@ function CallCenterView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  OPERATOR KPI REPORT — Admin/Manager-д харагдах ажилтны KPI тайлан
 // ═══════════════════════════════════════════════════════════════════════════
+function MarketingView({ profile }) {
+  const [employees, setEmployees] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [empCats, setEmpCats] = useState([]);
+  const [reach, setReach] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [catPickerEmp, setCatPickerEmp] = useState(null);
+  const [expandedEmp, setExpandedEmp] = useState(null);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [reachEmp, setReachEmp] = useState("");
+  const [reachDate, setReachDate] = useState(todayStr);
+  const [reachVal, setReachVal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [emps, cats, prods, ec, rc] = await Promise.all([
+        supabase.from("profiles").select("id, name, role, job_title").eq("role", "marketing").order("name"),
+        supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
+        supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
+        supabase.from("mkt_employee_categories").select("*"),
+        supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(500),
+      ]);
+      setEmployees(emps.data || []);
+      setCategories(cats.data || []);
+      setProducts(prods.data || []);
+      setEmpCats(ec.data || []);
+      setReach(rc.data || []);
+    } catch (e) { console.error("[marketing]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { loadAll(); }, []);
+
+  const catById = useMemo(() => { const m = {}; categories.forEach((c) => (m[c.id] = c)); return m; }, [categories]);
+  const empById = useMemo(() => { const m = {}; employees.forEach((e) => (m[e.id] = e)); return m; }, [employees]);
+  const prodsByCat = useMemo(() => {
+    const m = {};
+    products.forEach((p) => { if (!m[p.category_id]) m[p.category_id] = []; m[p.category_id].push(p); });
+    return m;
+  }, [products]);
+  const catsByEmp = useMemo(() => {
+    const m = {};
+    empCats.forEach((ec) => { if (!m[ec.employee_id]) m[ec.employee_id] = []; m[ec.employee_id].push(ec.category_id); });
+    return m;
+  }, [empCats]);
+
+  const catStock = (categoryId) => (prodsByCat[categoryId] || []).reduce((s, p) => s + Number(p.stock || 0), 0);
+
+  const toggleCat = async (employeeId, categoryId) => {
+    const existing = empCats.find((ec) => ec.employee_id === employeeId && ec.category_id === categoryId);
+    try {
+      if (existing) {
+        await supabase.from("mkt_employee_categories").delete().eq("id", existing.id);
+        setEmpCats((prev) => prev.filter((ec) => ec.id !== existing.id));
+      } else {
+        const { data } = await supabase.from("mkt_employee_categories").insert({ employee_id: employeeId, category_id: categoryId }).select().single();
+        if (data) setEmpCats((prev) => [...prev, data]);
+      }
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const saveReach = async () => {
+    if (!reachEmp) { alert("Ажилтан сонгоно уу"); return; }
+    if (reachVal === "" || isNaN(Number(reachVal))) { alert("Хандалтын тоо оруулна уу"); return; }
+    setSaving(true);
+    try {
+      const existing = reach.find((r) => r.employee_id === reachEmp && r.reach_date === reachDate);
+      if (existing) {
+        await supabase.from("mkt_reach").update({ reach: Number(reachVal), created_by: profile.id }).eq("id", existing.id);
+      } else {
+        await supabase.from("mkt_reach").insert({ employee_id: reachEmp, reach_date: reachDate, reach: Number(reachVal), created_by: profile.id });
+      }
+      setReachVal("");
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteReach = async (id) => {
+    if (!confirm("Устгах уу?")) return;
+    try { await supabase.from("mkt_reach").delete().eq("id", id); setReach((prev) => prev.filter((r) => r.id !== id)); }
+    catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">📦</span>
+          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажилтны ажиллаж буй бараа</span>
+        </div>
+        {employees.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Маркетингийн ажилтан алга.</div>}
+        <div className="space-y-3">
+          {employees.map((emp) => {
+            const empCatIds = catsByEmp[emp.id] || [];
+            const empProducts = empCatIds.flatMap((cid) => prodsByCat[cid] || []);
+            const totalStock = empProducts.reduce((s, p) => s + Number(p.stock || 0), 0);
+            const expanded = expandedEmp === emp.id;
+            return (
+              <div key={emp.id} className="rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">{emp.name}</span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{empCatIds.length} ангилал · {empProducts.length} бараа · нөөц {totalStock.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {canEdit && <button onClick={() => setCatPickerEmp(catPickerEmp === emp.id ? null : emp.id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>Ангилал сонгох</button>}
+                    <button onClick={() => setExpandedEmp(expanded ? null : emp.id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>{expanded ? "Хаах" : "Бараа харах"}</button>
+                  </div>
+                </div>
+                {catPickerEmp === emp.id && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {categories.map((c) => {
+                      const on = empCatIds.includes(c.id);
+                      return (
+                        <button key={c.id} onClick={() => toggleCat(emp.id, c.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]"
+                          style={{ background: on ? T.ok : (T.surface || "#fff"), color: on ? "white" : T.muted, fontFamily: FS, border: `1px solid ${on ? T.ok : (T.border || "#E5E7EB")}` }}>
+                          {on ? "✓ " : ""}{c.name} ({catStock(c.id).toLocaleString()})
+                        </button>
+                      );
+                    })}
+                    {categories.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ангилал алга.</span>}
+                  </div>
+                )}
+                {expanded && (
+                  <div className="mt-2 space-y-2">
+                    {empCatIds.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ангилал сонгоогүй байна.</div>}
+                    {empCatIds.map((cid) => (
+                      <div key={cid}>
+                        <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-[11px] mb-1">{catById[cid]?.name || "—"} · нөөц {catStock(cid).toLocaleString()}</div>
+                        <div className="grid grid-cols-2 gap-1">
+                          {(prodsByCat[cid] || []).map((p) => (
+                            <div key={p.id} className="flex items-center justify-between rounded-lg px-2 py-1" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                              <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate mr-1">{p.name}</span>
+                              <span style={{ color: Number(p.stock) > 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 700 }} className="text-[11px]">{Number(p.stock || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+                          {(prodsByCat[cid] || []).length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Бараагүй</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">📈</span>
+          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Өдрийн хандалт (гар оруулга)</span>
+        </div>
+        {canEdit && (
+          <div className="flex flex-wrap items-end gap-2 mb-3">
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Ажилтан</div>
+              <select value={reachEmp} onChange={(e) => setReachEmp(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                <option value="">— сонгох —</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
+              <input type="date" value={reachDate} onChange={(e) => setReachDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            </div>
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Хандалт</div>
+              <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-28 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            </div>
+            <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
+          </div>
+        )}
+        <div className="space-y-1">
+          <div className="grid grid-cols-4 gap-2 px-2 py-1">
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">Огноо</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">Ажилтан</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase text-right">Хандалт</span>
+            <span></span>
+          </div>
+          {reach.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Бүртгэл алга.</div>}
+          {reach.map((r) => (
+            <div key={r.id} className="grid grid-cols-4 gap-2 items-center rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+              <span style={{ color: T.ink, fontFamily: FM }} className="text-[11px]">{r.reach_date}</span>
+              <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{empById[r.employee_id]?.name || "—"}</span>
+              <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-[11px] text-right">{Number(r.reach || 0).toLocaleString()}</span>
+              <span className="text-right">{canEdit && <button onClick={() => deleteReach(r.id)} style={{ color: T.err, fontFamily: FS }} className="text-[11px]">Устгах</button>}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OperatorKPIReportView({ profile }) {
   const [calls, setCalls] = useState([]);
   const [orders, setOrders] = useState([]);
