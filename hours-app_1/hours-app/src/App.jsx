@@ -15528,6 +15528,10 @@ function MarketingView({ profile }) {
     else if (preset === "all") { setFromDate("2020-01-01"); setToDate("2099-12-31"); }
   };
   const [doneFilterEmp, setDoneFilterEmp] = useState("");
+  const [targets, setTargets] = useState([]); // mkt_reach_targets
+  const [targetMonth, setTargetMonth] = useState(todayStr.slice(0, 7)); // YYYY-MM
+  const [targetInput, setTargetInput] = useState("");
+  const [savingTarget, setSavingTarget] = useState(false);
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
   const PIE_COLORS = ["#0F766E", "#F59E0B", "#3B82F6", "#8B5CF6", "#EF4444", "#10B981", "#EC4899", "#F97316", "#14B8A6", "#6366F1", "#84CC16", "#06B6D4"];
@@ -15535,7 +15539,7 @@ function MarketingView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [profs, cats, prods, ec, mem, mp, rc] = await Promise.all([
+      const [profs, cats, prods, ec, mem, mp, rc, tg] = await Promise.all([
         supabase.from("profiles").select("id, name, role, job_title, is_active").order("name"),
         supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
         supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
@@ -15543,6 +15547,7 @@ function MarketingView({ profile }) {
         supabase.from("mkt_members").select("*"),
         supabase.from("mkt_products").select("*").order("created_at", { ascending: false }),
         supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(1000),
+        supabase.from("mkt_reach_targets").select("*"),
       ]);
       setAllProfiles(profs.data || []);
       setCategories(cats.data || []);
@@ -15551,6 +15556,7 @@ function MarketingView({ profile }) {
       setMembers(mem.data || []);
       setMktProducts(mp.data || []);
       setReach(rc.data || []);
+      setTargets(tg.data || []);
     } catch (e) { console.error("[marketing]", e); }
     finally { setLoading(false); }
   };
@@ -15671,6 +15677,31 @@ function MarketingView({ profile }) {
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
   const availableToAdd = allProfiles.filter((p) => p.is_active !== false && !memberIds.has(p.id) && (!addEmpSearch.trim() || p.name?.toLowerCase().includes(addEmpSearch.toLowerCase())));
+
+  // 🎯 Сарын хандалтын зорилго
+  const monthReach = useMemo(() => reach.filter((r) => (r.reach_date || "").slice(0, 7) === targetMonth).reduce((s, r) => s + Number(r.reach || 0), 0), [reach, targetMonth]);
+  const monthTarget = Number(targets.find((t) => t.month === targetMonth)?.target || 0);
+  const targetPct = monthTarget > 0 ? (monthReach / monthTarget) * 100 : 0;
+  const targetColor = targetPct >= 100 ? "#10B981" : targetPct >= 50 ? "#F59E0B" : "#EF4444";
+  const gaugeData = [
+    { name: "Биелсэн", value: Math.max(0, Math.min(monthReach, monthTarget || monthReach || 1)) },
+    { name: "Үлдсэн", value: Math.max(0, (monthTarget || monthReach || 1) - monthReach) },
+  ];
+  const saveTarget = async () => {
+    if (targetInput === "" || isNaN(Number(targetInput))) { alert("Зорилгын тоо оруулна уу"); return; }
+    setSavingTarget(true);
+    try {
+      const existing = targets.find((t) => t.month === targetMonth);
+      if (existing) {
+        await supabase.from("mkt_reach_targets").update({ target: Number(targetInput), updated_at: new Date().toISOString() }).eq("id", existing.id);
+      } else {
+        await supabase.from("mkt_reach_targets").insert({ month: targetMonth, target: Number(targetInput), created_by: profile.id });
+      }
+      setTargetInput("");
+      await loadAll();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setSavingTarget(false); }
+  };
 
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
 
@@ -15820,6 +15851,62 @@ function MarketingView({ profile }) {
           <span style={{ color: T.muted }} className="text-[11px]">→</span>
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
         </div>
+      </div>
+
+      {/* ====== Сарын хандалтын зорилго (gauge) ====== */}
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🎯</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Сарын хандалтын зорилго</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="month" value={targetMonth} onChange={(e) => setTargetMonth(e.target.value)} className="rounded-lg px-2 py-1.5 text-xs outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            {canEdit && (
+              <>
+                <input type="number" value={targetInput} onChange={(e) => setTargetInput(e.target.value)} placeholder={monthTarget ? String(monthTarget) : "Зорилго"} className="rounded-lg px-2 py-1.5 text-xs w-28 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                <button onClick={saveTarget} disabled={savingTarget} className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: savingTarget ? 0.6 : 1 }}>Зорилго хадгалах</button>
+              </>
+            )}
+          </div>
+        </div>
+        {monthTarget <= 0 ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-8">Энэ сард зорилго тавиагүй байна. {canEdit ? "Дээрээс зорилго оруулна уу." : ""} (Одоогийн хандалт: <b style={{ color: T.ink }}>{monthReach.toLocaleString()}</b>)</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <div style={{ position: "relative" }}>
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie data={gaugeData} dataKey="value" cx="50%" cy="50%" innerRadius={68} outerRadius={98} startAngle={90} endAngle={-270} stroke="none">
+                    <Cell fill={targetColor} />
+                    <Cell fill={T.border || "#E5E7EB"} />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                <span style={{ color: targetColor, fontFamily: FS, fontWeight: 800 }} className="text-3xl leading-none">{targetPct.toFixed(0)}%</span>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">биелэлт</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">🎯 Зорилго</span>
+                <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700 }} className="text-sm">{monthTarget.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">📈 Одоогийн хандалт</span>
+                <span style={{ color: targetColor, fontFamily: FM, fontWeight: 700 }} className="text-sm">{monthReach.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{monthReach >= monthTarget ? "✅ Давсан" : "⏳ Үлдсэн"}</span>
+                <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700 }} className="text-sm">{Math.abs(monthTarget - monthReach).toLocaleString()}</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: T.border || "#E5E7EB", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, targetPct)}%`, background: targetColor, borderRadius: 4, transition: "width .3s" }} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ====== SECTION B: хандалт оруулга + pie chart ====== */}
