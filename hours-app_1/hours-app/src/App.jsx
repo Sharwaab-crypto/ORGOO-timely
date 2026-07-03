@@ -16555,7 +16555,8 @@ function DeliveryDashboardView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState("today");
-  const [customDate, setCustomDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  const [customStart, setCustomStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  const [customEnd, setCustomEnd] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   const [dailyGoal, setDailyGoal] = useState(() => {
     try { return Number(localStorage.getItem("orgoo-delivery-daily-goal")) || 30; }
     catch { return 30; }
@@ -16637,19 +16638,25 @@ function DeliveryDashboardView({ profile }) {
       };
     }
     if (period === "custom") {
-      const [y, m, dd] = customDate.split("-").map(Number);
-      const start = new Date(y, m - 1, dd);
-      const end = new Date(start.getTime() + DAY);
+      const [sy, sm, sd] = customStart.split("-").map(Number);
+      const [ey, em, ed] = customEnd.split("-").map(Number);
+      let start = new Date(sy, sm - 1, sd);
+      let end = new Date(ey, em - 1, ed);
+      if (end < start) { const tmp = start; start = end; end = tmp; }
+      end = new Date(end.getTime() + DAY); // дуусах өдрийг бүтэн хамруулна
+      const spanDays = Math.max(1, Math.round((end - start) / DAY));
+      const sLabel = customStart <= customEnd ? customStart : customEnd;
+      const eLabel = customStart <= customEnd ? customEnd : customStart;
       return {
-        currentRange: { start, end, label: customDate },
-        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Өмнөх өдөр" },
+        currentRange: { start, end, label: sLabel === eLabel ? sLabel : `${sLabel} → ${eLabel}` },
+        previousRange: { start: new Date(start.getTime() - spanDays * DAY), end: start, label: "Өмнөх ижил хугацаа" },
       };
     }
     return {
       currentRange: { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" },
       previousRange: null,
     };
-  }, [period, customDate]);
+  }, [period, customStart, customEnd]);
 
   const periodRange = currentRange;
 
@@ -16827,9 +16834,15 @@ function DeliveryDashboardView({ profile }) {
             </button>
           ))}
           {period === "custom" && (
-            <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
-              className="rounded-full px-3 py-1.5 text-xs outline-none"
-              style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
+            <>
+              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-full px-3 py-1.5 text-xs outline-none"
+                style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">→</span>
+              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-full px-3 py-1.5 text-xs outline-none"
+                style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
+            </>
           )}
         </div>
         {previousRange && (
