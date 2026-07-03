@@ -15495,36 +15495,48 @@ function CallCenterView({ profile }) {
 //  OPERATOR KPI REPORT — Admin/Manager-д харагдах ажилтны KPI тайлан
 // ═══════════════════════════════════════════════════════════════════════════
 function MarketingView({ profile }) {
-  const [employees, setEmployees] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]);
+  const [members, setMembers] = useState([]); // mkt_members
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [empCats, setEmpCats] = useState([]);
+  const [mktProducts, setMktProducts] = useState([]); // mkt_products (гар нэмсэн + хийгдсэн)
   const [reach, setReach] = useState([]);
   const [loading, setLoading] = useState(true);
   const [catPickerEmp, setCatPickerEmp] = useState(null);
+  const [prodPickerEmp, setProdPickerEmp] = useState(null);
+  const [prodSearch, setProdSearch] = useState("");
   const [expandedEmp, setExpandedEmp] = useState(null);
+  const [addEmpOpen, setAddEmpOpen] = useState(false);
+  const [addEmpSearch, setAddEmpSearch] = useState("");
   const todayStr = new Date().toISOString().slice(0, 10);
   const [reachEmp, setReachEmp] = useState("");
   const [reachDate, setReachDate] = useState(todayStr);
   const [reachVal, setReachVal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pieDate, setPieDate] = useState(todayStr);
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
+  const PIE_COLORS = ["#0F766E", "#F59E0B", "#3B82F6", "#8B5CF6", "#EF4444", "#10B981", "#EC4899", "#F97316", "#14B8A6", "#6366F1", "#84CC16", "#06B6D4"];
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [emps, cats, prods, ec, rc] = await Promise.all([
-        supabase.from("profiles").select("id, name, role, job_title").eq("role", "marketing").order("name"),
+      const [profs, cats, prods, ec, mem, mp, rc] = await Promise.all([
+        supabase.from("profiles").select("id, name, role, job_title, is_active").order("name"),
         supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
         supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
         supabase.from("mkt_employee_categories").select("*"),
-        supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(500),
+        supabase.from("mkt_members").select("*"),
+        supabase.from("mkt_products").select("*").order("created_at", { ascending: false }),
+        supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(1000),
       ]);
-      setEmployees(emps.data || []);
+      setAllProfiles(profs.data || []);
       setCategories(cats.data || []);
       setProducts(prods.data || []);
       setEmpCats(ec.data || []);
+      setMembers(mem.data || []);
+      setMktProducts(mp.data || []);
       setReach(rc.data || []);
     } catch (e) { console.error("[marketing]", e); }
     finally { setLoading(false); }
@@ -15532,7 +15544,8 @@ function MarketingView({ profile }) {
   useEffect(() => { loadAll(); }, []);
 
   const catById = useMemo(() => { const m = {}; categories.forEach((c) => (m[c.id] = c)); return m; }, [categories]);
-  const empById = useMemo(() => { const m = {}; employees.forEach((e) => (m[e.id] = e)); return m; }, [employees]);
+  const profById = useMemo(() => { const m = {}; allProfiles.forEach((e) => (m[e.id] = e)); return m; }, [allProfiles]);
+  const prodById = useMemo(() => { const m = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
   const prodsByCat = useMemo(() => {
     const m = {};
     products.forEach((p) => { if (!m[p.category_id]) m[p.category_id] = []; m[p.category_id].push(p); });
@@ -15543,6 +15556,15 @@ function MarketingView({ profile }) {
     empCats.forEach((ec) => { if (!m[ec.employee_id]) m[ec.employee_id] = []; m[ec.employee_id].push(ec.category_id); });
     return m;
   }, [empCats]);
+
+  // Гишүүд = role='marketing' + гараар нэмсэн (mkt_members)
+  const memberIds = useMemo(() => {
+    const s = new Set(members.map((m) => m.employee_id));
+    allProfiles.forEach((p) => { if (p.role === "marketing" && p.is_active !== false) s.add(p.id); });
+    return s;
+  }, [members, allProfiles]);
+  const employees = useMemo(() => allProfiles.filter((p) => memberIds.has(p.id)), [allProfiles, memberIds]);
+  const memberEmpIdSet = useMemo(() => new Set(members.map((m) => m.employee_id)), [members]);
 
   const catStock = (categoryId) => (prodsByCat[categoryId] || []).reduce((s, p) => s + Number(p.stock || 0), 0);
 
@@ -15557,6 +15579,47 @@ function MarketingView({ profile }) {
         if (data) setEmpCats((prev) => [...prev, data]);
       }
     } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const addMember = async (empId) => {
+    try {
+      const { data } = await supabase.from("mkt_members").insert({ employee_id: empId, created_by: profile.id }).select().single();
+      if (data) setMembers((prev) => [...prev, data]);
+      setAddEmpOpen(false); setAddEmpSearch("");
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const removeMember = async (empId) => {
+    const m = members.find((x) => x.employee_id === empId);
+    if (!m) { alert("Энэ нь автомат (role=marketing) гишүүн — устгах боломжгүй."); return; }
+    if (!confirm("Гишүүнийг маркетингээс хасах уу?")) return;
+    try { await supabase.from("mkt_members").delete().eq("id", m.id); setMembers((prev) => prev.filter((x) => x.id !== m.id)); }
+    catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const addMktProduct = async (empId, productId) => {
+    if (mktProducts.some((mp) => mp.employee_id === empId && mp.product_id === productId && mp.status === "active")) return;
+    try {
+      const { data } = await supabase.from("mkt_products").insert({ employee_id: empId, product_id: productId, status: "active", created_by: profile.id }).select().single();
+      if (data) setMktProducts((prev) => [data, ...prev]);
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const markDone = async (mp) => {
+    const note = prompt("Хийсэн тэмдэглэл (заавал биш):", "") ?? "";
+    try {
+      const { data } = await supabase.from("mkt_products").update({ status: "done", note: note.trim(), done_at: new Date().toISOString() }).eq("id", mp.id).select().single();
+      if (data) setMktProducts((prev) => prev.map((x) => (x.id === mp.id ? data : x)));
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const revertDone = async (mp) => {
+    try {
+      const { data } = await supabase.from("mkt_products").update({ status: "active", done_at: null }).eq("id", mp.id).select().single();
+      if (data) setMktProducts((prev) => prev.map((x) => (x.id === mp.id ? data : x)));
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const deleteMktProduct = async (id) => {
+    if (!confirm("Устгах уу?")) return;
+    try { await supabase.from("mkt_products").delete().eq("id", id); setMktProducts((prev) => prev.filter((x) => x.id !== id)); }
+    catch (e) { alert("Алдаа: " + e.message); }
   };
 
   const saveReach = async () => {
@@ -15575,48 +15638,89 @@ function MarketingView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setSaving(false); }
   };
-
   const deleteReach = async (id) => {
     if (!confirm("Устгах уу?")) return;
     try { await supabase.from("mkt_reach").delete().eq("id", id); setReach((prev) => prev.filter((r) => r.id !== id)); }
     catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // Pie — сонгосон огнооны хандалт ажилтнаар
+  const pieData = useMemo(() => {
+    return reach
+      .filter((r) => r.reach_date === pieDate)
+      .map((r) => ({ name: profById[r.employee_id]?.name || "—", value: Number(r.reach || 0) }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [reach, pieDate, profById]);
+  const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
+
+  const availableToAdd = allProfiles.filter((p) => p.is_active !== false && !memberIds.has(p.id) && (!addEmpSearch.trim() || p.name?.toLowerCase().includes(addEmpSearch.toLowerCase())));
+
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
 
   return (
     <div className="space-y-4">
+      {/* ====== SECTION A: ажилтан × ангилал/бараа ====== */}
       <div className="glass rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-lg">📦</span>
-          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажилтны ажиллаж буй бараа</span>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📦</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажилтны ажиллаж буй бараа</span>
+          </div>
+          {canEdit && (
+            <button onClick={() => setAddEmpOpen((v) => !v)} className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: T.highlight, color: "white", fontFamily: FS }}>＋ Ажилтан нэмэх</button>
+          )}
         </div>
-        {employees.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Маркетингийн ажилтан алга.</div>}
+
+        {addEmpOpen && (
+          <div className="mb-3 rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+            <input value={addEmpSearch} onChange={(e) => setAddEmpSearch(e.target.value)} placeholder="Ажилтан хайх (ахлах ч болно)..." className="w-full rounded-lg px-2.5 py-1.5 text-sm mb-2 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
+              {availableToAdd.map((p) => (
+                <button key={p.id} onClick={() => addMember(p.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                  ＋ {p.name} <span style={{ color: T.muted }}>· {p.role === "manager" ? "ахлах" : p.role}</span>
+                </button>
+              ))}
+              {availableToAdd.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Нэмэх ажилтан алга.</span>}
+            </div>
+          </div>
+        )}
+
+        {employees.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Маркетингийн ажилтан алга. "Ажилтан нэмэх"-ээр нэмнэ үү.</div>}
         <div className="space-y-3">
           {employees.map((emp) => {
             const empCatIds = catsByEmp[emp.id] || [];
-            const empProducts = empCatIds.flatMap((cid) => prodsByCat[cid] || []);
-            const totalStock = empProducts.reduce((s, p) => s + Number(p.stock || 0), 0);
+            const empCatProducts = empCatIds.flatMap((cid) => prodsByCat[cid] || []);
+            const totalStock = empCatProducts.reduce((s, p) => s + Number(p.stock || 0), 0);
             const expanded = expandedEmp === emp.id;
+            const manualActive = mktProducts.filter((mp) => mp.employee_id === emp.id && mp.status === "active");
+            const manualDone = mktProducts.filter((mp) => mp.employee_id === emp.id && mp.status === "done");
+            const isManualMember = memberEmpIdSet.has(emp.id);
+            const prodSearchLc = (prodSearch || "").toLowerCase();
+            const addableProducts = products.filter((p) => (!prodSearchLc || p.name?.toLowerCase().includes(prodSearchLc) || p.sku?.toLowerCase().includes(prodSearchLc)) && !manualActive.some((mp) => mp.product_id === p.id)).slice(0, 30);
             return (
               <div key={emp.id} className="rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">{emp.name}</span>
-                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{empCatIds.length} ангилал · {empProducts.length} бараа · нөөц {totalStock.toLocaleString()}</span>
+                    {emp.role === "manager" && <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }} className="text-[9px] px-1.5 py-0.5 rounded-full">ахлах</span>}
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{empCatIds.length} ангилал · {empCatProducts.length + manualActive.length} бараа · нөөц {totalStock.toLocaleString()}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {canEdit && <button onClick={() => setCatPickerEmp(catPickerEmp === emp.id ? null : emp.id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>Ангилал сонгох</button>}
-                    <button onClick={() => setExpandedEmp(expanded ? null : emp.id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>{expanded ? "Хаах" : "Бараа харах"}</button>
+                  <div className="flex items-center gap-1.5">
+                    {canEdit && <button onClick={() => { setCatPickerEmp(catPickerEmp === emp.id ? null : emp.id); setProdPickerEmp(null); }} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>Ангилал</button>}
+                    {canEdit && <button onClick={() => { setProdPickerEmp(prodPickerEmp === emp.id ? null : emp.id); setCatPickerEmp(null); setProdSearch(""); }} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.okSoft || "#DCFCE7", color: T.ok, fontFamily: FS }}>＋ Бараа</button>}
+                    <button onClick={() => setExpandedEmp(expanded ? null : emp.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>{expanded ? "Хаах" : "Дэлгэрэнгүй"}</button>
+                    {canEdit && isManualMember && <button onClick={() => removeMember(emp.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FS }}>✕</button>}
                   </div>
                 </div>
+
+                {/* Ангилал сонгогч */}
                 {catPickerEmp === emp.id && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {categories.map((c) => {
                       const on = empCatIds.includes(c.id);
                       return (
-                        <button key={c.id} onClick={() => toggleCat(emp.id, c.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]"
-                          style={{ background: on ? T.ok : (T.surface || "#fff"), color: on ? "white" : T.muted, fontFamily: FS, border: `1px solid ${on ? T.ok : (T.border || "#E5E7EB")}` }}>
+                        <button key={c.id} onClick={() => toggleCat(emp.id, c.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: on ? T.ok : (T.surface || "#fff"), color: on ? "white" : T.muted, fontFamily: FS, border: `1px solid ${on ? T.ok : (T.border || "#E5E7EB")}` }}>
                           {on ? "✓ " : ""}{c.name} ({catStock(c.id).toLocaleString()})
                         </button>
                       );
@@ -15624,6 +15728,70 @@ function MarketingView({ profile }) {
                     {categories.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ангилал алга.</span>}
                   </div>
                 )}
+
+                {/* Бараа гараар нэмэх сонгогч */}
+                {prodPickerEmp === emp.id && (
+                  <div className="mt-2 rounded-lg p-2" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                    <input value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} placeholder="Бараа хайх..." className="w-full rounded-lg px-2 py-1.5 text-xs mb-2 outline-none" style={{ background: T.surfaceAlt || "#F8FAFC", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                    <div className="flex flex-wrap gap-1 max-h-40 overflow-auto">
+                      {addableProducts.map((p) => (
+                        <button key={p.id} onClick={() => addMktProduct(emp.id, p.id)} className="press-btn px-2 py-1 rounded-lg text-[11px]" style={{ background: T.surfaceAlt || "#F8FAFC", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                          ＋ {p.name} <span style={{ color: Number(p.stock) > 0 ? T.ok : T.err }}>({Number(p.stock || 0)})</span>
+                        </button>
+                      ))}
+                      {addableProducts.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Олдсонгүй.</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Гараар нэмсэн ажиллах ёстой бараа */}
+                {manualActive.length > 0 && (
+                  <div className="mt-2">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">✍️ Гараар нэмсэн — ажиллах ёстой</div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {manualActive.map((mp) => {
+                        const p = prodById[mp.product_id];
+                        return (
+                          <div key={mp.id} className="flex items-center justify-between rounded-lg px-2 py-1 gap-1" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                            <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{p?.name || "—"}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span style={{ color: Number(p?.stock) > 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 700 }} className="text-[11px]">{Number(p?.stock || 0)}</span>
+                              {canEdit && <button onClick={() => markDone(mp)} className="press-btn px-1.5 py-0.5 rounded text-[10px]" style={{ background: T.ok, color: "white", fontFamily: FS }}>Хийсэн</button>}
+                              {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">✕</button>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Хийгдсэн бараанууд */}
+                {manualDone.length > 0 && (
+                  <div className="mt-2">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">✅ Хийгдсэн бараанууд ({manualDone.length})</div>
+                    <div className="space-y-1">
+                      {manualDone.map((mp) => {
+                        const p = prodById[mp.product_id];
+                        return (
+                          <div key={mp.id} className="rounded-lg px-2 py-1.5" style={{ background: T.okSoft || "#DCFCE7", border: `1px solid ${T.ok}` }}>
+                            <div className="flex items-center justify-between gap-1">
+                              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px] truncate">✓ {p?.name || "—"}</span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{mp.done_at ? new Date(mp.done_at).toLocaleDateString() : ""}</span>
+                                {canEdit && <button onClick={() => revertDone(mp)} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">↩</button>}
+                                {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.err, fontFamily: FS }} className="text-[10px]">✕</button>}
+                              </div>
+                            </div>
+                            {mp.note && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] italic mt-0.5">💬 {mp.note}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Ангиллын бараанууд (дэлгэрэнгүй) */}
                 {expanded && (
                   <div className="mt-2 space-y-2">
                     {empCatIds.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ангилал сонгоогүй байна.</div>}
@@ -15649,47 +15817,82 @@ function MarketingView({ profile }) {
         </div>
       </div>
 
-      <div className="glass rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-lg">📈</span>
-          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Өдрийн хандалт (гар оруулга)</span>
+      {/* ====== SECTION B: хандалт оруулга + pie chart ====== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Оруулга + түүх */}
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">📈</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Өдрийн хандалт (гар оруулга)</span>
+          </div>
+          {canEdit && (
+            <div className="flex flex-wrap items-end gap-2 mb-3">
+              <div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Ажилтан</div>
+                <select value={reachEmp} onChange={(e) => setReachEmp(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                  <option value="">— сонгох —</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
+                <input type="date" value={reachDate} onChange={(e) => setReachDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+              </div>
+              <div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Хандалт</div>
+                <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-24 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+              </div>
+              <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
+            </div>
+          )}
+          <div className="space-y-1 max-h-72 overflow-auto">
+            {reach.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Бүртгэл алга.</div>}
+            {reach.slice(0, 100).map((r) => (
+              <div key={r.id} className="grid grid-cols-4 gap-2 items-center rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                <span style={{ color: T.ink, fontFamily: FM }} className="text-[11px]">{r.reach_date}</span>
+                <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{profById[r.employee_id]?.name || "—"}</span>
+                <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-[11px] text-right">{Number(r.reach || 0).toLocaleString()}</span>
+                <span className="text-right">{canEdit && <button onClick={() => deleteReach(r.id)} style={{ color: T.err, fontFamily: FS }} className="text-[11px]">Устгах</button>}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        {canEdit && (
-          <div className="flex flex-wrap items-end gap-2 mb-3">
-            <div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Ажилтан</div>
-              <select value={reachEmp} onChange={(e) => setReachEmp(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
-                <option value="">— сонгох —</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
+
+        {/* Pie chart — сонгосон огнооны хандалт ажилтнаар */}
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🥧</span>
+              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Хандалтын хуваарилалт</span>
             </div>
-            <div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
-              <input type="date" value={reachDate} onChange={(e) => setReachDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
-            </div>
-            <div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Хандалт</div>
-              <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-28 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
-            </div>
-            <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
+            <input type="date" value={pieDate} onChange={(e) => setPieDate(e.target.value)} className="rounded-lg px-2 py-1 text-xs outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
           </div>
-        )}
-        <div className="space-y-1">
-          <div className="grid grid-cols-4 gap-2 px-2 py-1">
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">Огноо</span>
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">Ажилтан</span>
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase text-right">Хандалт</span>
-            <span></span>
-          </div>
-          {reach.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Бүртгэл алга.</div>}
-          {reach.map((r) => (
-            <div key={r.id} className="grid grid-cols-4 gap-2 items-center rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
-              <span style={{ color: T.ink, fontFamily: FM }} className="text-[11px]">{r.reach_date}</span>
-              <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{empById[r.employee_id]?.name || "—"}</span>
-              <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-[11px] text-right">{Number(r.reach || 0).toLocaleString()}</span>
-              <span className="text-right">{canEdit && <button onClick={() => deleteReach(r.id)} style={{ color: T.err, fontFamily: FS }} className="text-[11px]">Устгах</button>}</span>
-            </div>
-          ))}
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2">Нийт: <b style={{ color: T.ink }}>{pieTotal.toLocaleString()}</b></div>
+          {pieData.length === 0 ? (
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-10">Энэ өдөр хандалтын бүртгэл алга.</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${(d.percent * 100).toFixed(0)}%`}>
+                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <RechartsTooltip formatter={(v) => Number(v).toLocaleString()} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1 mt-2">
+                {pieData.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5" style={{ color: T.ink, fontFamily: FS }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: PIE_COLORS[i % PIE_COLORS.length], display: "inline-block" }} />
+                      <span className="text-[11px]">{d.name}</span>
+                    </span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{d.value.toLocaleString()} · {pieTotal ? ((d.value / pieTotal) * 100).toFixed(0) : 0}%</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
