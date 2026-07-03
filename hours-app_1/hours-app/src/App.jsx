@@ -24707,7 +24707,7 @@ function OrdersView({ profile }) {
   // Filter/хайлт өөрчлөгдөх үед хуудсыг 1-д буцаах
   useEffect(() => { setPage(1); }, [filter, driverFilter, debouncedSearch, showArchived]);
 
-  // 🚚 Сонгосон жолоочийн хураангуй — БҮХ төлөвөөр (тусдаа count query, хуудаслалтаас хамааралгүй)
+  // 🚚 Сонгосон жолоочийн хураангуй — ЗӨВХӨН одоогийн (settle хийгдээгүй) тооцоо
   const [driverSummary, setDriverSummary] = useState({ delivered: 0, cancelled: 0, pending: 0, revenue: 0 });
   useEffect(() => {
     if (driverFilter === "all" || driverFilter === "none" || driverFilter === "unassigned") {
@@ -24718,12 +24718,12 @@ function OrdersView({ profile }) {
     (async () => {
       try {
         const cnt = (status) => {
-          let q = supabase.from("biz_orders").select("*", { count: "exact", head: true }).eq("driver_id", driverFilter);
+          let q = supabase.from("biz_orders").select("*", { count: "exact", head: true }).eq("driver_id", driverFilter).is("settlement_id", null);
           if (!showArchived) q = q.or("is_archived.is.null,is_archived.eq.false");
           q = Array.isArray(status) ? q.in("status", status) : q.eq("status", status);
           return q;
         };
-        let rq = supabase.from("biz_orders").select("total_amount").eq("driver_id", driverFilter).eq("status", "delivered");
+        let rq = supabase.from("biz_orders").select("total_amount").eq("driver_id", driverFilter).eq("status", "delivered").is("settlement_id", null);
         if (!showArchived) rq = rq.or("is_archived.is.null,is_archived.eq.false");
         const [del, can, pen, revRows] = await Promise.all([
           cnt("delivered"), cnt("cancelled"), cnt(["new", "pending", "assigned"]), fetchAllRows(rq),
