@@ -15845,29 +15845,44 @@ function MarketingView({ profile }) {
             </div>
             <input type="date" value={pieDate} onChange={(e) => setPieDate(e.target.value)} className="rounded-lg px-2 py-1 text-xs outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
           </div>
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2">Нийт: <b style={{ color: T.ink }}>{pieTotal.toLocaleString()}</b></div>
           {pieData.length === 0 ? (
             <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-10">Энэ өдөр хандалтын бүртгэл алга.</div>
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={(d) => `${(d.percent * 100).toFixed(0)}%`}>
-                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <RechartsTooltip formatter={(v) => Number(v).toLocaleString()} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1 mt-2">
-                {pieData.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5" style={{ color: T.ink, fontFamily: FS }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 3, background: PIE_COLORS[i % PIE_COLORS.length], display: "inline-block" }} />
-                      <span className="text-[11px]">{d.name}</span>
-                    </span>
-                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{d.value.toLocaleString()} · {pieTotal ? ((d.value / pieTotal) * 100).toFixed(0) : 0}%</span>
-                  </div>
-                ))}
+              <div style={{ position: "relative" }}>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={64} outerRadius={98} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={3}>
+                      {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(v, n) => [`${Number(v).toLocaleString()} (${pieTotal ? ((v / pieTotal) * 100).toFixed(0) : 0}%)`, n]}
+                      contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Нийт хандалт</span>
+                  <span style={{ color: T.ink, fontFamily: FS, fontWeight: 800 }} className="text-2xl leading-tight">{pieTotal.toLocaleString()}</span>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{pieData.length} ажилтан</span>
+                </div>
+              </div>
+              <div className="space-y-1.5 mt-3">
+                {pieData.map((d, i) => {
+                  const pct = pieTotal ? (d.value / pieTotal) * 100 : 0;
+                  return (
+                    <div key={i} className="rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="flex items-center gap-1.5 min-w-0" style={{ color: T.ink, fontFamily: FS }}>
+                          <span style={{ width: 11, height: 11, borderRadius: 4, background: PIE_COLORS[i % PIE_COLORS.length], display: "inline-block", flexShrink: 0 }} />
+                          <span className="text-[11px] truncate">{d.name}</span>
+                        </span>
+                        <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700 }} className="text-[11px] shrink-0">{d.value.toLocaleString()} · {pct.toFixed(0)}%</span>
+                      </div>
+                      <div style={{ height: 5, borderRadius: 3, background: T.border || "#E5E7EB", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, background: PIE_COLORS[i % PIE_COLORS.length], borderRadius: 3 }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -15904,8 +15919,9 @@ function MarketingView({ profile }) {
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {mp.stock_at_done != null && (
-                          <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Хийх үед байсан үлдэгдэл">📦 {Number(mp.stock_at_done).toLocaleString()}</span>
+                          <span style={{ color: T.muted, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Хийх үеийн үлдэгдэл">хийхэд {Number(mp.stock_at_done).toLocaleString()}</span>
                         )}
+                        <span style={{ color: Number(p?.stock) > 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Одоогийн үлдэгдэл">📦 одоо {Number(p?.stock || 0).toLocaleString()}</span>
                         <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{mp.done_at ? new Date(mp.done_at).toLocaleDateString() : ""}</span>
                         {canEdit && <button onClick={() => revertDone(mp)} style={{ color: T.highlight, fontFamily: FS }} className="text-[11px]" title="Буцаах">↩</button>}
                         {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.err, fontFamily: FS }} className="text-[11px]">✕</button>}
