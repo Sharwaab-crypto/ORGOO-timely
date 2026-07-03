@@ -15515,6 +15515,7 @@ function MarketingView({ profile }) {
   const [reachVal, setReachVal] = useState("");
   const [saving, setSaving] = useState(false);
   const [pieDate, setPieDate] = useState(todayStr);
+  const [doneFilterEmp, setDoneFilterEmp] = useState("");
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
   const PIE_COLORS = ["#0F766E", "#F59E0B", "#3B82F6", "#8B5CF6", "#EF4444", "#10B981", "#EC4899", "#F97316", "#14B8A6", "#6366F1", "#84CC16", "#06B6D4"];
@@ -15695,7 +15696,6 @@ function MarketingView({ profile }) {
             const totalStock = empCatProducts.reduce((s, p) => s + Number(p.stock || 0), 0);
             const expanded = expandedEmp === emp.id;
             const manualActive = mktProducts.filter((mp) => mp.employee_id === emp.id && mp.status === "active");
-            const manualDone = mktProducts.filter((mp) => mp.employee_id === emp.id && mp.status === "done");
             const isManualMember = memberEmpIdSet.has(emp.id);
             const prodSearchLc = (prodSearch || "").toLowerCase();
             const addableProducts = products.filter((p) => (!prodSearchLc || p.name?.toLowerCase().includes(prodSearchLc) || p.sku?.toLowerCase().includes(prodSearchLc)) && !manualActive.some((mp) => mp.product_id === p.id)).slice(0, 30);
@@ -15767,33 +15767,7 @@ function MarketingView({ profile }) {
                   </div>
                 )}
 
-                {/* Хийгдсэн бараанууд */}
-                {manualDone.length > 0 && (
-                  <div className="mt-2">
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">✅ Хийгдсэн бараанууд ({manualDone.length})</div>
-                    <div className="space-y-1">
-                      {manualDone.map((mp) => {
-                        const p = prodById[mp.product_id];
-                        return (
-                          <div key={mp.id} className="rounded-lg px-2 py-1.5" style={{ background: T.okSoft || "#DCFCE7", border: `1px solid ${T.ok}` }}>
-                            <div className="flex items-center justify-between gap-1">
-                              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px] truncate">✓ {p?.name || "—"}</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {mp.stock_at_done != null && (
-                                  <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Хийх үед байсан үлдэгдэл">📦 {Number(mp.stock_at_done).toLocaleString()}</span>
-                                )}
-                                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{mp.done_at ? new Date(mp.done_at).toLocaleDateString() : ""}</span>
-                                {canEdit && <button onClick={() => revertDone(mp)} style={{ color: T.highlight, fontFamily: FS }} className="text-[10px]">↩</button>}
-                                {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.err, fontFamily: FS }} className="text-[10px]">✕</button>}
-                              </div>
-                            </div>
-                            {mp.note && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] italic mt-0.5">💬 {mp.note}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* (Хийгдсэн бараанууд доод тусдаа цонхонд шилжсэн) */}
 
                 {/* Ангиллын бараанууд (дэлгэрэнгүй) */}
                 {expanded && (
@@ -15898,6 +15872,52 @@ function MarketingView({ profile }) {
             </>
           )}
         </div>
+      </div>
+
+      {/* ====== Хийгдсэн бараанууд (доод тусдаа цонх) ====== */}
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">✅</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Хийгдсэн бараанууд</span>
+          </div>
+          <select value={doneFilterEmp} onChange={(e) => setDoneFilterEmp(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+            <option value="">Бүх ажилтан</option>
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </div>
+        {(() => {
+          const doneList = mktProducts
+            .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp))
+            .sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0));
+          if (doneList.length === 0) return <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хийгдсэн бараа алга.</div>;
+          return (
+            <div className="space-y-1">
+              {doneList.map((mp) => {
+                const p = prodById[mp.product_id];
+                return (
+                  <div key={mp.id} className="rounded-lg px-2.5 py-1.5" style={{ background: T.okSoft || "#DCFCE7", border: `1px solid ${T.ok}` }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span style={{ color: T.highlight, fontFamily: FS, fontWeight: 600 }} className="text-[11px] shrink-0">{profById[mp.employee_id]?.name || "—"}</span>
+                        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-[11px] truncate">✓ {p?.name || "—"}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {mp.stock_at_done != null && (
+                          <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700, background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[10px] px-1.5 py-0.5 rounded" title="Хийх үед байсан үлдэгдэл">📦 {Number(mp.stock_at_done).toLocaleString()}</span>
+                        )}
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{mp.done_at ? new Date(mp.done_at).toLocaleDateString() : ""}</span>
+                        {canEdit && <button onClick={() => revertDone(mp)} style={{ color: T.highlight, fontFamily: FS }} className="text-[11px]" title="Буцаах">↩</button>}
+                        {canEdit && <button onClick={() => deleteMktProduct(mp.id)} style={{ color: T.err, fontFamily: FS }} className="text-[11px]">✕</button>}
+                      </div>
+                    </div>
+                    {mp.note && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] italic mt-0.5">💬 {mp.note}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
