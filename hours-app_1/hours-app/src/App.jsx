@@ -16555,6 +16555,7 @@ function DeliveryDashboardView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState("today");
+  const [customDate, setCustomDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   const [dailyGoal, setDailyGoal] = useState(() => {
     try { return Number(localStorage.getItem("orgoo-delivery-daily-goal")) || 30; }
     catch { return 30; }
@@ -16635,11 +16636,20 @@ function DeliveryDashboardView({ profile }) {
         },
       };
     }
+    if (period === "custom") {
+      const [y, m, dd] = customDate.split("-").map(Number);
+      const start = new Date(y, m - 1, dd);
+      const end = new Date(start.getTime() + DAY);
+      return {
+        currentRange: { start, end, label: customDate },
+        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Өмнөх өдөр" },
+      };
+    }
     return {
       currentRange: { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" },
       previousRange: null,
     };
-  }, [period]);
+  }, [period, customDate]);
 
   const periodRange = currentRange;
 
@@ -16803,6 +16813,7 @@ function DeliveryDashboardView({ profile }) {
             { id: "week", label: "7 хоног" },
             { id: "month", label: "Энэ сар" },
             { id: "all", label: "Бүгд" },
+            { id: "custom", label: "📆 Гар" },
           ].map((p) => (
             <button key={p.id} onClick={() => setPeriod(p.id)}
               className="press-btn px-3 py-1.5 rounded-full text-xs"
@@ -16815,6 +16826,11 @@ function DeliveryDashboardView({ profile }) {
               {p.label}
             </button>
           ))}
+          {period === "custom" && (
+            <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
+              className="rounded-full px-3 py-1.5 text-xs outline-none"
+              style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
+          )}
         </div>
         {previousRange && (
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2">
