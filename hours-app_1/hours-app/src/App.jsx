@@ -15532,6 +15532,11 @@ function MarketingView({ profile }) {
   const [targetMonth, setTargetMonth] = useState(todayStr.slice(0, 7)); // YYYY-MM
   const [targetInput, setTargetInput] = useState("");
   const [donePage, setDonePage] = useState(1);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkFrom, setBulkFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  const [bulkTo, setBulkTo] = useState(todayStr);
+  const [bulkValues, setBulkValues] = useState({}); // `${empId}_${date}` → string
+  const [bulkSaving, setBulkSaving] = useState(false);
   const DONE_PAGE_SIZE = 50;
   const [savingTarget, setSavingTarget] = useState(false);
 
@@ -15706,6 +15711,55 @@ function MarketingView({ profile }) {
   };
 
   useEffect(() => { setDonePage(1); }, [doneFilterEmp, fromDate, toDate]);
+
+  // 📋 Олон оруулга — өдрүүдийн жагсаалт (дээд тал 40 өдөр)
+  const bulkDays = useMemo(() => {
+    const list = [];
+    let s = new Date(bulkFrom + "T00:00:00");
+    const e = new Date(bulkTo + "T00:00:00");
+    if (e < s) return [];
+    let guard = 0;
+    while (s <= e && guard < 40) {
+      list.push(`${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, "0")}-${String(s.getDate()).padStart(2, "0")}`);
+      s.setDate(s.getDate() + 1); guard++;
+    }
+    return list;
+  }, [bulkFrom, bulkTo]);
+  // Grid-ийг одоо байгаа утгуудаар дүүргэх (муж/дата солигдоход)
+  useEffect(() => {
+    if (!bulkOpen) return;
+    const seed = {};
+    reach.forEach((r) => {
+      if (r.reach_date >= bulkFrom && r.reach_date <= bulkTo) seed[`${r.employee_id}_${r.reach_date}`] = String(r.reach ?? "");
+    });
+    setBulkValues(seed);
+  }, [bulkOpen, bulkFrom, bulkTo, reach]);
+
+  const saveBulk = async () => {
+    setBulkSaving(true);
+    try {
+      const existMap = {};
+      reach.forEach((r) => { existMap[`${r.employee_id}_${r.reach_date}`] = r; });
+      const toInsert = [], toUpdate = [];
+      for (const emp of employees) {
+        for (const day of bulkDays) {
+          const key = `${emp.id}_${day}`;
+          const raw = bulkValues[key];
+          if (raw === undefined || raw === "") continue;
+          const val = Number(raw);
+          if (isNaN(val)) continue;
+          const ex = existMap[key];
+          if (ex) { if (Number(ex.reach) !== val) toUpdate.push({ id: ex.id, reach: val }); }
+          else toInsert.push({ employee_id: emp.id, reach_date: day, reach: val, created_by: profile.id });
+        }
+      }
+      if (toInsert.length) await supabase.from("mkt_reach").insert(toInsert);
+      for (const u of toUpdate) await supabase.from("mkt_reach").update({ reach: u.reach, created_by: profile.id }).eq("id", u.id);
+      await loadAll();
+      alert(`Хадгалагдлаа: ${toInsert.length} шинэ, ${toUpdate.length} шинэчлэл`);
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBulkSaving(false); }
+  };
 
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
 
@@ -15917,9 +15971,12 @@ function MarketingView({ profile }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Оруулга + түүх */}
         <div className="glass rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-lg">📈</span>
-            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Өдрийн хандалт (гар оруулга)</span>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📈</span>
+              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Өдрийн хандалт (гар оруулга)</span>
+            </div>
+            {canEdit && <button onClick={() => setBulkOpen((v) => !v)} className="press-btn px-2.5 py-1 rounded-lg text-[11px] font-semibold" style={{ background: bulkOpen ? T.highlight : T.highlightSoft, color: bulkOpen ? "white" : T.highlight, fontFamily: FS }}>📋 {bulkOpen ? "Хаах" : "Олон оруулах"}</button>}
           </div>
           {canEdit && (
             <div className="flex flex-wrap items-end gap-2 mb-3">
@@ -15939,6 +15996,53 @@ function MarketingView({ profile }) {
                 <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-24 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
               </div>
               <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
+            </div>
+          )}
+          {bulkOpen && canEdit && (
+            <div className="mb-3 rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase">Муж:</span>
+                <input type="date" value={bulkFrom} onChange={(e) => setBulkFrom(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                <span style={{ color: T.muted }} className="text-[11px]">→</span>
+                <input type="date" value={bulkTo} onChange={(e) => setBulkTo(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{bulkDays.length} өдөр × {employees.length} ажилтан</span>
+                <button onClick={saveBulk} disabled={bulkSaving} className="press-btn px-3 py-1.5 rounded-lg text-[11px] font-semibold ml-auto" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: bulkSaving ? 0.6 : 1 }}>💾 Бүгдийг хадгалах</button>
+              </div>
+              {bulkDays.length === 0 ? (
+                <div style={{ color: T.err, fontFamily: FS }} className="text-[11px]">Муж буруу (эхлэх &gt; дуусах эсвэл 40 хоногоос их).</div>
+              ) : employees.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ажилтан алга.</div>
+              ) : (
+                <div className="overflow-auto" style={{ maxHeight: 340 }}>
+                  <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ position: "sticky", left: 0, top: 0, zIndex: 3, background: T.surfaceAlt || "#F8FAFC", color: T.muted, fontFamily: FM }} className="text-[10px] uppercase text-left px-2 py-1">Ажилтан</th>
+                        {bulkDays.map((d) => (
+                          <th key={d} style={{ position: "sticky", top: 0, zIndex: 2, background: T.surfaceAlt || "#F8FAFC", color: T.muted, fontFamily: FM }} className="text-[10px] px-1 py-1 text-center whitespace-nowrap">{d.slice(5)}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {employees.map((emp) => (
+                        <tr key={emp.id}>
+                          <td style={{ position: "sticky", left: 0, zIndex: 1, background: T.surface || "#fff", color: T.ink, fontFamily: FS, borderRight: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1 whitespace-nowrap max-w-[140px] truncate">{emp.name}</td>
+                          {bulkDays.map((d) => {
+                            const key = `${emp.id}_${d}`;
+                            return (
+                              <td key={d} className="px-0.5 py-0.5">
+                                <input type="number" value={bulkValues[key] ?? ""} onChange={(e) => setBulkValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                  className="rounded text-[11px] text-center outline-none" style={{ width: 52, padding: "3px 2px", background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">Нүд бүрт хандалтын тоо бичээд "Бүгдийг хадгалах" дарна. Хоосон нүд алгасагдана.</div>
             </div>
           )}
           <div className="space-y-1 max-h-72 overflow-auto">
