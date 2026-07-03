@@ -15514,7 +15514,19 @@ function MarketingView({ profile }) {
   const [reachDate, setReachDate] = useState(todayStr);
   const [reachVal, setReachVal] = useState("");
   const [saving, setSaving] = useState(false);
-  const [pieDate, setPieDate] = useState(todayStr);
+  const monthStartStr = todayStr.slice(0, 8) + "01";
+  const [fromDate, setFromDate] = useState(monthStartStr);
+  const [toDate, setToDate] = useState(todayStr);
+  const applyPreset = (preset) => {
+    const d = new Date();
+    const fmt = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    const t = fmt(d);
+    if (preset === "today") { setFromDate(t); setToDate(t); }
+    else if (preset === "week") { const s = new Date(); s.setDate(s.getDate() - 6); setFromDate(fmt(s)); setToDate(t); }
+    else if (preset === "month") { setFromDate(t.slice(0, 8) + "01"); setToDate(t); }
+    else if (preset === "year") { setFromDate(t.slice(0, 4) + "-01-01"); setToDate(t); }
+    else if (preset === "all") { setFromDate("2020-01-01"); setToDate("2099-12-31"); }
+  };
   const [doneFilterEmp, setDoneFilterEmp] = useState("");
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
@@ -15646,14 +15658,16 @@ function MarketingView({ profile }) {
     catch (e) { alert("Алдаа: " + e.message); }
   };
 
-  // Pie — сонгосон огнооны хандалт ажилтнаар
+  // Pie — сонгосон МУЖИЙН нийт хандалт ажилтан бүрээр
+  const reachInRange = useMemo(() => reach.filter((r) => r.reach_date >= fromDate && r.reach_date <= toDate), [reach, fromDate, toDate]);
   const pieData = useMemo(() => {
-    return reach
-      .filter((r) => r.reach_date === pieDate)
-      .map((r) => ({ name: profById[r.employee_id]?.name || "—", value: Number(r.reach || 0) }))
+    const byEmp = {};
+    reachInRange.forEach((r) => { byEmp[r.employee_id] = (byEmp[r.employee_id] || 0) + Number(r.reach || 0); });
+    return Object.entries(byEmp)
+      .map(([id, value]) => ({ name: profById[id]?.name || "—", value }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [reach, pieDate, profById]);
+  }, [reachInRange, profById]);
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
   const availableToAdd = allProfiles.filter((p) => p.is_active !== false && !memberIds.has(p.id) && (!addEmpSearch.trim() || p.name?.toLowerCase().includes(addEmpSearch.toLowerCase())));
@@ -15795,6 +15809,19 @@ function MarketingView({ profile }) {
         </div>
       </div>
 
+      {/* ====== Хугацааны шүүлт (доорх 3 цонхонд нөлөөлнө) ====== */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mr-1">📅 Хугацаа:</span>
+          {[["today", "Өнөөдөр"], ["week", "7 хоног"], ["month", "Энэ сар"], ["year", "Энэ жил"], ["all", "Бүгд"]].map(([id, label]) => (
+            <button key={id} onClick={() => applyPreset(id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>{label}</button>
+          ))}
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+          <span style={{ color: T.muted }} className="text-[11px]">→</span>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+        </div>
+      </div>
+
       {/* ====== SECTION B: хандалт оруулга + pie chart ====== */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Оруулга + түүх */}
@@ -15824,8 +15851,8 @@ function MarketingView({ profile }) {
             </div>
           )}
           <div className="space-y-1 max-h-72 overflow-auto">
-            {reach.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Бүртгэл алга.</div>}
-            {reach.slice(0, 100).map((r) => (
+            {reachInRange.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Энэ мужид бүртгэл алга.</div>}
+            {reachInRange.slice(0, 200).map((r) => (
               <div key={r.id} className="grid grid-cols-4 gap-2 items-center rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
                 <span style={{ color: T.ink, fontFamily: FM }} className="text-[11px]">{r.reach_date}</span>
                 <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{profById[r.employee_id]?.name || "—"}</span>
@@ -15843,7 +15870,7 @@ function MarketingView({ profile }) {
               <span className="text-lg">🥧</span>
               <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Хандалтын хуваарилалт</span>
             </div>
-            <input type="date" value={pieDate} onChange={(e) => setPieDate(e.target.value)} className="rounded-lg px-2 py-1 text-xs outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{fromDate === toDate ? fromDate : `${fromDate} → ${toDate}`}</span>
           </div>
           {pieData.length === 0 ? (
             <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-10">Энэ өдөр хандалтын бүртгэл алга.</div>
@@ -15903,7 +15930,7 @@ function MarketingView({ profile }) {
         </div>
         {(() => {
           const doneList = mktProducts
-            .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp))
+            .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp) && mp.done_at && mp.done_at.slice(0, 10) >= fromDate && mp.done_at.slice(0, 10) <= toDate)
             .sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0));
           if (doneList.length === 0) return <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хийгдсэн бараа алга.</div>;
           return (
