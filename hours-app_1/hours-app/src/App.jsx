@@ -10000,7 +10000,17 @@ function MovementsView({ profile }) {
     if (filterType !== "all") q = q.eq("movement_type", filterType);
     if (filterWarehouse !== "all") q = q.eq("warehouse_id", filterWarehouse);
     if (filterProduct !== "all") q = q.eq("product_id", filterProduct);
-    if (filterUser !== "all") q = q.eq("created_by", filterUser);
+    if (filterUser !== "all") {
+      // Жолооч сонговол: тухайн хүний үүсгэсэн ЭСВЭЛ түүний агуулах руу/аас хийсэн
+      //   хөдөлгөөн (шилжүүлэг авах/буцаах г.м) хамруулна. Жолоочгүй бол зөвхөн created_by.
+      const driverWhs = warehouses.filter((w) => w.driver_id === filterUser).map((w) => w.id);
+      if (driverWhs.length) {
+        const whList = driverWhs.join(",");
+        q = q.or(`created_by.eq.${filterUser},warehouse_id.in.(${whList}),to_warehouse_id.in.(${whList})`);
+      } else {
+        q = q.eq("created_by", filterUser);
+      }
+    }
     if (filterDateFrom) q = q.gte("created_at", new Date(filterDateFrom).toISOString());
     if (filterDateTo) { const t = new Date(filterDateTo); t.setHours(23, 59, 59, 999); q = q.lte("created_at", t.toISOString()); }
     const s = (debouncedSearch || "").trim().toLowerCase();
