@@ -10200,7 +10200,7 @@ function MovementsView({ profile }) {
       </div>
 
       {/* Filter bar */}
-      <div className="glass rounded-2xl p-3 space-y-2">
+      <div className="glass rounded-2xl p-3 space-y-2 relative" style={{ zIndex: 40, overflow: "visible" }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
             🔍 Шүүлтүүр
