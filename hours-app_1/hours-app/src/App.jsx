@@ -13005,16 +13005,27 @@ function CallCenterView({ profile }) {
       //    байсан → 5-10 сек гацаа. Pending нь хэдэн зуу л байдаг тул хурдан.
       if (!isMerchant) {
         try {
-          // ⚡ ГАЦАА ЗАСВАР 2: 60 хоногийн шүүлт нэмэв. Өмнө нь БҮХ хуучин pending (30,000+ мөр,
-          //    30 удаагийн дараалсан хуудаслалт, ~13 сек!) татаж байсан. Үндсэн жагсаалт
-          //    60 хоногоор хязгаарлагдсан тул түүнээс хуучин pending-ийн бараа хэрэггүй.
-          const withProducts = await fetchAllRows(
-            supabase.from("biz_calls")
-              .select("phone, interested_products, call_status, created_at")
-              .eq("call_status", "pending")
-              .not("interested_products", "is", null)
-              .gte("created_at", calls60Days)
-          );
+          // ⚡ ГАЦАА ЗАСВАР 2 (сайжруулсан): БҮХ pending-ийг хуудаслахын оронд зөвхөн
+          //    ДЭЛГЭЦЭНД харагдах утаснуудын (callData доторх) pending барааг chunk-оор
+          //    ЗЭРЭГЦЭЭ татна. Өмнө 60 хоногт ч 30,000+ pending байсан тул 30 дараалсан
+          //    хүсэлт (~13 сек) үүсгэж байсан — одоо 5-10 зэрэгцээ жижиг хүсэлт.
+          const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))];
+          const CHUNK = 200;
+          const chunkJobs = [];
+          for (let i = 0; i < displayPhones.length; i += CHUNK) {
+            const chunk = displayPhones.slice(i, i + CHUNK);
+            chunkJobs.push(
+              supabase.from("biz_calls")
+                .select("phone, interested_products, call_status, created_at")
+                .in("phone", chunk)
+                .eq("call_status", "pending")
+                .not("interested_products", "is", null)
+                .order("created_at", { ascending: false })
+                .limit(1000)
+            );
+          }
+          const chunkResults = await Promise.all(chunkJobs);
+          const withProducts = chunkResults.flatMap((r) => r.data || []);
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
           //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
