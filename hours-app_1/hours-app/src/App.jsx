@@ -13005,11 +13005,15 @@ function CallCenterView({ profile }) {
       //    байсан → 5-10 сек гацаа. Pending нь хэдэн зуу л байдаг тул хурдан.
       if (!isMerchant) {
         try {
+          // ⚡ ГАЦАА ЗАСВАР 2: 60 хоногийн шүүлт нэмэв. Өмнө нь БҮХ хуучин pending (30,000+ мөр,
+          //    30 удаагийн дараалсан хуудаслалт, ~13 сек!) татаж байсан. Үндсэн жагсаалт
+          //    60 хоногоор хязгаарлагдсан тул түүнээс хуучин pending-ийн бараа хэрэггүй.
           const withProducts = await fetchAllRows(
             supabase.from("biz_calls")
               .select("phone, interested_products, call_status, created_at")
               .eq("call_status", "pending")
               .not("interested_products", "is", null)
+              .gte("created_at", calls60Days)
           );
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
           //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
@@ -13456,6 +13460,149 @@ function CallCenterView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // ⚡ ГАЦАА ЗАСВАР 3: таб тоо/бүлэглэлтийн ХҮНД тооцооллыг useMemo болгов.
+  //    Өмнө render болгонд (хайлтын үсэг бүрт!) бүх утсанд sort+cycle тооцож jank үүсгэдэг байсан.
+  const ccTabData = useMemo(() => {
+          // 🔗 Page шүүлт — Ажиллаж буй page сонгогдсон бол зөвхөн тэр page-ийн дуудлага
+          const pageFilteredCalls = activeFbPageId
+            ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
+            : recentCalls;
+          // Period-ээр шүүсэн (ordered, cancelled tab-д)
+          const filteredByPeriod = pageFilteredCalls.filter((c) => {
+            const d = new Date(c.created_at);
+            return d >= periodRange.start && d < periodRange.end;
+          });
+
+          // Calling tab — period үл хамааран
+          const phoneGroupedAll = {};
+          pageFilteredCalls.forEach((c) => {
+            if (!phoneGroupedAll[c.phone]) phoneGroupedAll[c.phone] = [];
+            phoneGroupedAll[c.phone].push(c);
+          });
+
+          // Period-ээр шүүсэн (ordered, cancelled-д)
+          const phoneGrouped = {};
+          filteredByPeriod.forEach((c) => {
+            if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
+            phoneGrouped[c.phone].push(c);
+          });
+
+          const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
+
+          // ⚡ ГАЦАА ЗАСВАР: захиалгыг утсаар нэг удаа бүлэглэх (өмнө утас бүрд orders.filter
+          //    хийж байсан → O(утас×захиалга) ≈ сая үйлдэл, гацаа үүсгэдэг байсан)
+          const latestOrderByPhone = {};
+          orders.forEach((o) => {
+            if (!o.customer_phone) return;
+            const ex = latestOrderByPhone[o.customer_phone];
+            if (!ex || new Date(o.created_at) > new Date(ex.created_at)) {
+              latestOrderByPhone[o.customer_phone] = o;
+            }
+          });
+
+          // ⚡ Map-ууд: карт render дотор products.find / customers.find давталтаас сэргийлэх (O(1))
+          const productById = new Map();
+          products.forEach((pr) => productById.set(pr.id, pr));
+          const customerByPhone = new Map();
+          customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
+
+          // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
+          const orderInfoByPhone = {};
+          Object.keys(phoneGroupedAll).forEach((phone) => {
+            const callsArr = phoneGroupedAll[phone];
+            const hasOrderedCall = callsArr.some((c) => c.call_status === "ordered");
+            const sortedC = [...callsArr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestCallStatus = sortedC[0]?.call_status;
+            const ord = latestOrderByPhone[phone]; // ⚡ pre-grouped (filter биш)
+            const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
+            const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
+            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder, latestCallStatus };
+          });
+
+          // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
+          // ⚠ Сүүлийн pending (дугаар бүртгэсэн)-ээс ХОЙШ ordered/cancelled байгаа эсэхээр шийднэ.
+          //    ordered/cancelled болсны дараа дахин залгасан (unreachable г.м) нь "залгах дугаар" БИШ
+          //    — захиалга аль хэдийн болсон/цуцлагдсан. Зөвхөн ДАХИН pending бүртгэсэн бол шинэ cycle.
+          {
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const asc = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              // Сүүлийн pending-ийн индекс олох
+              let lastPendingIdx = -1;
+              asc.forEach((c, i) => {
+                if (c.call_status === "pending" || !c.call_status) lastPendingIdx = i;
+              });
+              // Сүүлийн pending-ээс хойших дуудлагууд (тэр мөчлөг)
+              const cycleCalls = lastPendingIdx >= 0 ? asc.slice(lastPendingIdx) : asc;
+              const hasOrdered = cycleCalls.some((c) => c.call_status === "ordered");
+              const hasCancelled = cycleCalls.some((c) => c.call_status === "cancelled");
+              if (hasOrdered || hasCancelled) return; // захиалга болсон/цуцалсан — calling биш
+              counts.calling++;
+            });
+          }
+          
+          // 🗓 Period шүүлт — ordered/cancelled/delivered-д хэрэглэнэ ("Залгах дугаар" бүх цаг хэвээр)
+          const inPeriod = (dateStr) => {
+            if (period === "all") return true;
+            if (!dateStr) return false;
+            const d = new Date(dateStr);
+            return d >= periodRange.start && d < periodRange.end;
+          };
+
+          // Delivered (амжилттай) — delivered захиалгатай ӨВӨРМӨЦ утас (period-аар шүүсэн)
+          {
+            const delivPhones = new Set();
+            orders.forEach((o) => {
+              if (o.status === "delivered" && o.customer_phone && inPeriod(o.delivered_at || o.created_at)) {
+                delivPhones.add(o.customer_phone);
+              }
+            });
+            counts.delivered = delivPhones.size;
+          }
+          
+          // "Захиалга болсон" / "Цуцалсан" — CYCLE-аар тоолно (жагсаалттай таарах)
+          {
+            let ordC = 0, canC = 0;
+            const seenOrdPhone = new Set();
+            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
+              const info = orderInfoByPhone[phone];
+              // Cycle хуваах (жагсаалттай ижил логик: pending эсвэл өдөр солигдвол шинэ cycle)
+              const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+              const cycles = [];
+              let cur = [];
+              let closed = false;
+              sorted.forEach((c) => {
+                let startNew = false;
+                if (closed) {
+                  if (c.call_status === "pending" || !c.call_status) startNew = true;
+                  else if (cur.length > 0) {
+                    const pd = new Date(cur[cur.length - 1].created_at).toDateString();
+                    const cd = new Date(c.created_at).toDateString();
+                    if (pd !== cd) startNew = true;
+                  }
+                }
+                if (startNew) { cycles.push(cur); cur = []; closed = false; }
+                cur.push(c);
+                if (c.call_status === "ordered" || c.call_status === "cancelled") closed = true;
+              });
+              if (cur.length > 0) cycles.push(cur);
+
+              cycles.forEach((cyCalls) => {
+                const last = cyCalls[cyCalls.length - 1];
+                const cyStatus = last.call_status === "ordered" ? "ordered"
+                              : last.call_status === "cancelled" ? "cancelled" : "calling";
+                if (cyStatus === "cancelled" && inPeriod(last.created_at)) canC++;
+                // Захиалга болсон: ordered cycle БА захиалга идэвхтэй
+                if (cyStatus === "ordered" && info.activeOrder && inPeriod(last.created_at)) {
+                  if (!seenOrdPhone.has(phone)) { seenOrdPhone.add(phone); ordC++; }
+                }
+              });
+            });
+            counts.ordered = ordC;
+            counts.cancelled = canC;
+          }
+          return { filteredByPeriod, phoneGrouped, counts, productById, customerByPhone, orderInfoByPhone };
+  }, [recentCalls, activeFbPageId, periodRange, period, orders, products, customers]);
+
   return (
     <div className="space-y-3">
       {/* 🔔 Шинэчлэх badge */}
@@ -13797,143 +13944,7 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
-          // 🔗 Page шүүлт — Ажиллаж буй page сонгогдсон бол зөвхөн тэр page-ийн дуудлага
-          const pageFilteredCalls = activeFbPageId
-            ? recentCalls.filter((c) => c.fb_page_id === activeFbPageId)
-            : recentCalls;
-          // Period-ээр шүүсэн (ordered, cancelled tab-д)
-          const filteredByPeriod = pageFilteredCalls.filter((c) => {
-            const d = new Date(c.created_at);
-            return d >= periodRange.start && d < periodRange.end;
-          });
-
-          // Calling tab — period үл хамааран
-          const phoneGroupedAll = {};
-          pageFilteredCalls.forEach((c) => {
-            if (!phoneGroupedAll[c.phone]) phoneGroupedAll[c.phone] = [];
-            phoneGroupedAll[c.phone].push(c);
-          });
-
-          // Period-ээр шүүсэн (ordered, cancelled-д)
-          const phoneGrouped = {};
-          filteredByPeriod.forEach((c) => {
-            if (!phoneGrouped[c.phone]) phoneGrouped[c.phone] = [];
-            phoneGrouped[c.phone].push(c);
-          });
-
-          const counts = { calling: 0, ordered: 0, cancelled: 0, delivered: 0 };
-
-          // ⚡ ГАЦАА ЗАСВАР: захиалгыг утсаар нэг удаа бүлэглэх (өмнө утас бүрд orders.filter
-          //    хийж байсан → O(утас×захиалга) ≈ сая үйлдэл, гацаа үүсгэдэг байсан)
-          const latestOrderByPhone = {};
-          orders.forEach((o) => {
-            if (!o.customer_phone) return;
-            const ex = latestOrderByPhone[o.customer_phone];
-            if (!ex || new Date(o.created_at) > new Date(ex.created_at)) {
-              latestOrderByPhone[o.customer_phone] = o;
-            }
-          });
-
-          // ⚡ Map-ууд: карт render дотор products.find / customers.find давталтаас сэргийлэх (O(1))
-          const productById = new Map();
-          products.forEach((pr) => productById.set(pr.id, pr));
-          const customerByPhone = new Map();
-          customers.forEach((cu) => customerByPhone.set(cu.phone, cu));
-
-          // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + идэвхтэй захиалгатай эсэх
-          const orderInfoByPhone = {};
-          Object.keys(phoneGroupedAll).forEach((phone) => {
-            const callsArr = phoneGroupedAll[phone];
-            const hasOrderedCall = callsArr.some((c) => c.call_status === "ordered");
-            const sortedC = [...callsArr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const latestCallStatus = sortedC[0]?.call_status;
-            const ord = latestOrderByPhone[phone]; // ⚡ pre-grouped (filter биш)
-            const activeOrder = ord && ord.status !== "delivered" && ord.status !== "cancelled";
-            const cancelledOrder = (ord && ord.status === "cancelled") || (!activeOrder && latestCallStatus === "cancelled");
-            orderInfoByPhone[phone] = { hasOrderedCall, ord, activeOrder, cancelledOrder, latestCallStatus };
-          });
-
-          // Calling — "Залгах дугаар": захиалга АВААГҮЙ дугаар (дахин залгах ёстой)
-          // ⚠ Сүүлийн pending (дугаар бүртгэсэн)-ээс ХОЙШ ordered/cancelled байгаа эсэхээр шийднэ.
-          //    ordered/cancelled болсны дараа дахин залгасан (unreachable г.м) нь "залгах дугаар" БИШ
-          //    — захиалга аль хэдийн болсон/цуцлагдсан. Зөвхөн ДАХИН pending бүртгэсэн бол шинэ cycle.
-          {
-            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-              const asc = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-              // Сүүлийн pending-ийн индекс олох
-              let lastPendingIdx = -1;
-              asc.forEach((c, i) => {
-                if (c.call_status === "pending" || !c.call_status) lastPendingIdx = i;
-              });
-              // Сүүлийн pending-ээс хойших дуудлагууд (тэр мөчлөг)
-              const cycleCalls = lastPendingIdx >= 0 ? asc.slice(lastPendingIdx) : asc;
-              const hasOrdered = cycleCalls.some((c) => c.call_status === "ordered");
-              const hasCancelled = cycleCalls.some((c) => c.call_status === "cancelled");
-              if (hasOrdered || hasCancelled) return; // захиалга болсон/цуцалсан — calling биш
-              counts.calling++;
-            });
-          }
-          
-          // 🗓 Period шүүлт — ordered/cancelled/delivered-д хэрэглэнэ ("Залгах дугаар" бүх цаг хэвээр)
-          const inPeriod = (dateStr) => {
-            if (period === "all") return true;
-            if (!dateStr) return false;
-            const d = new Date(dateStr);
-            return d >= periodRange.start && d < periodRange.end;
-          };
-
-          // Delivered (амжилттай) — delivered захиалгатай ӨВӨРМӨЦ утас (period-аар шүүсэн)
-          {
-            const delivPhones = new Set();
-            orders.forEach((o) => {
-              if (o.status === "delivered" && o.customer_phone && inPeriod(o.delivered_at || o.created_at)) {
-                delivPhones.add(o.customer_phone);
-              }
-            });
-            counts.delivered = delivPhones.size;
-          }
-          
-          // "Захиалга болсон" / "Цуцалсан" — CYCLE-аар тоолно (жагсаалттай таарах)
-          {
-            let ordC = 0, canC = 0;
-            const seenOrdPhone = new Set();
-            Object.entries(phoneGroupedAll).forEach(([phone, calls]) => {
-              const info = orderInfoByPhone[phone];
-              // Cycle хуваах (жагсаалттай ижил логик: pending эсвэл өдөр солигдвол шинэ cycle)
-              const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-              const cycles = [];
-              let cur = [];
-              let closed = false;
-              sorted.forEach((c) => {
-                let startNew = false;
-                if (closed) {
-                  if (c.call_status === "pending" || !c.call_status) startNew = true;
-                  else if (cur.length > 0) {
-                    const pd = new Date(cur[cur.length - 1].created_at).toDateString();
-                    const cd = new Date(c.created_at).toDateString();
-                    if (pd !== cd) startNew = true;
-                  }
-                }
-                if (startNew) { cycles.push(cur); cur = []; closed = false; }
-                cur.push(c);
-                if (c.call_status === "ordered" || c.call_status === "cancelled") closed = true;
-              });
-              if (cur.length > 0) cycles.push(cur);
-
-              cycles.forEach((cyCalls) => {
-                const last = cyCalls[cyCalls.length - 1];
-                const cyStatus = last.call_status === "ordered" ? "ordered"
-                              : last.call_status === "cancelled" ? "cancelled" : "calling";
-                if (cyStatus === "cancelled" && inPeriod(last.created_at)) canC++;
-                // Захиалга болсон: ordered cycle БА захиалга идэвхтэй
-                if (cyStatus === "ordered" && info.activeOrder && inPeriod(last.created_at)) {
-                  if (!seenOrdPhone.has(phone)) { seenOrdPhone.add(phone); ordC++; }
-                }
-              });
-            });
-            counts.ordered = ordC;
-            counts.cancelled = canC;
-          }
+          const { filteredByPeriod, phoneGrouped, counts, productById, customerByPhone, orderInfoByPhone } = ccTabData;
 
           return (
             <>
