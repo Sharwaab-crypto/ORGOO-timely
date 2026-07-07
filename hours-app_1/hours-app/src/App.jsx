@@ -219,6 +219,31 @@ async function fetchAllRows(queryBuilder) {
 
 // 🧩 Хэт олон ID-тай .in() query-г chunk-аар асууна
 // PostgREST URL ~8KB хязгаартай. UUID 37 char × 200 ≈ 7400 → аюулгүй
+// ⚡ Зэрэгцээ хуудаслалт — олон хуудсыг wave-ээр Promise.all татна (дараалсан биш).
+//    makeQuery нь дуудлага бүрд ШИНЭ query builder буцаах ёстой (builder дахин ашиглагдахгүй).
+async function fetchAllRowsParallel(makeQuery, { pageSize = 1000, wave = 8, maxPages = 200 } = {}) {
+  let all = [];
+  let page = 0;
+  while (page < maxPages) {
+    const jobs = [];
+    for (let k = 0; k < wave && page + k < maxPages; k++) {
+      const from = (page + k) * pageSize;
+      jobs.push(makeQuery().order("id", { ascending: true }).range(from, from + pageSize - 1));
+    }
+    const results = await Promise.all(jobs);
+    let short = false;
+    for (const r of results) {
+      if (r.error) throw r.error;
+      const d = r.data || [];
+      all = all.concat(d);
+      if (d.length < pageSize) short = true;
+    }
+    if (short) break;
+    page += wave;
+  }
+  return all;
+}
+
 async function fetchInChunks(table, ids, options = {}) {
   const {
     select = "*",
@@ -17409,9 +17434,26 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       setLoading(true);
       setLoadError(null);
       try {
-        // Merchant бол зөвхөн өөрийн page-уудын өгөгдөл; admin бол бүгд
-        let callQ = supabase.from("biz_calls").select("*");
-        let ordQ = supabase.from("biz_orders").select("*");
+        // ⚡ ГАЦАА ЗАСВАР: (1) interested_products (том jsonb, энэ view-д хэрэглэгддэггүй) ХАСав,
+        //    (2) сонгосон period-оор СЕРВЕР талд шүүнэ (өмнө бүх түүхийг — biz_calls 81,000+ мөр,
+        //    81 ДАРААЛСАН хүсэлт ≈ 39 сек — татдаг байсан), (3) хуудсуудыг ЗЭРЭГЦЭЭ татна.
+        const isAllPeriod = periodRange.label === "Бүгд";
+        const pStart = periodRange.start.toISOString();
+        const pEnd = periodRange.end.toISOString();
+        const callCols = "id, phone, call_status, created_at, fb_page_id, created_by, customer_name";
+        const makeCallQ = () => {
+          let q = supabase.from("biz_calls").select(callCols);
+          if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
+          if (isMerchant) q = q.in("fb_page_id", allowedPageIds);
+          return q;
+        };
+        const makeOrdQ = () => {
+          let q = supabase.from("biz_orders").select("*");
+          if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
+          if (isMerchant) q = q.in("fb_page_id", allowedPageIds);
+          return q;
+        };
+        const makeItmQ = () => supabase.from("biz_order_items").select("*");
         let fbQ = supabase.from("biz_fb_pages").select("*");
         if (isMerchant) {
           if (allowedPageIds.length === 0) {
@@ -17420,14 +17462,12 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
             setLoading(false);
             return;
           }
-          callQ = supabase.from("biz_calls").select("*").in("fb_page_id", allowedPageIds);
-          ordQ = supabase.from("biz_orders").select("*").in("fb_page_id", allowedPageIds);
           fbQ = supabase.from("biz_fb_pages").select("*").in("id", allowedPageIds);
         }
         const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
-          fetchAllRows(callQ),
-          fetchAllRows(ordQ),
-          fetchAllRows(supabase.from("biz_order_items").select("*")),
+          fetchAllRowsParallel(makeCallQ),
+          fetchAllRowsParallel(makeOrdQ),
+          fetchAllRowsParallel(makeItmQ),
           supabase.from("inv_products").select("id, name, image_url, sku"),
           fbQ,
         ]);
@@ -17443,7 +17483,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       }
       finally { setLoading(false); }
     })();
-  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : "all"]);
+  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : "all", periodRange.start.getTime(), periodRange.end.getTime()]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
