@@ -15845,6 +15845,9 @@ function MarketingView({ profile }) {
     const reachSum = t.chat + t.comment;
     return { ...t, reach: reachSum, pcost: t.orders > 0 ? t.boost / t.orders : 0, success: reachSum > 0 ? t.orders / reachSum : 0 };
   }, [dsInRange]);
+  // 🎨 Босго өнгө: P/cost ≥2.5 улаан · 2.0–2.5 шар · ≤2.0 ногоон; Амжилт <25% улаан · 25–30% шар · ≥30% ногоон
+  const pcostColor = (v) => (!v ? T.muted : v >= 2.5 ? T.err : v <= 2.0 ? T.ok : "#F59E0B");
+  const successColor = (pct) => (pct >= 30 ? T.ok : pct >= 25 ? "#F59E0B" : T.err);
 
   const saveDailyStat = async () => {
     if ([dsBoost, dsChat, dsComment, dsOrders].every((v) => v === "")) { alert("Ядаж нэг утга оруулна уу"); return; }
@@ -16264,9 +16267,9 @@ function MarketingView({ profile }) {
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                <span style={{ color: dsTotals.success >= 0.15 ? T.ok : T.err, fontFamily: FS, fontWeight: 800 }} className="text-2xl leading-none">{(dsTotals.success * 100).toFixed(1)}%</span>
+                <span style={{ color: successColor(dsTotals.success * 100), fontFamily: FS, fontWeight: 800 }} className="text-2xl leading-none">{(dsTotals.success * 100).toFixed(1)}%</span>
                 <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">Амжилт</span>
-                <span style={{ color: "#F97316", fontFamily: FM, fontWeight: 700 }} className="text-[11px] mt-1">P/cost {dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</span>
+                <span style={{ color: pcostColor(dsTotals.pcost), fontFamily: FM, fontWeight: 700 }} className="text-[11px] mt-1">P/cost {dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</span>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -16275,7 +16278,7 @@ function MarketingView({ profile }) {
                 ["#8B5CF6", "Comment", dsTotals.comment.toLocaleString()],
                 [T.highlight, "Хандалт (нийт)", dsTotals.reach.toLocaleString()],
                 ["#10B981", "Захиалга", dsTotals.orders.toLocaleString()],
-                ["#F97316", "P/cost (Boost ÷ Захиалга)", dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"],
+                [pcostColor(dsTotals.pcost), "P/cost (Boost ÷ Захиалга)", dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"],
                 [T.muted, "Boost (нийт)", dsTotals.boost.toLocaleString()],
               ].map(([color, label, val], i) => (
                 <div key={i} className="flex items-center justify-between rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff" }}>
@@ -16314,8 +16317,8 @@ function MarketingView({ profile }) {
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.comment || 0).toLocaleString()}</td>
                     <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach.toLocaleString()}</td>
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.orders || 0).toLocaleString()}</td>
-                    <td style={{ color: "#F97316", fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{pcost ? pcost.toFixed(2) : "—"}</td>
-                    <td style={{ color: succ >= 0.15 ? T.ok : T.err, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach ? (succ * 100).toFixed(1) + "%" : "—"}</td>
+                    <td style={{ color: pcostColor(pcost), fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{pcost ? pcost.toFixed(2) : "—"}</td>
+                    <td style={{ color: reach ? successColor(succ * 100) : T.muted, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach ? (succ * 100).toFixed(1) + "%" : "—"}</td>
                     <td style={{ borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-right px-2 py-1.5 whitespace-nowrap">
                       {canEdit && <button onClick={() => editDailyStat(d)} style={{ color: T.highlight }} className="text-[11px] mr-1.5" title="Засах">✎</button>}
                       {canEdit && <button onClick={() => delDailyStat(d.id)} style={{ color: T.err }} className="text-[11px]">🗑</button>}
@@ -16331,8 +16334,8 @@ function MarketingView({ profile }) {
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.comment.toLocaleString()}</td>
                   <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach.toLocaleString()}</td>
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.orders.toLocaleString()}</td>
-                  <td style={{ color: "#F97316", fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</td>
-                  <td style={{ color: T.ok, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach ? (dsTotals.success * 100).toFixed(1) + "%" : "—"}</td>
+                  <td style={{ color: pcostColor(dsTotals.pcost), fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</td>
+                  <td style={{ color: dsTotals.reach ? successColor(dsTotals.success * 100) : T.muted, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach ? (dsTotals.success * 100).toFixed(1) + "%" : "—"}</td>
                   <td style={{ background: T.surfaceAlt || "#F8FAFC" }}></td>
                 </tr>
               )}
