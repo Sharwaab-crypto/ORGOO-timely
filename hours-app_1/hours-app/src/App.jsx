@@ -15600,6 +15600,13 @@ function MarketingView({ profile }) {
   const [bulkTo, setBulkTo] = useState(todayStr);
   const [bulkValues, setBulkValues] = useState({}); // `${empId}_${date}` → string
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [dailyStats, setDailyStats] = useState([]); // mkt_daily_stats
+  const [dsDate, setDsDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dsBoost, setDsBoost] = useState("");
+  const [dsChat, setDsChat] = useState("");
+  const [dsComment, setDsComment] = useState("");
+  const [dsOrders, setDsOrders] = useState("");
+  const [dsSaving, setDsSaving] = useState(false);
   const DONE_PAGE_SIZE = 50;
   const [savingTarget, setSavingTarget] = useState(false);
 
@@ -15609,7 +15616,7 @@ function MarketingView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [profs, cats, prods, ec, mem, mp, rc, tg] = await Promise.all([
+      const [profs, cats, prods, ec, mem, mp, rc, tg, ds] = await Promise.all([
         supabase.from("profiles").select("id, name, role, job_title, is_active").order("name"),
         supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
         supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
@@ -15618,6 +15625,7 @@ function MarketingView({ profile }) {
         supabase.from("mkt_products").select("*").order("created_at", { ascending: false }),
         supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(1000),
         supabase.from("mkt_reach_targets").select("*"),
+        supabase.from("mkt_daily_stats").select("*").order("stat_date", { ascending: false }).limit(400),
       ]);
       setAllProfiles(profs.data || []);
       setCategories(cats.data || []);
@@ -15627,6 +15635,7 @@ function MarketingView({ profile }) {
       setMktProducts(mp.data || []);
       setReach(rc.data || []);
       setTargets(tg.data || []);
+      setDailyStats(ds.data || []);
     } catch (e) { console.error("[marketing]", e); }
     finally { setLoading(false); }
   };
@@ -15822,6 +15831,49 @@ function MarketingView({ profile }) {
       alert(`Хадгалагдлаа: ${toInsert.length} шинэ, ${toUpdate.length} шинэчлэл`);
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setBulkSaving(false); }
+  };
+
+  // 📊 Өдрийн статистик (Boost/Chat/Comment) — тооцоолол
+  const dsInRange = useMemo(() =>
+    dailyStats
+      .filter((d) => d.stat_date >= fromDate && d.stat_date <= toDate)
+      .sort((a, b) => (a.stat_date < b.stat_date ? 1 : -1)),
+  [dailyStats, fromDate, toDate]);
+  const dsTotals = useMemo(() => {
+    const t = { boost: 0, chat: 0, comment: 0, orders: 0 };
+    dsInRange.forEach((d) => { t.boost += Number(d.boost || 0); t.chat += Number(d.chat || 0); t.comment += Number(d.comment || 0); t.orders += Number(d.orders || 0); });
+    const reachSum = t.chat + t.comment;
+    return { ...t, reach: reachSum, pcost: t.orders > 0 ? t.boost / t.orders : 0, success: reachSum > 0 ? t.orders / reachSum : 0 };
+  }, [dsInRange]);
+
+  const saveDailyStat = async () => {
+    if ([dsBoost, dsChat, dsComment, dsOrders].every((v) => v === "")) { alert("Ядаж нэг утга оруулна уу"); return; }
+    setDsSaving(true);
+    try {
+      const payload = { stat_date: dsDate, boost: Number(dsBoost || 0), chat: Number(dsChat || 0), comment: Number(dsComment || 0), orders: Number(dsOrders || 0), created_by: profile.id, updated_at: new Date().toISOString() };
+      const existing = dailyStats.find((d) => d.stat_date === dsDate);
+      if (existing) {
+        const { data } = await supabase.from("mkt_daily_stats").update(payload).eq("id", existing.id).select().single();
+        if (data) setDailyStats((p) => p.map((x) => (x.id === existing.id ? data : x)));
+      } else {
+        const { data } = await supabase.from("mkt_daily_stats").insert(payload).select().single();
+        if (data) setDailyStats((p) => [data, ...p]);
+      }
+      setDsBoost(""); setDsChat(""); setDsComment(""); setDsOrders("");
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setDsSaving(false); }
+  };
+  const editDailyStat = (d) => {
+    setDsDate(d.stat_date);
+    setDsBoost(String(d.boost ?? ""));
+    setDsChat(String(d.chat ?? ""));
+    setDsComment(String(d.comment ?? ""));
+    setDsOrders(String(d.orders ?? ""));
+  };
+  const delDailyStat = async (id) => {
+    if (!confirm("Устгах уу?")) return;
+    try { await supabase.from("mkt_daily_stats").delete().eq("id", id); setDailyStats((p) => p.filter((x) => x.id !== id)); }
+    catch (e) { alert("Алдаа: " + e.message); }
   };
 
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
@@ -16172,6 +16224,77 @@ function MarketingView({ profile }) {
             </>
           )}
         </div>
+      </div>
+
+      {/* ====== 📊 Өдрийн статистик (Boost/Chat/Comment) ====== */}
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">📊 Өдрийн статистик — Boost · Chat · Comment</div>
+        {canEdit && (
+          <div className="flex flex-wrap items-end gap-2 mb-3">
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
+              <input type="date" value={dsDate} onChange={(e) => setDsDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            </div>
+            {[["Boost", dsBoost, setDsBoost], ["Chat", dsChat, setDsChat], ["Comment", dsComment, setDsComment], ["Нийт захиалга", dsOrders, setDsOrders]].map(([label, val, setter]) => (
+              <div key={label}>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">{label}</div>
+                <input type="number" value={val} onChange={(e) => setter(e.target.value)} placeholder="0" className="w-28 rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+              </div>
+            ))}
+            <button onClick={saveDailyStat} disabled={dsSaving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: dsSaving ? 0.6 : 1 }}>Хадгалах</button>
+          </div>
+        )}
+        <div className="overflow-auto">
+          <table className="w-full" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 640 }}>
+            <thead>
+              <tr>
+                {["Огноо", "Boost", "Chat", "Comment", "Хандалт", "Захиалга", "P/cost", "Амжилт %", ""].map((h, i) => (
+                  <th key={i} style={{ color: T.muted, fontFamily: FM, background: T.surfaceAlt || "#F8FAFC" }} className={`text-[10px] uppercase px-2 py-1.5 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dsInRange.length === 0 && (
+                <tr><td colSpan={9} style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2 py-3">Энэ мужид бүртгэл алга.</td></tr>
+              )}
+              {dsInRange.map((d) => {
+                const reach = Number(d.chat || 0) + Number(d.comment || 0);
+                const pcost = Number(d.orders) > 0 ? Number(d.boost || 0) / Number(d.orders) : 0;
+                const succ = reach > 0 ? Number(d.orders || 0) / reach : 0;
+                return (
+                  <tr key={d.id}>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5">{d.stat_date}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.boost || 0).toLocaleString()}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.chat || 0).toLocaleString()}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.comment || 0).toLocaleString()}</td>
+                    <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach.toLocaleString()}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.orders || 0).toLocaleString()}</td>
+                    <td style={{ color: "#F97316", fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{pcost ? pcost.toFixed(2) : "—"}</td>
+                    <td style={{ color: succ >= 0.15 ? T.ok : T.err, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach ? (succ * 100).toFixed(1) + "%" : "—"}</td>
+                    <td style={{ borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-right px-2 py-1.5 whitespace-nowrap">
+                      {canEdit && <button onClick={() => editDailyStat(d)} style={{ color: T.highlight }} className="text-[11px] mr-1.5" title="Засах">✎</button>}
+                      {canEdit && <button onClick={() => delDailyStat(d.id)} style={{ color: T.err }} className="text-[11px]">🗑</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {dsInRange.length > 0 && (
+                <tr>
+                  <td style={{ color: T.ink, fontFamily: FS, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5">НИЙТ</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.boost.toLocaleString()}</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.chat.toLocaleString()}</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.comment.toLocaleString()}</td>
+                  <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach.toLocaleString()}</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.orders.toLocaleString()}</td>
+                  <td style={{ color: "#F97316", fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</td>
+                  <td style={{ color: T.ok, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach ? (dsTotals.success * 100).toFixed(1) + "%" : "—"}</td>
+                  <td style={{ background: T.surfaceAlt || "#F8FAFC" }}></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">Хандалт = Chat + Comment · P/cost = Boost ÷ Захиалга · Амжилт % = Захиалга ÷ Хандалт. Дээрх хугацааны шүүлтээр шүүгдэнэ; ижил огноонд хадгалбал шинэчилнэ.</div>
       </div>
 
       {/* ====== Хийгдсэн бараанууд (доод тусдаа цонх) ====== */}
