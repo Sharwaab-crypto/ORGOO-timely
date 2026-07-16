@@ -16244,6 +16244,51 @@ function MarketingView({ profile }) {
             <button onClick={saveDailyStat} disabled={dsSaving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: dsSaving ? 0.6 : 1 }}>Хадгалах</button>
           </div>
         )}
+
+        {dsTotals.reach > 0 && (
+          <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+            <div style={{ position: "relative" }}>
+              <ResponsiveContainer width="100%" height={235}>
+                <PieChart>
+                  {/* Гадна цагираг — Хандалтын бүтэц (Chat + Comment) */}
+                  <Pie data={[{ name: "Chat", value: dsTotals.chat }, { name: "Comment", value: dsTotals.comment }]} dataKey="value" cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
+                    <Cell fill="#3B82F6" />
+                    <Cell fill="#8B5CF6" />
+                  </Pie>
+                  {/* Дотор цагираг — Захиалга vs үлдсэн хандалт */}
+                  <Pie data={[{ name: "Захиалга", value: dsTotals.orders }, { name: "Хандалтын үлдсэн", value: Math.max(0, dsTotals.reach - dsTotals.orders) }]} dataKey="value" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
+                    <Cell fill="#10B981" />
+                    <Cell fill={T.border || "#E5E7EB"} />
+                  </Pie>
+                  <RechartsTooltip formatter={(v, n) => [Number(v).toLocaleString(), n]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                <span style={{ color: dsTotals.success >= 0.15 ? T.ok : T.err, fontFamily: FS, fontWeight: 800 }} className="text-2xl leading-none">{(dsTotals.success * 100).toFixed(1)}%</span>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">Амжилт</span>
+                <span style={{ color: "#F97316", fontFamily: FM, fontWeight: 700 }} className="text-[11px] mt-1">P/cost {dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {[
+                ["#3B82F6", "Chat", dsTotals.chat.toLocaleString()],
+                ["#8B5CF6", "Comment", dsTotals.comment.toLocaleString()],
+                [T.highlight, "Хандалт (нийт)", dsTotals.reach.toLocaleString()],
+                ["#10B981", "Захиалга", dsTotals.orders.toLocaleString()],
+                ["#F97316", "P/cost (Boost ÷ Захиалга)", dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"],
+                [T.muted, "Boost (нийт)", dsTotals.boost.toLocaleString()],
+              ].map(([color, label, val], i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff" }}>
+                  <span className="flex items-center gap-1.5" style={{ color: T.ink, fontFamily: FS }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: "inline-block", flexShrink: 0 }} />
+                    <span className="text-[11px]">{label}</span>
+                  </span>
+                  <span style={{ color: T.ink, fontFamily: FM, fontWeight: 700 }} className="text-[11px]">{val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="overflow-auto">
           <table className="w-full" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 640 }}>
             <thead>
