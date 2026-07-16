@@ -2478,6 +2478,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "settlement"} onClick={() => { setView("settlement"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооцоо тулгах</SidebarTab>
               <SidebarTab active={view === "settlement-reports"} onClick={() => { setView("settlement-reports"); setSidebarOpen(false); }} icon={Inbox}>Тооцооний тайлан</SidebarTab>
               <SidebarTab active={view === "sales-report"} onClick={() => { setView("sales-report"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалтын тайлан</SidebarTab>
+              <SidebarTab active={view === "profit-calc"} onClick={() => { setView("profit-calc"); setSidebarOpen(false); }} icon={DollarSign}>💵 Ашгийн тооцоо</SidebarTab>
             </SidebarSection>
             )}
 
@@ -2584,6 +2585,7 @@ function AdminDashboard({ profile }) {
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
+                {view === "profit-calc" && "Ашгийн тооцоо"}
                 {view === "settlement-reports" && "Тооцооний тайлан"}
                 {view === "sales-report" && "Борлуулалтын тайлан"}
                 {view === "orders" && "Захиалга"}
@@ -2878,6 +2880,10 @@ function AdminDashboard({ profile }) {
 
         {view === "settlement" && (
           <DriverSettlementView profile={profile} />
+        )}
+
+        {view === "profit-calc" && (
+          <ProfitCalcView profile={profile} />
         )}
 
         {view === "settlement-reports" && (
@@ -17372,6 +17378,284 @@ function DeliveryDashboardView({ profile }) {
   );
 }
 
+
+function ProfitCalcView({ profile }) {
+  const canEdit = ["admin", "manager"].includes(profile.role);
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [month, setMonth] = useState(curMonth);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [recId, setRecId] = useState(null);
+  const [revenue, setRevenue] = useState("");
+  const [orderCount, setOrderCount] = useState("");
+  const [costPerOrder, setCostPerOrder] = useState("");
+  const [fixedCosts, setFixedCosts] = useState([]); // [{name, amount}]
+  const [notes, setNotes] = useState("");
+  const [expenses, setExpenses] = useState([]);
+  const [prev, setPrev] = useState(null); // өмнөх сарын {revenue, totalCost, profit}
+  const [expFormOpen, setExpFormOpen] = useState(false);
+  const [expDate, setExpDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expTitle, setExpTitle] = useState("");
+  const [expCat, setExpCat] = useState("");
+  const [expAmount, setExpAmount] = useState("");
+
+  const monthRange = (m) => {
+    const [y, mm] = m.split("-").map(Number);
+    const ny = mm === 12 ? y + 1 : y;
+    const nm = mm === 12 ? 1 : mm + 1;
+    return [`${m}-01`, `${ny}-${String(nm).padStart(2, "0")}-01`];
+  };
+  const prevMonthStr = (m) => {
+    const [y, mm] = m.split("-").map(Number);
+    const py = mm === 1 ? y - 1 : y;
+    const pm = mm === 1 ? 12 : mm - 1;
+    return `${py}-${String(pm).padStart(2, "0")}`;
+  };
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [mStart, mEnd] = monthRange(month);
+      const pm = prevMonthStr(month);
+      const [pStart, pEnd] = monthRange(pm);
+      const [{ data: rec }, { data: exp }, { data: prevRec }, { data: prevExp }] = await Promise.all([
+        supabase.from("fin_profit_calc").select("*").eq("month", month).maybeSingle(),
+        supabase.from("fin_expenses").select("*").gte("expense_date", mStart).lt("expense_date", mEnd).order("expense_date"),
+        supabase.from("fin_profit_calc").select("*").eq("month", pm).maybeSingle(),
+        supabase.from("fin_expenses").select("amount").gte("expense_date", pStart).lt("expense_date", pEnd),
+      ]);
+      setRecId(rec?.id || null);
+      setRevenue(rec?.revenue != null ? String(rec.revenue) : "");
+      setOrderCount(rec?.order_count != null ? String(rec.order_count) : "");
+      setCostPerOrder(rec?.cost_per_order != null ? String(rec.cost_per_order) : "");
+      setFixedCosts(Array.isArray(rec?.fixed_costs) ? rec.fixed_costs : []);
+      setNotes(rec?.notes || "");
+      setExpenses(exp || []);
+      if (prevRec) {
+        const pExpTotal = (prevExp || []).reduce((s, e) => s + Number(e.amount || 0), 0);
+        const pFixed = (Array.isArray(prevRec.fixed_costs) ? prevRec.fixed_costs : []).reduce((s, f) => s + Number(f.amount || 0), 0);
+        const pOrderCost = Number(prevRec.order_count || 0) * Number(prevRec.cost_per_order || 0);
+        const pTotal = pOrderCost + pFixed + pExpTotal;
+        setPrev({ revenue: Number(prevRec.revenue || 0), totalCost: pTotal, profit: Number(prevRec.revenue || 0) - pTotal });
+      } else setPrev(null);
+    } catch (e) { console.error("[profit calc]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { loadAll(); }, [month]);
+
+  const fmt = (n) => Number(n || 0).toLocaleString();
+  const rev = Number(revenue || 0);
+  const oc = Number(orderCount || 0);
+  const cpo = Number(costPerOrder || 0);
+  const orderCost = oc * cpo;
+  const fixedTotal = fixedCosts.reduce((s, f) => s + Number(f.amount || 0), 0);
+  const expTotal = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const totalCost = orderCost + fixedTotal + expTotal;
+  const profit = rev - totalCost;
+  const margin = rev > 0 ? (profit / rev) * 100 : 0;
+  const [my, mm] = month.split("-");
+
+  const saveCalc = async () => {
+    setSaving(true);
+    try {
+      const payload = { month, revenue: rev, order_count: oc, cost_per_order: cpo, fixed_costs: fixedCosts, notes: notes.trim() || null, created_by: profile.id, updated_at: new Date().toISOString() };
+      if (recId) await supabase.from("fin_profit_calc").update(payload).eq("id", recId);
+      else {
+        const { data } = await supabase.from("fin_profit_calc").insert(payload).select().single();
+        if (data) setRecId(data.id);
+      }
+      alert(`✓ ${my} оны ${Number(mm)}-р сарын тооцоо хадгалагдлаа`);
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const addExpense = async () => {
+    if (!expTitle.trim() || !expAmount || isNaN(Number(expAmount))) { alert("Нэр ба дүн оруулна уу"); return; }
+    try {
+      const { data } = await supabase.from("fin_expenses").insert({ expense_date: expDate, title: expTitle.trim(), category: expCat.trim() || null, amount: Number(expAmount), created_by: profile.id }).select().single();
+      if (data) setExpenses((prev2) => [...prev2, data].sort((a, b) => (a.expense_date < b.expense_date ? -1 : 1)));
+      setExpTitle(""); setExpCat(""); setExpAmount(""); setExpFormOpen(false);
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const delExpense = async (id) => {
+    if (!confirm("Устгах уу?")) return;
+    try { await supabase.from("fin_expenses").delete().eq("id", id); setExpenses((p) => p.filter((x) => x.id !== id)); }
+    catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  const inputStyle = { background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` };
+  const cardGrad = (g) => ({ background: g, color: "white", borderRadius: 16, padding: "14px 16px" });
+
+  if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Гарчиг + сар сонгогч */}
+      <div className="glass rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💵 Ашгийн тооцоо</div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{my} оны {Number(mm)}-р сар</div>
+        </div>
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded-lg px-2.5 py-1.5 text-sm outline-none" style={inputStyle} />
+      </div>
+
+      {/* 4 KPI карт */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div style={cardGrad("linear-gradient(135deg,#6366F1,#3B82F6)")}>
+          <div style={{ fontFamily: FM, opacity: 0.85 }} className="text-[10px] uppercase">Нийт орлого</div>
+          <div style={{ fontFamily: FS, fontWeight: 800 }} className="text-xl">{fmt(rev)}₮</div>
+          {prev && <div style={{ fontFamily: FM, opacity: 0.8 }} className="text-[10px]">{fmt(prev.revenue)} / өмнөх сар</div>}
+        </div>
+        <div style={cardGrad("linear-gradient(135deg,#F97316,#EF4444)")}>
+          <div style={{ fontFamily: FM, opacity: 0.85 }} className="text-[10px] uppercase">Нийт зардал</div>
+          <div style={{ fontFamily: FS, fontWeight: 800 }} className="text-xl">{fmt(totalCost)}₮</div>
+          {prev && <div style={{ fontFamily: FM, opacity: 0.8 }} className="text-[10px]">{fmt(prev.totalCost)} / өмнөх сар</div>}
+        </div>
+        <div style={cardGrad("linear-gradient(135deg,#10B981,#059669)")}>
+          <div style={{ fontFamily: FM, opacity: 0.85 }} className="text-[10px] uppercase">Цэвэр ашиг</div>
+          <div style={{ fontFamily: FS, fontWeight: 800 }} className="text-xl">{fmt(profit)}₮</div>
+          {prev && <div style={{ fontFamily: FM, opacity: 0.8 }} className="text-[10px]">{fmt(prev.profit)} / өмнөх сар</div>}
+        </div>
+        <div style={cardGrad("linear-gradient(135deg,#8B5CF6,#7C3AED)")}>
+          <div style={{ fontFamily: FM, opacity: 0.85 }} className="text-[10px] uppercase">Ашгийн маржин</div>
+          <div style={{ fontFamily: FS, fontWeight: 800 }} className="text-xl">{margin.toFixed(1)}%</div>
+          {prev && prev.revenue > 0 && <div style={{ fontFamily: FM, opacity: 0.8 }} className="text-[10px]">{((prev.profit / prev.revenue) * 100).toFixed(1)}% / өмнөх сар</div>}
+        </div>
+      </div>
+
+      {/* Орлого/захиалга + Тогтмол зардал */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="glass rounded-2xl p-4 space-y-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📈 Орлого ба захиалга</div>
+          <div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Нийт орлого (₮)</div>
+            <input type="number" value={revenue} onChange={(e) => setRevenue(e.target.value)} disabled={!canEdit} className="w-full rounded-lg px-2.5 py-2 text-sm outline-none" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Захиалгын тоо</div>
+            <input type="number" value={orderCount} onChange={(e) => setOrderCount(e.target.value)} disabled={!canEdit} className="w-full rounded-lg px-2.5 py-2 text-sm outline-none" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Нэг захиалгад ногдох зардал (₮)</div>
+            <input type="number" value={costPerOrder} onChange={(e) => setCostPerOrder(e.target.value)} disabled={!canEdit} className="w-full rounded-lg px-2.5 py-2 text-sm outline-none" style={inputStyle} />
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">Баримт/хүргэлт, сав баглаа г.м</div>
+          </div>
+          <div className="rounded-lg px-3 py-2" style={{ background: "#FEF3C7", border: "1px solid #F59E0B" }}>
+            <span style={{ color: "#92400E", fontFamily: FS }} className="text-[11px]">Захиалгын нийт зардал: {fmt(oc)} × {fmt(cpo)}₮ = <b>{fmt(orderCost)}₮</b></span>
+          </div>
+        </div>
+
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">🏢 Сарын тогтмол зардал</div>
+            {canEdit && <button onClick={() => setFixedCosts((p) => [...p, { name: "", amount: 0 }])} className="press-btn px-2.5 py-1 rounded-lg text-[11px] font-semibold" style={{ background: T.okSoft || "#DCFCE7", color: T.ok, fontFamily: FS }}>＋ Нэмэх</button>}
+          </div>
+          <div className="space-y-2">
+            {fixedCosts.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Тогтмол зардал алга.</div>}
+            {fixedCosts.map((f, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={f.name} onChange={(e) => setFixedCosts((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} disabled={!canEdit} placeholder="Нэр (түрээс, цалин...)" className="flex-1 rounded-lg px-2.5 py-1.5 text-sm outline-none" style={inputStyle} />
+                <input type="number" value={f.amount} onChange={(e) => setFixedCosts((p) => p.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} disabled={!canEdit} className="w-32 rounded-lg px-2.5 py-1.5 text-sm text-right outline-none" style={inputStyle} />
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">₮</span>
+                {canEdit && <button onClick={() => setFixedCosts((p) => p.filter((_, j) => j !== i))} style={{ color: T.err }} className="text-sm">🗑</button>}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: `1px solid ${T.border || "#E5E7EB"}` }}>
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Тогтмол зардлын нийт:</span>
+            <span style={{ color: T.err, fontFamily: FM, fontWeight: 700 }} className="text-sm">{fmt(fixedTotal)}₮</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Тооцооны задаргаа */}
+      <div className="glass rounded-2xl p-4">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">🧮 Тооцооны задаргаа</div>
+        <div className="space-y-2">
+          {[
+            ["Нийт орлого", `+${fmt(rev)}₮`, T.ok],
+            [`Захиалгын зардал (${fmt(oc)} × ${fmt(cpo)}₮)`, `−${fmt(orderCost)}₮`, T.err],
+            ["Тогтмол зардал", `−${fmt(fixedTotal)}₮`, T.err],
+            [`Урсгал зардал (${expenses.length} бичилт)`, `−${fmt(expTotal)}₮`, T.err],
+          ].map(([label, val, color], i) => (
+            <div key={i} className="flex items-center justify-between py-1" style={{ borderBottom: `1px dashed ${T.border || "#E5E7EB"}` }}>
+              <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">{label}</span>
+              <span style={{ color, fontFamily: FM, fontWeight: 700 }} className="text-sm">{val}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between pt-2">
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 800 }} className="text-sm">ЦЭВЭР АШИГ</span>
+            <span style={{ color: profit >= 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 800 }} className="text-lg">{profit >= 0 ? "+" : ""}{fmt(profit)}₮</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Урсгал зардал */}
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">🧾 Урсгал зардал ({month})</div>
+          {canEdit && <button onClick={() => setExpFormOpen((v) => !v)} className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#F97316", color: "white", fontFamily: FS }}>＋ Зардал бүртгэх</button>}
+        </div>
+        {expFormOpen && canEdit && (
+          <div className="mb-3 rounded-xl p-3 flex flex-wrap items-end gap-2" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
+              <input type="date" value={expDate} onChange={(e) => setExpDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Юунд зарцуулсан</div>
+              <input value={expTitle} onChange={(e) => setExpTitle(e.target.value)} placeholder="ж: агуулахын түрээс" className="w-full rounded-lg px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Ангилал</div>
+              <input value={expCat} onChange={(e) => setExpCat(e.target.value)} placeholder="Бусад" className="w-28 rounded-lg px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Дүн (₮)</div>
+              <input type="number" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} className="w-28 rounded-lg px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+            </div>
+            <button onClick={addExpense} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS }}>Хадгалах</button>
+          </div>
+        )}
+        <div className="space-y-1">
+          <div className="grid grid-cols-5 gap-2 px-2 py-1">
+            {["Огноо", "Юунд зарцуулсан", "Ангилал", "Дүн", ""].map((h, i) => (
+              <span key={i} style={{ color: T.muted, fontFamily: FM }} className={`text-[10px] uppercase ${i === 3 ? "text-right" : ""}`}>{h}</span>
+            ))}
+          </div>
+          {expenses.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2">Энэ сард урсгал зардал алга.</div>}
+          {expenses.map((e) => (
+            <div key={e.id} className="grid grid-cols-5 gap-2 items-center rounded-lg px-2 py-1.5" style={{ background: T.surface || "#fff", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+              <span style={{ color: T.ink, fontFamily: FM }} className="text-[11px]">{e.expense_date}</span>
+              <span style={{ color: T.ink, fontFamily: FS }} className="text-[11px] truncate">{e.title}</span>
+              <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]"><span className="px-1.5 py-0.5 rounded-full" style={{ background: T.surfaceAlt || "#F8FAFC" }}>{e.category || "Бусад"}</span></span>
+              <span style={{ color: "#F97316", fontFamily: FM, fontWeight: 700 }} className="text-[11px] text-right">{fmt(e.amount)}₮</span>
+              <span className="text-right">{canEdit && <button onClick={() => delExpense(e.id)} style={{ color: T.err }} className="text-sm">🗑</button>}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Нийт урсгал зардал:</span>
+            <span style={{ color: "#F97316", fontFamily: FM, fontWeight: 800 }} className="text-sm">{fmt(expTotal)}₮</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Тэмдэглэл + Хадгалах */}
+      <div className="glass rounded-2xl p-4 space-y-3">
+        <div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Тэмдэглэл (заавал биш)</div>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} disabled={!canEdit} rows={2} className="w-full rounded-lg px-2.5 py-2 text-sm outline-none resize-none" style={inputStyle} />
+        </div>
+        {canEdit && (
+          <button onClick={saveCalc} disabled={saving} className="press-btn w-full py-3 rounded-xl text-sm font-bold" style={{ background: "linear-gradient(90deg,#8B5CF6,#EC4899)", color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>
+            💾 {my} оны {Number(mm)}-р сарын тооцоог хадгалах
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SalesDashboardView({ profile, allowedPageIds = null }) {
   // allowedPageIds: null = бүх page (admin), массив = зөвхөн тэр page-ууд (merchant)
