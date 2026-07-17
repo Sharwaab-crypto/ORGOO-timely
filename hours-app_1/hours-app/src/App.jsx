@@ -15609,6 +15609,21 @@ function MarketingView({ profile }) {
   const [dsSaving, setDsSaving] = useState(false);
   const dsChartRef = useRef(null);
   const DONE_PAGE_SIZE = 50;
+  const [donePeriod, setDonePeriod] = useState("month");
+  const [doneFrom, setDoneFrom] = useState(monthStartStr);
+  const [doneTo, setDoneTo] = useState(todayStr);
+  const applyDonePreset = (preset) => {
+    const d = new Date();
+    const fmt = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    const t = fmt(d);
+    setDonePeriod(preset);
+    if (preset === "today") { setDoneFrom(t); setDoneTo(t); }
+    else if (preset === "yesterday") { const y = new Date(); y.setDate(y.getDate() - 1); const ys = fmt(y); setDoneFrom(ys); setDoneTo(ys); }
+    else if (preset === "week") { const s = new Date(); s.setDate(s.getDate() - 6); setDoneFrom(fmt(s)); setDoneTo(t); }
+    else if (preset === "month") { setDoneFrom(t.slice(0, 8) + "01"); setDoneTo(t); }
+    else if (preset === "all") { setDoneFrom("2020-01-01"); setDoneTo("2099-12-31"); }
+    // custom (Гараар): огноог доорх input-аар өөрчилнө
+  };
   const [savingTarget, setSavingTarget] = useState(false);
 
   const canEdit = ["admin", "manager", "marketing"].includes(profile.role);
@@ -15783,7 +15798,7 @@ function MarketingView({ profile }) {
     finally { setSavingTarget(false); }
   };
 
-  useEffect(() => { setDonePage(1); }, [doneFilterEmp, fromDate, toDate]);
+  useEffect(() => { setDonePage(1); }, [doneFilterEmp, doneFrom, doneTo]);
 
   // 📋 Олон оруулга — өдрүүдийн жагсаалт (дээд тал 40 өдөр)
   const bulkDays = useMemo(() => {
@@ -16424,9 +16439,27 @@ function MarketingView({ profile }) {
             {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         </div>
+        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+          {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["week", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "📆 Гараар"]].map(([id, label]) => (
+            <button key={id} onClick={() => applyDonePreset(id)} className="press-btn px-2.5 py-1 rounded-lg text-[11px]"
+              style={{ background: donePeriod === id ? T.highlight : (T.surface || "#fff"), color: donePeriod === id ? "white" : T.ink, fontFamily: FS, fontWeight: 600, border: `1px solid ${donePeriod === id ? T.highlight : (T.border || "#E5E7EB")}` }}>
+              {label}
+            </button>
+          ))}
+          {donePeriod === "custom" && (
+            <>
+              <input type="date" value={doneFrom} onChange={(e) => setDoneFrom(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+              <span style={{ color: T.muted }} className="text-[11px]">→</span>
+              <input type="date" value={doneTo} onChange={(e) => setDoneTo(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            </>
+          )}
+          {donePeriod !== "custom" && (
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{doneFrom === doneTo ? doneFrom : `${doneFrom} → ${doneTo}`}</span>
+          )}
+        </div>
         {(() => {
           const doneList = mktProducts
-            .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp) && mp.done_at && mp.done_at.slice(0, 10) >= fromDate && mp.done_at.slice(0, 10) <= toDate)
+            .filter((mp) => mp.status === "done" && (!doneFilterEmp || mp.employee_id === doneFilterEmp) && mp.done_at && mp.done_at.slice(0, 10) >= doneFrom && mp.done_at.slice(0, 10) <= doneTo)
             .sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0));
           if (doneList.length === 0) return <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Хийгдсэн бараа алга.</div>;
           const totalPages = Math.max(1, Math.ceil(doneList.length / DONE_PAGE_SIZE));
