@@ -19394,7 +19394,7 @@ function DriverSettlementView({ profile }) {
         </div>
 
         {/* Тооцоо хаах хэсэг */}
-        {driver.owed > 0 && (() => {
+        {(driver.owed > 0 || driver.isOpenSettlement) && (() => {
           const cash = Number(cashAmount) || 0;
           const bank = Number(bankAmount) || 0;
           const expense = Number(expenseAmount) || 0;
@@ -19527,6 +19527,55 @@ function DriverSettlementView({ profile }) {
             } catch (e) { alert("Алдаа: " + e.message); }
             finally { setClosingSettlement(false); }
           };
+
+          // 🗑 Хоосон (захиалгагүй) нээлттэй тооцоог устгах — 0₮-өөр хаавал хог бичлэг үүснэ
+          const handleDeleteEmptySettlement = async () => {
+            if (!driver.openSettle) return;
+            if (!confirm(`Хоосон нээлттэй тооцоог устгах уу?\n\nХүргэгч: ${driver.name}\nЭнэ тооцоонд захиалга холбогдоогүй тул устгахад аюулгүй.`)) return;
+            setClosingSettlement(true);
+            try {
+              // Аюулгүйн шалгалт: захиалга холбогдсон эсэхийг DB-ээс дахин шалгана
+              const { count } = await supabase.from("biz_orders").select("*", { count: "exact", head: true }).eq("settlement_id", driver.openSettle.id);
+              if ((count || 0) > 0) {
+                alert("⚠ Энэ тооцоонд захиалга холбогдсон байна — устгах боломжгүй. Хуудсаа шинэчилнэ үү.");
+                return;
+              }
+              const { error } = await supabase.from("biz_settlements").delete().eq("id", driver.openSettle.id);
+              if (error) throw error;
+              alert("✓ Хоосон тооцоо устгагдлаа");
+              setActiveDriver(null);
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+            finally { setClosingSettlement(false); }
+          };
+
+          // Хоосон нээлттэй тооцоо — зөвхөн тайлбар + устгах товч
+          if (driver.isOpenSettlement && driver.delivered === 0 && driver.owed <= 0) {
+            return (
+              <div className="glass rounded-2xl p-3">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3 flex items-center gap-2">
+                  💵 Тооцоо хаах
+                </div>
+                <div className="rounded-lg p-3 mb-3" style={{ background: "rgba(245,158,11,0.1)", border: `2px solid ${T.warn}` }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-base">⚠️</span>
+                    <span style={{ fontFamily: FS, fontWeight: 700, color: T.warn }} className="text-sm">Хоосон нээлттэй тооцоо</span>
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                    Энэ тооцоонд захиалга холбогдоогүй (0₮). Магадгүй захиалгууд нь өөрчлөгдсөн/цуцлагдсан. Доорх товчоор устгаж болно.
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
+                    🕒 Нээсэн: {new Date(driver.openSettle?.settled_at || driver.openSettle?.created_at || Date.now()).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
+                  </div>
+                </div>
+                <button onClick={handleDeleteEmptySettlement} disabled={closingSettlement}
+                  className="press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                  style={{ background: T.err, color: "white", fontFamily: FS, fontWeight: 700, opacity: closingSettlement ? 0.6 : 1 }}>
+                  {closingSettlement ? "Устгаж байна..." : "🗑 Хоосон тооцоог устгах"}
+                </button>
+              </div>
+            );
+          }
 
           return (
             <div className="glass rounded-2xl p-3">
