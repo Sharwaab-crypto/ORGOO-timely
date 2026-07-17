@@ -15578,7 +15578,7 @@ function MarketingView({ profile }) {
   const [reachVal, setReachVal] = useState("");
   const [saving, setSaving] = useState(false);
   const monthStartStr = todayStr.slice(0, 8) + "01";
-  const [fromDate, setFromDate] = useState(monthStartStr);
+  const [fromDate, setFromDate] = useState(todayStr); // default: Өнөөдөр
   const [toDate, setToDate] = useState(todayStr);
   const applyPreset = (preset) => {
     const d = new Date();
@@ -15609,8 +15609,8 @@ function MarketingView({ profile }) {
   const [dsSaving, setDsSaving] = useState(false);
   const dsChartRef = useRef(null);
   const DONE_PAGE_SIZE = 50;
-  const [donePeriod, setDonePeriod] = useState("month");
-  const [doneFrom, setDoneFrom] = useState(monthStartStr);
+  const [donePeriod, setDonePeriod] = useState("today"); // default: Өнөөдөр
+  const [doneFrom, setDoneFrom] = useState(todayStr);
   const [doneTo, setDoneTo] = useState(todayStr);
   const applyDonePreset = (preset) => {
     const d = new Date();
