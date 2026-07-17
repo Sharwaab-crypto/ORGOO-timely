@@ -23606,7 +23606,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             <div>
               <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
                 <MapPin size={11} style={{ color: "#10b981" }} />
-                Байршил сонгох
+                Байршил сонгох <span style={{ color: T.err, fontWeight: 700 }}>*</span>
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {/* Хот/Аймаг */}
@@ -24305,6 +24305,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                       return;
                     }
+                    // 📍 Байршил заавал: хот/аймаг + дүүрэг (+ хороо сонголт байвал)
+                    if (!selectedCity || !selectedDistrict) {
+                      alert("⚠ Хот/аймаг болон дүүрэг/сумыг заавал сонгоно уу!");
+                      return;
+                    }
+                    if (dbKhoroo.length > 0 && !selectedKhoroo) {
+                      alert("⚠ Хороог заавал сонгоно уу!");
+                      return;
+                    }
                     setBusy(true);
                     await onSave({
                       action: "save_only",
@@ -24360,6 +24369,15 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               }
               if (!address.trim()) {
                 alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
+                return;
+              }
+              // 📍 Байршил заавал: хот/аймаг + дүүрэг (+ хороо сонголт байвал)
+              if (!selectedCity || !selectedDistrict) {
+                alert("⚠ Хот/аймаг болон дүүрэг/сумыг заавал сонгоно уу!");
+                return;
+              }
+              if (dbKhoroo.length > 0 && !selectedKhoroo) {
+                alert("⚠ Хороог заавал сонгоно уу!");
                 return;
               }
 
