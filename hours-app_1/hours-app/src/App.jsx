@@ -15607,6 +15607,7 @@ function MarketingView({ profile }) {
   const [dsComment, setDsComment] = useState("");
   const [dsOrders, setDsOrders] = useState("");
   const [dsSaving, setDsSaving] = useState(false);
+  const dsChartRef = useRef(null);
   const DONE_PAGE_SIZE = 50;
   const [savingTarget, setSavingTarget] = useState(false);
 
@@ -15877,6 +15878,67 @@ function MarketingView({ profile }) {
     if (!confirm("Устгах уу?")) return;
     try { await supabase.from("mkt_daily_stats").delete().eq("id", id); setDailyStats((p) => p.filter((x) => x.id !== id)); }
     catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  // 📋 Chart-ыг PNG зураг болгож clipboard-д хуулах (голын текст + legend-тэй)
+  const copyDailyChart = async () => {
+    try {
+      const wrap = dsChartRef.current;
+      const svg = wrap?.querySelector("svg");
+      if (!svg) { alert("Chart олдсонгүй"); return; }
+      const rect = svg.getBoundingClientRect();
+      const W = Math.max(320, Math.round(rect.width));
+      const H = Math.max(200, Math.round(rect.height));
+      const legendRows = [
+        ["#3B82F6", "Chat", dsTotals.chat.toLocaleString()],
+        ["#8B5CF6", "Comment", dsTotals.comment.toLocaleString()],
+        [T.highlight || "#0F766E", "Хандалт (нийт)", dsTotals.reach.toLocaleString()],
+        ["#10B981", "Захиалга", dsTotals.orders.toLocaleString()],
+        [pcostColor(dsTotals.pcost), "P/cost", dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"],
+        ["#9CA3AF", "Boost (нийт)", dsTotals.boost.toLocaleString()],
+      ];
+      const pad = 16, rowH = 22, legendH = legendRows.length * rowH + 20, scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = W * scale; canvas.height = (H + legendH) * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H + legendH);
+      const xml = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml); });
+      ctx.drawImage(img, 0, 0, W, H);
+      // Голын текст (HTML overlay нь SVG-д ордоггүй тул гараар зурна)
+      const cx = W / 2, cy = H / 2;
+      ctx.textAlign = "center";
+      ctx.fillStyle = successColor(dsTotals.success * 100);
+      ctx.font = "800 24px Arial";
+      ctx.fillText((dsTotals.success * 100).toFixed(1) + "%", cx, cy - 2);
+      ctx.fillStyle = "#6B7280"; ctx.font = "600 10px Arial";
+      ctx.fillText("Амжилт", cx, cy + 12);
+      ctx.fillStyle = pcostColor(dsTotals.pcost); ctx.font = "700 12px Arial";
+      ctx.fillText("P/cost " + (dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"), cx, cy + 28);
+      // Legend
+      let y = H + 16; ctx.textAlign = "left";
+      legendRows.forEach(([color, label, val]) => {
+        ctx.fillStyle = color; ctx.fillRect(pad, y - 9, 10, 10);
+        ctx.fillStyle = "#111827"; ctx.font = "600 11px Arial"; ctx.fillText(label, pad + 16, y);
+        ctx.textAlign = "right"; ctx.font = "700 11px Arial"; ctx.fillText(String(val), W - pad, y);
+        ctx.textAlign = "left"; y += rowH;
+      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) { alert("Зураг үүсгэж чадсангүй"); return; }
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          alert("✓ Chart зураг хуулагдлаа — Ctrl+V хийж буулгана уу");
+        } catch (err) {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `daily-stats-${fromDate}_${toDate}.png`;
+          a.click();
+          alert("Clipboard дэмжигдээгүй тул зураг файлаар татагдлаа");
+        }
+      }, "image/png");
+    } catch (e) { alert("Алдаа: " + e.message); }
   };
 
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
@@ -16250,7 +16312,12 @@ function MarketingView({ profile }) {
 
         {dsTotals.reach > 0 && (
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center rounded-xl p-3" style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
-            <div style={{ position: "relative" }}>
+            <div ref={dsChartRef} style={{ position: "relative" }}>
+              <button onClick={copyDailyChart} title="Chart-ыг зураг болгож хуулах"
+                className="press-btn px-2 py-1 rounded-lg text-[10px] font-semibold"
+                style={{ position: "absolute", top: 2, right: 2, zIndex: 3, background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                📋 Хуулах
+              </button>
               <ResponsiveContainer width="100%" height={235}>
                 <PieChart>
                   {/* Гадна цагираг — Хандалтын бүтэц (Chat + Comment) */}
