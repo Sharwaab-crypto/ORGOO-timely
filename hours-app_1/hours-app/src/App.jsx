@@ -19628,6 +19628,25 @@ function DriverSettlementView({ profile }) {
             finally { setClosingSettlement(false); }
           };
 
+          // ✕ Нээлттэй тооцоог ЦУЦЛАХ — захиалгуудыг салгаж, нээлттэй бичлэгийг устгана
+          const handleCancelSettlement = async () => {
+            if (!driver.openSettle) return;
+            if (!confirm(`Нээлттэй тооцоог ЦУЦЛАХ уу?\n\nХүргэгч: ${driver.name}\nХолбогдсон захиалга: ${driver.delivered}ш\n\n• Захиалгууд тооцооноос салж, дараа дахин "Тооцоо нээх" боломжтой болно\n• Нээлттэй тооцооны бичлэг устана (хаагдсан тооцоонд нөлөөгүй)\n\nҮргэлжлүүлэх үү?`)) return;
+            setClosingSettlement(true);
+            try {
+              // Аюулгүй: зөвхөн ОДОО ч 'open' байгаа тохиолдолд
+              const { data: st } = await supabase.from("biz_settlements").select("id, status").eq("id", driver.openSettle.id).maybeSingle();
+              if (!st || st.status !== "open") { alert("⚠ Тооцоо аль хэдийн хаагдсан эсвэл устсан байна. Хуудсаа шинэчилнэ үү."); return; }
+              const { error: e1 } = await supabase.from("biz_orders").update({ settlement_id: null }).eq("settlement_id", driver.openSettle.id);
+              if (e1) throw e1;
+              const { error: e2 } = await supabase.from("biz_settlements").delete().eq("id", driver.openSettle.id).eq("status", "open");
+              if (e2) throw e2;
+              alert("✓ Нээлттэй тооцоо цуцлагдлаа — захиалгууд чөлөөлөгдөв.");
+              await loadAll();
+            } catch (e) { alert("Алдаа: " + e.message); }
+            finally { setClosingSettlement(false); }
+          };
+
           // 🗑 Хоосон (захиалгагүй) нээлттэй тооцоог устгах — 0₮-өөр хаавал хог бичлэг үүснэ
           const handleDeleteEmptySettlement = async () => {
             if (!driver.openSettle) return;
@@ -19701,6 +19720,13 @@ function DriverSettlementView({ profile }) {
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">
                     🕒 Нээсэн: {new Date(driver.openSettle.settled_at || driver.openSettle.created_at || Date.now()).toLocaleString("mn-MN", { dateStyle: "short", timeStyle: "short" })}
                   </div>
+                  {["admin", "manager"].includes(profile.role) && (
+                    <button onClick={handleCancelSettlement} disabled={closingSettlement}
+                      className="press-btn mt-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                      style={{ background: "transparent", color: T.err, fontFamily: FS, border: `1.5px solid ${T.err}`, opacity: closingSettlement ? 0.6 : 1 }}>
+                      ✕ Тооцоо цуцлах (захиалгуудыг чөлөөлнө)
+                    </button>
+                  )}
                 </div>
               )}
 
