@@ -19220,28 +19220,43 @@ function DriverSettlementView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: drvData }, ordData, openSettleData] = await Promise.all([
+      // ⚡ ГАЦАА ЗАСВАР: өмнө driver-тэй БҮХ (settle хийгдсэн 15К+ хуучныг оруулаад) захиалга,
+      //    дараа нь тэдгээрийн items-ийг 180+ ДАРААЛСАН хүсэлтээр (~50 сек!) татдаг байсан.
+      //    Тооцоо тулгахад зөвхөн settle хийгдээгүй + НЭЭЛТТЭЙ тооцооны захиалга хангалттай.
+      const [{ data: drvData }, openSettleData] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null)),
         fetchAllRows(supabase.from("biz_settlements").select("*").eq("status", "open")),
       ]);
+      const openIds = (openSettleData || []).map((s) => s.id);
+      const orFilter = openIds.length
+        ? `settlement_id.is.null,settlement_id.in.(${openIds.join(",")})`
+        : "settlement_id.is.null";
+      const ordData = await fetchAllRowsParallel(() =>
+        supabase.from("biz_orders").select("*").not("driver_id", "is", null).or(orFilter)
+      );
       setDrivers(drvData || []);
       setOrders(ordData || []);
       setOpenSettlements(openSettleData || []);
-      // 🛍 Захиалгын бараа татах (картад харуулах) — driver-ийн захиалгуудынх
+      // 🛍 Захиалгын бараа (картад харуулах) — chunk-уудыг ЗЭРЭГЦЭЭ татна
       try {
         const driverOrderIds = (ordData || []).map((o) => o.id);
         if (driverOrderIds.length > 0) {
-          const allItems = await fetchInChunks("biz_order_items", driverOrderIds, {
-            select: "order_id, product_name, quantity",
-            filterColumn: "order_id",
-          });
+          const CH = 200;
+          const jobs = [];
+          for (let i = 0; i < driverOrderIds.length; i += CH) {
+            const chunk = driverOrderIds.slice(i, i + CH);
+            jobs.push(supabase.from("biz_order_items").select("order_id, product_name, quantity").in("order_id", chunk));
+          }
+          const results = await Promise.all(jobs);
+          const allItems = results.flatMap((r) => r.data || []);
           const grouped = {};
-          (allItems || []).forEach((it) => {
+          allItems.forEach((it) => {
             if (!grouped[it.order_id]) grouped[it.order_id] = [];
             grouped[it.order_id].push(it);
           });
           setItemsByOrder(grouped);
+        } else {
+          setItemsByOrder({});
         }
       } catch (e) { console.error("[settlement items]", e); }
     } catch (e) { console.error(e); }
