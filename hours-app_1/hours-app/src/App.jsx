@@ -7751,7 +7751,7 @@ function SupplierOrdersView({ profile }) {
     try {
       const [{ data: orderData }, { data: prodData }] = await Promise.all([
         supabase.from("inv_supplier_orders").select("*").order("ordered_at", { ascending: false }),
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
       setOrders(orderData || []);
       setProducts(prodData || []);
@@ -8399,10 +8399,10 @@ function InventoryView({ profile, isAdmin = false }) {
         { data: recvData },     // 🆕 Бөөн орлогын header-ууд
         { data: whData },        // 🆕 Агуулахууд
       ] = await Promise.all([
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_movements").select("*").order("created_at", { ascending: false }).limit(100),
-        supabase.from("inv_stock").select("product_id, quantity, warehouse_id"),
+        fetchAllRows(supabase.from("inv_stock").select("product_id, quantity, warehouse_id")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         supabase.from("inv_receivings").select("*").order("received_at", { ascending: false }).limit(100),
         supabase.from("inv_warehouses").select("id, name, type"),
       ]);
@@ -9258,7 +9258,7 @@ function WarehousesView({ profile }) {
     try {
       const [{ data: whData, error: whErr }, { data: stkData, error: stkErr }, { data: prdData, error: prdErr }, { data: drvData }] = await Promise.all([
         supabase.from("inv_warehouses").select("*").order("type").order("name"),
-        supabase.from("inv_stock").select("*"),
+        fetchAllRows(supabase.from("inv_stock").select("*")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("profiles").select("id, name, role").eq("role", "driver"),
       ]);
@@ -10017,7 +10017,7 @@ function MovementsView({ profile }) {
         supabase.from("inv_products").select("id, name, sku, image_url").eq("is_active", true),
         supabase.from("inv_warehouses").select("id, name, driver_id"),
         supabase.from("profiles").select("id, name, role"),
-        supabase.from("inv_stock").select("*"),
+        fetchAllRows(supabase.from("inv_stock").select("*")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
       setProducts(prd || []);
       setWarehouses(wh || []);
@@ -10525,7 +10525,7 @@ function TransferRequestsView({ profile }) {
         supabase.from("inv_transfer_requests").select("*").order("created_at", { ascending: false }),
         supabase.from("inv_warehouses").select("*"),
         supabase.from("inv_products").select("id, name, sku, image_url"),
-        supabase.from("inv_stock").select("*"),
+        fetchAllRows(supabase.from("inv_stock").select("*")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
       setRequests(reqData || []);
       setWarehouses(whData || []);
@@ -11020,10 +11020,10 @@ function StockCountView({ profile }) {
     try {
       const [{ data: countsData }, { data: prodData }, { data: catData }, { data: whData }, { data: stkData }] = await Promise.all([
         supabase.from("inv_stock_counts").select("*").order("started_at", { ascending: false }),
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         supabase.from("inv_categories").select("*").order("display_order"),
         supabase.from("inv_warehouses").select("id, name, type"),
-        supabase.from("inv_stock").select("product_id, warehouse_id, quantity"),
+        fetchAllRows(supabase.from("inv_stock").select("product_id, warehouse_id, quantity")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
       // Төв агуулах
       const mainWh = (whData || []).find((w) => w.type === "main");
@@ -12626,7 +12626,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
         const [{ data: orderData }, { data: itemsData }, { data: prodData }] = await Promise.all([
           supabase.from("biz_orders").select("*").eq("id", orderId).single(),
           supabase.from("biz_order_items").select("*").eq("order_id", orderId),
-          supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+          fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         ]);
         setOrder(orderData);
         setItems(itemsData || []);
@@ -12754,7 +12754,7 @@ function LowStockAlertBanner() {
         supabase.from("inv_products")
           .select("id, name, sku, min_stock, image_url")
           .gt("min_stock", 0),
-        supabase.from("inv_stock").select("product_id, quantity"),
+        fetchAllRows(supabase.from("inv_stock").select("product_id, quantity")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
 
       // 🆕 ЖИНХЭНЭ нөөц — inv_stock нийлбэр (inv_products.stock хуучирсан тул ашиглахгүй).
@@ -13012,8 +13012,8 @@ function CallCenterView({ profile }) {
         ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000)
         : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000);
       const productsQuery = isMerchant && allowedPageIds.length > 0
-        ? supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")
-        : supabase.from("inv_products").select("*").eq("is_active", true).order("name");
+        ? fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")).then((d) => ({ data: d }))
+        : fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d }));
 
       const [callRes, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
         callsQuery,
@@ -25576,7 +25576,7 @@ function OrdersView({ profile }) {
 
       const [{ data: ordData, count: totalC, error: ordErr }, { data: prodData }, { data: drvData }] = await Promise.all([
         mainQ,
-        supabase.from("inv_products").select("*").eq("is_active", true).order("name"),
+        fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
         supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
       ]);
       if (ordErr) throw ordErr;
@@ -35000,7 +35000,7 @@ function DriverRequestsView({ profile }) {
       const [{ data: reqData, error: reqErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         reqQuery.order("created_at", { ascending: false }),
         supabase.from("inv_products").select("id, name, sku, image_url, sale_price, category_id").eq("is_active", true),
-        supabase.from("inv_stock").select("*"),
+        fetchAllRows(supabase.from("inv_stock").select("*")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
       if (prdErr) console.error("Product fetch error:", prdErr);
