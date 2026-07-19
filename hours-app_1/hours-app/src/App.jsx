@@ -19195,16 +19195,6 @@ function DriverSettlementView({ profile }) {
     return () => { cancelled = true; };
   }, [editOrder?.order?.id]);
 
-  // Bulk автомат нээх — өдөр бүрийн тогтсон цаг
-  const [scheduledTime, setScheduledTime] = useState(() => {
-    try { return localStorage.getItem("orgoo-settlement-time") || "18:00"; } catch { return "18:00"; }
-  });
-  const [autoOpenEnabled, setAutoOpenEnabled] = useState(() => {
-    try { return localStorage.getItem("orgoo-settlement-auto") === "true"; } catch { return false; }
-  });
-  const [lastAutoOpenDate, setLastAutoOpenDate] = useState(() => {
-    try { return localStorage.getItem("orgoo-settlement-last-date") || ""; } catch { return ""; }
-  });
 
   // Хугацаа — settle хийгдээгүй бүх захиалгуудыг харна
   const periodRange = useMemo(() => {
@@ -19320,89 +19310,6 @@ function DriverSettlementView({ profile }) {
     };
   }), [drivers, filteredOrders, openSettlements]);
 
-  // ⏰ Автомат нээх — өдөр бүрийн тогтсон цагт ажиллана
-  // ВАЖНО: ENE useEffect зайлшгүй "if (activeDriver) return"-ын өмнө байх ёстой (hooks order)
-  const driverStatsRef = useRef(driverStats);
-  driverStatsRef.current = driverStats;
-  
-  useEffect(() => {
-    if (!autoOpenEnabled) {
-      logDev("[Auto Open] Disabled");
-      return;
-    }
-    logDev(`[Auto Open] Initialized — scheduledTime: ${scheduledTime}, lastAutoOpenDate: ${lastAutoOpenDate}`);
-    
-    const checkAndOpen = async () => {
-      // Монголын цагийг авах (UTC+8)
-      const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
-      const today = `${mnNow.getFullYear()}-${String(mnNow.getMonth() + 1).padStart(2, "0")}-${String(mnNow.getDate()).padStart(2, "0")}`;
-      const currentTime = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
-      
-      logDev(`[Auto Open Check] now=${currentTime} (${today}), scheduled=${scheduledTime}, lastDate=${lastAutoOpenDate}`);
-      
-      if (lastAutoOpenDate === today) {
-        logDev("[Auto Open] Already opened today, skipping");
-        return;
-      }
-      if (currentTime < scheduledTime) {
-        logDev(`[Auto Open] Too early (${currentTime} < ${scheduledTime})`);
-        return;
-      }
-      
-      // Closure-аас одоогийн driverStats авах
-      const stats = driverStatsRef.current;
-      const driversToOpen = stats.filter((d) => !d.openSettlement && d.delivered > 0);
-      logDev(`[Auto Open] Found ${driversToOpen.length} drivers to open`);
-      if (driversToOpen.length === 0) {
-        // Өнөөдөр захиалга байхгүй ч → date-ийг хадгалбал маргааш сэргээнэ
-        return;
-      }
-      
-      logDev(`[Auto Open] Triggered at ${currentTime}, scheduled: ${scheduledTime}`);
-      
-      try {
-        for (const d of driversToOpen) {
-          const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
-            driver_id: d.id,
-            cash_amount: 0, bank_amount: 0, expense_amount: 0,
-            total_submitted: 0,
-            settlement_amount: d.owed,
-            delivered_total: d.deliveredTotal,
-            paid_already: d.paidAlready,
-            period_start: periodRange.start.toISOString(),
-            period_end: periodRange.end.toISOString(),
-            period_label: periodRange.label,
-            order_count: d.delivered,
-            settled_by: profile.id,
-            status: "open",
-          }).select().single();
-          if (stErr) { console.error(`[Auto Open] ${d.name}:`, stErr); continue; }
-          
-          const orderIds = [
-            ...d.deliveredOrders.map((o) => o.id),
-            ...d.cancelledOrders.map((o) => o.id),
-          ];
-          if (orderIds.length > 0) {
-            await updateInChunks("biz_orders", "id", orderIds, { settlement_id: stData.id });
-          }
-        }
-        
-        try {
-          localStorage.setItem("orgoo-settlement-last-date", today);
-          setLastAutoOpenDate(today);
-        } catch {}
-        
-        logDev(`[Auto Open] ${driversToOpen.length} settlement opened`);
-        await loadAll();
-      } catch (e) {
-        console.error("[Auto Open] Error:", e);
-      }
-    };
-    
-    checkAndOpen();
-    const intervalId = setInterval(checkAndOpen, 60 * 1000);
-    return () => clearInterval(intervalId);
-  }, [autoOpenEnabled, scheduledTime, lastAutoOpenDate, periodRange, profile.id]);
 
   // Detail харах хэсэг
   if (activeDriver) {
@@ -20589,95 +20496,6 @@ function DriverSettlementView({ profile }) {
                 style={{ background: T.warn, color: "white", fontFamily: FS, fontWeight: 700 }}>
                 {bulkOpening ? "Нээж байна..." : "🔓 Бүгдийг нээх"}
               </button>
-            </div>
-            
-            {/* ⏰ Автомат нээх цаг */}
-            <div className="rounded-lg p-2.5 mt-2" style={{ background: T.bg, border: `1px solid ${T.border}` }}>
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-xs">
-                    ⏰ Өдөр бүр автомат:
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {/* Цаг dropdown 00-23 */}
-                    <select value={scheduledTime.split(":")[0] || "18"}
-                      onChange={(e) => {
-                        const newTime = `${e.target.value}:${scheduledTime.split(":")[1] || "00"}`;
-                        setScheduledTime(newTime);
-                        try { localStorage.setItem("orgoo-settlement-time", newTime); } catch {}
-                      }}
-                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700 }}
-                      className="px-2 py-1 rounded text-sm tabular-nums cursor-pointer">
-                      {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                    </select>
-                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-sm">:</span>
-                    {/* Минут input — 0-59 */}
-                    <input type="number" value={scheduledTime.split(":")[1] || "00"}
-                      onChange={(e) => {
-                        let v = parseInt(e.target.value, 10);
-                        if (isNaN(v)) v = 0;
-                        if (v < 0) v = 0;
-                        if (v > 59) v = 59;
-                        const newTime = `${scheduledTime.split(":")[0] || "18"}:${String(v).padStart(2, "0")}`;
-                        setScheduledTime(newTime);
-                        try { localStorage.setItem("orgoo-settlement-time", newTime); } catch {}
-                      }}
-                      min="0" max="59"
-                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD, fontWeight: 700, width: 56 }}
-                      className="px-2 py-1 rounded text-sm tabular-nums text-center" />
-                  </div>
-                </div>
-                
-                {/* Toggle */}
-                <button onClick={() => {
-                  const newVal = !autoOpenEnabled;
-                  setAutoOpenEnabled(newVal);
-                  try { localStorage.setItem("orgoo-settlement-auto", String(newVal)); } catch {}
-                }}
-                  className="press-btn px-3 py-1 rounded-full text-xs flex items-center gap-1.5"
-                  style={{
-                    background: autoOpenEnabled ? T.ok : T.surfaceAlt,
-                    color: autoOpenEnabled ? "white" : T.muted,
-                    fontFamily: FS, fontWeight: 600,
-                    border: `1px solid ${autoOpenEnabled ? T.ok : T.border}`,
-                  }}>
-                  <span>{autoOpenEnabled ? "✓ Идэвхтэй" : "○ Идэвхгүй"}</span>
-                </button>
-              </div>
-              {autoOpenEnabled && (
-                <div className="mt-1.5">
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                    ℹ Энэ системийг нээлттэй бол → өдөр бүр <strong style={{ color: T.ok }}>{scheduledTime}</strong> цагт автомат нээгдэнэ
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    {(() => {
-                      const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
-                      const cur = `${String(mnNow.getHours()).padStart(2, "0")}:${String(mnNow.getMinutes()).padStart(2, "0")}`;
-                      return (
-                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                          🕐 Одоо: <strong style={{ color: T.highlight }}>{cur}</strong> (Монгол)
-                        </span>
-                      );
-                    })()}
-                    {lastAutoOpenDate && (
-                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        · Сүүлийн: <strong>{lastAutoOpenDate}</strong>
-                      </span>
-                    )}
-                    <button onClick={() => {
-                      try { localStorage.removeItem("orgoo-settlement-last-date"); } catch {}
-                      setLastAutoOpenDate("");
-                      alert("✅ Reset! Дараагийн минутэд шалгахад дахин ажиллана.");
-                    }}
-                      className="press-btn px-2 py-0.5 rounded text-[10px]"
-                      style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>
-                      🔄 Reset
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         );
