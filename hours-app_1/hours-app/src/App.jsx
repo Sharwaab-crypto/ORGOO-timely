@@ -20270,26 +20270,29 @@ function DriverSettlementView({ profile }) {
                       if (removedIds.length > 0) {
                         await deleteInChunks("biz_order_items", "id", removedIds);
                       }
-                      // Modified
+                      // Modified — quantity + мөрийн total_amount хамт шинэчилнэ
                       for (const it of editOrderItems.filter((x) => x.id && x._modified)) {
-                        await supabase.from("biz_order_items").update({
+                        const { error: updErr } = await supabase.from("biz_order_items").update({
                           quantity: Number(it.quantity || 0),
+                          total_amount: Number(it.unit_price || 0) * Number(it.quantity || 0),
                         }).eq("id", it.id);
+                        if (updErr) throw new Error("Item шинэчлэхэд: " + updErr.message);
                       }
-                      // Шинэ insert
+                      // Шинэ insert — ⚠ зөвхөн хүснэгтэд БАЙГАА баганууд (өмнө product_sku/product_image
+                      //   гэсэн байхгүй багана руу бичиж 400 алдаа чимээгүй унаж, мөр огт үүсдэггүй байсан!)
                       const newItems = editOrderItems.filter((x) => !x.id);
                       if (newItems.length > 0) {
-                        await supabase.from("biz_order_items").insert(
+                        const { error: insErr } = await supabase.from("biz_order_items").insert(
                           newItems.map((it) => ({
                             order_id: orderId,
                             product_id: it.product_id,
                             product_name: it.product_name,
-                            product_sku: it.product_sku,
-                            product_image: it.product_image,
                             unit_price: Number(it.unit_price || 0),
                             quantity: Number(it.quantity || 0),
+                            total_amount: Number(it.unit_price || 0) * Number(it.quantity || 0),
                           }))
                         );
+                        if (insErr) throw new Error("Шинэ бараа нэмэхэд: " + insErr.message);
                       }
                       
                       // ─── 6. biz_orders update ───
