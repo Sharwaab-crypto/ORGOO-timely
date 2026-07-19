@@ -20154,6 +20154,15 @@ function DriverSettlementView({ profile }) {
                       const driverId = editOrder.order.driver_id;
                       const originalStatus = editOrder.order.status;
                       const newStatus = editOrder.status;
+
+                      // 🛡 Хаагдсан тооцоонд орсон захиалгыг засахаас сэргийлэх анхааруулга
+                      if (editOrder.order.settlement_id) {
+                        const { data: stChk } = await supabase.from("biz_settlements").select("status, settled_at").eq("id", editOrder.order.settlement_id).maybeSingle();
+                        if (stChk && stChk.status === "closed") {
+                          const ok = confirm(`⚠️ АНХААР: Энэ захиалга ${stChk.settled_at ? new Date(stChk.settled_at).toLocaleDateString("mn-MN") : ""}-нд ХААГДСАН тооцоонд багтсан байна.\n\nЗасвар хийвэл хаагдсан тооцооны дүн АВТОМАТААР ӨӨРЧЛӨГДӨХГҮЙ тул тайлан зөрнө. Дараа нь тооцоог гараар (SQL/админ) залруулах шаардлагатай.\n\nҮүнийг ойлгож байвал үргэлжлүүлэх үү?`);
+                          if (!ok) return;
+                        }
+                      }
                       
                       // ─── 1. Driver-ийн агуулахыг олох (stock adjustment-руу) ───
                       let driverWh = null;
