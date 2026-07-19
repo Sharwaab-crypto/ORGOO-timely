@@ -19556,13 +19556,18 @@ function DriverSettlementView({ profile }) {
             if (!confirm(`Нээлттэй тооцоог ЦУЦЛАХ уу?\n\nХүргэгч: ${driver.name}\nХолбогдсон захиалга: ${driver.delivered}ш\n\n• Захиалгууд тооцооноос салж, дараа дахин "Тооцоо нээх" боломжтой болно\n• Нээлттэй тооцооны бичлэг устана (хаагдсан тооцоонд нөлөөгүй)\n\nҮргэлжлүүлэх үү?`)) return;
             setClosingSettlement(true);
             try {
-              // Аюулгүй: зөвхөн ОДОО ч 'open' байгаа тохиолдолд
-              const { data: st } = await supabase.from("biz_settlements").select("id, status").eq("id", driver.openSettle.id).maybeSingle();
-              if (!st || st.status !== "open") { alert("⚠ Тооцоо аль хэдийн хаагдсан эсвэл устсан байна. Хуудсаа шинэчилнэ үү."); return; }
+              // 🛡 Race-аюулгүй дараалал: ЭХЛЭЭД нээлттэй мөрийг устгана (status='open' нөхцөлтэй).
+              //    Хэрэв яг энэ мөчид өөр хүн хааж амжсан бол устгалт 0 мөр → зогсооно.
+              //    (Өмнө нь эхэлж захиалга салгадаг байсан нь зэрэг хаахтай давхцвал
+              //     "захиалгагүй хаагдсан тооцоо" үүсгэдэг байсан.)
+              const { data: delRows, error: e2 } = await supabase.from("biz_settlements").delete().eq("id", driver.openSettle.id).eq("status", "open").select("id");
+              if (e2) throw e2;
+              if (!delRows || delRows.length === 0) {
+                alert("⚠ Тооцоо энэ хооронд хаагдсан байна — цуцлах боломжгүй. Хуудсаа шинэчилнэ үү.");
+                return;
+              }
               const { error: e1 } = await supabase.from("biz_orders").update({ settlement_id: null }).eq("settlement_id", driver.openSettle.id);
               if (e1) throw e1;
-              const { error: e2 } = await supabase.from("biz_settlements").delete().eq("id", driver.openSettle.id).eq("status", "open");
-              if (e2) throw e2;
               alert("✓ Нээлттэй тооцоо цуцлагдлаа — захиалгууд чөлөөлөгдөв.");
               await loadAll();
             } catch (e) { alert("Алдаа: " + e.message); }
