@@ -24181,15 +24181,6 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                       return;
                     }
-                    // 📍 Байршил заавал: хот/аймаг + дүүрэг (+ хороо сонголт байвал)
-                    if (!selectedCity || !selectedDistrict) {
-                      alert("⚠ Хот/аймаг болон дүүрэг/сумыг заавал сонгоно уу!");
-                      return;
-                    }
-                    if (dbKhoroo.length > 0 && !selectedKhoroo) {
-                      alert("⚠ Хороог заавал сонгоно уу!");
-                      return;
-                    }
                     setBusy(true);
                     await onSave({
                       action: "save_only",
