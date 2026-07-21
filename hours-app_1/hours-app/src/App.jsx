@@ -2484,9 +2484,9 @@ function AdminDashboard({ profile }) {
 
             <SidebarSection label="Агуулах" icon={Warehouse}>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
+              <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
               {!isMarketing && (
                 <>
-                  <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
                   <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
                   <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
                   <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
