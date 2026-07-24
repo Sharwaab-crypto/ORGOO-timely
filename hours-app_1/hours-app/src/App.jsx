@@ -36693,6 +36693,13 @@ function DriverDashboard({ profile }) {
 
   // Filter
   const filtered = orders.filter((o) => {
+    // 📋 Бүх — жолоочид харагдах бүх төлөв нэг дор (миний идэвхтэй/хүргэсэн/цуцалсан + шинэ + тодорхойгүй)
+    if (filter === "all") {
+      const mine = o.driver_id === profile.id && !((o.status === "delivered" || o.status === "cancelled") && o.settlement_id);
+      const availableNew = o.status === "new" && !o.driver_id;
+      const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
+      return mine || availableNew || markedUnknown;
+    }
     if (filter === "available") return o.status === "new" && !o.driver_id && !o.is_unknown;
     if (filter === "active") return o.driver_id === profile.id && !o.is_unknown && (o.status === "new" || o.status === "pending" || o.status === "assigned");
     // 🆕 Хуваарилах — зөвхөн Шинэ хэсэгт байгаа + миний бүсэд багтсан pin-тэй
@@ -36729,6 +36736,12 @@ function DriverDashboard({ profile }) {
   const pagedFiltered = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   const counts = {
+    all: orders.filter((o) => {
+      const mine = o.driver_id === profile.id && !((o.status === "delivered" || o.status === "cancelled") && o.settlement_id);
+      const availableNew = o.status === "new" && !o.driver_id;
+      const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
+      return mine || availableNew || markedUnknown;
+    }).length,
     available: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length,
     myzone: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown && isInMyZone(o)).length,
     unknown: orders.filter((o) => {
@@ -36939,6 +36952,16 @@ function DriverDashboard({ profile }) {
 
         {/* Filter tabs */}
         <div className="glass rounded-2xl p-2 flex gap-1 flex-wrap">
+          <button onClick={() => setFilter("all")}
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{
+              background: filter === "all" ? "#475569" : T.surfaceAlt,
+              color: filter === "all" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+              minWidth: "80px",
+            }}>
+            📋 Бүх ({counts.all})
+          </button>
           <button onClick={() => setFilter("available")}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
             style={{
