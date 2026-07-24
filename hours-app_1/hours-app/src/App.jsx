@@ -34842,6 +34842,7 @@ function DriverRequestsView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
   const [isReturn, setIsReturn] = useState(false);
+  const [surplusMode, setSurplusMode] = useState(false); // ⚡ Илүү бараа горим
   const [activeRequest, setActiveRequest] = useState(null); // detail modal-руу нээх хүсэлт
 
   const loadAll = async () => {
@@ -34920,7 +34921,7 @@ function DriverRequestsView({ profile }) {
     <div className="space-y-3">
       {/* Action buttons */}
       <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => { setIsReturn(false); setShowNewModal(true); }}
+        <button onClick={() => { setIsReturn(false); setSurplusMode(false); setShowNewModal(true); }}
           className="press-btn glass lift rounded-2xl p-3 flex flex-col items-center gap-1.5"
           style={{ borderLeft: `3px solid #0ea5e9` }}>
           <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
@@ -34934,7 +34935,7 @@ function DriverRequestsView({ profile }) {
             Төв агуулахаас авах хүсэлт
           </div>
         </button>
-        <button onClick={() => { setIsReturn(true); setShowNewModal(true); }}
+        <button onClick={() => { setIsReturn(true); setSurplusMode(false); setShowNewModal(true); }}
           className="press-btn glass lift rounded-2xl p-3 flex flex-col items-center gap-1.5"
           style={{ borderLeft: `3px solid ${T.warn}` }}>
           <div style={{ background: T.warnSoft, color: T.warn }}
@@ -34946,6 +34947,20 @@ function DriverRequestsView({ profile }) {
           </div>
           <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center">
             Төв агуулах руу буцаах
+          </div>
+        </button>
+        <button onClick={() => { setIsReturn(true); setSurplusMode(true); setShowNewModal(true); }}
+          className="press-btn glass lift rounded-2xl p-3 flex flex-col items-center gap-1.5 col-span-2"
+          style={{ borderLeft: `3px solid #8B5CF6` }}>
+          <div style={{ background: "rgba(139,92,246,0.12)", color: "#8B5CF6" }}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-lg">
+            ⚡
+          </div>
+          <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-xs">
+            Илүү бараа буцаах
+          </div>
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] text-center">
+            Захиалгад хэрэггүй илүү барааг автоматаар шүүж буцаана
           </div>
         </button>
       </div>
@@ -35284,6 +35299,7 @@ function DriverRequestsView({ profile }) {
       {showNewModal && myWarehouse && (
         <NewTransferRequestModal
           isReturn={isReturn}
+          surplusOnly={surplusMode}
           myWarehouse={myWarehouse}
           warehouses={warehouses}
           products={products}
@@ -35301,7 +35317,7 @@ function DriverRequestsView({ profile }) {
 }
 
 // ─── Шинэ хүсэлт modal — Categories + Grid layout ────────────────
-function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, stock, profile, onSave, onClose }) {
+function NewTransferRequestModal({ isReturn, surplusOnly = false, myWarehouse, warehouses, products, stock, profile, onSave, onClose }) {
   const mainWarehouse = warehouses.find((w) => w.type === "main");
   const [selectedItems, setSelectedItems] = useState([]);
   const [notes, setNotes] = useState("");
@@ -35339,8 +35355,58 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
     (async () => {
       setCalculating(true);
       try {
-        if (isReturn) {
-          // БУЦААХ
+        if (isReturn && surplusOnly) {
+          // ⚡ ИЛҮҮ БАРАА — агуулахын үлдэгдлээс дуусаагүй захиалгуудад
+          //   хэрэгтэй тоог хасч, зөвхөн илүүг автоматаар сонгоно.
+          const myStock = stock.filter((s) => s.warehouse_id === myWarehouse?.id && Number(s.quantity) > 0);
+          let neededBy = {};
+          try {
+            const { data: pendOrders } = await supabase
+              .from("biz_orders")
+              .select("id")
+              .eq("driver_id", profile.id)
+              .not("status", "in", "(delivered,cancelled)");
+            const ids = (pendOrders || []).map((o) => o.id);
+            if (ids.length > 0) {
+              const itemsRows = await fetchInChunks("biz_order_items", ids, {
+                select: "product_id, quantity",
+                filterColumn: "order_id",
+              });
+              (itemsRows || []).forEach((r) => {
+                if (!r.product_id) return;
+                neededBy[r.product_id] = (neededBy[r.product_id] || 0) + Number(r.quantity || 0);
+              });
+            }
+          } catch (e) { console.error("[return surplus calc]", e); }
+          let heldTypes = 0;
+          const items = [];
+          myStock.forEach((s) => {
+            const product = products.find((p) => p.id === s.product_id);
+            const have = Number(s.quantity);
+            const need = Number(neededBy[s.product_id] || 0);
+            const surplus = Math.max(0, have - need);
+            if (need > 0) heldTypes++;
+            if (surplus <= 0) return; // захиалгад бүрэн хэрэгтэй — автоматаар оруулахгүй
+            items.push({
+              product_id: s.product_id,
+              product_name: product?.name || "",
+              product_sku: product?.sku || "",
+              product_image: product?.image_url || null,
+              product_price: Number(product?.sale_price || 0),
+              quantity: surplus, // ⚡ зөвхөн илүү тоо
+              maxQty: have,
+            });
+          });
+          setSelectedItems(items);
+          const surplusTotal = items.reduce((s2, it) => s2 + it.quantity, 0);
+          setAutoNote(
+            myStock.length === 0 ? "Агуулахад буцаах бараа байхгүй"
+            : items.length > 0
+              ? `⚡ Илүү ${items.length} төрөл / ${surplusTotal}ш автомат сонгов${heldTypes > 0 ? ` (${heldTypes} төрөл захиалгад хэрэгтэй тул хасагдав)` : ""}`
+              : `Бүх бараа (${myStock.length} төрөл) одоогийн захиалгуудад хэрэгтэй — илүү алга. Шаардлагатай бол гараар нэмнэ үү.`
+          );
+        } else if (isReturn) {
+          // 🔄 БУЦААХ (энгийн) — хуучин зан үйл: агуулахын бүх барааг автомат сонгоно
           const myStock = stock.filter((s) => s.warehouse_id === myWarehouse?.id && Number(s.quantity) > 0);
           const items = myStock.map((s) => {
             const product = products.find((p) => p.id === s.product_id);
@@ -35552,7 +35618,7 @@ function NewTransferRequestModal({ isReturn, myWarehouse, warehouses, products, 
         <div className="px-4 py-3 flex items-center justify-between gap-2"
           style={{ borderBottom: `1px solid ${T.border}` }}>
           <h3 style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-base flex items-center gap-2">
-            {isReturn ? "🔄 Бараа буцаах" : "📨 Бараа авах"}
+            {isReturn ? (surplusOnly ? "⚡ Илүү бараа буцаах" : "🔄 Бараа буцаах") : "📨 Бараа авах"}
           </h3>
           <div className="flex items-center gap-2">
             {selectedItems.length > 0 && (
