@@ -36398,6 +36398,43 @@ function DriverDashboard({ profile }) {
   const [ratingOrder, setRatingOrder] = useState(null); // { order, action: 'delivered'|'cancelled' }
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingNote, setRatingNote] = useState("");
+  const [pickupShort, setPickupShort] = useState(null); // ⚠ {types, total} — авах шаардлагатай бараа
+
+  // ⚠ Авах бараа анхааруулга: идэвхтэй захиалгын хэрэгцээ − агуулахын үлдэгдэл
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const active = orders.filter((o) => o.driver_id === profile.id && o.status !== "delivered" && o.status !== "cancelled");
+        if (active.length === 0) { if (!cancelled) setPickupShort(null); return; }
+        const need = {};
+        active.forEach((o) => {
+          (items[o.id] || []).forEach((it) => {
+            if (!it.product_id) return;
+            need[it.product_id] = (need[it.product_id] || 0) + Number(it.quantity || 0);
+          });
+        });
+        const pids = Object.keys(need);
+        if (pids.length === 0) { if (!cancelled) setPickupShort(null); return; }
+        const { data: wh } = await supabase.from("inv_warehouses").select("id").eq("driver_id", profile.id).limit(1).maybeSingle();
+        const have = {};
+        if (wh?.id) {
+          const stockRows = await fetchInChunks("inv_stock", pids, { select: "product_id, quantity, warehouse_id", filterColumn: "product_id", chunkSize: 200 });
+          (stockRows || []).forEach((s) => {
+            if (s.warehouse_id !== wh.id) return;
+            have[s.product_id] = (have[s.product_id] || 0) + Number(s.quantity || 0);
+          });
+        }
+        let types = 0, total = 0;
+        pids.forEach((pid) => {
+          const short = Math.max(0, need[pid] - (have[pid] || 0));
+          if (short > 0) { types++; total += short; }
+        });
+        if (!cancelled) setPickupShort(types > 0 ? { types, total } : null);
+      } catch (e) { console.error("[pickup shortage]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [orders, items, profile.id]);
   const [ratingBusy, setRatingBusy] = useState(false);
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem("orgoo-driver-filter") || "active"; } catch { return "active"; }
@@ -36932,6 +36969,17 @@ function DriverDashboard({ profile }) {
       </div>
 
       <div className="p-3 max-w-2xl mx-auto space-y-3">
+        {pickupShort && view !== "requests" && (
+          <button onClick={() => setView("requests")}
+            className="press-btn w-full rounded-2xl p-3 flex items-center gap-2.5 text-left"
+            style={{ background: "linear-gradient(90deg,#F59E0B,#F97316)", color: "white", boxShadow: "0 4px 14px rgba(245,158,11,0.35)" }}>
+            <span className="text-xl">📦</span>
+            <span className="flex-1">
+              <span style={{ fontFamily: FS, fontWeight: 800 }} className="text-sm block">Авах шаардлагатай бараа байна!</span>
+              <span style={{ fontFamily: FM, opacity: 0.92 }} className="text-[11px]">Захиалгуудад {pickupShort.types} төрөл · нийт {pickupShort.total}ш дутуу — Хүсэлт үүсгэх →</span>
+            </span>
+          </button>
+        )}
         {view === "orders" && (<>
         {/* Stats — 4 card */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
