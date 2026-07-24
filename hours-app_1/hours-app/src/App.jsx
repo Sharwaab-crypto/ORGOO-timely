@@ -25925,7 +25925,7 @@ function OrdersView({ profile }) {
               color: filter === "all" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            📋 Бүх ({counts.all})
+            📋 Бүх ({allTotal.toLocaleString()})
           </button>
           <button onClick={() => setFilter("new")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -36482,6 +36482,53 @@ function DriverDashboard({ profile }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // 📋 "БҮХ" таб — КОМПАНИЙН бүх захиалгыг SERVER-side хуудаслалтаар (гацаахгүй).
+  const [allPageOrders, setAllPageOrders] = useState([]);
+  const [allTotal, setAllTotal] = useState(0);
+  const [allLoading, setAllLoading] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { count } = await supabase.from("biz_orders").select("*", { count: "exact", head: true });
+        setAllTotal(count || 0);
+      } catch {}
+    })();
+  }, []);
+  useEffect(() => {
+    if (filter !== "all") return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setAllLoading(true);
+      try {
+        let q = supabase.from("biz_orders").select("*", { count: "exact" });
+        const s = driverSearch.trim();
+        if (s) {
+          const esc = s.replace(/[%,()]/g, "");
+          q = q.or(`customer_phone.ilike.%${esc}%,customer_name.ilike.%${esc}%,order_number.ilike.%${esc}%,delivery_address.ilike.%${esc}%`);
+        }
+        q = q.order("created_at", { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+        const { data, count, error } = await q;
+        if (error) throw error;
+        if (cancelled) return;
+        setAllPageOrders(data || []);
+        setAllTotal(count || 0);
+        const ids = (data || []).map((o) => o.id);
+        if (ids.length) {
+          const itemData = await fetchInChunks("biz_order_items", ids, { select: "*", filterColumn: "order_id", chunkSize: 200 });
+          if (cancelled) return;
+          const add = {};
+          (itemData || []).forEach((it) => {
+            if (!add[it.order_id]) add[it.order_id] = [];
+            add[it.order_id].push(it);
+          });
+          setItems((prev) => ({ ...prev, ...add }));
+        }
+      } catch (e) { console.error("[driver all tab]", e); }
+      finally { if (!cancelled) setAllLoading(false); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [filter, page, driverSearch]);
+
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastLoadTime = useRef(Date.now());
@@ -36693,13 +36740,6 @@ function DriverDashboard({ profile }) {
 
   // Filter
   const filtered = orders.filter((o) => {
-    // 📋 Бүх — жолоочид харагдах бүх төлөв нэг дор (миний идэвхтэй/хүргэсэн/цуцалсан + шинэ + тодорхойгүй)
-    if (filter === "all") {
-      const mine = o.driver_id === profile.id && !((o.status === "delivered" || o.status === "cancelled") && o.settlement_id);
-      const availableNew = o.status === "new" && !o.driver_id;
-      const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
-      return mine || availableNew || markedUnknown;
-    }
     if (filter === "available") return o.status === "new" && !o.driver_id && !o.is_unknown;
     if (filter === "active") return o.driver_id === profile.id && !o.is_unknown && (o.status === "new" || o.status === "pending" || o.status === "assigned");
     // 🆕 Хуваарилах — зөвхөн Шинэ хэсэгт байгаа + миний бүсэд багтсан pin-тэй
@@ -36734,14 +36774,11 @@ function DriverDashboard({ profile }) {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const pageStart = (page - 1) * PAGE_SIZE;
   const pagedFiltered = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const isAllMode = filter === "all";
+  const displayOrders = isAllMode ? allPageOrders : pagedFiltered;
+  const displayTotalPages = isAllMode ? (Math.ceil(allTotal / PAGE_SIZE) || 1) : totalPages;
 
   const counts = {
-    all: orders.filter((o) => {
-      const mine = o.driver_id === profile.id && !((o.status === "delivered" || o.status === "cancelled") && o.settlement_id);
-      const availableNew = o.status === "new" && !o.driver_id;
-      const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
-      return mine || availableNew || markedUnknown;
-    }).length,
     available: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown).length,
     myzone: orders.filter((o) => o.status === "new" && !o.driver_id && !o.is_unknown && isInMyZone(o)).length,
     unknown: orders.filter((o) => {
@@ -36960,7 +36997,7 @@ function DriverDashboard({ profile }) {
               fontFamily: FS, fontWeight: 600,
               minWidth: "80px",
             }}>
-            📋 Бүх ({counts.all})
+            📋 Бүх ({allTotal.toLocaleString()})
           </button>
           <button onClick={() => setFilter("available")}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
@@ -37094,7 +37131,7 @@ function DriverDashboard({ profile }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {pagedFiltered.map((o, idx) => {
+            {displayOrders.map((o, idx) => {
               const hasPin = o.delivery_lat && o.delivery_lng;
               return (
               <div key={o.id} className="glass rounded-xl p-3"
@@ -37360,16 +37397,16 @@ function DriverDashboard({ profile }) {
                 ◀
               </button>
               <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="px-3 text-sm">
-                {page} / {totalPages}
+                {page} / {displayTotalPages}
               </span>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+              <button onClick={() => setPage((p) => Math.min(displayTotalPages, p + 1))} disabled={page === displayTotalPages}
                 className="press-btn px-2 py-1 rounded text-xs"
-                style={{ background: page === totalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                style={{ background: page === displayTotalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
                 ▶
               </button>
-              <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+              <button onClick={() => setPage(displayTotalPages)} disabled={page === displayTotalPages}
                 className="press-btn px-2 py-1 rounded text-xs"
-                style={{ background: page === totalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
+                style={{ background: page === displayTotalPages ? T.surfaceAlt : T.surface, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
                 ⏭
               </button>
             </div>
