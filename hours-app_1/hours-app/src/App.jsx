@@ -26053,6 +26053,7 @@ function OrdersView({ profile }) {
         <OrdersMapView 
           orders={mapOrders} 
           drivers={drivers}
+          items={items}
           onOrderClick={(o) => setActiveOrder(o)}
         />
       ) : filtered.length === 0 ? (
@@ -26415,7 +26416,7 @@ function OrdersView({ profile }) {
 }
 
 // ─── Захиалгын газрын зураг — бүх pin-тай захиалгыг харах ──────────
-function OrdersMapView({ orders, drivers, onOrderClick }) {
+function OrdersMapView({ orders, drivers, onOrderClick, items = {} }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -26647,6 +26648,7 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
         const statusLabel = {
           new: "Шинэ", pending: "Хүлээгдэж", delivered: "Хүргэсэн", cancelled: "Цуцалсан"
         }[o.status] || o.status;
+        const esc = (s) => String(s ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/`/g, "'");
 
         // ⭐ Сайжруулсан popup
         const popupHtml = `
@@ -26663,6 +26665,14 @@ function OrdersMapView({ orders, drivers, onOrderClick }) {
             <div style="color:#64748b;font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
               📞 <a href="tel:${o.customer_phone || ''}" style="color:#3b82f6;text-decoration:none;font-weight:600;">${o.customer_phone || "—"}</a>
             </div>
+            ${o.delivery_address ? `<div style="color:#475569;font-size:11px;margin-bottom:8px;display:flex;gap:5px;line-height:1.4;">📍 <span>${esc(o.delivery_address)}</span></div>` : ""}
+            ${(items[o.id] && items[o.id].length)
+              ? `<div style="background:#f1f5f9;border-radius:8px;padding:7px 9px;margin-bottom:8px;">
+                   <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">🛍 Бараа (${items[o.id].length})</div>
+                   ${items[o.id].slice(0, 4).map((it) => `<div style="color:#0f172a;font-size:11px;display:flex;justify-content:space-between;gap:8px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(it.product_name)}</span><span style="font-weight:700;flex-shrink:0;">×${Number(it.quantity || 0)}</span></div>`).join("")}
+                   ${items[o.id].length > 4 ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px;">+${items[o.id].length - 4} бусад</div>` : ""}
+                 </div>`
+              : ""}
             <div style="background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:8px;">
               <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Нийт дүн</div>
               <div style="color:#0f172a;font-size:15px;font-weight:700;">
@@ -37120,6 +37130,7 @@ function DriverDashboard({ profile }) {
           <OrdersMapView 
             orders={filtered} 
             drivers={[]}
+            items={items}
             onOrderClick={(o) => setActiveOrder(o)}
           />
         ) : filtered.length === 0 ? (
