@@ -26669,7 +26669,13 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {} }) {
             ${(items[o.id] && items[o.id].length)
               ? `<div style="background:#f1f5f9;border-radius:8px;padding:7px 9px;margin-bottom:8px;">
                    <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">🛍 Бараа (${items[o.id].length})</div>
-                   ${items[o.id].slice(0, 4).map((it) => `<div style="color:#0f172a;font-size:11px;display:flex;justify-content:space-between;gap:8px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(it.product_name)}</span><span style="font-weight:700;flex-shrink:0;">×${Number(it.quantity || 0)}</span></div>`).join("")}
+                   ${items[o.id].slice(0, 4).map((it) => `<div style="display:flex;align-items:center;gap:7px;padding:2px 0;">
+                       ${it.product_image
+                         ? `<img src="${String(it.product_image).replace(/"/g, "").replace(/`/g, "")}" style="width:26px;height:26px;border-radius:6px;object-fit:cover;flex-shrink:0;background:#e2e8f0;" onerror="this.style.display='none'"/>`
+                         : `<span style="width:26px;height:26px;border-radius:6px;background:#e2e8f0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">🛍</span>`}
+                       <span style="color:#0f172a;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(it.product_name)}</span>
+                       <span style="color:#0f172a;font-size:11px;font-weight:700;flex-shrink:0;">×${Number(it.quantity || 0)}</span>
+                     </div>`).join("")}
                    ${items[o.id].length > 4 ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px;">+${items[o.id].length - 4} бусад</div>` : ""}
                  </div>`
               : ""}
