@@ -26416,7 +26416,7 @@ function OrdersView({ profile }) {
 }
 
 // ─── Захиалгын газрын зураг — бүх pin-тай захиалгыг харах ──────────
-function OrdersMapView({ orders, drivers, onOrderClick, items = {} }) {
+function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = null, onDeliver = null }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -26688,6 +26688,9 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {} }) {
             ${driver
               ? `<div style="display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;margin-bottom:8px;"><span style="background:#3b82f6;color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">${driver.name?.[0] || "?"}</span>🚚 ${driver.name}</div>`
               : '<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:5px 8px;border-radius:6px;margin-bottom:8px;font-weight:600;">⚠ Хүргэгч хуваарилаагүй</div>'}
+            ${(onDeliver && profileId && o.driver_id === profileId && o.status !== "delivered" && o.status !== "cancelled")
+              ? `<button class="map-deliver-btn" data-order-id="${o.id}" style="width:100%;padding:8px;background:linear-gradient(135deg,#10B981,#059669);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;box-shadow:0 2px 6px rgba(16,185,129,0.3);">✓ Хүргэгдсэн</button>`
+              : ""}
             <button class="map-detail-btn" data-order-id="${o.id}" style="width:100%;padding:8px;background:linear-gradient(135deg,${color},${color}dd);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
               Дэлгэрэнгүй харах →
             </button>
@@ -26698,6 +26701,10 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {} }) {
         marker.bindPopup(popupHtml, { className: "order-popup", closeButton: true });
         marker.on("popupopen", () => {
           setTimeout(() => {
+            const dbtn = document.querySelector(`.map-deliver-btn[data-order-id="${o.id}"]`);
+            if (dbtn && onDeliver) {
+              dbtn.onclick = () => { try { marker.closePopup(); } catch {} onDeliver(o); };
+            }
             const btn = document.querySelector(`.map-detail-btn[data-order-id="${o.id}"]`);
             if (btn) {
               btn.onclick = () => onOrderClickRef.current(o);
@@ -37137,6 +37144,8 @@ function DriverDashboard({ profile }) {
             orders={filtered} 
             drivers={[]}
             items={items}
+            profileId={profile.id}
+            onDeliver={(o) => updateStatus(o.id, "delivered")}
             onOrderClick={(o) => setActiveOrder(o)}
           />
         ) : filtered.length === 0 ? (
