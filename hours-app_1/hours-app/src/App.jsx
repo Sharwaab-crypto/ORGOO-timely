@@ -25925,7 +25925,7 @@ function OrdersView({ profile }) {
               color: filter === "all" ? "white" : T.ink,
               fontFamily: FS, fontWeight: 600,
             }}>
-            📋 Бүх ({allTotal.toLocaleString()})
+            📋 Бүх ({counts.all})
           </button>
           <button onClick={() => setFilter("new")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
