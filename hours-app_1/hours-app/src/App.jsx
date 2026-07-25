@@ -20171,18 +20171,59 @@ function DriverSettlementView({ profile }) {
                             });
                           }
                         }
+                        // Хувилбар D (ШИНЭ): was delivered → now assigned/new — items driver-руу БУЦААНА
+                        //   (өмнө энэ салаа байгаагүй тул буцааж идэвхжүүлэхэд нөөц буцахгүй,
+                        //    дараа нь дахин delivered болгоход ДАВХАР хасагддаг байсан!)
+                        else if (originalStatus === "delivered" && newStatus !== "delivered" && newStatus !== "cancelled") {
+                          for (const it of (existingItems || []).filter((x) => x.product_id)) {
+                            movements.push({
+                              product_id: it.product_id, warehouse_id: driverWh.id,
+                              movement_type: "in", quantity: Number(it.quantity || 0),
+                              reason: "order_edit_return", created_by: profile.id,
+                              notes: `Захиалга #${orderId.slice(0,8)} delivered-ээс ${newStatus} болгож буцаав: ${it.product_name}`,
+                            });
+                          }
+                        }
+                      }
+                      // 🛡 Агуулахгүй жолооч + нөөц хөдлөх ёстой шилжилт → зогсооно (чимээгүй алгасахгүй)
+                      if (!driverWh && (originalStatus === "delivered" || newStatus === "delivered")) {
+                        alert("⚠ Энэ жолоочид агуулах оноогдоогүй тул нөөцийн хөдөлгөөн бүртгэх боломжгүй.\nЭхлээд Агуулах хэсгээс жолоочид агуулах онооно уу.");
+                        return;
                       }
                       
                       // ─── 4. Stock movements оруулах (хэрэв байвал) ───
                       if (movements.length > 0) {
-                        const { error: mvErr } = await supabase.from("inv_movements").insert(movements);
-                        if (mvErr) {
-                          if (mvErr.message?.includes("үлдэгдэл хүрэлцэхгүй")) {
-                            alert("⚠ Барааны үлдэгдэл хүрэлцэхгүй байна\n\nDriver-ийн агуулахад хангалттай нөөц байхгүй учир тоо нэмэх боломжгүй.");
+                        // ⛔ НӨӨЦ ШАЛГАЛТ: нийт out−in (net) хасалт бараа бүрд агуулахад хүрэлцэж буйг
+                        //    урьдчилан шалгана. (Өмнө триггер алдаа өгнө гэж найдаж байсан ч триггер
+                        //    шалгалт хийдэггүй тул минус нөөц чимээгүй үүсдэг байсан.)
+                        const netOut = {};
+                        movements.forEach((m) => {
+                          netOut[m.product_id] = (netOut[m.product_id] || 0) + (m.movement_type === "out" ? m.quantity : -m.quantity);
+                        });
+                        const needIds = Object.keys(netOut).filter((pid) => netOut[pid] > 0);
+                        if (needIds.length > 0) {
+                          const { data: stRows } = await supabase.from("inv_stock")
+                            .select("product_id, quantity")
+                            .eq("warehouse_id", driverWh.id)
+                            .in("product_id", needIds);
+                          const haveMap = {};
+                          (stRows || []).forEach((r) => { haveMap[r.product_id] = Number(r.quantity || 0); });
+                          const shorts = [];
+                          needIds.forEach((pid) => {
+                            const have = haveMap[pid] || 0;
+                            if (have < netOut[pid]) {
+                              const nm = editOrderItems.find((x) => x.product_id === pid)?.product_name
+                                || (existingItems || []).find((x) => x.product_id === pid)?.product_name || "?";
+                              shorts.push(`• ${nm}: байгаа ${have}, хэрэгтэй ${netOut[pid]}`);
+                            }
+                          });
+                          if (shorts.length > 0) {
+                            alert(`⛔ Жолоочийн агуулахад хүрэлцэхгүй:\n${shorts.join("\n")}\n\nЭхлээд "Бараа авах" хүсэлтээр нөөц нэмүүлнэ үү.`);
                             return;
                           }
-                          throw mvErr;
                         }
+                        const { error: mvErr } = await supabase.from("inv_movements").insert(movements);
+                        if (mvErr) throw mvErr;
                       }
                       
                       // ─── 5. biz_order_items хадгалах ───
