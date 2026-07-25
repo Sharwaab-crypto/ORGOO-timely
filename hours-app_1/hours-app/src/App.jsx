@@ -26550,7 +26550,9 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
 
       if (cancelled || !containerRef.current || mapRef.current) return;
 
-      const map = L.map(containerRef.current).setView([47.918873, 106.917701], 12);
+      // 📱 Утсан дээр tap давхар бүртгэгдэж popup нээгдмэгц хаагддаг тул
+      //    map-click-ээр хаахыг унтраав (✕ товч, өөр pin-ээр хаагдана)
+      const map = L.map(containerRef.current, { closePopupOnClick: false }).setView([47.918873, 106.917701], 12);
       mapRef.current = map;
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OSM",
@@ -26699,6 +26701,9 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
 
         const marker = L.marker([lat, lng], { icon: customIcon });
         marker.bindPopup(popupHtml, { className: "order-popup", closeButton: true });
+        marker.on("click", (ev) => {
+          try { if (ev?.originalEvent) L.DomEvent.stopPropagation(ev.originalEvent); } catch {}
+        });
         marker.on("popupopen", () => {
           setTimeout(() => {
             const dbtn = document.querySelector(`.map-deliver-btn[data-order-id="${o.id}"]`);
