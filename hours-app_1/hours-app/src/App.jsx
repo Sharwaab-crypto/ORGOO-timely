@@ -26700,21 +26700,24 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
         `;
 
         const marker = L.marker([lat, lng], { icon: customIcon });
-        marker.bindPopup(popupHtml, { className: "order-popup", closeButton: true });
+        // 📱 Popup-ийг marker-т биш MAP-д бие даалган нээнэ — cluster хумигдахад
+        //    (unspiderfy) marker устсан ч popup хэвээр үлдэнэ. Утасны ghost-tap-д тэсвэртэй.
         marker.on("click", (ev) => {
           try { if (ev?.originalEvent) L.DomEvent.stopPropagation(ev.originalEvent); } catch {}
-        });
-        marker.on("popupopen", () => {
+          const popup = L.popup({ className: "order-popup", closeButton: true, autoClose: true, closeOnClick: false, maxWidth: 300 })
+            .setLatLng([lat, lng])
+            .setContent(popupHtml)
+            .openOn(map);
           setTimeout(() => {
             const dbtn = document.querySelector(`.map-deliver-btn[data-order-id="${o.id}"]`);
             if (dbtn && onDeliver) {
-              dbtn.onclick = () => { try { marker.closePopup(); } catch {} onDeliver(o); };
+              dbtn.onclick = () => { try { map.closePopup(popup); } catch {} onDeliver(o); };
             }
             const btn = document.querySelector(`.map-detail-btn[data-order-id="${o.id}"]`);
             if (btn) {
               btn.onclick = () => onOrderClickRef.current(o);
             }
-          }, 50);
+          }, 60);
         });
 
         cluster.addLayer(marker);
