@@ -19144,6 +19144,7 @@ function DriverSettlementView({ profile }) {
   const [openSettlements, setOpenSettlements] = useState([]); // Нээлттэй settlement-ууд
   const [openingSettlement, setOpeningSettlement] = useState(false); // Тооцоо нээх loading
   const [editOrder, setEditOrder] = useState(null); // {order, paidAmount, status} — захиалга засах modal
+  const [editSaving, setEditSaving] = useState(false); // 🛡 давхар даралтын хамгаалалт
   const [editOrderItems, setEditOrderItems] = useState([]); // editOrder-ийн биз_order_items
   const [allProducts, setAllProducts] = useState([]); // нэмэх боломжтой бараанууд
   const [showAddProduct, setShowAddProduct] = useState(false); // бараа нэмэх picker
@@ -20061,6 +20062,8 @@ function DriverSettlementView({ profile }) {
                     Цуцлах
                   </button>
                   <button onClick={async () => {
+                    if (editSaving) return; // 🛡 давхар даралт → өмнө 1 цуцлалт 4× бичигдэж байсан
+                    setEditSaving(true);
                     try {
                       const orderId = editOrder.order.id;
                       const driverId = editOrder.order.driver_id;
@@ -20289,11 +20292,14 @@ function DriverSettlementView({ profile }) {
                       alert(`✅ Захиалга засагдлаа${stockMsg}`);
                     } catch (e) {
                       alert("Алдаа: " + e.message);
+                    } finally {
+                      setEditSaving(false);
                     }
                   }}
+                    disabled={editSaving}
                     className="press-btn py-3 rounded-xl text-sm font-semibold"
-                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700 }}>
-                    💾 Хадгалах
+                    style={{ background: T.ok, color: "white", fontFamily: FS, fontWeight: 700, opacity: editSaving ? 0.6 : 1 }}>
+                    {editSaving ? "Хадгалж байна..." : "💾 Хадгалах"}
                   </button>
                 </div>
               </div>
