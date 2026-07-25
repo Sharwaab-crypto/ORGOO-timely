@@ -26643,6 +26643,8 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
       markersRef.current = [];
 
       // ⭐ Cluster group үүсгэх — ойролцоо pin-үүдийг бөөгнүүлнэ
+      // 📱 Утсанд авсаархан popup хэмжээс
+      const compact = typeof window !== "undefined" && window.innerWidth < 480;
       const cluster = L.markerClusterGroup({
         chunkedLoading: true,         // Олон pin-тэй үед performance
         maxClusterRadius: 55,         // Px-р ойролцоо pin-үүдийг нэгтгэх
@@ -26701,7 +26703,7 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
 
         // ⭐ Сайжруулсан popup
         const popupHtml = `
-          <div style="font-family:system-ui;min-width:220px;">
+          <div style="font-family:system-ui;min-width:${compact ? 178 : 220}px;max-width:${compact ? 200 : 280}px;font-size:${compact ? "11px" : "12px"};">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               <div style="background:${color};color:white;font-size:10px;padding:3px 8px;border-radius:999px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
                 ${statusEmoji} ${statusLabel}${o.is_unknown ? " · Тодорхойгүй" : ""}
@@ -26716,12 +26718,12 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
             </div>
             ${o.delivery_address ? `<div style="color:#475569;font-size:11px;margin-bottom:8px;display:flex;gap:5px;line-height:1.4;">📍 <span>${esc(o.delivery_address)}</span></div>` : ""}
             ${(items[o.id] && items[o.id].length)
-              ? `<div style="background:#f1f5f9;border-radius:8px;padding:7px 9px;margin-bottom:8px;">
+              ? `<div style="background:#f1f5f9;border-radius:8px;padding:${compact ? "5px 7px" : "7px 9px"};margin-bottom:${compact ? 6 : 8}px;${compact ? "max-height:92px;overflow-y:auto;" : ""}">
                    <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">🛍 Бараа (${items[o.id].length})</div>
                    ${items[o.id].slice(0, 4).map((it) => `<div style="display:flex;align-items:center;gap:7px;padding:2px 0;">
                        ${it.product_image
-                         ? `<img src="${String(it.product_image).replace(/"/g, "").replace(/`/g, "")}" style="width:26px;height:26px;border-radius:6px;object-fit:cover;flex-shrink:0;background:#e2e8f0;" onerror="this.style.display='none'"/>`
-                         : `<span style="width:26px;height:26px;border-radius:6px;background:#e2e8f0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">🛍</span>`}
+                         ? `<img src="${String(it.product_image).replace(/"/g, "").replace(/`/g, "")}" style="width:${compact ? 20 : 26}px;height:${compact ? 20 : 26}px;border-radius:6px;object-fit:cover;flex-shrink:0;background:#e2e8f0;" onerror="this.style.display='none'"/>`
+                         : `<span style="width:${compact ? 20 : 26}px;height:${compact ? 20 : 26}px;border-radius:6px;background:#e2e8f0;display:inline-flex;align-items:center;justify-content:center;font-size:${compact ? 10 : 12}px;flex-shrink:0;">🛍</span>`}
                        <span style="color:#0f172a;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(it.product_name)}</span>
                        <span style="color:#0f172a;font-size:11px;font-weight:700;flex-shrink:0;">×${Number(it.quantity || 0)}</span>
                      </div>`).join("")}
@@ -26738,9 +26740,9 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
               ? `<div style="display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;margin-bottom:8px;"><span style="background:#3b82f6;color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">${driver.name?.[0] || "?"}</span>🚚 ${driver.name}</div>`
               : '<div style="background:#fef3c7;color:#92400e;font-size:11px;padding:5px 8px;border-radius:6px;margin-bottom:8px;font-weight:600;">⚠ Хүргэгч хуваарилаагүй</div>'}
             ${(onDeliver && profileId && o.driver_id === profileId && o.status !== "delivered" && o.status !== "cancelled")
-              ? `<button class="map-deliver-btn" data-order-id="${o.id}" style="width:100%;padding:8px;background:linear-gradient(135deg,#10B981,#059669);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;box-shadow:0 2px 6px rgba(16,185,129,0.3);">✓ Хүргэгдсэн</button>`
+              ? `<button class="map-deliver-btn" data-order-id="${o.id}" style="width:100%;padding:${compact ? "6px" : "8px"};background:linear-gradient(135deg,#10B981,#059669);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;box-shadow:0 2px 6px rgba(16,185,129,0.3);">✓ Хүргэгдсэн</button>`
               : ""}
-            <button class="map-detail-btn" data-order-id="${o.id}" style="width:100%;padding:8px;background:linear-gradient(135deg,${color},${color}dd);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+            <button class="map-detail-btn" data-order-id="${o.id}" style="width:100%;padding:${compact ? "6px" : "8px"};background:linear-gradient(135deg,${color},${color}dd);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
               Дэлгэрэнгүй харах →
             </button>
           </div>
@@ -26751,7 +26753,7 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
         //    (unspiderfy) marker устсан ч popup хэвээр үлдэнэ. Утасны ghost-tap-д тэсвэртэй.
         marker.on("click", (ev) => {
           try { if (ev?.originalEvent) L.DomEvent.stopPropagation(ev.originalEvent); } catch {}
-          const popup = L.popup({ className: "order-popup", closeButton: true, autoClose: true, closeOnClick: false, maxWidth: 300 })
+          const popup = L.popup({ className: "order-popup", closeButton: true, autoClose: true, closeOnClick: false, maxWidth: compact ? 212 : 300 })
             .setLatLng([lat, lng])
             .setContent(popupHtml)
             .openOn(map);
