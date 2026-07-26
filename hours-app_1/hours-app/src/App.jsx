@@ -27106,7 +27106,10 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
         { label: "Өөртөө авах", action: "claim", color: "#9333ea", icon: "🆕" },
         { label: "Өөр хүнд хуваарилах", action: "assign", color: "#0ea5e9", icon: "🚚" },
       ],
-    } : {
+    } : (order.driver_id && currentDriverId && order.driver_id === currentDriverId ? {
+      // ✅ ЗӨВХӨН ӨӨРТ оноогдсон захиалгад "Хүргэгдсэн" харуулна.
+      //   (Өмнө эзэмшил шалгадаггүй байсан тул өөр жолооч "Бүх" таб-аас
+      //    бусдын захиалгыг хүргэсэн болгож, ӨӨРИЙН агуулахаас нөөц хасагддаг байсан!)
       new: [
         { label: "Хүргэгдсэн", action: "delivered", color: T.ok, icon: "✓" },
       ],
@@ -27118,7 +27121,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
       ],
       delivered: [],
       cancelled: [],
-    }
+    } : { new: [], pending: [], assigned: [], delivered: [], cancelled: [] })
   ) : {
     new: [
       { label: "Хүргэлт хуваарилах", action: "assign", color: "#0ea5e9", icon: "🚚" },
