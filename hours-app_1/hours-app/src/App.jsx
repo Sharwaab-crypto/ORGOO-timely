@@ -14910,12 +14910,21 @@ function CallCenterView({ profile }) {
 
                 // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
                 // Үргэлж pending — Залгах дугаар tab-руу орно
+                // ♻️ ДАХИН БҮРТГЭЛ: ижил дугаарын өмнөх PENDING бүртгэлийн барааг
+                //    шинэ сонголт дээр НЭМЖ хадгална (өмнөх бараанууд алга болохгүй).
+                let mergedProducts = interested_products;
+                const prevProds = productsByPhoneAll[phone];
+                if (Array.isArray(prevProds) && prevProds.length > 0) {
+                  const seen = new Set((interested_products || []).map((ip) => ip.id));
+                  const carry = prevProds.filter((pp) => pp && pp.id && !seen.has(pp.id));
+                  if (carry.length > 0) mergedProducts = [...carry, ...interested_products];
+                }
                 const { error: callErr } = await supabase.from("biz_calls").insert({
                   phone,
                   customer_id: customerId,
                   notes: notes || null,
                   fb_page_id: effectiveFbPageId || null, // 🔗 Автомат тавигдсан FB Page
-                  interested_products,
+                  interested_products: mergedProducts,
                   call_status: "pending",
                   created_by: profile.id,
                   created_at: new Date().toISOString(),
