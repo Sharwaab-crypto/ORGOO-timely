@@ -32038,6 +32038,7 @@ function OrderHistorySection({ orderId }) {
   }, [orderId]);
 
   const fieldLabels = {
+    is_unknown: "Тодорхойгүй",
     status: "Төлөв",
     delivery_address: "Хаяг",
     customer_phone: "Утас",
@@ -36468,6 +36469,9 @@ function DriverDashboard({ profile }) {
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingNote, setRatingNote] = useState("");
   const [pickupShort, setPickupShort] = useState(null); // ⚠ {types, total} — авах шаардлагатай бараа
+  const [unknownTarget, setUnknownTarget] = useState(null); // ❓ Тодорхойгүй болгох popup-ийн захиалга
+  const [unknownNote, setUnknownNote] = useState("");
+  const [unknownSaving, setUnknownSaving] = useState(false);
 
   // ⚠ Авах бараа анхааруулга: идэвхтэй захиалгын хэрэгцээ − агуулахын үлдэгдэл
   useEffect(() => {
@@ -37472,33 +37476,7 @@ function DriverDashboard({ profile }) {
                     )}
                     {/* "Хүргэх" tab дотор → "Тодорхойгүй болгох" товч */}
                     {filter === "active" && o.driver_id === profile.id && !o.is_unknown && (
-                      <button onClick={async () => {
-                        if (!confirm("❓ Энэ захиалгыг 'Тодорхойгүй' болгох уу?\n\nБусад driver хариц хариуцагч авах боломжтой.")) return;
-                        try {
-                          const { error, data } = await supabase.from("biz_orders").update({ 
-                            is_unknown: true,
-                            driver_id: null,
-                          }).eq("id", o.id).select();
-                          
-                          logDev("[Тодорхойгүй болгох] Result:", { error, data });
-                          
-                          if (error) {
-                            alert("⚠ Алдаа: " + error.message);
-                            return;
-                          }
-                          
-                          setOrders((prev) => prev.map((order) => 
-                            order.id === o.id 
-                              ? { ...order, is_unknown: true, driver_id: null }
-                              : order
-                          ));
-                          await loadAll();
-                          alert("✅ Захиалга 'Тодорхойгүй' хэсэгт орлоо");
-                        } catch (e) { 
-                          console.error("[Тодорхойгүй болгох] Error:", e);
-                          alert("Алдаа: " + (e.message || JSON.stringify(e))); 
-                        }
-                      }}
+                      <button onClick={() => { setUnknownTarget(o); setUnknownNote(""); }}
                         className="press-btn w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                         style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.warn}` }}>
                         ❓ Тодорхойгүй болгох
@@ -37569,6 +37547,55 @@ function DriverDashboard({ profile }) {
           <DriverSettlementsView profile={profile} myOwed={myOwed} myDeliveredTotal={myDeliveredTotal} />
         )}
       </div>
+
+      {/* ❓ Тодорхойгүй болгох — тэмдэглэл заавал popup */}
+      {unknownTarget && createPortal(
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }}
+          onClick={() => !unknownSaving && setUnknownTarget(null)}>
+          <div style={{ background: T.bg, borderRadius: 16, width: "100%", maxWidth: 380, padding: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.25)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontFamily: FS, fontWeight: 800, color: T.ink }} className="text-sm mb-1">❓ Тодорхойгүй болгох</div>
+            <div style={{ fontFamily: FM, color: T.muted }} className="text-[11px] mb-3">
+              #{unknownTarget.order_number || String(unknownTarget.id).slice(0, 8)} · Шалтгаанаа заавал бичнэ (Түүхэнд хадгалагдана)
+            </div>
+            <textarea value={unknownNote} onChange={(e) => setUnknownNote(e.target.value)} rows={3} autoFocus
+              placeholder="ж: Утсаа авахгүй байна / хаяг тодорхойгүй..."
+              className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
+              style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1.5px solid ${T.warn}` }} />
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button onClick={() => setUnknownTarget(null)} disabled={unknownSaving}
+                className="press-btn py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>Болих</button>
+              <button disabled={unknownSaving}
+                onClick={async () => {
+                  const note = unknownNote.trim();
+                  if (!note) { alert("⚠ Шалтгаан/сэтгэгдэл заавал бичнэ үү!"); return; }
+                  setUnknownSaving(true);
+                  try {
+                    const { error } = await supabase.from("biz_orders").update({ is_unknown: true, driver_id: null }).eq("id", unknownTarget.id);
+                    if (error) throw error;
+                    // 📜 Түүхэнд сэтгэгдэлтэй бичилт (алдвал чимээгүй — audit trigger ерөнхийг нь бүртгэнэ)
+                    try {
+                      await supabase.from("biz_order_history").insert({
+                        order_id: unknownTarget.id, action: "edited", field_name: "is_unknown",
+                        old_value: "Үгүй", new_value: "Тийм", notes: `Тодорхойгүй болгосон: ${note}`,
+                        changed_by: profile.id, changed_at: new Date().toISOString(),
+                      });
+                    } catch (he) { console.error("[unknown history]", he); }
+                    setOrders((prev) => prev.map((order) => order.id === unknownTarget.id ? { ...order, is_unknown: true, driver_id: null } : order));
+                    setUnknownTarget(null);
+                    await loadAll();
+                    alert("✅ Захиалга 'Тодорхойгүй' хэсэгт орлоо");
+                  } catch (e) { alert("Алдаа: " + (e.message || JSON.stringify(e))); }
+                  finally { setUnknownSaving(false); }
+                }}
+                className="press-btn py-2.5 rounded-xl text-sm font-bold"
+                style={{ background: T.warn, color: "white", fontFamily: FS, opacity: unknownSaving ? 0.6 : 1 }}>
+                {unknownSaving ? "Хадгалж байна..." : "❓ Баталгаажуулах"}
+              </button>
+            </div>
+          </div>
+        </div>, document.body)}
 
       {/* Order detail modal — admin-маягийн дэлгэрэнгүй харах modal */}
       {activeOrder && createPortal(
