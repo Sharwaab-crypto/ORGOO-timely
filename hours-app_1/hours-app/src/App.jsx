@@ -11902,6 +11902,8 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
   const [stock, setStock] = useState(product?.stock ? String(product.stock) : "0");
   const [minStock, setMinStock] = useState(product?.min_stock ? String(product.min_stock) : "0");
   const [description, setDescription] = useState(product?.description || "");
+  const [usageGuide, setUsageGuide] = useState(product?.usage_guide || "");
+  const [cautions, setCautions] = useState(product?.cautions || "");
   const [imageUrl, setImageUrl] = useState(product?.image_url || "");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(product?.image_url || "");
@@ -12175,10 +12177,28 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
 
           <div>
             <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-              Тэмдэглэл
+              📝 Тайлбар
             </label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)}
               rows={2}
+              style={inputStyle} className={`${inputClass} resize-none`} />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              📖 Хэрэглэх заавар
+            </label>
+            <textarea value={usageGuide} onChange={(e) => setUsageGuide(e.target.value)}
+              rows={3} placeholder="ж: Ам нээж, хоолойн хэсэг рүү чиглүүлнэ..."
+              style={inputStyle} className={`${inputClass} resize-none`} />
+          </div>
+
+          <div>
+            <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+              ⚠️ Анхаарах зүйлс
+            </label>
+            <textarea value={cautions} onChange={(e) => setCautions(e.target.value)}
+              rows={3} placeholder="ж: Хүүхдээс хол хадгална, ..."
               style={inputStyle} className={`${inputClass} resize-none`} />
           </div>
 
@@ -12198,6 +12218,8 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
                   stock: product ? Number(product.stock) : 0,
                   min_stock: Number(minStock) || 0,
                   description: description.trim() || null,
+                  usage_guide: usageGuide.trim() || null,
+                  cautions: cautions.trim() || null,
                   image_url: finalImageUrl || null,
                   fb_page_id: fbPageId || null, // 🔗 FB Page холбоо
                 });
@@ -15405,35 +15427,54 @@ function CallCenterView({ profile }) {
 
             {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
-              {/* 1. Барааны тэмдэглэл (description) */}
-              <div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                  📝 Барааны тэмдэглэл
+              {/* 1. Тайлбар / Хэрэглэх заавар / Анхаарах зүйлс — тус бүр 📋 Copy товчтой */}
+              {!productInfo ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
                 </div>
-                {!productInfo ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+              ) : !productInfo.product ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Бараа нөөц бүртгэлд олдсонгүй
                   </div>
-                ) : !productInfo.product ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                      Бараа нөөц бүртгэлд олдсонгүй
+                </div>
+              ) : (
+                <>
+                  {[
+                    ["📝", "Тайлбар", productInfo.product.description],
+                    ["📖", "Хэрэглэх заавар", productInfo.product.usage_guide],
+                    ["⚠️", "Анхаарах зүйлс", productInfo.product.cautions],
+                  ].map(([icon, label, val]) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                          {icon} {label}
+                        </div>
+                        {val && (
+                          <button
+                            onClick={async () => {
+                              try { await navigator.clipboard.writeText(val); alert(`✓ "${label}" хуулагдлаа — Ctrl+V буулгана`); }
+                              catch { alert("Хуулж чадсангүй"); }
+                            }}
+                            className="press-btn px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                            style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                            📋 Хуулах
+                          </button>
+                        )}
+                      </div>
+                      {val ? (
+                        <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                          <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">{val}</div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-2.5 rounded-lg" style={{ background: T.surfaceAlt }}>
+                          <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">Оруулаагүй</div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : productInfo.product.description ? (
-                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
-                      {productInfo.product.description}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
-                      Тэмдэглэл оруулаагүй байна
-                    </div>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </>
+              )}
 
               {/* 2. Үлдэгдэл card */}
               {productInfo?.product && (
