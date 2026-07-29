@@ -12896,6 +12896,7 @@ function CallCenterView({ profile }) {
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
   const [productsByPhoneAll, setProductsByPhoneAll] = useState({}); // утас→бараанууд (бүх бараатай дуудлагаас)
+  const [carryProductsByPhone, setCarryProductsByPhone] = useState({}); // ♻ дахин бүртгэлд ЗАЛГАЖ болох бараа (ordered болоогүй pending-ээс л)
   const [callsByPhoneAll, setCallsByPhoneAll] = useState({}); // утас→бүх дуудлага (түүх limit-гүй харуулахад)
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
   const [customers, setCustomers] = useState([]);
@@ -13098,6 +13099,21 @@ function CallCenterView({ profile }) {
             pmap[phone] = [...v.products];
           });
           setProductsByPhoneAll(pmap);
+          // ♻ ЗАЛГАХ map: pending-ийн ДАРАА "ordered" болсон бол тэр бараанууд аль
+          //   хэдийн захиалга болсон тул дахин бүртгэлд ЗАЛГАХГҮЙ.
+          const latestOrderedAtByPhone = {};
+          (callData || []).forEach((cc) => {
+            if (cc.call_status !== "ordered") return;
+            const t = new Date(cc.created_at).getTime();
+            if (!latestOrderedAtByPhone[cc.phone] || t > latestOrderedAtByPhone[cc.phone]) latestOrderedAtByPhone[cc.phone] = t;
+          });
+          const carryMap = {};
+          Object.entries(latestPendingByPhone).forEach(([phone, v]) => {
+            const ordAt = latestOrderedAtByPhone[phone];
+            if (ordAt && ordAt >= new Date(v.created_at).getTime()) return;
+            carryMap[phone] = [...v.products];
+          });
+          setCarryProductsByPhone(carryMap);
         } catch (e) { console.error("[products calls fetch]", e); }
 
         // 📋 ЗАСВАР: "Залгах дугаар"-т харагдах утаснуудын БҮХ дуудлагыг түүх харуулахад
@@ -14894,6 +14910,7 @@ function CallCenterView({ profile }) {
               
               // Тус утсаар customer + call бичих
               const skippedPhones = [];
+              const carriedNotices = []; // ♻ залгасан бараануудын мэдэгдэл
               for (const phoneEntry of phoneList) {
                 const { phone, notes } = phoneEntry;
 
@@ -14932,14 +14949,18 @@ function CallCenterView({ profile }) {
 
                 // 2. Call log — үргэлж шинэ дуудлага бүртгэх (давхардаж байсан ч)
                 // Үргэлж pending — Залгах дугаар tab-руу орно
-                // ♻️ ДАХИН БҮРТГЭЛ: ижил дугаарын өмнөх PENDING бүртгэлийн барааг
-                //    шинэ сонголт дээр НЭМЖ хадгална (өмнөх бараанууд алга болохгүй).
+                // ♻️ ДАХИН БҮРТГЭЛ: өмнөх ШИЙДЭГДЭЭГҮЙ pending-ийн барааг залгана.
+                //    (Pending-ийн дараа ordered болсон бол — бараа нь захиалга болчихсон
+                //     тул залгахгүй. Залгасан тохиолдолд операторт мэдэгдэнэ.)
                 let mergedProducts = interested_products;
-                const prevProds = productsByPhoneAll[phone];
+                const prevProds = carryProductsByPhone[phone];
                 if (Array.isArray(prevProds) && prevProds.length > 0) {
                   const seen = new Set((interested_products || []).map((ip) => ip.id));
                   const carry = prevProds.filter((pp) => pp && pp.id && !seen.has(pp.id));
-                  if (carry.length > 0) mergedProducts = [...carry, ...interested_products];
+                  if (carry.length > 0) {
+                    mergedProducts = [...carry, ...interested_products];
+                    carriedNotices.push(`${phone}: ♻ өмнөх бүртгэлээс ${carry.map((x) => x.name).join(", ")} залгав`);
+                  }
                 }
                 const { error: callErr } = await supabase.from("biz_calls").insert({
                   phone,
@@ -14961,6 +14982,10 @@ function CallCenterView({ profile }) {
               // 🚫 "new" захиалгатай тул алгассан дугааруудыг мэдэгдэх
               if (skippedPhones.length > 0) {
                 alert(`🚫 Дараах дугаар(ууд) аль хэдийн ЗАХИАЛГА БОЛСОН тул бүртгэгдсэнгүй:\n\n${skippedPhones.join("\n")}\n\n(Захиалга хараахан хуваарилагдаагүй байгаа дугаарт дахин захиалга авах боломжгүй.)`);
+              }
+              // ♻ Өмнөх бүртгэлээс бараа залгасан бол мэдэгдэх
+              if (carriedNotices.length > 0) {
+                alert(`♻ Өмнөх шийдэгдээгүй бүртгэлээс бараа нэмэгдлээ:\n\n${carriedNotices.join("\n")}\n\n(Хэрэггүй бол картаас нь хасаж болно.)`);
               }
 
               setShowCallModal(false);
