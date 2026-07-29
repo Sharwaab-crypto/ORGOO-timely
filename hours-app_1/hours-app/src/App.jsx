@@ -22814,7 +22814,8 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             className="rounded-lg overflow-hidden relative"
                             style={{
                               background: T.surface,
-                              border: `1px solid ${T.border}`,
+                              // ⚠ Нөөц 50-иас доош → улаан хүрээ (анхааруулга)
+                              border: Number(p.stock || 0) < 50 ? `2px solid ${T.err}` : `1px solid ${T.border}`,
                             }}>
                             {/* Top: SKU + Тайлбар pill */}
                             <div className="flex items-center gap-1 p-1.5"
@@ -22830,6 +22831,16 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                                 className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
                                 Тайлбар
                               </button>
+                              <span
+                                title="Нийт үлдэгдэл (бүх агуулах)"
+                                style={{
+                                  background: Number(p.stock || 0) < 50 ? T.errSoft : "rgba(16,185,129,0.1)",
+                                  color: Number(p.stock || 0) < 50 ? T.err : T.ok,
+                                  fontFamily: FD, fontWeight: 700,
+                                }}
+                                className="text-[9px] px-1.5 py-0.5 rounded tabular-nums">
+                                📦 {Number(p.stock || 0)}
+                              </span>
                               {pendingQtyByProduct[p.id] > 0 && (
                                 <span
                                   title="Захиалга болсон ч хүргэгдээгүй тоо"
@@ -32086,6 +32097,7 @@ function OrderHistorySection({ orderId }) {
     customer_name: "Нэр",
     total_amount: "Нийт дүн",
     paid_amount: "Төлсөн",
+    prepaid_amount: "Урьдчилгаа",
     delivery_fee: "Хүргэлт",
     driver_id: "Жолооч",
     fb_page_id: "FB Page",
