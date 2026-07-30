@@ -16636,24 +16636,36 @@ function OperatorKPIReportView({ profile }) {
     (async () => {
       setLoading(true);
       try {
+        // ⚡ ГАЦАА ЗАСВАР: өмнө biz_calls (1 САЯ+ мөр!) болон biz_orders-ийг БҮХЛЭЭР нь
+        //    select(*)-ээр татдаг байсан (~28MB, 1+ минут, 300+ хүсэлт). Одоо:
+        //    сонгосон хугацааг SERVER талд шүүж, зөвхөн хэрэгтэй баганыг ЗЭРЭГЦЭЭ татна.
+        //    "Бүгд" сонголт = сүүлийн 12 сар (хэт өгөгдөл татахаас сэргийлнэ).
+        const HARD_START = new Date(Date.now() - 365 * 24 * 3600 * 1000);
+        const rangeStart = periodRange.start.getTime() < HARD_START.getTime() ? HARD_START : periodRange.start;
+        const rangeEnd = periodRange.end.getTime() > Date.now() + 86400000
+          ? new Date(Date.now() + 86400000) : periodRange.end;
+        const startIso = rangeStart.toISOString();
+        const endIso = rangeEnd.toISOString();
         const [callData, ordData, { data: opData }] = await Promise.all([
-          fetchAllRows(supabase.from("biz_calls").select("*")),
-          fetchAllRows(supabase.from("biz_orders").select("*")),
+          fetchAllRowsParallel(() => supabase.from("biz_calls")
+            .select("phone, call_status, created_by, created_at")
+            .gte("created_at", startIso).lt("created_at", endIso)),
+          fetchAllRowsParallel(() => supabase.from("biz_orders")
+            .select("customer_phone, status, taken_by, total_amount, created_at")
+            .gte("created_at", startIso).lt("created_at", endIso)),
           supabase.from("profiles")
             .select("id, name, role, job_title")
             .in("role", ["admin", "manager", "operator", "merchant"])
             .order("name"),
         ]);
-        console.log("[KPI Report] Calls:", callData?.length, "Orders:", ordData?.length, "Users:", opData?.length);
-        const merchantCalls = (callData || []).filter(c => (opData || []).find(u => u.id === c.created_by && u.role === "merchant"));
-        console.log("[KPI Report] Merchant calls (matched):", merchantCalls.length);
+        logDev("[KPI Report] Calls:", callData?.length, "Orders:", ordData?.length, "Users:", opData?.length);
         setCalls(callData || []);
         setOrders(ordData || []);
         setOperators(opData || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [periodRange.start.getTime(), periodRange.end.getTime()]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
