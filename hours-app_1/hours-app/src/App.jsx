@@ -15858,6 +15858,34 @@ function MarketingView({ profile }) {
 
   // Pie — сонгосон МУЖИЙН нийт хандалт ажилтан бүрээр
   const reachInRange = useMemo(() => reach.filter((r) => r.reach_date >= fromDate && r.reach_date <= toDate), [reach, fromDate, toDate]);
+
+  // 📈 Ажилчдын өдөр тутмын харьцуулалт (сонгосон мужаар)
+  const EMP_COLORS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1", "#14B8A6", "#A855F7"];
+  const empCompare = useMemo(() => {
+    const dates = [];
+    const [fy, fm, fd] = fromDate.split("-").map(Number);
+    const [ty, tm, td] = toDate.split("-").map(Number);
+    const d = new Date(fy, fm - 1, fd);
+    const end = new Date(ty, tm - 1, td);
+    let guard = 0;
+    while (d <= end && guard < 370) {
+      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      d.setDate(d.getDate() + 1); guard++;
+    }
+    const empIds = [...new Set(reachInRange.map((r) => r.employee_id))];
+    const emps = empIds.map((id, i) => ({ id, name: profById[id]?.name || "?", color: EMP_COLORS[i % EMP_COLORS.length] }));
+    const byKey = {};
+    reachInRange.forEach((r) => {
+      const k = r.employee_id + "|" + r.reach_date;
+      byKey[k] = (byKey[k] || 0) + Number(r.reach || 0);
+    });
+    const rows = dates.map((dt) => {
+      const row = { date: dt.slice(5) };
+      emps.forEach((e) => { row[e.name] = byKey[e.id + "|" + dt] || 0; });
+      return row;
+    });
+    return { rows, emps, days: dates.length };
+  }, [reachInRange, fromDate, toDate, profById]);
   const pieData = useMemo(() => {
     const byEmp = {};
     reachInRange.forEach((r) => { byEmp[r.employee_id] = (byEmp[r.employee_id] || 0) + Number(r.reach || 0); });
@@ -16202,6 +16230,29 @@ function MarketingView({ profile }) {
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="rounded-lg px-2 py-1 text-[11px] outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
         </div>
       </div>
+
+      {/* ====== 📈 Ажилчдын өдөр тутмын харьцуулалт ====== */}
+      {empCompare.emps.length > 0 && (
+        <div className="glass rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">📈</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажилчдын харьцуулалт (өдрөөр)</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">{fromDate} → {toDate} · {empCompare.days} өдөр</span>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={empCompare.rows} margin={{ top: 6, right: 10, left: -14, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.border || "#E5E7EB"} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
+              <YAxis tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} allowDecimals={false} />
+              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+              <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
+              {empCompare.emps.map((e) => (
+                <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} connectNulls />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* ====== Сарын хандалтын зорилго (gauge) ====== */}
       <div className="glass rounded-2xl p-4">
