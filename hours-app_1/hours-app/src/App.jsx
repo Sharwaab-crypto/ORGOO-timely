@@ -5587,7 +5587,10 @@ function CancelReasonsManager({ profile }) {
 
 // 🚫 Цуцлалтын тайлан — шалтгаанаар бүлэглэх + огноо/жолооч шүүлт + жагсаалт
 function CancelReportView({ profile }) {
-  const [period, setPeriod] = useState("30"); // 7 | 30 | 90 | all
+  const [period, setPeriod] = useState("30"); // 7 | 30 | 90 | all | custom
+  const _crToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const [customStart, setCustomStart] = useState(_crToday.slice(0, 8) + "01");
+  const [customEnd, setCustomEnd] = useState(_crToday);
   const [driverFilter, setDriverFilter] = useState("all"); // all | none | <driverId>
   const [reasonFilter, setReasonFilter] = useState("all"); // all | __none__ | <label>
   const [orders, setOrders] = useState([]);
@@ -5602,7 +5605,15 @@ function CancelReportView({ profile }) {
       let q = supabase.from("biz_orders")
         .select("id, order_number, customer_name, customer_phone, total_amount, cancel_reasons, cancel_note, cancelled_at, cancelled_by, driver_id, created_at")
         .eq("status", "cancelled");
-      if (period !== "all") {
+      if (period === "custom") {
+        // 📆 Гараар: эхлэх → дуусах (дуусах өдрийг БҮТНЭЭР нь оруулна)
+        let s = customStart, e = customEnd;
+        if (e < s) { const t = s; s = e; e = t; }
+        const [ey, em, ed] = e.split("-").map(Number);
+        const endNext = new Date(ey, em - 1, ed + 1, 0, 0, 0);
+        q = q.gte("cancelled_at", new Date(s + "T00:00:00").toISOString())
+             .lt("cancelled_at", endNext.toISOString());
+      } else if (period !== "all") {
         const since = new Date(Date.now() - Number(period) * 24 * 60 * 60 * 1000).toISOString();
         q = q.gte("cancelled_at", since);
       }
@@ -5615,7 +5626,7 @@ function CancelReportView({ profile }) {
     } catch (e) { console.error("[cancel report]", e); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); setPage(1); }, [period]);
+  useEffect(() => { load(); setPage(1); }, [period, customStart, customEnd]);
   useEffect(() => { setPage(1); }, [driverFilter]);
   useEffect(() => { setPage(1); }, [reasonFilter]);
 
@@ -5661,13 +5672,24 @@ function CancelReportView({ profile }) {
     <div className="space-y-3">
       {/* Шүүлт */}
       <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
-        {[["7", "7 хоног"], ["30", "30 хоног"], ["90", "90 хоног"], ["all", "Бүх"]].map(([v, lbl]) => (
+        {[["7", "7 хоног"], ["30", "30 хоног"], ["90", "90 хоног"], ["all", "Бүх"], ["custom", "📆 Гараар"]].map(([v, lbl]) => (
           <button key={v} onClick={() => setPeriod(v)}
             className="press-btn px-3 py-1.5 rounded-full text-xs"
             style={{ background: period === v ? T.highlight : T.surfaceAlt, color: period === v ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
             {lbl}
           </button>
         ))}
+        {period === "custom" && (
+          <>
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="px-2 py-1.5 rounded-lg text-xs" />
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">→</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+              className="px-2 py-1.5 rounded-lg text-xs" />
+          </>
+        )}
         <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)}
           style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
           className="px-3 py-1.5 rounded-full text-xs ml-auto">
