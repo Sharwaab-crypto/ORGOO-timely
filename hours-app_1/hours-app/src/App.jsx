@@ -12955,7 +12955,7 @@ function CallCenterView({ profile }) {
           return;
         }
         const [{ data: p }, { data: stk }] = await Promise.all([
-          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_products").select("id, name, sku, image_url, description, usage_guide, cautions, sale_price").eq("id", productId).maybeSingle(),
           supabase.from("inv_stock").select("quantity").eq("product_id", productId),
         ]);
         if (cancelled) return;
@@ -22515,7 +22515,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
           return;
         }
         const [{ data: p }, { data: stk }] = await Promise.all([
-          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_products").select("id, name, sku, image_url, description, usage_guide, cautions, sale_price").eq("id", productId).maybeSingle(),
           supabase.from("inv_stock").select("quantity").eq("product_id", productId),
         ]);
         if (cancelled) return;
@@ -23108,35 +23108,54 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 
             {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
-              {/* 1. Барааны тэмдэглэл (description) */}
-              <div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                  📝 Барааны тэмдэглэл
+              {/* 1. Тайлбар / Хэрэглэх заавар / Анхаарах зүйлс — 📋 Copy товчтой */}
+              {!pdProductInfo ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
                 </div>
-                {!pdProductInfo ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+              ) : !pdProductInfo.product ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Бараа нөөц бүртгэлд олдсонгүй
                   </div>
-                ) : !pdProductInfo.product ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                      Бараа нөөц бүртгэлд олдсонгүй
+                </div>
+              ) : (
+                <>
+                  {[
+                    ["📝", "Тайлбар", pdProductInfo.product.description],
+                    ["📖", "Хэрэглэх заавар", pdProductInfo.product.usage_guide],
+                    ["⚠️", "Анхаарах зүйлс", pdProductInfo.product.cautions],
+                  ].map(([icon, label, val]) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                          {icon} {label}
+                        </div>
+                        {val && (
+                          <button
+                            onClick={async () => {
+                              try { await navigator.clipboard.writeText(val); alert(`✓ "${label}" хуулагдлаа — Ctrl+V буулгана`); }
+                              catch { alert("Хуулж чадсангүй"); }
+                            }}
+                            className="press-btn px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                            style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                            📋 Хуулах
+                          </button>
+                        )}
+                      </div>
+                      {val ? (
+                        <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                          <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">{val}</div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-2.5 rounded-lg" style={{ background: T.surfaceAlt }}>
+                          <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">Оруулаагүй</div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : pdProductInfo.product.description ? (
-                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
-                      {pdProductInfo.product.description}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
-                      Тэмдэглэл оруулаагүй байна
-                    </div>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </>
+              )}
 
               {/* 2. Үлдэгдэл card */}
               {pdProductInfo?.product && (
@@ -23485,7 +23504,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
           return;
         }
         const [{ data: p }, { data: stk }] = await Promise.all([
-          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_products").select("id, name, sku, image_url, description, usage_guide, cautions, sale_price").eq("id", productId).maybeSingle(),
           supabase.from("inv_stock").select("quantity").eq("product_id", productId),
         ]);
         if (cancelled) return;
@@ -24129,35 +24148,54 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
 
               {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
               <div className="p-4 space-y-3">
-                {/* 1. Барааны тэмдэглэл (description) */}
-                <div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                    📝 Барааны тэмдэглэл
-                  </div>
-                  {!pdProductInfo ? (
-                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                      <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
-                    </div>
-                  ) : !pdProductInfo.product ? (
-                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                      <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                        Бараа нөөц бүртгэлд олдсонгүй
-                      </div>
-                    </div>
-                  ) : pdProductInfo.product.description ? (
-                    <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                      <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
-                        {pdProductInfo.product.description}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                      <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
-                        Тэмдэглэл оруулаагүй байна
-                      </div>
-                    </div>
-                  )}
+              {/* 1. Тайлбар / Хэрэглэх заавар / Анхаарах зүйлс — 📋 Copy товчтой */}
+              {!pdProductInfo ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
                 </div>
+              ) : !pdProductInfo.product ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Бараа нөөц бүртгэлд олдсонгүй
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {[
+                    ["📝", "Тайлбар", pdProductInfo.product.description],
+                    ["📖", "Хэрэглэх заавар", pdProductInfo.product.usage_guide],
+                    ["⚠️", "Анхаарах зүйлс", pdProductInfo.product.cautions],
+                  ].map(([icon, label, val]) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                          {icon} {label}
+                        </div>
+                        {val && (
+                          <button
+                            onClick={async () => {
+                              try { await navigator.clipboard.writeText(val); alert(`✓ "${label}" хуулагдлаа — Ctrl+V буулгана`); }
+                              catch { alert("Хуулж чадсангүй"); }
+                            }}
+                            className="press-btn px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                            style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                            📋 Хуулах
+                          </button>
+                        )}
+                      </div>
+                      {val ? (
+                        <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                          <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">{val}</div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-2.5 rounded-lg" style={{ background: T.surfaceAlt }}>
+                          <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">Оруулаагүй</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
 
                 {/* 2. Үлдэгдэл card */}
                 {pdProductInfo?.product && (
@@ -27163,7 +27201,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
           return;
         }
         const [{ data: p }, { data: stk }] = await Promise.all([
-          supabase.from("inv_products").select("id, name, sku, image_url, description, sale_price").eq("id", productId).maybeSingle(),
+          supabase.from("inv_products").select("id, name, sku, image_url, description, usage_guide, cautions, sale_price").eq("id", productId).maybeSingle(),
           supabase.from("inv_stock").select("quantity").eq("product_id", productId),
         ]);
         if (cancelled) return;
@@ -27647,35 +27685,54 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
 
             {/* Body — Барааны тэмдэглэл + үлдэгдэл */}
             <div className="p-4 space-y-3">
-              {/* 1. Барааны тэмдэглэл (description) */}
-              <div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-2">
-                  📝 Барааны тэмдэглэл
+              {/* 1. Тайлбар / Хэрэглэх заавар / Анхаарах зүйлс — 📋 Copy товчтой */}
+              {!productInfo ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
                 </div>
-                {!productInfo ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <Loader2 className="spin mx-auto" size={16} style={{ color: T.muted }} />
+              ) : !productInfo.product ? (
+                <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    Бараа нөөц бүртгэлд олдсонгүй
                   </div>
-                ) : !productInfo.product ? (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                      Бараа нөөц бүртгэлд олдсонгүй
+                </div>
+              ) : (
+                <>
+                  {[
+                    ["📝", "Тайлбар", productInfo.product.description],
+                    ["📖", "Хэрэглэх заавар", productInfo.product.usage_guide],
+                    ["⚠️", "Анхаарах зүйлс", productInfo.product.cautions],
+                  ].map(([icon, label, val]) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                          {icon} {label}
+                        </div>
+                        {val && (
+                          <button
+                            onClick={async () => {
+                              try { await navigator.clipboard.writeText(val); alert(`✓ "${label}" хуулагдлаа — Ctrl+V буулгана`); }
+                              catch { alert("Хуулж чадсангүй"); }
+                            }}
+                            className="press-btn px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                            style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                            📋 Хуулах
+                          </button>
+                        )}
+                      </div>
+                      {val ? (
+                        <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                          <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">{val}</div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-2.5 rounded-lg" style={{ background: T.surfaceAlt }}>
+                          <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">Оруулаагүй</div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : productInfo.product.description ? (
-                  <div className="rounded-lg p-3" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                    <div style={{ color: T.ink, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm">
-                      {productInfo.product.description}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 rounded-lg" style={{ background: T.surfaceAlt }}>
-                    <div style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-xs">
-                      Тэмдэглэл оруулаагүй байна
-                    </div>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </>
+              )}
 
               {/* 2. Үлдэгдэл card */}
               {productInfo?.product && (
