@@ -9327,38 +9327,19 @@ function WarehousesView({ profile }) {
           }).filter(Boolean);
           if (!cancelled) setActionItems(items);
         } else if (showActionModal === "receive") {
-          // 📥 Бараа авах → сонгосон driver-ийн захиалгаас хэрэгтэй (дутуу) бараа
-          const driverId = selWh.driver_id;
-          if (!driverId) { if (!cancelled) setActionItems([]); return; }
-          const { data: ordData } = await supabase
-            .from("biz_orders").select("id")
-            .eq("driver_id", driverId).in("status", ["new", "pending", "assigned"]);
-          const orderIds = (ordData || []).map((o) => o.id);
-          if (orderIds.length === 0) { if (!cancelled) setActionItems([]); return; }
-          const itemData = await fetchInChunks("biz_order_items", orderIds, {
-            select: "product_id, product_name, quantity",
-            filterColumn: "order_id", chunkSize: 200,
-          });
-          const requiredMap = {};
-          (itemData || []).forEach((it) => {
-            if (!it.product_id) return;
-            if (!requiredMap[it.product_id]) requiredMap[it.product_id] = { product_id: it.product_id, qty: 0 };
-            requiredMap[it.product_id].qty += Number(it.quantity || 0);
-          });
-          const items = Object.values(requiredMap).map((r) => {
-            const product = products.find((p) => p.id === r.product_id);
+          // 📥 Бараа авах (хүргэгчээс ТАТАХ) → сонгосон хүргэгчийн агуулахад
+          //    ОДОО БАЙГАА бүх барааг тоотой нь автоматаар жагсаана.
+          //    (Өмнө "захиалгад дутуу"-г тооцдог байсан нь энэ урсгалд урвуу утгатай байсан.)
+          const drvStock = stock.filter((s) => s.warehouse_id === selWh.id && Number(s.quantity) > 0);
+          const items = drvStock.map((s) => {
+            const product = products.find((p) => p.id === s.product_id);
             if (!product) return null;
-            const drStock = stock.find((s) => s.warehouse_id === selWh.id && s.product_id === r.product_id);
-            const missing = Math.max(0, r.qty - Number(drStock?.quantity || 0));
-            if (missing <= 0) return null;
-            const mainStock = stock.find((s) => s.warehouse_id === mainWh?.id && s.product_id === r.product_id);
-            const avail = Number(mainStock?.quantity || 0);
             return {
-              product_id: r.product_id, product_name: product.name, product_sku: product.sku,
+              product_id: s.product_id, product_name: product.name, product_sku: product.sku,
               product_image: product.image_url || null,
-              quantity: Math.min(missing, avail), maxQty: avail,
+              quantity: Number(s.quantity), maxQty: Number(s.quantity),
             };
-          }).filter(Boolean);
+          }).filter(Boolean).sort((a, b) => a.product_name.localeCompare(b.product_name));
           if (!cancelled) setActionItems(items);
         }
       } catch (e) { console.error("[warehouse auto-calc]", e); }
