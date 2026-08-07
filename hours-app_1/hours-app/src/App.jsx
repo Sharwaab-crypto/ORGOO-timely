@@ -19681,9 +19681,10 @@ function DriverSettlementView({ profile }) {
                 // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
-                    // ⚠ prepaid_amount-д ХҮРЭХГҮЙ — тэр бол захиалга ҮҮСЭХ үеийн урьдчилгаа.
-                    //   (Өмнө энд paid_amount-аар дарж бичдэг байсан нь хаагдсан бүх захиалгын
-                    //    "урьдчилгаа"-г бохирдуулж, тайланд хуурамч 💰 мөр гаргадаг байсан.)
+                    // 💰 Хаахаас ӨМНӨ төлөгдсөн (шилжүүлэг г.м) дүнг тайланд харуулахын тулд
+                    //    prepaid-д хадгална. max() — үүсгэлтийн урьдчилгааг дарахгүй.
+                    //    (Давхар-хаалтын бохирдол claim-guard-аар хаагдсан.)
+                    prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -19710,9 +19711,10 @@ function DriverSettlementView({ profile }) {
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
                     settlement_id: stData.id,
-                    // ⚠ prepaid_amount-д ХҮРЭХГҮЙ — тэр бол захиалга ҮҮСЭХ үеийн урьдчилгаа.
-                    //   (Өмнө энд paid_amount-аар дарж бичдэг байсан нь хаагдсан бүх захиалгын
-                    //    "урьдчилгаа"-г бохирдуулж, тайланд хуурамч 💰 мөр гаргадаг байсан.)
+                    // 💰 Хаахаас ӨМНӨ төлөгдсөн (шилжүүлэг г.м) дүнг тайланд харуулахын тулд
+                    //    prepaid-д хадгална. max() — үүсгэлтийн урьдчилгааг дарахгүй.
+                    //    (Давхар-хаалтын бохирдол claim-guard-аар хаагдсан.)
+                    prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -21421,6 +21423,10 @@ function SettlementReportsView({ profile }) {
           if (o.status !== "delivered") return;
           if (!o.settlement_id) return;
           ppMap[o.settlement_id] = (ppMap[o.settlement_id] || 0) + Number(o.prepaid_amount || 0);
+        });
+        // Fallback: захиалгуудад тамга байхгүй ч тооцооны paid_already хадгалагдсан бол түүнийг харуулна
+        (rData || []).forEach((r) => {
+          if (!ppMap[r.id] && Number(r.paid_already || 0) > 0) ppMap[r.id] = Number(r.paid_already);
         });
         setPrepaidBySettlement(ppMap);
       }
