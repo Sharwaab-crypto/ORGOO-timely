@@ -10554,19 +10554,10 @@ function TransferRequestsView({ profile }) {
       setProducts(prdData || []);
       setStock(stkData || []);
 
-      // Items
+      // ⚡ ГАЦАА ЗАСВАР: өмнө 3000+ хүсэлтийн ~45К item-ийг НЭЭХ БҮРД урьдчилан
+      //    татдаг байсан (27+ сек). Одоо items-ийг зөвхөн дэлгэцэнд буй хуудасны
+      //    хүсэлтүүдэд lazy татна (доорх effect).
       if (reqData && reqData.length > 0) {
-        const ids = reqData.map((r) => r.id);
-        const itemData = await fetchInChunks("inv_transfer_items", ids, {
-          select: "*", filterColumn: "request_id", chunkSize: 200,
-        });
-        const map = {};
-        (itemData || []).forEach((i) => {
-          if (!map[i.request_id]) map[i.request_id] = [];
-          map[i.request_id].push(i);
-        });
-        setItems(map);
-
         // Profiles
         const profileIds = [...new Set(reqData.map((r) => r.requester_id).filter(Boolean))];
         if (profileIds.length > 0) {
@@ -10683,6 +10674,10 @@ function TransferRequestsView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  const [reqPage, setReqPage] = useState(1);
+  const RPAGE = 30;
+  useEffect(() => { setReqPage(1); }, [filter, empFilter, monthFilter]);
+
   // Filter
   let filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
   // 🆕 Ажилтнаар шүүх
@@ -10698,6 +10693,32 @@ function TransferRequestsView({ profile }) {
       return ym === monthFilter;
     });
   }
+  const reqTotalPages = Math.ceil(filtered.length / RPAGE) || 1;
+  const pagedRequests = filtered.slice((reqPage - 1) * RPAGE, reqPage * RPAGE);
+  // 🛍 Дэлгэцэнд буй хүсэлтүүдийн items-ийг lazy татна (нэг .in query)
+  const visibleReqKey = pagedRequests.map((r) => r.id).join(",");
+  useEffect(() => {
+    const ids = visibleReqKey ? visibleReqKey.split(",") : [];
+    const missing = ids.filter((id) => !items[id]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.from("inv_transfer_items").select("*").in("request_id", missing);
+        if (cancelled) return;
+        setItems((prev) => {
+          const nx = { ...prev };
+          missing.forEach((id) => { if (!nx[id]) nx[id] = []; });
+          (data || []).forEach((i) => {
+            if (!nx[i.request_id]) nx[i.request_id] = [];
+            nx[i.request_id].push(i);
+          });
+          return nx;
+        });
+      } catch (e) { console.error("[req items lazy]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [visibleReqKey]);
 
   const counts = {
     pending: requests.filter((r) => r.status === "pending").length,
@@ -10946,8 +10967,18 @@ function TransferRequestsView({ profile }) {
                 </button>
               )}
               <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto pr-1">
-                {filtered.length} хүсэлт
+                {filtered.length} хүсэлт · {reqPage}/{reqTotalPages}
               </span>
+              {reqTotalPages > 1 && (
+                <>
+                  <button onClick={() => setReqPage((p) => Math.max(1, p - 1))} disabled={reqPage === 1}
+                    className="press-btn px-2 py-0.5 rounded text-[10px]"
+                    style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: reqPage === 1 ? 0.4 : 1 }}>←</button>
+                  <button onClick={() => setReqPage((p) => Math.min(reqTotalPages, p + 1))} disabled={reqPage === reqTotalPages}
+                    className="press-btn px-2 py-0.5 rounded text-[10px]"
+                    style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, opacity: reqPage === reqTotalPages ? 0.4 : 1 }}>→</button>
+                </>
+              )}
             </>
           );
         })()}
@@ -10964,7 +10995,7 @@ function TransferRequestsView({ profile }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((req) => {
+          {pagedRequests.map((req) => {
             const reqItems = items[req.id] || [];
             const requester = profiles[req.requester_id];
             const fromWh = warehouses.find((w) => w.id === req.from_warehouse_id);
