@@ -9719,6 +9719,16 @@ function WarehousesView({ profile }) {
               </div>
 
               {/* Сонгосон бараанууд */}
+              {showActionModal === "receive" && actionWarehouse && actionItems.length === 0 && (
+                <div className="mb-3 rounded-lg p-3 text-center" style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+                    📭 Энэ хүргэгчийн агуулахад бараа алга байна
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
+                    Татах зүйлгүй — өөр хүргэгч сонгох эсвэл хайлтаас гараар нэмнэ үү
+                  </div>
+                </div>
+              )}
               {actionItems.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center justify-between mb-2">
@@ -25727,7 +25737,11 @@ function OrdersView({ profile }) {
       const applyDriver = (qb) => {
         if (driverFilter === "all") return qb;
         if (driverFilter === "unassigned") return qb.is("driver_id", null);
-        return qb.eq("driver_id", driverFilter);
+        // 🎯 Жолооч сонгосон үед Хүргэсэн/Цуцалсан таб нь дээрх картын тоотой
+        //    таарч, зөвхөн ОДООГИЙН циклийн (тооцоонд ороогүй) захиалгыг харуулна.
+        let q = qb.eq("driver_id", driverFilter);
+        if (filter === "delivered" || filter === "cancelled") q = q.is("settlement_id", null);
+        return q;
       };
       const applySearch = (qb) => {
         const s = (debouncedSearch || "").trim();
