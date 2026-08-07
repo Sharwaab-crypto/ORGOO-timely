@@ -19681,7 +19681,9 @@ function DriverSettlementView({ profile }) {
                 // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
-                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
+                    // ⚠ prepaid_amount-д ХҮРЭХГҮЙ — тэр бол захиалга ҮҮСЭХ үеийн урьдчилгаа.
+                    //   (Өмнө энд paid_amount-аар дарж бичдэг байсан нь хаагдсан бүх захиалгын
+                    //    "урьдчилгаа"-г бохирдуулж, тайланд хуурамч 💰 мөр гаргадаг байсан.)
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
@@ -19708,7 +19710,9 @@ function DriverSettlementView({ profile }) {
                 for (const o of driver.deliveredOrders) {
                   await supabase.from("biz_orders").update({
                     settlement_id: stData.id,
-                    prepaid_amount: Math.max(0, Number(o.paid_amount || 0)), // 🛡 Сөрөг утга хорино
+                    // ⚠ prepaid_amount-д ХҮРЭХГҮЙ — тэр бол захиалга ҮҮСЭХ үеийн урьдчилгаа.
+                    //   (Өмнө энд paid_amount-аар дарж бичдэг байсан нь хаагдсан бүх захиалгын
+                    //    "урьдчилгаа"-г бохирдуулж, тайланд хуурамч 💰 мөр гаргадаг байсан.)
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
                 }
