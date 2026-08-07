@@ -19598,6 +19598,13 @@ function DriverSettlementView({ profile }) {
 
             setOpeningSettlement(true);
             try {
+              // 🛡 DB-ийн бодит төлөв: энэ жолоочид аль хэдийн нээлттэй тооцоо бий юу?
+              const { data: existOpen } = await supabase.from("biz_settlements").select("id").eq("driver_id", driver.id).eq("status", "open").limit(1);
+              if (existOpen && existOpen.length > 0) {
+                alert("⚠ Энэ жолоочид нээлттэй тооцоо аль хэдийн байна. Хуудсаа шинэчилнэ үү.");
+                await loadAll();
+                return;
+              }
               // 1. Open settlement үүсгэх
               const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
                 driver_id: driver.id,
@@ -19615,19 +19622,27 @@ function DriverSettlementView({ profile }) {
               }).select().single();
               if (stErr) throw stErr;
 
-              // 2. Захиалгуудыг settlement-руу холбох (paid_amount-ыг хараахан өөрчлөхгүй)
-              for (const o of driver.deliveredOrders) {
-                await supabase.from("biz_orders").update({
-                  settlement_id: stData.id,
-                }).eq("id", o.id);
+              // 2. Захиалгуудыг холбох — 🛡 ЗӨВХӨН одоо ч settle-гүй (settlement_id IS NULL)
+              //    мөрийг atomic-аар авна. (Өмнө нөхцөлгүй дарж бичдэг байсан нь хуучирсан
+              //    дэлгэцтэй үед ХААГДСАН тооцооны захиалгыг хулгайлж, №1-ийг хоосолдог байсан!)
+              let claimed = 0;
+              for (const o of [...driver.deliveredOrders, ...driver.cancelledOrders]) {
+                const { data: cl } = await supabase.from("biz_orders")
+                  .update({ settlement_id: stData.id })
+                  .eq("id", o.id)
+                  .is("settlement_id", null)
+                  .select("id");
+                if (cl && cl.length > 0) claimed++;
               }
-              for (const o of driver.cancelledOrders) {
-                await supabase.from("biz_orders").update({
-                  settlement_id: stData.id,
-                }).eq("id", o.id);
+              if (claimed === 0) {
+                // Бүгд аль хэдийн өөр тооцоонд — хуучирсан дэлгэц. Хоосон нээлтийг цэвэрлэнэ.
+                await supabase.from("biz_settlements").delete().eq("id", stData.id).eq("status", "open");
+                alert("⚠ Эдгээр захиалга өөр тооцоонд орсон байна (дэлгэц хуучирсан). Хуудас шинэчлэгдлээ — дахин шалгана уу.");
+                await loadAll();
+                return;
               }
 
-              alert(`✅ Тооцоо нээгдлээ!\n\nЗахиалгууд "Тооцоонд орсон" болов.\nДараа нь дүнгээ оруулж "Тооцоо хаах" даргана уу.`);
+              alert(`✅ Тооцоо нээгдлээ!\n\n${claimed}ш захиалга "Тооцоонд орсон" болов.\nДараа нь дүнгээ оруулж "Тооцоо хаах" даргана уу.`);
               await loadAll();
             } catch (e) {
               alert("Алдаа: " + e.message);
@@ -20612,10 +20627,24 @@ function DriverSettlementView({ profile }) {
             ...d.cancelledOrders.map((o) => o.id),
           ];
           if (orderIds.length > 0) {
-            const { error: updErr } = await updateInChunks("biz_orders", "id", orderIds, {
-              settlement_id: stData.id,
-            });
-            if (updErr) throw updErr;
+            // 🛡 ЗӨВХӨН одоо ч settle-гүй (settlement_id IS NULL) мөрийг atomic-аар авна —
+            //    хуучирсан дэлгэцтэй үед ХААГДСАН тооцооноос хулгайлахаас сэргийлнэ.
+            const CH = 200;
+            let claimed = 0;
+            for (let i = 0; i < orderIds.length; i += CH) {
+              const chunk = orderIds.slice(i, i + CH);
+              const { data: cl, error: updErr } = await supabase.from("biz_orders")
+                .update({ settlement_id: stData.id })
+                .in("id", chunk)
+                .is("settlement_id", null)
+                .select("id");
+              if (updErr) throw updErr;
+              claimed += (cl || []).length;
+            }
+            if (claimed === 0) {
+              await supabase.from("biz_settlements").delete().eq("id", stData.id).eq("status", "open");
+              throw new Error("захиалгууд нь өөр тооцоонд орсон байна (дэлгэц хуучирсан)");
+            }
           }
           
           successCount++;
