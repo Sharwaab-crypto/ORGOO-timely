@@ -12940,6 +12940,17 @@ function CallCenterView({ profile }) {
   const [products, setProducts] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
   const [productsByPhoneAll, setProductsByPhoneAll] = useState({}); // утас→бараанууд (бүх бараатай дуудлагаас)
+  const [ccStaff, setCcStaff] = useState({}); // 📊 id→нэр (pie chart-д)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("profiles").select("id, name").in("role", ["operator", "merchant", "admin", "manager"]);
+        const m = {};
+        (data || []).forEach((p) => { m[p.id] = p.name; });
+        setCcStaff(m);
+      } catch {}
+    })();
+  }, []);
   const [carryProductsByPhone, setCarryProductsByPhone] = useState({}); // ♻ дахин бүртгэлд ЗАЛГАЖ болох бараа (ordered болоогүй pending-ээс л)
   const [callsByPhoneAll, setCallsByPhoneAll] = useState({}); // утас→бүх дуудлага (түүх limit-гүй харуулахад)
   const [orders, setOrders] = useState([]); // delivered тоо тооцох
@@ -14064,6 +14075,58 @@ function CallCenterView({ profile }) {
         className="press-btn w-full py-6 rounded-2xl font-bold text-lg flex items-center justify-center gap-3">
         📞 Дугаар бүртгэх
       </button>
+
+      {/* 📊 Залгалт ажилтнаар — сонгосон хугацааны нийт залгалтын хуваарилалт */}
+      {(() => {
+        const pieSrc = recentCalls.filter((cc2) => {
+          if (period === "all") return true;
+          const d = new Date(cc2.created_at);
+          return d >= periodRange.start && d < periodRange.end;
+        });
+        const counts = {};
+        pieSrc.forEach((cc2) => {
+          const k = cc2.created_by || "__none";
+          counts[k] = (counts[k] || 0) + 1;
+        });
+        const PIE_COLORS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1", "#14B8A6", "#A855F7"];
+        const entries = Object.entries(counts)
+          .map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v }))
+          .sort((a, b) => b.value - a.value);
+        const total = entries.reduce((s, e) => s + e.value, 0);
+        if (total === 0) return null;
+        return (
+          <div className="glass rounded-2xl p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">📊</span>
+              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Залгалт ажилтнаар</span>
+              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">Нийт {total.toLocaleString()} залгалт</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie data={entries} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={82} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
+                    {entries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <RechartsTooltip formatter={(v, n) => [`${Number(v).toLocaleString()} (${((v / total) * 100).toFixed(1)}%)`, n]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                {entries.map((e, i) => (
+                  <div key={e.id} className="flex items-center justify-between rounded-lg px-2 py-1" style={{ background: T.surfaceAlt }}>
+                    <span className="flex items-center gap-1.5 min-w-0" style={{ color: T.ink, fontFamily: FS }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 3, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+                      <span className="text-[11px] truncate">{e.name}</span>
+                    </span>
+                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-[11px] flex-shrink-0">
+                      {e.value.toLocaleString()} <span style={{ color: T.muted, fontWeight: 500 }}>({((e.value / total) * 100).toFixed(0)}%)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Recent calls + Tabs */}
       <div>
@@ -22985,8 +23048,9 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             className="rounded-lg overflow-hidden relative"
                             style={{
                               background: T.surface,
-                              // ⚠ Нөөц 50-иас доош → улаан хүрээ (анхааруулга)
-                              border: Number(p.stock || 0) < 20 ? `2px solid ${T.err}` : `1px solid ${T.border}`,
+                              // ⚠ Нөөц 20-иос доош → тод улаан хүрээ + glow (dark/light хоёуланд тодорно)
+                              border: Number(p.stock || 0) < 20 ? "2px solid #EF4444" : `1px solid ${T.border}`,
+                              boxShadow: Number(p.stock || 0) < 20 ? "0 0 0 1px rgba(239,68,68,0.35), 0 0 12px rgba(239,68,68,0.45)" : "none",
                             }}>
                             {/* Top: SKU + Тайлбар pill */}
                             <div className="flex items-center gap-1 p-1.5"
@@ -23005,8 +23069,8 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                               <span
                                 title="Нийт үлдэгдэл (бүх агуулах)"
                                 style={{
-                                  background: Number(p.stock || 0) < 20 ? T.errSoft : "rgba(16,185,129,0.1)",
-                                  color: Number(p.stock || 0) < 20 ? T.err : T.ok,
+                                  background: Number(p.stock || 0) < 20 ? "rgba(239,68,68,0.22)" : "rgba(16,185,129,0.15)",
+                                  color: Number(p.stock || 0) < 20 ? "#EF4444" : "#10B981",
                                   fontFamily: FD, fontWeight: 700,
                                 }}
                                 className="text-[9px] px-1.5 py-0.5 rounded tabular-nums">
