@@ -14101,7 +14101,14 @@ function CallCenterView({ profile }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
               <ResponsiveContainer width="100%" height={210}>
                 <PieChart>
-                  <Pie data={entries} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={82} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
+                  <Pie data={entries} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}
+                    labelLine={false}
+                    label={({ percent, x, y, textAnchor }) => percent >= 0.04 ? (
+                      <text x={x} y={y} textAnchor={textAnchor} dominantBaseline="central"
+                        style={{ fontSize: 10, fontFamily: FD, fontWeight: 700, fill: T.ink }}>
+                        {(percent * 100).toFixed(0)}%
+                      </text>
+                    ) : null}>
                     {entries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
                   <RechartsTooltip formatter={(v, n) => [`${Number(v).toLocaleString()} (${((v / total) * 100).toFixed(1)}%)`, n]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
