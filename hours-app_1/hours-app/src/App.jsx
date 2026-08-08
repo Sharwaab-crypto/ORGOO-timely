@@ -13961,14 +13961,9 @@ function CallCenterView({ profile }) {
           const d = new Date(c.created_at);
           return d >= periodRange.start && d < periodRange.end;
         });
-        // ⚠ Stat-уудад зөвхөн анхдагч дугаар бүртгэлийг тоолно
-        // ("Дуудаад авахгүй" гэх мэт sub-status-уудыг хасна)
-        const allCallsForStats = periodCalls.filter((c) => 
-          !c.call_status || 
-          c.call_status === "pending" || 
-          c.call_status === "ordered" || 
-          c.call_status === "cancelled"
-        );
+        // ⚠ Залгалтын тоонд "unreachable" ба "callback" ХОЁРЫГ Л хасна.
+        //    Бусад бүх статус (хоосон/pending/ordered/cancelled/no_answer) тооцогдоно.
+        const allCallsForStats = periodCalls.filter((c) => c.call_status !== "unreachable" && c.call_status !== "callback");
 
         // 📞 Нийт дугаар = Давхардаагүй (unique) бүртгэгдсэн дугаарын тоо
         const uniquePhones = new Set(allCallsForStats.map((c) => c.phone)).size;
@@ -14079,6 +14074,8 @@ function CallCenterView({ profile }) {
       {/* 📊 Залгалт ажилтнаар — сонгосон хугацааны нийт залгалтын хуваарилалт */}
       {(() => {
         const pieSrc = recentCalls.filter((cc2) => {
+          // "НИЙТ ЗАЛГАЛТ" карттай ИЖИЛ дүрэм: unreachable/callback хоёрыг л хасна
+          if (cc2.call_status === "unreachable" || cc2.call_status === "callback") return false;
           if (period === "all") return true;
           const d = new Date(cc2.created_at);
           return d >= periodRange.start && d < periodRange.end;
