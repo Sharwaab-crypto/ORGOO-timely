@@ -32299,8 +32299,8 @@ function OperatorCalendarView({ profile }) {
       setLoading(true);
       try {
         const [{ data: leavesData }, { data: empData }, { data: schedData }, { data: fbpData }] = await Promise.all([
-          supabase.from("hrm_leaves").select("*").order("start_date", { ascending: false }),
-          supabase.from("profiles").select("id, name, avatar_url, role, job_title"),
+          supabase.from("leaves").select("*").order("created_at", { ascending: false }),
+          supabase.from("profiles").select("id, name, role, job_title"),
           supabase.from("work_schedules").select("*"),
           supabase.from("biz_fb_pages").select("id, name").eq("is_active", true),
         ]);
