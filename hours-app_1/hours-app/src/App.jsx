@@ -22986,7 +22986,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             style={{
                               background: T.surface,
                               // ⚠ Нөөц 50-иас доош → улаан хүрээ (анхааруулга)
-                              border: Number(p.stock || 0) < 50 ? `2px solid ${T.err}` : `1px solid ${T.border}`,
+                              border: Number(p.stock || 0) < 20 ? `2px solid ${T.err}` : `1px solid ${T.border}`,
                             }}>
                             {/* Top: SKU + Тайлбар pill */}
                             <div className="flex items-center gap-1 p-1.5"
@@ -23005,8 +23005,8 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                               <span
                                 title="Нийт үлдэгдэл (бүх агуулах)"
                                 style={{
-                                  background: Number(p.stock || 0) < 50 ? T.errSoft : "rgba(16,185,129,0.1)",
-                                  color: Number(p.stock || 0) < 50 ? T.err : T.ok,
+                                  background: Number(p.stock || 0) < 20 ? T.errSoft : "rgba(16,185,129,0.1)",
+                                  color: Number(p.stock || 0) < 20 ? T.err : T.ok,
                                   fontFamily: FD, fontWeight: 700,
                                 }}
                                 className="text-[9px] px-1.5 py-0.5 rounded tabular-nums">
@@ -34524,11 +34524,14 @@ function OperatorDashboard({ profile }) {
               </div>
             </div>
           </div>
-          <button onClick={handleLogout}
-            className="press-btn w-full px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1"
-            style={{ background: T.surfaceAlt, color: T.err, fontFamily: FS, fontWeight: 600 }}>
-            <LogOut size={12} /> Гарах
-          </button>
+          <div className="flex items-center gap-1.5">
+            <DarkModeToggle />
+            <button onClick={handleLogout}
+              className="press-btn flex-1 px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1"
+              style={{ background: T.surfaceAlt, color: T.err, fontFamily: FS, fontWeight: 600 }}>
+              <LogOut size={12} /> Гарах
+            </button>
+          </div>
         </div>
       </aside>
 
