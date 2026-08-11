@@ -4118,6 +4118,13 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                 <Clock size={10} />
                 {emp.schedule_days?.length ? `${emp.schedule_start}–${emp.schedule_end}` : "хязгааргүй"}
               </span>
+              {emp.email && (
+                <span className="flex items-center gap-1 min-w-0" title={emp.email + " (дарж хуулна)"}
+                  onClick={() => { try { navigator.clipboard.writeText(emp.email); } catch {} }}
+                  style={{ cursor: "copy" }}>
+                  ✉️ <span className="truncate" style={{ maxWidth: 170 }}>{emp.email}</span>
+                </span>
+              )}
               {activeSite && (
                 <span style={{ color: T.highlight }} className="flex items-center gap-1">
                   · {activeSite.name}
