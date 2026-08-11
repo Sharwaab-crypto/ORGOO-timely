@@ -260,10 +260,12 @@ async function fetchInChunks(table, ids, options = {}) {
     let from = 0;
     const PAGE = 1000;
     while (true) {
-      const { data, error } = await supabase
+      let q = supabase
         .from(table)
         .select(select)
-        .in(filterColumn, chunk)
+        .in(filterColumn, chunk);
+      if (typeof options.extraFilter === "function") q = options.extraFilter(q);
+      const { data, error } = await q
         .order("id", { ascending: true }) // ⚠️ тогтвортой дараалалгүй бол range() мөр алдагдуулдаг
         .range(from, from + PAGE - 1);
       if (error) {
@@ -13128,7 +13130,9 @@ function CallCenterView({ profile }) {
           //    ЗЭРЭГЦЭЭ татна. Өмнө 60 хоногт ч 30,000+ pending байсан тул 30 дараалсан
           //    хүсэлт (~13 сек) үүсгэж байсан — одоо 5-10 зэрэгцээ жижиг хүсэлт.
           const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))];
-          const CHUNK = 200;
+          // ⚠ 200-утасны багцад limit(1000) хүрч ХУУЧИН pending-үүд тайрагддаг байсан
+          //   (7-р сарын бараатай pending map-д ордоггүй) → 50 болгож багтаамж 4×.
+          const CHUNK = 50;
           const chunkJobs = [];
           for (let i = 0; i < displayPhones.length; i += CHUNK) {
             const chunk = displayPhones.slice(i, i + CHUNK);
@@ -13143,7 +13147,21 @@ function CallCenterView({ profile }) {
             );
           }
           const chunkResults = await Promise.all(chunkJobs);
-          const withProducts = chunkResults.flatMap((r) => r.data || []);
+          let withProducts = chunkResults.flatMap((r) => r.data || []);
+          // 🎯 2-р шат: limit-д тайрагдаж БҮР ороогүй утаснуудын сүүлийн pending-ийг
+          //    зорилтот жижиг татaltаар нөхнө (ховор тохиолдол — цөөн мөр).
+          try {
+            const seenPhones = new Set(withProducts.map((r) => r.phone));
+            const missingPh = displayPhones.filter((ph) => !seenPhones.has(ph));
+            if (missingPh.length > 0) {
+              const extra = await fetchInChunks("biz_calls", missingPh, {
+                select: "phone, interested_products, call_status, created_at",
+                filterColumn: "phone", chunkSize: 40,
+                extraFilter: (q) => q.eq("call_status", "pending").not("interested_products", "is", null),
+              });
+              if (Array.isArray(extra) && extra.length > 0) withProducts = withProducts.concat(extra);
+            }
+          } catch (e2) { console.error("[pmap 2nd pass]", e2); }
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
           //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
@@ -13162,6 +13180,48 @@ function CallCenterView({ profile }) {
           Object.entries(latestPendingByPhone).forEach(([phone, v]) => {
             pmap[phone] = [...v.products];
           });
+          // 🛍 FALLBACK: pending-д бараа байхгүй утаснуудад тухайн утасны СҮҮЛИЙН
+          //   захиалгын бараануудыг харуулна (хуучин нэрээр-л бүртгэгдсэн дугаарууд
+          //   "Бараа сонирхоогүй" хоосон харагддаг байсныг нөхнө).
+          try {
+            const emptyPhones = displayPhones.filter((ph) => !pmap[ph] || pmap[ph].length === 0);
+            if (emptyPhones.length > 0 && (ordData || []).length > 0) {
+              const latestOrdByPhone = {};
+              (ordData || []).forEach((o) => {
+                if (!o.customer_phone || !o.id) return;
+                const prev = latestOrdByPhone[o.customer_phone];
+                if (!prev || new Date(o.created_at) > new Date(prev.created_at)) latestOrdByPhone[o.customer_phone] = o;
+              });
+              const targetOrders = emptyPhones.map((ph) => latestOrdByPhone[ph]).filter(Boolean);
+              const ordIds = [...new Set(targetOrders.map((o) => o.id))];
+              if (ordIds.length > 0) {
+                const itemRows = await fetchInChunks("biz_order_items", ordIds, {
+                  select: "order_id, product_id, product_name, quantity",
+                  filterColumn: "order_id", chunkSize: 200,
+                });
+                const itemsByOrd = {};
+                (itemRows || []).forEach((it) => {
+                  if (!itemsByOrd[it.order_id]) itemsByOrd[it.order_id] = [];
+                  itemsByOrd[it.order_id].push(it);
+                });
+                const prodInfo = {};
+                (prodData || []).forEach((p) => { prodInfo[p.id] = p; });
+                emptyPhones.forEach((ph) => {
+                  const o = latestOrdByPhone[ph];
+                  const its = o ? itemsByOrd[o.id] : null;
+                  if (!its || its.length === 0) return;
+                  pmap[ph] = its.map((it) => {
+                    const p = prodInfo[it.product_id] || {};
+                    return {
+                      id: it.product_id, sku: p.sku || "", name: it.product_name || p.name || "?",
+                      price: p.sale_price || 0, image_url: p.image_url || null,
+                      qty: Number(it.quantity || 1),
+                    };
+                  });
+                });
+              }
+            }
+          } catch (fe) { console.error("[pmap order fallback]", fe); }
           setProductsByPhoneAll(pmap);
           // ♻ ЗАЛГАХ map: pending-ийн ДАРАА "ordered" болсон бол тэр бараанууд аль
           //   хэдийн захиалга болсон тул дахин бүртгэлд ЗАЛГАХГҮЙ.
