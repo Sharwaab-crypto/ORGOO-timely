@@ -33923,6 +33923,31 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
 
 // ─── Merchant Orders View ────────────────────────────────────────────────
 function MerchantOrdersView({ allowedPageIds, profile }) {
+  // 📊 Badge-үүдийн ҮНЭН тоо — жагсаалт 300-аар хязгаарлагдсан ч тоолол SERVER-ээс бүрнээр
+  const [svCounts, setSvCounts] = useState(null);
+  useEffect(() => {
+    if (!allowedPageIds || allowedPageIds.length === 0) { setSvCounts({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const base = () => supabase.from("biz_orders").select("*", { count: "exact", head: true }).in("fb_page_id", allowedPageIds);
+        const [all, nw, asg, unk, dlv, cnc] = await Promise.all([
+          base(),
+          base().eq("status", "new").is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false"),
+          base().not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)"),
+          base().eq("is_unknown", true).not("status", "in", "(delivered,cancelled)"),
+          base().eq("status", "delivered"),
+          base().eq("status", "cancelled"),
+        ]);
+        if (cancelled) return;
+        setSvCounts({
+          all: all.count || 0, new: nw.count || 0, assigned: asg.count || 0,
+          unknown: unk.count || 0, delivered: dlv.count || 0, cancelled: cnc.count || 0,
+        });
+      } catch (e) { console.error("[merchant counts]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [JSON.stringify(allowedPageIds)]);
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
   const [fbPagesMap, setFbPagesMap] = useState({});
@@ -34072,13 +34097,14 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
           { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
           { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
         ].map((t) => {
-          const count = orders.filter((o) => {
+          const clientCount = orders.filter((o) => {
             if (t.id === "all") return true;
             if (t.id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
             if (t.id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
             if (t.id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
             return o.status === t.id;
           }).length;
+          const count = svCounts && svCounts[t.id] !== undefined ? svCounts[t.id] : clientCount;
           return (
             <button key={t.id} onClick={() => setFilter(t.id)}
               style={{
