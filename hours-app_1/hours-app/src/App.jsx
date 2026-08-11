@@ -13744,7 +13744,7 @@ function CallCenterView({ profile }) {
             counts.ordered = ordC;
             counts.cancelled = canC;
           }
-          return { filteredByPeriod, phoneGrouped, counts, productById, customerByPhone, orderInfoByPhone };
+          return { filteredByPeriod, phoneGrouped, phoneGroupedAll, counts, productById, customerByPhone, orderInfoByPhone };
   }, [recentCalls, activeFbPageId, periodRange, period, orders, products, customers]);
 
   return (
@@ -14144,7 +14144,7 @@ function CallCenterView({ profile }) {
       {/* Recent calls + Tabs */}
       <div>
         {(() => {
-          const { filteredByPeriod, phoneGrouped, counts, productById, customerByPhone, orderInfoByPhone } = ccTabData;
+          const { filteredByPeriod, phoneGrouped, phoneGroupedAll, counts, productById, customerByPhone, orderInfoByPhone } = ccTabData;
 
           return (
             <>
@@ -14315,8 +14315,10 @@ function CallCenterView({ profile }) {
               });
 
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
+              // 📞 "Залгах дугаар" таб period-оос ЧӨЛӨӨТЭЙ (badge-тэй адил бүх цагийнх)
+              const srcGrouped = activeTab === "calling" ? phoneGroupedAll : phoneGrouped;
               const cycleList = []; // [{ phone, calls, status, latestDate, cycleIndex }]
-              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+              Object.entries(srcGrouped).forEach(([phone, calls]) => {
                 // Ascending sort (хамгийн хуучнаас эхэлж)
                 const sorted = [...calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 let currentCycle = [];
@@ -14397,14 +14399,14 @@ function CallCenterView({ profile }) {
 
               // Утас бүрийн ХАМГИЙН СҮҮЛИЙН дуудлагын статус (ordered tab-д ашиглана)
               const latestCallStatusByPhone = {};
-              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+              Object.entries(srcGrouped).forEach(([phone, calls]) => {
                 const sortedCalls = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                 latestCallStatusByPhone[phone] = sortedCalls[0]?.call_status;
               });
 
               // Утас бүрд: ordered дуудлага хэзээ нэгэн цагт байсан эсэх + захиалгын төлөв
               const orderInfoByPhone = {};
-              Object.entries(phoneGrouped).forEach(([phone, calls]) => {
+              Object.entries(srcGrouped).forEach(([phone, calls]) => {
                 const hasOrderedCall = calls.some((c) => c.call_status === "ordered");
                 const sortedC = [...calls].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                 const latestCallStatus = sortedC[0]?.call_status;
