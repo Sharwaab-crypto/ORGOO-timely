@@ -13216,9 +13216,10 @@ function CallCenterView({ profile }) {
         const customerPhones = [...new Set((ordData || []).map(o => o.customer_phone).filter(Boolean))];
         if (customerPhones.length > 0) {
           try {
-            const phoneCalls = await fetchAllRows(
-              supabase.from("biz_calls").select("*").in("phone", customerPhones)
-            );
+            // ⚡ 3000+ утас нэг .in()-д → URL хэт урт → 400. Chunk-аар татна.
+            const phoneCalls = await fetchInChunks("biz_calls", customerPhones, {
+              select: "*", filterColumn: "phone", chunkSize: 150,
+            });
             const existingIds = new Set(allCalls.map(c => c.id));
             (phoneCalls || []).forEach(c => {
               if (!existingIds.has(c.id)) allCalls.push(c);
@@ -14316,7 +14317,7 @@ function CallCenterView({ profile }) {
 
               // Тус утсаар дуудлагуудыг ascending sort + cycle-д хуваах
               // 📞 "Залгах дугаар" таб period-оос ЧӨЛӨӨТЭЙ (badge-тэй адил бүх цагийнх)
-              const srcGrouped = activeTab === "calling" ? phoneGroupedAll : phoneGrouped;
+              const srcGrouped = activeTab === "calling" ? ((ccTabData && ccTabData.phoneGroupedAll) || phoneGrouped) : phoneGrouped;
               const cycleList = []; // [{ phone, calls, status, latestDate, cycleIndex }]
               Object.entries(srcGrouped).forEach(([phone, calls]) => {
                 // Ascending sort (хамгийн хуучнаас эхэлж)
