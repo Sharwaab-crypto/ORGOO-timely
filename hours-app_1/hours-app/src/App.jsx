@@ -37106,6 +37106,7 @@ function DriverDashboard({ profile }) {
   const [allPageOrders, setAllPageOrders] = useState([]);
   const [allTotal, setAllTotal] = useState(0);
   const [allLoading, setAllLoading] = useState(false);
+  const [allSearchByProduct, setAllSearchByProduct] = useState(false); // 🛍 Бүх таб: бараагаар хайх горим
   useEffect(() => {
     (async () => {
       try {
@@ -37120,11 +37121,19 @@ function DriverDashboard({ profile }) {
     const t = setTimeout(async () => {
       setAllLoading(true);
       try {
-        let q = supabase.from("biz_orders").select("*", { count: "exact" });
         const s = driverSearch.trim();
-        if (s) {
-          const esc = s.replace(/[%,()]/g, "");
-          q = q.or(`customer_phone.ilike.%${esc}%,customer_name.ilike.%${esc}%,order_number.ilike.%${esc}%,delivery_address.ilike.%${esc}%`);
+        const esc = s.replace(/[%,()]/g, "");
+        let q;
+        if (s && allSearchByProduct) {
+          // 🛍 Бараагаар: items-тэй inner join хийж барааны нэрээр шүүнэ
+          q = supabase.from("biz_orders")
+            .select("*, biz_order_items!inner(id)", { count: "exact" })
+            .ilike("biz_order_items.product_name", `%${esc}%`);
+        } else {
+          q = supabase.from("biz_orders").select("*", { count: "exact" });
+          if (s) {
+            q = q.or(`customer_phone.ilike.%${esc}%,customer_name.ilike.%${esc}%,order_number.ilike.%${esc}%,delivery_address.ilike.%${esc}%`);
+          }
         }
         q = q.order("created_at", { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
         const { data, count, error } = await q;
@@ -37147,7 +37156,7 @@ function DriverDashboard({ profile }) {
       finally { if (!cancelled) setAllLoading(false); }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [filter, page, driverSearch]);
+  }, [filter, page, driverSearch, allSearchByProduct]);
 
   // 🔔 Badge + Realtime — Хэрэглэгч даргах хүртэл шинэчлэгдэхгүй
   const [pendingChanges, setPendingChanges] = useState(0);
@@ -37386,7 +37395,9 @@ function DriverDashboard({ profile }) {
       o.customer_phone?.includes(q) ||
       o.customer_name?.toLowerCase().includes(q) ||
       o.delivery_address?.toLowerCase().includes(q) ||
-      o.order_number?.toLowerCase().includes(q)
+      o.order_number?.toLowerCase().includes(q) ||
+      // 🛍 Бараагаар хайх (картын бараануудын нэрээр)
+      (items[o.id] || []).some((it) => (it.product_name || "").toLowerCase().includes(q))
     );
   });
 
@@ -37729,10 +37740,23 @@ function DriverDashboard({ profile }) {
           <input
             value={driverSearch}
             onChange={(e) => { setDriverSearch(e.target.value); setPage(1); }}
-            placeholder="Дугаар, нэр, хаягаар хайх..."
+            placeholder={isAllMode && allSearchByProduct ? "Барааны нэрээр хайх..." : "Дугаар, нэр, хаягаар хайх..."}
             className="flex-1 bg-transparent outline-none text-sm"
             style={{ color: T.ink, fontFamily: FS }}
           />
+          {isAllMode && (
+            <button
+              onClick={() => { setAllSearchByProduct((v) => !v); setPage(1); }}
+              className="press-btn px-2 py-1 rounded-lg text-[10px] font-semibold flex-shrink-0"
+              style={{
+                background: allSearchByProduct ? T.highlight : T.surfaceAlt,
+                color: allSearchByProduct ? "white" : T.ink,
+                fontFamily: FS,
+              }}
+              title="Бараагаар хайх горим (Бүх таб)">
+              🛍 Бараагаар
+            </button>
+          )}
           {driverSearch && (
             <button onClick={() => setDriverSearch("")}
               className="press-btn px-2 py-1 rounded-lg text-xs"
@@ -37832,7 +37856,12 @@ function DriverDashboard({ profile }) {
                     {o.delivery_address && (
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2 flex items-start gap-1">
                         <MapPin size={11} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
-                        <span>{o.delivery_address}</span>
+                        <span>
+                          {o.delivery_address}
+                          {o.is_unknown && o.unknown_note && (
+                            <span style={{ color: "#F59E0B", fontFamily: FS, fontWeight: 600 }}> · 💬 {o.unknown_note}</span>
+                          )}
+                        </span>
                       </div>
                     )}
                     <div className="flex items-center gap-2 flex-wrap">
@@ -38059,7 +38088,7 @@ function DriverDashboard({ profile }) {
                   if (!note) { alert("⚠ Шалтгаан/сэтгэгдэл заавал бичнэ үү!"); return; }
                   setUnknownSaving(true);
                   try {
-                    const { error } = await supabase.from("biz_orders").update({ is_unknown: true, driver_id: null }).eq("id", unknownTarget.id);
+                    const { error } = await supabase.from("biz_orders").update({ is_unknown: true, driver_id: null, unknown_note: note }).eq("id", unknownTarget.id);
                     if (error) throw error;
                     // 📜 Түүхэнд сэтгэгдэлтэй бичилт (алдвал чимээгүй — audit trigger ерөнхийг нь бүртгэнэ)
                     try {
