@@ -8764,10 +8764,27 @@ function InventoryView({ profile, isAdmin = false }) {
                       🏬 Агуулах
                     </button>
                     {isAdmin && (
-                      <button onClick={() => setEditing(p)} style={{ color: T.muted }}
-                        className="press-btn p-1 rounded">
-                        <Edit3 size={11} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={async () => {
+                            const next = !p.is_locked;
+                            if (!confirm(next
+                              ? `🔒 "${p.name}" барааг ТҮГЖИХ үү?\n\nТүгжсэн үед дугаар бүртгэлд сонгогдохгүй болно.`
+                              : `🔓 "${p.name}" барааны түгжээг тайлах уу?`)) return;
+                            const { error } = await supabase.from("inv_products").update({ is_locked: next }).eq("id", p.id);
+                            if (error) { alert("Алдаа: " + error.message); return; }
+                            await loadAll();
+                          }}
+                          style={{ color: p.is_locked ? "#EF4444" : T.muted }}
+                          className="press-btn p-1 rounded"
+                          title={p.is_locked ? "Түгжээтэй — тайлах" : "Түгжих"}>
+                          {p.is_locked ? <Lock size={11} /> : <Unlock size={11} />}
+                        </button>
+                        <button onClick={() => setEditing(p)} style={{ color: T.muted }}
+                          className="press-btn p-1 rounded">
+                          <Edit3 size={11} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -15057,6 +15074,17 @@ function CallCenterView({ profile }) {
           products={products}
           profile={profile}
           onSave={async ({ fb_page_id, phones: phoneList, interested_products }) => {
+            // 🔒 Түгжээтэй бараа шалгах (сонголтын guard-ийг тойрсон ч энд баригдана)
+            {
+              const lockedSel = (interested_products || []).filter((ip) => {
+                const pr = products.find((pp) => pp.id === ip.id);
+                return pr && pr.is_locked;
+              });
+              if (lockedSel.length > 0) {
+                alert(`🔒 Дараах бараа түгжээтэй байгаа тул админд хандана уу:\n\n${lockedSel.map((x) => "• " + x.name).join("\n")}\n\nДугаар бүртгэл үүсгэгдсэнгүй.`);
+                return;
+              }
+            }
             try {
               // 🛍 Заавал бараа сонгосон байх ёстой
               if (!interested_products || interested_products.length === 0) {
@@ -16045,8 +16073,32 @@ function MarketingView({ profile }) {
       emps.forEach((e) => { row[e.name] = byKey[e.id + "|" + dt] || 0; });
       return row;
     });
-    return { rows, emps, days: dates.length };
+    const totals = {};
+    emps.forEach((e) => {
+      totals[e.id] = dates.reduce((s, dt) => s + (byKey[e.id + "|" + dt] || 0), 0);
+    });
+    return { rows, emps, days: dates.length, totals };
   }, [reachInRange, fromDate, toDate, profById]);
+
+  // 🎯 Ажилтан бүрийн сарын зорилт (харьцуулалтын мужийн САРААР)
+  const cmpMonth = toDate.slice(0, 7);
+  const [empTargets, setEmpTargets] = useState({}); // { employee_id: target }
+  const [showTargetEditor, setShowTargetEditor] = useState(false);
+  const [targetDraft, setTargetDraft] = useState({});
+  const [targetSaving, setTargetSaving] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.from("mkt_emp_targets").select("employee_id, target").eq("month", cmpMonth);
+        if (cancelled) return;
+        const m = {};
+        (data || []).forEach((r) => { m[r.employee_id] = Number(r.target || 0); });
+        setEmpTargets(m);
+      } catch (e) { console.error("[emp targets]", e); }
+    })();
+    return () => { cancelled = true; };
+  }, [cmpMonth]);
   const pieData = useMemo(() => {
     const byEmp = {};
     reachInRange.forEach((r) => { byEmp[r.employee_id] = (byEmp[r.employee_id] || 0) + Number(r.reach || 0); });
@@ -16399,7 +16451,41 @@ function MarketingView({ profile }) {
             <span className="text-lg">📈</span>
             <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажилчдын харьцуулалт (өдрөөр)</span>
             <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">{fromDate} → {toDate} · {empCompare.days} өдөр</span>
+            <button
+              onClick={() => {
+                const d = {};
+                empCompare.emps.forEach((e) => { d[e.id] = empTargets[e.id] ?? ""; });
+                setTargetDraft(d); setShowTargetEditor(true);
+              }}
+              className="press-btn px-2 py-1 rounded-lg text-[10px] font-semibold"
+              style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>
+              🎯 Зорилт
+            </button>
           </div>
+          {/* 🎯 Зорилтын гүйцэтгэл — ажилтан бүрээр ({cmpMonth} сарын зорилтод) */}
+          {Object.keys(empTargets).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {empCompare.emps.map((e) => {
+                const tgt = Number(empTargets[e.id] || 0);
+                if (tgt <= 0) return null;
+                const got = Number(empCompare.totals?.[e.id] || 0);
+                const pct = Math.round((got / tgt) * 100);
+                const good = pct >= 100;
+                return (
+                  <span key={e.id} title={`${cmpMonth} сарын зорилт: ${tgt.toLocaleString()}`}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1"
+                    style={{
+                      background: good ? "rgba(16,185,129,0.14)" : pct >= 60 ? "rgba(245,158,11,0.14)" : "rgba(239,68,68,0.12)",
+                      color: good ? "#10B981" : pct >= 60 ? "#F59E0B" : "#EF4444",
+                      fontFamily: FS,
+                    }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 2, background: e.color }} />
+                    {e.name}: {got.toLocaleString()}/{tgt.toLocaleString()} ({pct}%)
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={empCompare.rows} margin={{ top: 6, right: 10, left: -14, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border || "#E5E7EB"} />
@@ -16412,6 +16498,67 @@ function MarketingView({ profile }) {
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* 🎯 Ажилтан бүрийн зорилт тохируулах modal */}
+      {showTargetEditor && (
+        <div onClick={() => !targetSaving && setShowTargetEditor(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
+          className="flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ background: T.bg, maxWidth: 420, width: "100%", maxHeight: "80vh" }}
+            className="glass rounded-2xl p-4 flex flex-col">
+            <div style={{ fontFamily: FS, fontWeight: 800, color: T.ink }} className="text-sm mb-0.5">🎯 Сарын зорилт — {cmpMonth}</div>
+            <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] mb-3">Ажилтан бүрийн хандалтын зорилтот тоо (хоосон = зорилтгүй)</div>
+            <div className="space-y-2 overflow-y-auto pr-1 flex-1">
+              {empCompare.emps.map((e) => (
+                <div key={e.id} className="flex items-center gap-2">
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: e.color, flexShrink: 0 }} />
+                  <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{e.name}</span>
+                  <input type="number" min="0" value={targetDraft[e.id] ?? ""}
+                    onChange={(ev) => setTargetDraft((prev) => ({ ...prev, [e.id]: ev.target.value }))}
+                    placeholder="0"
+                    className="w-24 px-2 py-1.5 rounded-lg text-xs text-right outline-none tabular-nums"
+                    style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FD, border: `1px solid ${T.border}` }} />
+                </div>
+              ))}
+              {empCompare.emps.length === 0 && (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Сонгосон мужид хандалттай ажилтан алга</div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button onClick={() => setShowTargetEditor(false)} disabled={targetSaving}
+                className="press-btn py-2 rounded-xl text-sm font-semibold"
+                style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>Болих</button>
+              <button disabled={targetSaving}
+                onClick={async () => {
+                  setTargetSaving(true);
+                  try {
+                    const rows = Object.entries(targetDraft)
+                      .map(([empId, v]) => ({ employee_id: empId, month: cmpMonth, target: Number(v || 0) }))
+                      .filter((r) => r.target > 0);
+                    const zeroIds = Object.entries(targetDraft).filter(([, v]) => !Number(v || 0)).map(([id]) => id);
+                    if (rows.length > 0) {
+                      const { error } = await supabase.from("mkt_emp_targets").upsert(rows, { onConflict: "employee_id,month" });
+                      if (error) throw error;
+                    }
+                    if (zeroIds.length > 0) {
+                      await supabase.from("mkt_emp_targets").delete().eq("month", cmpMonth).in("employee_id", zeroIds);
+                    }
+                    const m = {};
+                    rows.forEach((r) => { m[r.employee_id] = r.target; });
+                    setEmpTargets(m);
+                    setShowTargetEditor(false);
+                  } catch (e) { alert("Алдаа: " + e.message); }
+                  finally { setTargetSaving(false); }
+                }}
+                className="press-btn py-2 rounded-xl text-sm font-bold"
+                style={{ background: T.highlight, color: "white", fontFamily: FS, opacity: targetSaving ? 0.6 : 1 }}>
+                {targetSaving ? "Хадгалж байна..." : "💾 Хадгалах"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -22862,6 +23009,11 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
       setItems(items.filter((it) => it.productId !== product.id));
       return;
     }
+    // 🔒 ТҮГЖЭЭТЭЙ бараа — бүртгэлд сонгохыг хориглоно
+    if (product.is_locked) {
+      alert(`🔒 "${product.name}" бараа түгжээтэй байгаа тул админд хандана уу.\n\nЭнэ бараагаар дугаар бүртгэл үүсгэх боломжгүй.`);
+      return;
+    }
     // 🔗 БАРАА → FB PAGE ХЯЗГААРЛАЛТЫН ШАЛГАЛТ
     // Хэрэв шинээр сонгох бараа FB Page-руу холбогдсон бол:
     if (product.fb_page_id) {
@@ -23142,6 +23294,13 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                                 className="text-[9px] px-1.5 py-0.5 rounded press-btn hover:opacity-80">
                                 Тайлбар
                               </button>
+                              {p.is_locked && (
+                                <span title="Түгжээтэй — сонгох боломжгүй"
+                                  style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444", fontFamily: FS, fontWeight: 700 }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded">
+                                  🔒
+                                </span>
+                              )}
                               <span
                                 title="Нийт үлдэгдэл (бүх агуулах)"
                                 style={{
@@ -37391,13 +37550,14 @@ function DriverDashboard({ profile }) {
     // 🔍 Дугаар / нэр / хаяг / захиалгын дугаараар хайх
     if (!driverSearch.trim()) return true;
     const q = driverSearch.toLowerCase();
+    const prodHit = (items[o.id] || []).some((it) => (it.product_name || "").toLowerCase().includes(q));
+    if (allSearchByProduct) return prodHit; // 🛍 горим: зөвхөн бараагаар
     return (
       o.customer_phone?.includes(q) ||
       o.customer_name?.toLowerCase().includes(q) ||
       o.delivery_address?.toLowerCase().includes(q) ||
       o.order_number?.toLowerCase().includes(q) ||
-      // 🛍 Бараагаар хайх (картын бараануудын нэрээр)
-      (items[o.id] || []).some((it) => (it.product_name || "").toLowerCase().includes(q))
+      prodHit
     );
   });
 
@@ -37744,7 +37904,7 @@ function DriverDashboard({ profile }) {
             className="flex-1 bg-transparent outline-none text-sm"
             style={{ color: T.ink, fontFamily: FS }}
           />
-          {isAllMode && (
+          {(isAllMode || filter === "available" || filter === "new") && (
             <button
               onClick={() => { setAllSearchByProduct((v) => !v); setPage(1); }}
               className="press-btn px-2 py-1 rounded-lg text-[10px] font-semibold flex-shrink-0"
