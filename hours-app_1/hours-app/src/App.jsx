@@ -24178,9 +24178,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             className="text-sm mb-1 line-clamp-2">
                             {p.name}
                           </div>
-                          {(p.description || it.itemNotes) && (
+                          {(p.description || p.usage_guide || p.cautions || it.itemNotes) && (
                             <button
-                              onClick={() => setNotesPopup({ name: p.name, text: p.description || it.itemNotes })}
+                              onClick={() => setNotesPopup({ product: p, itemNotes: it.itemNotes })}
                               style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
                               className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
                               📝 Тайлбар харах
@@ -24335,11 +24335,44 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 </button>
               </div>
               <div style={{ fontFamily: FS, fontWeight: 600, color: T.ink }} className="text-sm mb-2">
-                {notesPopup.name}
+                {notesPopup.product?.name || notesPopup.name}
               </div>
-              <div style={{ fontFamily: FS, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}
-                className="text-sm p-3 rounded-xl leading-relaxed whitespace-pre-wrap">
-                {notesPopup.text}
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {[
+                  ["📝", "Тайлбар", notesPopup.product?.description ?? notesPopup.text],
+                  ["📖", "Хэрэглэх заавар", notesPopup.product?.usage_guide],
+                  ["⚠️", "Анхаарах зүйлс", notesPopup.product?.cautions],
+                  ...(notesPopup.itemNotes ? [["🗒", "Захиалгын тэмдэглэл", notesPopup.itemNotes]] : []),
+                ].map(([icon, label, val]) => (
+                  <div key={label}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
+                        {icon} {label}
+                      </div>
+                      {val && (
+                        <button
+                          onClick={async () => {
+                            try { await navigator.clipboard.writeText(val); alert(`✓ "${label}" хуулагдлаа`); }
+                            catch { alert("Хуулж чадсангүй"); }
+                          }}
+                          className="press-btn px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                          style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}>
+                          📋 Хуулах
+                        </button>
+                      )}
+                    </div>
+                    {val ? (
+                      <div style={{ fontFamily: FS, color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}
+                        className="text-sm p-3 rounded-xl leading-relaxed whitespace-pre-wrap">
+                        {val}
+                      </div>
+                    ) : (
+                      <div className="text-center py-2 rounded-xl" style={{ background: T.surfaceAlt }}>
+                        <span style={{ color: T.muted, fontFamily: FS, fontStyle: "italic" }} className="text-[11px]">Оруулаагүй</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
               <button onClick={() => setNotesPopup(null)}
                 style={{ background: T.highlight, color: "white", fontFamily: FS }}
