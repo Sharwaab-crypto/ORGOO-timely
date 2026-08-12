@@ -880,6 +880,28 @@ function AppRoot() {
     })();
   }, [session]);
 
+  // 🛑 SERVER WARNING — систем зогсолтын төлөв (бүх хэрэглэгчид realtime)
+  const [maint, setMaint] = useState({ active: false, message: "" });
+  useEffect(() => {
+    if (!session) return;
+    let ch = null;
+    (async () => {
+      try {
+        const { data } = await supabase.from("sys_maintenance").select("active, message").eq("id", 1).maybeSingle();
+        if (data) setMaint({ active: !!data.active, message: data.message || "" });
+      } catch {}
+      try {
+        ch = supabase.channel("sys-maint")
+          .on("postgres_changes", { event: "*", schema: "public", table: "sys_maintenance" }, (payload) => {
+            const r = payload.new || {};
+            setMaint({ active: !!r.active, message: r.message || "" });
+          })
+          .subscribe();
+      } catch {}
+    })();
+    return () => { try { if (ch) supabase.removeChannel(ch); } catch {} };
+  }, [session]);
+
   if (!isConfigured) return <ConfigError />;
   if (loading) return <Loading />;
 
@@ -908,9 +930,31 @@ function AppRoot() {
     );
   }
 
+  // 🛑 Систем зогссон — админаас БУСАД бүх хэрэглэгчид зогсолтын дэлгэц
+  if (maint.active && profile.role !== "admin") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#7F1D1D", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ background: "white", borderRadius: 20, maxWidth: 460, width: "100%", padding: 28, textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,0.4)" }}>
+          <div style={{ fontSize: 52 }} className="mb-2">🛑</div>
+          <div style={{ fontFamily: FD, fontWeight: 800, color: "#7F1D1D" }} className="text-xl mb-2">Системийн үйл ажиллагаа түр зогссон</div>
+          <div style={{ fontFamily: FS, color: "#334155", whiteSpace: "pre-wrap", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12 }} className="text-sm p-3 mb-4 text-left">
+            {maint.message || "Түр хүлээнэ үү."}
+          </div>
+          <div style={{ fontFamily: FM, color: "#94A3B8" }} className="text-[11px]">Асуудал шийдэгдмэгц автоматаар сэргэнэ — хуудсаа хаах шаардлагагүй.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {installBanner}
+      {maint.active && profile.role === "admin" && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 99999, background: "#DC2626", color: "white", fontFamily: FS, fontWeight: 700 }}
+          className="text-center text-xs py-1.5 px-3">
+          🛑 СИСТЕМ ЗОГССОН — бусад хэрэглэгчид түгжигдсэн. Server Warning хэсгээс сэргээнэ. 💬 {maint.message}
+        </div>
+      )}
       <NotificationManager profile={profile} />
       {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") ? <AdminDashboard profile={profile} />
         : profile.role === "operator" ? <OperatorDashboard profile={profile} />
@@ -1640,6 +1684,82 @@ function LoginScreen() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  ADMIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
+function ServerWarningView({ profile }) {
+  const [row, setRow] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const { data } = await supabase.from("sys_maintenance").select("*").eq("id", 1).maybeSingle();
+    setRow(data || { active: false, message: "" });
+    if (data?.message) setMsg(data.message);
+  };
+  useEffect(() => { load(); }, []);
+  if (!row) return <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>;
+  const active = !!row.active;
+  return (
+    <div className="max-w-xl mx-auto space-y-4">
+      <div className="glass rounded-2xl p-5" style={{ border: `2px solid ${active ? "#DC2626" : T.border}` }}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-2xl">🛑</span>
+          <span style={{ fontFamily: FD, fontWeight: 800, color: T.ink }} className="text-lg">Server Warning</span>
+          <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold"
+            style={{ background: active ? "#DC2626" : "rgba(16,185,129,0.15)", color: active ? "white" : "#10B981", fontFamily: FS }}>
+            {active ? "ЗОГССОН" : "Хэвийн"}
+          </span>
+        </div>
+        <div style={{ fontFamily: FS, color: T.muted }} className="text-xs mb-4">
+          Товч дарахад НЭВТЭРСЭН БҮХ хэрэглэгчийн (админаас бусад) дэлгэц түгжигдэж, доорх тайлбар харагдана. Realtime — секундын дотор.
+        </div>
+        <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">💬 Хэрэглэгчдэд харагдах тайлбар (заавал)</label>
+        <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={3} disabled={busy}
+          placeholder="ж: Системийн шинэчлэл хийж байна. 15 минутын дараа сэргэнэ..."
+          className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none mb-4"
+          style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1.5px solid ${active ? "#DC2626" : T.border}` }} />
+        {!active ? (
+          <button disabled={busy}
+            onClick={async () => {
+              const m = msg.trim();
+              if (!m) { alert("⚠ Тайлбар заавал бичнэ үү — хэрэглэгчдэд энэ л харагдана!"); return; }
+              if (!confirm(`🛑 БҮХ ҮЙЛ АЖИЛЛАГААГ ЗОГСООХ УУ?\n\nНэвтэрсэн бүх хэрэглэгч түгжигдэнэ:\n"${m}"`)) return;
+              setBusy(true);
+              try {
+                const { error } = await supabase.from("sys_maintenance").update({ active: true, message: m, updated_by: profile.id, updated_at: new Date().toISOString() }).eq("id", 1);
+                if (error) throw error;
+                await load();
+              } catch (e) { alert("Алдаа: " + e.message); }
+              finally { setBusy(false); }
+            }}
+            className="press-btn w-full py-5 rounded-2xl text-lg font-extrabold"
+            style={{ background: "linear-gradient(135deg,#DC2626,#991B1B)", color: "white", fontFamily: FD, boxShadow: "0 8px 24px rgba(220,38,38,0.4)", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "..." : "🛑 БҮХ ҮЙЛ АЖИЛЛАГААГ ЗОГСООХ"}
+          </button>
+        ) : (
+          <button disabled={busy}
+            onClick={async () => {
+              if (!confirm("🟢 Үйл ажиллагааг сэргээх үү? Бүх хэрэглэгч дахин нэвтрэх боломжтой болно.")) return;
+              setBusy(true);
+              try {
+                const { error } = await supabase.from("sys_maintenance").update({ active: false, updated_by: profile.id, updated_at: new Date().toISOString() }).eq("id", 1);
+                if (error) throw error;
+                await load();
+              } catch (e) { alert("Алдаа: " + e.message); }
+              finally { setBusy(false); }
+            }}
+            className="press-btn w-full py-5 rounded-2xl text-lg font-extrabold"
+            style={{ background: "linear-gradient(135deg,#10B981,#059669)", color: "white", fontFamily: FD, boxShadow: "0 8px 24px rgba(16,185,129,0.35)", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "..." : "🟢 ҮЙЛ АЖИЛЛАГААГ СЭРГЭЭХ"}
+          </button>
+        )}
+        {row.updated_at && (
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-3 text-center">
+            Сүүлд: {new Date(row.updated_at).toLocaleString()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminDashboard({ profile }) {
   // 🎯 Marketing role — зөвхөн зарим view-руу хандана
   const isMarketing = profile.role === "marketing";
@@ -2510,6 +2630,9 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "leaves"} onClick={() => { setView("leaves"); setSidebarOpen(false); }} icon={Calendar} badge={leaves.filter(l => l.status === "pending").length}>Чөлөө</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
+              {profile.role === "admin" && (
+                <SidebarTab active={view === "server-warning"} onClick={() => { setView("server-warning"); setSidebarOpen(false); }} icon={AlertCircle}>🛑 Server Warning</SidebarTab>
+              )}
             </SidebarSection>
             )}
           </nav>
@@ -2598,6 +2721,7 @@ function AdminDashboard({ profile }) {
                 {view === "departments" && "Хэлтсүүд"}
                 {view === "managers" && "Ахлагчид"}
                 {view === "sites" && "Байрууд"}
+                {view === "server-warning" && "🛑 Server Warning"}
                 {view === "approvals" && "Хүсэлт"}
                 {view === "leaves" && "Чөлөө"}
                 {view === "ledger" && "Тэмдэглэл"}
@@ -2728,6 +2852,9 @@ function AdminDashboard({ profile }) {
           <LedgerView sessions={sessions} employees={employees} sites={sites}
             canEdit={true}
             onEditSession={(s) => setEditingSession(s)} />
+        )}
+        {view === "server-warning" && profile.role === "admin" && (
+          <ServerWarningView profile={profile} />
         )}
         {view === "approvals" && (
           <ApprovalsView approvals={approvals} employees={employees} onResolve={resolveApproval} />
