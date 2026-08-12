@@ -16486,18 +16486,41 @@ function MarketingView({ profile }) {
               })}
             </div>
           )}
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={empCompare.rows} margin={{ top: 6, right: 10, left: -14, bottom: 0 }}>
+          {(() => {
+            // 🎯 Өдрийн зорилт = сарын зорилт ÷ сарын хоногийн тоо
+            const [cy, cm] = cmpMonth.split("-").map(Number);
+            const daysInMonth = new Date(cy, cm, 0).getDate();
+            const dailyTargetById = {};
+            empCompare.emps.forEach((e) => {
+              const t = Number(empTargets[e.id] || 0);
+              if (t > 0) dailyTargetById[e.id] = t / daysInMonth;
+            });
+            return (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={empCompare.rows} margin={{ top: 18, right: 10, left: -14, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border || "#E5E7EB"} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
               <YAxis tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} allowDecimals={false} />
               <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
               <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
               {empCompare.emps.map((e) => (
-                <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} connectNulls />
+                <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} connectNulls
+                  label={dailyTargetById[e.id] ? (props) => {
+                    const { x, y, value } = props;
+                    if (!value || value <= 0) return null;
+                    const pct = Math.round((value / dailyTargetById[e.id]) * 100);
+                    return (
+                      <text x={x} y={y - 7} textAnchor="middle"
+                        style={{ fontSize: 8.5, fontFamily: FD, fontWeight: 700, fill: e.color }}>
+                        {pct}%
+                      </text>
+                    );
+                  } : false} />
               ))}
             </LineChart>
           </ResponsiveContainer>
+            );
+          })()}
         </div>
       )}
 
