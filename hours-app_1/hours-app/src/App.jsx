@@ -13259,7 +13259,27 @@ function CallCenterView({ profile }) {
         supabase.from("biz_fb_pages").select("*"),
         ordersQuery,
       ]);
-      const callData = callRes.data;
+      let callData = callRes.data || [];
+      // ⏳ "ЗАЛГАХ ДУГААР = БҮХ ЦАГ": 60-хоногийн цонхноос ГАДУУРХ шийдэгдээгүй
+      //    байж болзошгүй pending-тэй дугааруудын БҮРЭН түүхийг нэмж татна.
+      //    (Хуучин unresolved нь calling таб-д гарч, resolved нь дотоод логикоор автоматаар шүүгдэнэ.
+      //     Merchant дээр page-шүүлттэй адилхан — хоёр талын жагсаалт таарна.)
+      try {
+        let oldPendQ = supabase.from("biz_calls").select("phone")
+          .eq("call_status", "pending").lt("created_at", calls60Days)
+          .order("created_at", { ascending: false }).limit(4000);
+        if (isMerchant && allowedPageIds.length > 0) oldPendQ = oldPendQ.in("fb_page_id", allowedPageIds);
+        const { data: oldPend } = await oldPendQ;
+        const inWin = new Set(callData.map((cc) => cc.phone));
+        const oldPhones = [...new Set((oldPend || []).map((r) => r.phone).filter(Boolean))]
+          .filter((ph) => !inWin.has(ph)).slice(0, 800);
+        if (oldPhones.length > 0) {
+          const extraRows = await fetchInChunks("biz_calls", oldPhones, {
+            select: callCols, filterColumn: "phone", chunkSize: 50,
+          });
+          if (Array.isArray(extraRows) && extraRows.length > 0) callData = callData.concat(extraRows);
+        }
+      } catch (e) { console.error("[old pendings]", e); }
       const ordData = ordRes.data;
 
       // 🛍 ЗАСВАР: зөвхөн PENDING дуудлагуудын барааг ТУСДАА татах (limit-гүй бүх түүх биш!)
@@ -14979,6 +14999,8 @@ function CallCenterView({ profile }) {
                               status = { label: "🔄 Эргэн холбогдох", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" };
                             } else if (c.call_status === "cancelled" || isCancelled) {
                               status = { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft };
+                            } else if (c.call_status === "answered") {
+                              status = { label: "🎙 Хариулсан (CallPro)", color: "#10B981", bg: "rgba(16,185,129,0.1)" };
                             }
 
                             // Тэмдэглэл: "[Шалтгаан] комментын текст" хэлбэрээс комментыг гаргана.
@@ -14993,6 +15015,19 @@ function CallCenterView({ profile }) {
                               }
                             }
 
+                            const cpMeta = (c.record_url || c.duration) ? (
+                              <span className="flex items-center gap-1.5 flex-shrink-0">
+                                {Number(c.duration) > 0 && (
+                                  <span style={{ color: T.muted, fontFamily: FD }} className="text-[10px]">⏱ {c.duration}с</span>
+                                )}
+                                {c.record_url && (
+                                  <a href={c.record_url} target="_blank" rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ color: "#3b82f6", fontFamily: FS, fontWeight: 600 }}
+                                    className="text-[10px] hover:underline">🎧 Бичлэг</a>
+                                )}
+                              </span>
+                            ) : null;
                             return (
                               <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
                                 <div className="flex items-center gap-1 flex-shrink-0" style={{ color: T.muted, fontFamily: FM }}>
@@ -15024,6 +15059,7 @@ function CallCenterView({ profile }) {
                                       "{noteText.slice(0, 40)}{noteText.length > 40 ? '...' : ''}"
                                     </span>
                                   )}
+                                  {cpMeta}
                                 </div>
                               </div>
                             );
