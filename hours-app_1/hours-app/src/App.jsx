@@ -255,10 +255,14 @@ async function fetchInChunks(table, ids, options = {}) {
   const uniqueIds = [...new Set(ids)];
   const results = [];
 
-  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
-    const chunk = uniqueIds.slice(i, i + chunkSize);
+  // ⚡ parallel: chunk-уудыг N-ээр зэрэгцүүлж (анхдагч 1 = хуучин дараалсан зан үйл)
+  const PAR = Math.max(1, Number(options.parallel || 1));
+  const allChunks = [];
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) allChunks.push(uniqueIds.slice(i, i + chunkSize));
+  const runOne = async (chunk) => {
     let from = 0;
     const PAGE = 1000;
+    const out = [];
     while (true) {
       let q = supabase
         .from(table)
@@ -269,15 +273,20 @@ async function fetchInChunks(table, ids, options = {}) {
         .order("id", { ascending: true }) // ⚠️ тогтвортой дараалалгүй бол range() мөр алдагдуулдаг
         .range(from, from + PAGE - 1);
       if (error) {
-        console.error(`[fetchInChunks ${table}] chunk ${i}-${i + chunkSize} error:`, error);
+        console.error(`[fetchInChunks ${table}] chunk error:`, error);
         throw error;
       }
       if (!data || data.length === 0) break;
-      results.push(...data);
+      out.push(...data);
       if (data.length < PAGE) break;
       from += PAGE;
       if (from > 50000) break;
     }
+    return out;
+  };
+  for (let i = 0; i < allChunks.length; i += PAR) {
+    const waves = await Promise.all(allChunks.slice(i, i + PAR).map(runOne));
+    waves.forEach((w) => results.push(...w));
   }
   return results;
 }
@@ -13275,7 +13284,7 @@ function CallCenterView({ profile }) {
           .filter((ph) => !inWin.has(ph)).slice(0, 800);
         if (oldPhones.length > 0) {
           const extraRows = await fetchInChunks("biz_calls", oldPhones, {
-            select: callCols, filterColumn: "phone", chunkSize: 50,
+            select: callCols, filterColumn: "phone", chunkSize: 150, parallel: 8,
           });
           if (Array.isArray(extraRows) && extraRows.length > 0) callData = callData.concat(extraRows);
         }
@@ -13296,36 +13305,14 @@ function CallCenterView({ profile }) {
           const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))];
           // ⚠ 200-утасны багцад limit(1000) хүрч ХУУЧИН pending-үүд тайрагддаг байсан
           //   (7-р сарын бараатай pending map-д ордоггүй) → 50 болгож багтаамж 4×.
-          const CHUNK = 50;
-          const chunkJobs = [];
-          for (let i = 0; i < displayPhones.length; i += CHUNK) {
-            const chunk = displayPhones.slice(i, i + CHUNK);
-            chunkJobs.push(
-              supabase.from("biz_calls")
-                .select("phone, interested_products, call_status, created_at")
-                .in("phone", chunk)
-                .eq("call_status", "pending")
-                .not("interested_products", "is", null)
-                .order("created_at", { ascending: false })
-                .limit(1000)
-            );
-          }
-          const chunkResults = await Promise.all(chunkJobs);
-          let withProducts = chunkResults.flatMap((r) => r.data || []);
-          // 🎯 2-р шат: limit-д тайрагдаж БҮР ороогүй утаснуудын сүүлийн pending-ийг
-          //    зорилтот жижиг татaltаар нөхнө (ховор тохиолдол — цөөн мөр).
-          try {
-            const seenPhones = new Set(withProducts.map((r) => r.phone));
-            const missingPh = displayPhones.filter((ph) => !seenPhones.has(ph));
-            if (missingPh.length > 0) {
-              const extra = await fetchInChunks("biz_calls", missingPh, {
-                select: "phone, interested_products, call_status, created_at",
-                filterColumn: "phone", chunkSize: 40,
-                extraFilter: (q) => q.eq("call_status", "pending").not("interested_products", "is", null),
-              });
-              if (Array.isArray(extra) && extra.length > 0) withProducts = withProducts.concat(extra);
-            }
-          } catch (e2) { console.error("[pmap 2nd pass]", e2); }
+          // ⚡ Lossless + зэрэгцээ: chunk бүр дотроо page-лэдэг (тайралтгүй),
+          //    8 chunk зэрэг явна. 2-р шат ХЭРЭГГҮЙ болсон (өмнө нь бараагүй
+          //    мянган дугаарыг дэмий мөшгиж 15+ сек гацаадаг байсан).
+          const withProducts = await fetchInChunks("biz_calls", displayPhones, {
+            select: "phone, interested_products, call_status, created_at",
+            filterColumn: "phone", chunkSize: 150, parallel: 8,
+            extraFilter: (q) => q.eq("call_status", "pending").not("interested_products", "is", null),
+          });
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
           //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
