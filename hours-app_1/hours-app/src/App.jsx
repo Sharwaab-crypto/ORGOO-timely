@@ -5512,7 +5512,9 @@ async function applyCancellation(orderId, { reasons = [], note = "", byId = null
       if (lastC?.call_status !== "cancelled") {
         await supabase.from("biz_calls").insert({
           phone: cur.customer_phone, customer_name: cur.customer_name || null,
-          call_status: "cancelled", fb_page_id: cur.fb_page_id || null, created_at: new Date().toISOString(),
+          call_status: "cancelled", fb_page_id: cur.fb_page_id || null,
+          created_by: byId || null, // 🛠 өмнө эзэнгүй үлдэж pie-д "Бусад" болгодог байсан
+          created_at: new Date().toISOString(),
         });
       }
     }
