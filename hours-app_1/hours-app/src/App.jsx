@@ -7927,6 +7927,193 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ORDER REQUESTS PANEL — 📝 Захиалах хүсэлт (Нөөц бэлдэлтээс ирсэн хүсэлтүүд)
+//  Урсгал: pending → (✔ Захиалах = will_order | ✖ Захиалахгүй = skip)
+//          will_order → 📦 Захиалга оруулсан = ordered (эцсийн)
+// ═══════════════════════════════════════════════════════════════════════════
+function OrderRequestsPanel({ profile, onCountChange }) {
+  const [reqs, setReqs] = useState([]);          // null = хүснэгт байхгүй/алдаа
+  const [people, setPeople] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [filter, setFilter] = useState("all");   // all | pending | will_order | ordered | skip
+
+  const load = async () => {
+    try {
+      const [{ data: rows, error }, { data: profs }] = await Promise.all([
+        supabase.from("inv_order_requests").select("*").order("created_at", { ascending: false }).limit(500),
+        supabase.from("profiles").select("id, name"),
+      ]);
+      if (error) throw error;
+      const pm = {};
+      (profs || []).forEach((p) => { pm[p.id] = p.name; });
+      setPeople(pm);
+      setReqs(rows || []);
+    } catch (e) {
+      console.error("[order-requests]", e);
+      setReqs(null);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  const debouncedLoad = useDebouncedCallback(load, 600);
+  useEffect(() => {
+    const ch = supabase.channel("order-requests-panel-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_order_requests" }, debouncedLoad)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const ST = {
+    pending: { lbl: "⏳ Хүлээгдэж буй", color: T.warn, bg: T.warnSoft },
+    will_order: { lbl: "🟢 Захиалах", color: T.ok, bg: T.okSoft },
+    skip: { lbl: "⚪ Захиалахгүй", color: T.muted, bg: "rgba(91,124,126,0.12)" },
+    ordered: { lbl: "✅ Захиалга оруулсан", color: T.highlightDark, bg: T.highlightSoft },
+  };
+  const ORDER = { pending: 0, will_order: 1, ordered: 2, skip: 3 };
+  const dfmt = (s) => {
+    if (!s) return "";
+    const d = new Date(s);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
+  // Статус солих — хуучирсан дэлгэцээс хамгаалсан (өөр хүн түрүүлж шийдсэн бол мэдэгдэнэ)
+  const setStatus = async (r, status) => {
+    if (busyId) return;
+    setBusyId(r.id);
+    try {
+      const patch = { status };
+      if (status === "will_order" || status === "skip") {
+        patch.decided_by = profile.id; patch.decided_at = new Date().toISOString();
+        patch.ordered_by = null; patch.ordered_at = null;
+      }
+      if (status === "ordered") { patch.ordered_by = profile.id; patch.ordered_at = new Date().toISOString(); }
+      if (status === "pending") { patch.decided_by = null; patch.decided_at = null; patch.ordered_by = null; patch.ordered_at = null; }
+      const { data: upd, error } = await supabase.from("inv_order_requests")
+        .update(patch).eq("id", r.id).eq("status", r.status).select("id");
+      if (error) throw error;
+      if (!upd || upd.length === 0) {
+        alert("♻ Энэ хүсэлтийг өөр хүн аль хэдийн өөрчилсөн байна — жагсаалт шинэчлэгдлээ.");
+        load();
+        return;
+      }
+      setReqs((prev) => (prev || []).map((x) => (x.id === r.id ? { ...x, ...patch } : x)));
+      if (typeof onCountChange === "function") onCountChange();
+    } catch (e) { alert("⚠ Хадгалж чадсангүй: " + (e.message || e)); }
+    finally { setBusyId(null); }
+  };
+
+  if (loading) {
+    return (
+      <div className="glass rounded-2xl p-10 text-center">
+        <Loader2 className="spin mx-auto mb-2" size={22} style={{ color: T.highlight }} />
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Хүсэлтүүд ачааллаж байна...</div>
+      </div>
+    );
+  }
+  if (reqs === null) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center space-y-1">
+        <div className="text-2xl">⚠</div>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">inv_order_requests хүснэгт олдсонгүй</div>
+        <div style={{ color: T.muted, fontFamily: FM }} className="text-xs">Supabase SQL Editor-т хүснэгт үүсгэх SQL-ээ ажиллуулаад энэ хуудсыг refresh хийнэ үү.</div>
+      </div>
+    );
+  }
+
+  const counts = { pending: 0, will_order: 0, ordered: 0, skip: 0 };
+  reqs.forEach((r) => { if (counts[r.status] !== undefined) counts[r.status] += 1; });
+  const list = reqs
+    .filter((r) => filter === "all" || r.status === filter)
+    .slice()
+    .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || new Date(b.created_at) - new Date(a.created_at));
+
+  return (
+    <div className="space-y-3">
+      {/* Шүүлтүүр */}
+      <div className="glass rounded-2xl p-2.5 flex gap-1.5 flex-wrap">
+        {[["all", `Бүгд (${reqs.length})`], ["pending", `⏳ Хүлээгдэж буй (${counts.pending})`], ["will_order", `🟢 Захиалах (${counts.will_order})`], ["ordered", `✅ Оруулсан (${counts.ordered})`], ["skip", `⚪ Захиалахгүй (${counts.skip})`]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setFilter(k)}
+            className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+            style={{ background: filter === k ? T.highlight : T.surfaceAlt, color: filter === k ? "#fff" : T.inkSoft, border: `1px solid ${filter === k ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center text-sm" style={{ color: T.muted, fontFamily: FS }}>
+          {filter === "all" ? "Одоогоор хүсэлт алга — Нөөц бэлдэлт хэсгээс 📝 товчоор илгээнэ" : "Энэ төлөвт хүсэлт алга"}
+        </div>
+      ) : list.map((r) => {
+        const st = ST[r.status] || ST.pending;
+        const busy = busyId === r.id;
+        return (
+          <div key={r.id} className="glass rounded-2xl p-3" style={{ opacity: busy ? 0.6 : 1 }}>
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm" style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>📦 {r.product_name}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: T.muted, fontFamily: FM }}>
+                  Хүсэлт: {people[r.requested_by] || "?"} · {dfmt(r.created_at)}{r.period_label ? ` · 📅 ${r.period_label}` : ""}
+                </div>
+                <div className="text-[11px] mt-1" style={{ color: T.inkSoft, fontFamily: FM }}>
+                  Үлдэгдэл (хүсэлтийн үед): <b>{Number(r.stock_at_request || 0).toLocaleString()}</b> · Дундаж: <b>{Number(r.avg_at_request || 0).toFixed(1)} ш/өдөр</b>
+                </div>
+                {r.status !== "pending" && (
+                  <div className="text-[10px] mt-1" style={{ color: T.mutedSoft, fontFamily: FM }}>
+                    {r.decided_at ? `Шийдсэн: ${people[r.decided_by] || "?"} · ${dfmt(r.decided_at)}` : ""}
+                    {r.status === "ordered" && r.ordered_at ? ` · Оруулсан: ${people[r.ordered_by] || "?"} · ${dfmt(r.ordered_at)}` : ""}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1.5">
+                <span className="px-2 py-0.5 rounded-full text-[10px]" style={{ background: st.bg, color: st.color, fontFamily: FM, fontWeight: 700 }}>{st.lbl}</span>
+                <div className="flex gap-1.5 flex-wrap justify-end">
+                  {r.status === "pending" && (
+                    <>
+                      <button onClick={() => setStatus(r, "will_order")} disabled={busy}
+                        className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                        style={{ background: T.ok, color: "#fff", fontFamily: FM, fontWeight: 700 }}>
+                        ✔ Захиалах
+                      </button>
+                      <button onClick={() => setStatus(r, "skip")} disabled={busy}
+                        className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                        style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+                        ✖ Захиалахгүй
+                      </button>
+                    </>
+                  )}
+                  {r.status === "will_order" && (
+                    <>
+                      <button onClick={() => setStatus(r, "ordered")} disabled={busy}
+                        className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                        style={{ background: T.highlight, color: "#fff", fontFamily: FM, fontWeight: 700 }}>
+                        📦 Захиалга оруулсан
+                      </button>
+                      <button onClick={() => setStatus(r, "pending")} disabled={busy} title="Шийдвэрийг буцаах"
+                        className="press-btn px-2 py-1.5 rounded-lg text-[11px]"
+                        style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                        ↩
+                      </button>
+                    </>
+                  )}
+                  {r.status === "skip" && (
+                    <button onClick={() => setStatus(r, "pending")} disabled={busy}
+                      className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                      style={{ background: T.surfaceAlt, color: T.muted, border: `1px solid ${T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
+                      ↩ Буцаах
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SupplierOrdersView({ profile }) {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -8074,8 +8261,51 @@ function SupplierOrdersView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // ─── 📝 Захиалах хүсэлт таб ───
+  const [soTab, setSoTab] = useState("orders"); // 'orders' | 'requests'
+  const [reqPendingCount, setReqPendingCount] = useState(0);
+  const loadReqCount = async () => {
+    const { count, error } = await supabase.from("inv_order_requests")
+      .select("id", { count: "exact", head: true }).eq("status", "pending");
+    if (!error) setReqPendingCount(count || 0);
+  };
+  useEffect(() => { loadReqCount(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("order-requests-badge-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_order_requests" }, () => loadReqCount())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const soTabBar = (
+    <div className="flex gap-1.5">
+      {[["orders", "🛒 Захиалсан бараа", 0], ["requests", "📝 Захиалах хүсэлт", reqPendingCount]].map(([k, lbl, bdg]) => (
+        <button key={k} onClick={() => setSoTab(k)}
+          className="press-btn px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5"
+          style={{ background: soTab === k ? T.highlight : T.surfaceAlt, color: soTab === k ? "#fff" : T.inkSoft, border: `1px solid ${soTab === k ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+          <span>{lbl}</span>
+          {Number(bdg) > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px]"
+              style={{ background: soTab === k ? "rgba(255,255,255,0.25)" : T.errSoft, color: soTab === k ? "#fff" : T.err, fontWeight: 700 }}>
+              {bdg}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+  if (soTab === "requests") {
+    return (
+      <div className="space-y-3">
+        {soTabBar}
+        <OrderRequestsPanel profile={profile} onCountChange={loadReqCount} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
+      {soTabBar}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -10200,6 +10430,8 @@ function StockPrepView({ profile }) {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [visibleCount, setVisibleCount] = useState(100); // доошоо 100-аар
+  const [openReqs, setOpenReqs] = useState({});          // { product_id: 'pending'|'will_order' } — нээлттэй хүсэлтүүд
+  const [reqBusy, setReqBusy] = useState(null);          // хүсэлт илгээж буй барааны id
 
   // Локал огнооны түлхүүр (YYYY-MM-DD)
   const dk = (d) => {
@@ -10243,10 +10475,11 @@ function StockPrepView({ profile }) {
     (async () => {
       setLoadingBase(true);
       try {
-        const [{ data: prd, error: pErr }, stk, { data: whs }] = await Promise.all([
+        const [{ data: prd, error: pErr }, stk, { data: whs }, { data: openR }] = await Promise.all([
           supabase.from("inv_products").select("id, name, sku, image_url, is_locked").eq("is_active", true).order("name"),
           fetchAllRows(supabase.from("inv_stock").select("product_id, warehouse_id, quantity")),
           supabase.from("inv_warehouses").select("id, type"),
+          supabase.from("inv_order_requests").select("product_id, status").in("status", ["pending", "will_order"]),
         ]);
         if (pErr) console.error("[stock-prep products]", pErr);
         const mainIds = new Set((whs || []).filter((w) => w.type === "main").map((w) => w.id));
@@ -10259,6 +10492,9 @@ function StockPrepView({ profile }) {
         setProducts(prd || []);
         setStockTotal(tot);
         setStockMain(main);
+        const openMap = {};
+        (openR || []).forEach((x) => { openMap[x.product_id] = x.status; });
+        setOpenReqs(openMap);
       } catch (e) { console.error("[stock-prep base]", e); }
       finally { setLoadingBase(false); }
     })();
@@ -10334,6 +10570,41 @@ function StockPrepView({ profile }) {
 
   const shown = rows.slice(0, visibleCount);
   const periodTotal = rows.reduce((s, r) => s + r.soldTotal, 0);
+
+  // Хүсэлтийн статус өөрчлөгдөхөд (шийдэгдэх г.м) товчнууд шинэчлэгдэнэ
+  useEffect(() => {
+    const ch = supabase.channel("stockprep-req-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inv_order_requests" }, async () => {
+        const { data } = await supabase.from("inv_order_requests").select("product_id, status").in("status", ["pending", "will_order"]);
+        const m = {};
+        (data || []).forEach((x) => { m[x.product_id] = x.status; });
+        setOpenReqs(m);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  // 📝 Захиалах хүсэлт үүсгэх → Захиалсан бараа › Захиалах хүсэлт таб-руу очно
+  const sendRequest = async (r) => {
+    if (reqBusy) return;
+    if (openReqs[r.id]) return;
+    if (!confirm(`📝 "${r.name}" барааг захиалах хүсэлт үүсгэх үү?\n\nҮлдэгдэл: ${fmt(r.remain)} · Дундаж: ${r.avg.toFixed(1)} ш/өдөр (${range.label})`)) return;
+    setReqBusy(r.id);
+    try {
+      const { error } = await supabase.from("inv_order_requests").insert({
+        product_id: r.id,
+        product_name: r.name,
+        stock_at_request: r.remain,
+        avg_at_request: Math.round(r.avg * 10) / 10,
+        period_label: range.label,
+        requested_by: profile.id,
+      });
+      if (error) throw error;
+      setOpenReqs((p) => ({ ...p, [r.id]: "pending" }));
+    } catch (e) {
+      alert("⚠ Хүсэлт үүсгэж чадсангүй: " + (e.message || e) + "\n\n(inv_order_requests хүснэгт үүссэн эсэхийг шалгана уу)");
+    } finally { setReqBusy(null); }
+  };
 
   if (loadingBase) {
     return (
@@ -10444,24 +10715,43 @@ function StockPrepView({ profile }) {
                         : `⏳ Одоогийн хурдаар ~${cover >= 99 ? "99+" : cover < 10 ? cover.toFixed(1) : Math.round(cover)} хоног хүрэлцэнэ`}
                     </span>
                   </div>
+                  <div className="mt-1.5">
+                    {openReqs[r.id] ? (
+                      <span className="px-2 py-1 rounded-lg text-[10px] inline-flex items-center gap-1"
+                        style={{ background: openReqs[r.id] === "will_order" ? T.okSoft : T.warnSoft, color: openReqs[r.id] === "will_order" ? T.ok : T.warn, fontFamily: FM, fontWeight: 700 }}>
+                        {openReqs[r.id] === "will_order" ? "🟢 Захиалахаар тэмдэглэгдсэн" : "⏳ Хүсэлт илгээгдсэн"}
+                      </span>
+                    ) : (
+                      <button onClick={() => sendRequest(r)} disabled={reqBusy === r.id}
+                        className="press-btn px-2.5 py-1 rounded-lg text-[10px] inline-flex items-center gap-1"
+                        style={{ background: T.highlight, color: "#fff", fontFamily: FM, fontWeight: 700, opacity: reqBusy === r.id ? 0.6 : 1 }}>
+                        {reqBusy === r.id ? <Loader2 className="spin" size={10} /> : <span>📝</span>}
+                        <span>Захиалах хүсэлт</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               {/* Баруун: өдөр тутмын борлуулалтын chart (шар тасархай = дундаж) */}
-              <div className="flex-1 min-w-0 h-24 sm:self-center">
+              <div className="flex-1 min-w-0 h-28 sm:self-center">
                 {loadingSales ? (
                   <div className="w-full h-full flex items-center justify-center">
                     <Loader2 className="spin" size={16} style={{ color: T.mutedSoft }} />
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 8, right: 4, left: -14, bottom: 0 }}>
+                    <LineChart data={chartData} margin={{ top: 16, right: 12, left: -14, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,156,142,0.12)" vertical={false} />
                       <XAxis dataKey="d" tick={{ fontSize: 8, fill: T.mutedSoft }} interval="preserveStartEnd" tickLine={false} axisLine={false} />
                       <YAxis tick={{ fontSize: 8, fill: T.mutedSoft }} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
                       <RechartsTooltip formatter={(v) => [`${v} ш`, "Борлуулалт"]} contentStyle={{ fontSize: 11, borderRadius: 10, border: `1px solid ${T.borderStrong}` }} />
                       {r.avg > 0 && <ReferenceLine y={r.avg} stroke={T.warn} strokeDasharray="4 3" strokeWidth={1.2} />}
-                      <Bar dataKey="qty" fill={T.highlight} radius={[3, 3, 0, 0]} isAnimationActive={false} />
-                    </BarChart>
+                      <Line type="monotone" dataKey="qty" stroke={T.highlight} strokeWidth={2}
+                        dot={{ r: 2.5, fill: T.highlight, strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false}>
+                        <LabelList dataKey="qty" position="top" offset={6} formatter={(v) => (v > 0 ? v : "")}
+                          style={{ fontSize: 8, fill: T.inkSoft, fontWeight: 700 }} />
+                      </Line>
+                    </LineChart>
                   </ResponsiveContainer>
                 )}
               </div>
