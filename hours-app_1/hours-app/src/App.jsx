@@ -2619,6 +2619,7 @@ function AdminDashboard({ profile }) {
               {!isMarketing && (
                 <>
                   <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
+                  <SidebarTab active={view === "stock-prep"} onClick={() => { setView("stock-prep"); setSidebarOpen(false); }} icon={BarChart3}>Нөөц бэлдэлт</SidebarTab>
                   <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
                   <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
                   <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
@@ -2707,6 +2708,7 @@ function AdminDashboard({ profile }) {
                 {view === "hrfile" && "HR хувийн файл"}
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "warehouses" && "Агуулах"}
+                {view === "stock-prep" && "Нөөц бэлдэлт"}
                 {view === "supplier-orders" && "Захиалсан бараа"}
                 {view === "locations" && "Байршил"}
                 {view === "zones" && "Хүргэлтийн бүс"}
@@ -2752,6 +2754,7 @@ function AdminDashboard({ profile }) {
                 {view === "locations" && "Хот, Дүүрэг, Хорооны байршил удирдах"}
                 {view === "zones" && "Хүргэгч тус бүрийн polygon бүсүүд"}
                 {view === "warehouses" && "Агуулахуудын нөөц хяналт"}
+                {view === "stock-prep" && "Үлдэгдэл + борлуулалтын хурдаар нөөц төлөвлөх"}
                 {view === "transfers" && "Хүргэгчдийн бараа авах / буцаах хүсэлтүүд"}
                 {view === "movements" && "Барааны бүх орлого/зарлагын түүх"}
                 {view === "stockcount" && "Бараа тоолох, зөрүү засах систем"}
@@ -2982,6 +2985,10 @@ function AdminDashboard({ profile }) {
 
         {view === "warehouses" && (
           <WarehousesView profile={profile} />
+        )}
+
+        {view === "stock-prep" && (
+          <StockPrepView profile={profile} />
         )}
 
         {view === "transfers" && (
@@ -10168,6 +10175,309 @@ function SearchableSelect({ value, onChange, options, placeholder = "Бүгд", 
               <div className="px-3 py-3 text-center text-xs" style={{ color: T.muted, fontFamily: FS }}>Олдсонгүй</div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STOCK PREP VIEW — Нөөц бэлдэлт: үлдэгдэл + борлуулалтын хурд (Admin)
+//  • Бүх идэвхтэй бараа картаар (нэг мөрөнд нэг) · доошоо 100-аар pagination
+//  • Дээрээ нэр (SKU)-ээр хайлт · Хугацаа: 7 хоног / Сар(30) / Гараар
+//  • Карт бүрийн хажууд өдөр тутмын борлуулалтын chart + дундаж шугам
+//  • "Зарагдсан" = Борлуулалтын тайлантай ижил дүрэм: status='delivered', delivered_at хүрээнд
+// ═══════════════════════════════════════════════════════════════════════════
+function StockPrepView({ profile }) {
+  const [products, setProducts] = useState([]);
+  const [stockTotal, setStockTotal] = useState({});   // { product_id: бүх агуулахын нийлбэр }
+  const [stockMain, setStockMain] = useState({});     // { product_id: төв агуулах }
+  const [salesByProduct, setSalesByProduct] = useState({}); // { product_id: { total, byDay: {"YYYY-MM-DD": qty} } }
+  const [loadingBase, setLoadingBase] = useState(true);
+  const [loadingSales, setLoadingSales] = useState(true);
+  const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState("7d");         // '7d' | '30d' | 'custom'
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [visibleCount, setVisibleCount] = useState(100); // доошоо 100-аар
+
+  // Локал огнооны түлхүүр (YYYY-MM-DD)
+  const dk = (d) => {
+    const x = new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  };
+  const fmt = (n) => Number(n || 0).toLocaleString();
+
+  // Сонгосон хугацааны хүрээ + өдрийн түлхүүрүүд
+  const range = useMemo(() => {
+    const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+    const endOfDay = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+    const now = new Date();
+    let start, end, label;
+    if (period === "custom" && customStart && customEnd) {
+      let s = new Date(customStart), e = new Date(customEnd);
+      if (e < s) { const t = s; s = e; e = t; } // урвуу сонголтыг засна
+      start = startOfDay(s); end = endOfDay(e);
+      label = `${dk(start)} – ${dk(end)}`;
+    } else if (period === "30d") {
+      const s = new Date(now); s.setDate(s.getDate() - 29);
+      start = startOfDay(s); end = endOfDay(now); label = "Сүүлийн 30 хоног";
+    } else {
+      const s = new Date(now); s.setDate(s.getDate() - 6);
+      start = startOfDay(s); end = endOfDay(now);
+      label = period === "custom" ? "Сүүлийн 7 хоног (огноо сонгоогүй)" : "Сүүлийн 7 хоног";
+    }
+    const keys = [];
+    const cur = new Date(start);
+    while (cur <= end && keys.length < 180) { keys.push(dk(cur)); cur.setDate(cur.getDate() + 1); }
+    if (keys.length >= 180) {
+      const clampEnd = new Date(keys[keys.length - 1] + "T23:59:59"); // хэт урт хүрээнээс хамгаална
+      if (clampEnd < end) { end = clampEnd; label += " · дээд тал 180 хоног"; }
+    }
+    const days = Math.max(1, keys.length);
+    return { start, end, label, days, keys };
+  }, [period, customStart, customEnd]);
+
+  // Бааз дата: бараа + үлдэгдэл (нэг л удаа)
+  useEffect(() => {
+    (async () => {
+      setLoadingBase(true);
+      try {
+        const [{ data: prd, error: pErr }, stk, { data: whs }] = await Promise.all([
+          supabase.from("inv_products").select("id, name, sku, image_url, is_locked").eq("is_active", true).order("name"),
+          fetchAllRows(supabase.from("inv_stock").select("product_id, warehouse_id, quantity")),
+          supabase.from("inv_warehouses").select("id, type"),
+        ]);
+        if (pErr) console.error("[stock-prep products]", pErr);
+        const mainIds = new Set((whs || []).filter((w) => w.type === "main").map((w) => w.id));
+        const tot = {}, main = {};
+        (stk || []).forEach((s) => {
+          const q = Number(s.quantity || 0);
+          tot[s.product_id] = (tot[s.product_id] || 0) + q;
+          if (mainIds.has(s.warehouse_id)) main[s.product_id] = (main[s.product_id] || 0) + q;
+        });
+        setProducts(prd || []);
+        setStockTotal(tot);
+        setStockMain(main);
+      } catch (e) { console.error("[stock-prep base]", e); }
+      finally { setLoadingBase(false); }
+    })();
+  }, []);
+
+  // Борлуулалт: хүрээ солигдох бүрд дахин татна
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingSales(true);
+      try {
+        const orders = await fetchAllRows(
+          supabase.from("biz_orders").select("id, delivered_at")
+            .eq("status", "delivered")
+            .gte("delivered_at", range.start.toISOString())
+            .lte("delivered_at", range.end.toISOString())
+        );
+        const dayByOrder = {};
+        (orders || []).forEach((o) => { if (o.delivered_at) dayByOrder[o.id] = dk(new Date(o.delivered_at)); });
+        const ids = (orders || []).map((o) => o.id);
+        const items = ids.length
+          ? await fetchInChunks("biz_order_items", ids, {
+              select: "order_id, product_id, quantity",
+              filterColumn: "order_id",
+              chunkSize: 150,
+              parallel: 8,
+            })
+          : [];
+        if (cancelled) return;
+        const agg = {};
+        (items || []).forEach((it) => {
+          if (!it.product_id) return;
+          const day = dayByOrder[it.order_id];
+          if (!day) return;
+          const q = Number(it.quantity || 0);
+          if (!agg[it.product_id]) agg[it.product_id] = { total: 0, byDay: {} };
+          agg[it.product_id].total += q;
+          agg[it.product_id].byDay[day] = (agg[it.product_id].byDay[day] || 0) + q;
+        });
+        setSalesByProduct(agg);
+      } catch (e) {
+        console.error("[stock-prep sales]", e);
+        if (!cancelled) setSalesByProduct({});
+      } finally { if (!cancelled) setLoadingSales(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [range.start.getTime(), range.end.getTime()]);
+
+  // Хайлт/хугацаа солигдоход pagination-г эхнээс нь
+  useEffect(() => { setVisibleCount(100); }, [search, period, customStart, customEnd]);
+
+  // Картын жагсаалт (их зарагдсан нь эхэндээ)
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products
+      .filter((p) => !q || (p.name || "").toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q))
+      .map((p) => {
+        const s = salesByProduct[p.id] || { total: 0, byDay: {} };
+        const avg = s.total / range.days;
+        const remain = stockTotal[p.id] || 0;
+        return {
+          ...p,
+          soldTotal: s.total,
+          byDay: s.byDay,
+          avg,
+          remain,
+          mainRemain: stockMain[p.id] || 0,
+          coverDays: avg > 0 ? remain / avg : null, // үлдэгдэл хэдэн хоног хүрэлцэх вэ
+        };
+      })
+      .sort((a, b) => b.soldTotal - a.soldTotal || (a.name || "").localeCompare(b.name || ""));
+  }, [products, salesByProduct, stockTotal, stockMain, search, range.days]);
+
+  const shown = rows.slice(0, visibleCount);
+  const periodTotal = rows.reduce((s, r) => s + r.soldTotal, 0);
+
+  if (loadingBase) {
+    return (
+      <div className="glass rounded-2xl p-10 text-center">
+        <Loader2 className="spin mx-auto mb-2" size={22} style={{ color: T.highlight }} />
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Бараа, үлдэгдэл ачааллаж байна...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* ─── Толгой: хайлт + хугацааны сонголт ─── */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: T.mutedSoft }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Барааны нэр эсвэл SKU-гаар хайх..."
+              className="w-full pl-9 pr-3 py-2 rounded-xl text-sm outline-none"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FS }} />
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {[["7d", "7 хоног"], ["30d", "Сар (30)"], ["custom", "Гараар"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setPeriod(k)}
+                className="press-btn px-3 py-2 rounded-xl text-xs"
+                style={{
+                  background: period === k ? T.highlight : T.surfaceAlt,
+                  color: period === k ? "#fff" : T.inkSoft,
+                  border: `1px solid ${period === k ? T.highlight : T.borderStrong}`,
+                  fontFamily: FM, fontWeight: 600,
+                }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        {period === "custom" && (
+          <div className="flex gap-2 items-center flex-wrap">
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+              className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+            <span style={{ color: T.muted }} className="text-xs">→</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+            {(!customStart || !customEnd) && (
+              <span style={{ color: T.warn, fontFamily: FM }} className="text-[11px]">⚠ Эхлэх / дуусах огноогоо сонгоно уу</span>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
+          <span>📅 {range.label}</span>
+          <span>·</span>
+          <span>{fmt(rows.length)} бараа</span>
+          <span>·</span>
+          <span>Нийт борлуулалт: <b style={{ color: T.ink }}>{fmt(periodTotal)} ш</b></span>
+          {loadingSales && (
+            <span className="flex items-center gap-1" style={{ color: T.highlight }}>
+              <Loader2 className="spin" size={11} /> борлуулалт ачааллаж байна...
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Картууд: нэг мөрөнд нэг ─── */}
+      {shown.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center text-sm" style={{ color: T.muted, fontFamily: FS }}>
+          {search ? "Хайлтад тохирох бараа олдсонгүй" : "Идэвхтэй бараа алга"}
+        </div>
+      ) : shown.map((r) => {
+        const chartData = range.keys.map((k) => ({ d: k.slice(5), qty: r.byDay[k] || 0 }));
+        const remainColor = r.remain < 20 ? T.err : T.highlightDark;
+        const remainBg = r.remain < 20 ? T.errSoft : T.highlightSoft;
+        const cover = r.coverDays;
+        const coverColor = cover === null ? T.mutedSoft : cover < 7 ? T.err : cover < 14 ? T.warn : T.ok;
+        return (
+          <div key={r.id} className="glass rounded-2xl p-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Зүүн: барааны мэдээлэл */}
+              <div className="sm:w-72 flex-shrink-0 flex gap-2.5">
+                {r.image_url ? (
+                  <img src={r.image_url} alt="" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" style={{ border: `1px solid ${T.borderStrong}` }} />
+                ) : (
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}>📦</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm truncate" style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} title={r.name}>
+                    {r.is_locked ? "🔒 " : ""}{r.name}
+                  </div>
+                  {r.sku && <div className="text-[10px]" style={{ color: T.mutedSoft, fontFamily: FM }}>{r.sku}</div>}
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full text-[11px]" style={{ background: remainBg, color: remainColor, fontFamily: FM, fontWeight: 700 }}>
+                      📦 Үлдэгдэл {fmt(r.remain)}
+                    </span>
+                    <span className="text-[10px]" style={{ color: T.mutedSoft, fontFamily: FM }}>Төв: {fmt(r.mainRemain)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[11px]" style={{ color: T.inkSoft, fontFamily: FM }}>
+                      Зарагдсан: <b>{fmt(r.soldTotal)} ш</b>
+                    </span>
+                    <span className="text-[11px]" style={{ color: T.warn, fontFamily: FM }}>
+                      Дундаж: <b>{r.avg >= 10 ? r.avg.toFixed(0) : r.avg.toFixed(1)} ш/өдөр</b>
+                    </span>
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-[10px]" style={{ color: coverColor, fontFamily: FM, fontWeight: 600 }}>
+                      {cover === null
+                        ? "· энэ хугацаанд борлуулалтгүй"
+                        : `⏳ Одоогийн хурдаар ~${cover >= 99 ? "99+" : cover < 10 ? cover.toFixed(1) : Math.round(cover)} хоног хүрэлцэнэ`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {/* Баруун: өдөр тутмын борлуулалтын chart (шар тасархай = дундаж) */}
+              <div className="flex-1 min-w-0 h-24 sm:self-center">
+                {loadingSales ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Loader2 className="spin" size={16} style={{ color: T.mutedSoft }} />
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 8, right: 4, left: -14, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,156,142,0.12)" vertical={false} />
+                      <XAxis dataKey="d" tick={{ fontSize: 8, fill: T.mutedSoft }} interval="preserveStartEnd" tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 8, fill: T.mutedSoft }} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
+                      <RechartsTooltip formatter={(v) => [`${v} ш`, "Борлуулалт"]} contentStyle={{ fontSize: 11, borderRadius: 10, border: `1px solid ${T.borderStrong}` }} />
+                      {r.avg > 0 && <ReferenceLine y={r.avg} stroke={T.warn} strokeDasharray="4 3" strokeWidth={1.2} />}
+                      <Bar dataKey="qty" fill={T.highlight} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ─── Доошоо 100-аар pagination ─── */}
+      {rows.length > visibleCount && (
+        <div className="text-center pt-1 pb-3">
+          <button onClick={() => setVisibleCount((v) => v + 100)}
+            className="press-btn px-5 py-2.5 rounded-full text-xs"
+            style={{ background: T.surfaceStrong, border: `1px solid ${T.borderStrong}`, color: T.highlightDark, fontFamily: FM, fontWeight: 700 }}>
+            ⬇ Дараагийн 100-г харах ({fmt(rows.length - visibleCount)} үлдсэн)
+          </button>
         </div>
       )}
     </div>
