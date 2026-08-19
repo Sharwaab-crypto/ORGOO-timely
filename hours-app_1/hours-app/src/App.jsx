@@ -10506,15 +10506,24 @@ function StockPrepView({ profile }) {
     (async () => {
       setLoadingSales(true);
       try {
-        const orders = await fetchAllRows(
-          supabase.from("biz_orders").select("id, delivered_at")
-            .eq("status", "delivered")
-            .gte("delivered_at", range.start.toISOString())
-            .lte("delivered_at", range.end.toISOString())
-        );
-        const dayByOrder = {};
-        (orders || []).forEach((o) => { if (o.delivered_at) dayByOrder[o.id] = dk(new Date(o.delivered_at)); });
-        const ids = (orders || []).map((o) => o.id);
+        const [delOrders, crOrders] = await Promise.all([
+          fetchAllRows(
+            supabase.from("biz_orders").select("id, delivered_at")
+              .eq("status", "delivered")
+              .gte("delivered_at", range.start.toISOString())
+              .lte("delivered_at", range.end.toISOString())
+          ),
+          fetchAllRows(
+            supabase.from("biz_orders").select("id, created_at")
+              .gte("created_at", range.start.toISOString())
+              .lte("created_at", range.end.toISOString())
+          ),
+        ]);
+        const delDayByOrder = {};
+        (delOrders || []).forEach((o) => { if (o.delivered_at) delDayByOrder[o.id] = dk(new Date(o.delivered_at)); });
+        const crDayByOrder = {};
+        (crOrders || []).forEach((o) => { if (o.created_at) crDayByOrder[o.id] = dk(new Date(o.created_at)); });
+        const ids = [...new Set([...(delOrders || []).map((o) => o.id), ...(crOrders || []).map((o) => o.id)])];
         const items = ids.length
           ? await fetchInChunks("biz_order_items", ids, {
               select: "order_id, product_id, quantity",
@@ -10525,14 +10534,26 @@ function StockPrepView({ profile }) {
           : [];
         if (cancelled) return;
         const agg = {};
+        const seenOrd = {}; // { product_id: Set(order_id) } — нэг захиалгыг давхардуулж тоолохгүй
         (items || []).forEach((it) => {
           if (!it.product_id) return;
-          const day = dayByOrder[it.order_id];
-          if (!day) return;
-          const q = Number(it.quantity || 0);
-          if (!agg[it.product_id]) agg[it.product_id] = { total: 0, byDay: {} };
-          agg[it.product_id].total += q;
-          agg[it.product_id].byDay[day] = (agg[it.product_id].byDay[day] || 0) + q;
+          if (!agg[it.product_id]) agg[it.product_id] = { total: 0, byDay: {}, ordTotal: 0, ordByDay: {} };
+          const a = agg[it.product_id];
+          const delDay = delDayByOrder[it.order_id];
+          if (delDay) {
+            const q = Number(it.quantity || 0);
+            a.total += q;
+            a.byDay[delDay] = (a.byDay[delDay] || 0) + q;
+          }
+          const crDay = crDayByOrder[it.order_id];
+          if (crDay) {
+            if (!seenOrd[it.product_id]) seenOrd[it.product_id] = new Set();
+            if (!seenOrd[it.product_id].has(it.order_id)) {
+              seenOrd[it.product_id].add(it.order_id);
+              a.ordTotal += 1;
+              a.ordByDay[crDay] = (a.ordByDay[crDay] || 0) + 1;
+            }
+          }
         });
         setSalesByProduct(agg);
       } catch (e) {
@@ -10552,13 +10573,15 @@ function StockPrepView({ profile }) {
     return products
       .filter((p) => !q || (p.name || "").toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q))
       .map((p) => {
-        const s = salesByProduct[p.id] || { total: 0, byDay: {} };
+        const s = salesByProduct[p.id] || { total: 0, byDay: {}, ordTotal: 0, ordByDay: {} };
         const avg = s.total / range.days;
         const remain = stockTotal[p.id] || 0;
         return {
           ...p,
           soldTotal: s.total,
           byDay: s.byDay,
+          ordTotal: s.ordTotal || 0,
+          ordByDay: s.ordByDay || {},
           avg,
           remain,
           mainRemain: stockMain[p.id] || 0,
@@ -10570,6 +10593,7 @@ function StockPrepView({ profile }) {
 
   const shown = rows.slice(0, visibleCount);
   const periodTotal = rows.reduce((s, r) => s + r.soldTotal, 0);
+  const periodOrders = rows.reduce((s, r) => s + (r.ordTotal || 0), 0);
 
   // Хүсэлтийн статус өөрчлөгдөхөд (шийдэгдэх г.м) товчнууд шинэчлэгдэнэ
   useEffect(() => {
@@ -10660,6 +10684,8 @@ function StockPrepView({ profile }) {
           <span>{fmt(rows.length)} бараа</span>
           <span>·</span>
           <span>Нийт борлуулалт: <b style={{ color: T.ink }}>{fmt(periodTotal)} ш</b></span>
+          <span>·</span>
+          <span>Үүссэн захиалга: <b style={{ color: "#6366f1" }}>{fmt(periodOrders)}</b></span>
           {loadingSales && (
             <span className="flex items-center gap-1" style={{ color: T.highlight }}>
               <Loader2 className="spin" size={11} /> борлуулалт ачааллаж байна...
@@ -10674,7 +10700,7 @@ function StockPrepView({ profile }) {
           {search ? "Хайлтад тохирох бараа олдсонгүй" : "Идэвхтэй бараа алга"}
         </div>
       ) : shown.map((r) => {
-        const chartData = range.keys.map((k) => ({ d: k.slice(5), qty: r.byDay[k] || 0 }));
+        const chartData = range.keys.map((k) => ({ d: k.slice(5), qty: r.byDay[k] || 0, ord: r.ordByDay[k] || 0 }));
         const remainColor = r.remain < 20 ? T.err : T.highlightDark;
         const remainBg = r.remain < 20 ? T.errSoft : T.highlightSoft;
         const cover = r.coverDays;
@@ -10701,6 +10727,9 @@ function StockPrepView({ profile }) {
                     <span className="text-[10px]" style={{ color: T.mutedSoft, fontFamily: FM }}>Төв: {fmt(r.mainRemain)}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[11px]" style={{ color: "#6366f1", fontFamily: FM }}>
+                      Захиалга: <b>{fmt(r.ordTotal)}</b>
+                    </span>
                     <span className="text-[11px]" style={{ color: T.inkSoft, fontFamily: FM }}>
                       Зарагдсан: <b>{fmt(r.soldTotal)} ш</b>
                     </span>
@@ -10732,27 +10761,49 @@ function StockPrepView({ profile }) {
                   </div>
                 </div>
               </div>
-              {/* Баруун: өдөр тутмын борлуулалтын chart (шар тасархай = дундаж) */}
-              <div className="flex-1 min-w-0 h-28 sm:self-center">
-                {loadingSales ? (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Loader2 className="spin" size={16} style={{ color: T.mutedSoft }} />
+              {/* Баруун: өдөр тутмын chart — ногоон=борлуулсан ш, хөх=үүссэн захиалга (шар тасархай = дундаж) */}
+              <div className="flex-1 min-w-0 sm:self-center">
+                <div className="h-28">
+                  {loadingSales ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Loader2 className="spin" size={16} style={{ color: T.mutedSoft }} />
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 16, right: 12, left: -14, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,156,142,0.12)" vertical={false} />
+                        <XAxis dataKey="d" tick={{ fontSize: 8, fill: T.mutedSoft }} interval="preserveStartEnd" tickLine={false} axisLine={false} />
+                        <YAxis tick={{ fontSize: 8, fill: T.mutedSoft }} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
+                        <RechartsTooltip
+                          formatter={(v, name) => (name === "qty" ? [`${v} ш`, "Борлуулсан"] : [`${v}`, "Үүссэн захиалга"])}
+                          contentStyle={{ fontSize: 11, borderRadius: 10, border: `1px solid ${T.borderStrong}` }} />
+                        {r.avg > 0 && <ReferenceLine y={r.avg} stroke={T.warn} strokeDasharray="4 3" strokeWidth={1.2} />}
+                        <Line type="monotone" dataKey="ord" stroke="#6366f1" strokeWidth={1.6}
+                          dot={{ r: 2, fill: "#6366f1", strokeWidth: 0 }} activeDot={{ r: 3.5 }} isAnimationActive={false}>
+                          <LabelList dataKey="ord" position="bottom" offset={6} formatter={(v) => (v > 0 ? v : "")}
+                            style={{ fontSize: 8, fill: "#6366f1", fontWeight: 700 }} />
+                        </Line>
+                        <Line type="monotone" dataKey="qty" stroke={T.highlight} strokeWidth={2}
+                          dot={{ r: 2.5, fill: T.highlight, strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false}>
+                          <LabelList dataKey="qty" position="top" offset={6} formatter={(v) => (v > 0 ? v : "")}
+                            style={{ fontSize: 8, fill: T.inkSoft, fontWeight: 700 }} />
+                        </Line>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+                {!loadingSales && (
+                  <div className="flex items-center justify-center gap-3 text-[9px] mt-0.5 flex-wrap" style={{ fontFamily: FM }}>
+                    <span className="flex items-center gap-1" style={{ color: T.highlightDark, fontWeight: 600 }}>
+                      <span style={{ width: 10, height: 2, background: T.highlight, display: "inline-block", borderRadius: 2 }}></span>Борлуулсан (ш)
+                    </span>
+                    <span className="flex items-center gap-1" style={{ color: "#6366f1", fontWeight: 600 }}>
+                      <span style={{ width: 10, height: 2, background: "#6366f1", display: "inline-block", borderRadius: 2 }}></span>Үүссэн захиалга
+                    </span>
+                    <span className="flex items-center gap-1" style={{ color: T.warn, fontWeight: 600 }}>
+                      <span style={{ width: 10, height: 0, borderTop: `2px dashed ${T.warn}`, display: "inline-block" }}></span>Дундаж
+                    </span>
                   </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 16, right: 12, left: -14, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(14,156,142,0.12)" vertical={false} />
-                      <XAxis dataKey="d" tick={{ fontSize: 8, fill: T.mutedSoft }} interval="preserveStartEnd" tickLine={false} axisLine={false} />
-                      <YAxis tick={{ fontSize: 8, fill: T.mutedSoft }} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
-                      <RechartsTooltip formatter={(v) => [`${v} ш`, "Борлуулалт"]} contentStyle={{ fontSize: 11, borderRadius: 10, border: `1px solid ${T.borderStrong}` }} />
-                      {r.avg > 0 && <ReferenceLine y={r.avg} stroke={T.warn} strokeDasharray="4 3" strokeWidth={1.2} />}
-                      <Line type="monotone" dataKey="qty" stroke={T.highlight} strokeWidth={2}
-                        dot={{ r: 2.5, fill: T.highlight, strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false}>
-                        <LabelList dataKey="qty" position="top" offset={6} formatter={(v) => (v > 0 ? v : "")}
-                          style={{ fontSize: 8, fill: T.inkSoft, fontWeight: 700 }} />
-                      </Line>
-                    </LineChart>
-                  </ResponsiveContainer>
                 )}
               </div>
             </div>
