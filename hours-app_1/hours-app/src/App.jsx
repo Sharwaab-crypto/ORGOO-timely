@@ -4270,19 +4270,6 @@ function TeamView({ employees, sessions, activeSessions, sites = [], employeeSit
                   ✉️ <span className="truncate" style={{ maxWidth: 170 }}>{emp.email}</span>
                 </span>
               )}
-              <span className="flex items-center gap-1 press-btn"
-                title={emp.callpro_ext ? `CallPro дотуур: ${emp.callpro_ext} — дарж солино` : "CallPro дотуур дугаар оноох"}
-                onClick={async () => {
-                  const v = prompt(`${emp.name} — CallPro дотуур дугаар (ext):`, emp.callpro_ext || "");
-                  if (v === null) return;
-                  const num = parseInt(v, 10);
-                  const val = Number.isFinite(num) && num > 0 ? num : null;
-                  const { error } = await supabase.from("profiles").update({ callpro_ext: val }).eq("id", emp.id);
-                  alert(error ? "Алдаа: " + error.message : `✓ ${emp.name}: ext ${val || "арилгав"} — хадгалагдлаа`);
-                }}
-                style={{ cursor: "pointer", color: emp.callpro_ext ? "#10B981" : T.muted, fontWeight: emp.callpro_ext ? 700 : 400 }}>
-                ☎️ {emp.callpro_ext || "ext+"}
-              </span>
               {activeSite && (
                 <span style={{ color: T.highlight }} className="flex items-center gap-1">
                   · {activeSite.name}
@@ -13910,7 +13897,7 @@ function CallCenterView({ profile }) {
       //    (interested_products — том jsonb зурагтай — бараа нь productsByPhoneAll-аас тусдаа
       //     ирдэг тул үндсэн дуудлагын жагсаалтад хэрэггүй. Энэ нь 356kB → ~60kB болгоно.)
       const calls60Days = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-      const callCols = "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id";
+      const callCols = "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url";
       const callsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("biz_calls").select(callCols).in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000)
         : supabase.from("biz_calls").select(callCols).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000);
@@ -15527,25 +15514,6 @@ function CallCenterView({ profile }) {
                                 </>
                               )}
                             </button>
-                            {profile.callpro_ext ? (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const { data, error } = await supabase.functions.invoke("callpro-dial", { body: { phone } });
-                                    if (error) throw error;
-                                    if (data && data.ok) alert(`☎️ Залгалт эхэллээ — эхлээд таны дотуур (${profile.callpro_ext}) утас дуугарна, авмагц ${phone} руу холбоно.`);
-                                    else if (data && data.reason === "not_configured") alert("⚙️ Click-to-call тохиргоо хийгдээгүй байна (CallPro-гийн dial API хүлээгдэж буй — админд хандана уу).");
-                                    else if (data && data.reason === "no_ext") alert("⚠️ Танд CallPro дотуур дугаар оноогдоогүй байна — Баг хуудсанд ☎️ chip-ээр оноолгоно уу.");
-                                    else alert("CallPro хариу: " + JSON.stringify(data || {}));
-                                  } catch (err) { alert("CallPro алдаа: " + (err?.message || err)); }
-                                }}
-                                className="press-btn flex items-center gap-1 px-2 py-1 rounded-md"
-                                title={`CallPro-оор залгах (таны дотуур: ${profile.callpro_ext})`}
-                                style={{ background: "rgba(16,185,129,0.12)", color: "#10B981", fontFamily: FS, fontWeight: 600 }}>
-                                <span className="text-xs">☎️ Залгах</span>
-                              </button>
-                            ) : null}
                           </>
                         );
                       })()}
@@ -15672,7 +15640,7 @@ function CallCenterView({ profile }) {
                             } else if (c.call_status === "cancelled" || isCancelled) {
                               status = { label: "✕ Цуцалсан", color: T.err, bg: T.errSoft };
                             } else if (c.call_status === "answered") {
-                              status = { label: "🎙 Хариулсан (CallPro)", color: "#10B981", bg: "rgba(16,185,129,0.1)" };
+                              status = { label: "📞 Хариулсан", color: "#10B981", bg: "rgba(16,185,129,0.1)" };
                             }
 
                             // Тэмдэглэл: "[Шалтгаан] комментын текст" хэлбэрээс комментыг гаргана.
@@ -15700,6 +15668,7 @@ function CallCenterView({ profile }) {
                                 )}
                               </span>
                             ) : null;
+
                             return (
                               <div key={c.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
                                 <div className="flex items-center gap-1 flex-shrink-0" style={{ color: T.muted, fontFamily: FM }}>
