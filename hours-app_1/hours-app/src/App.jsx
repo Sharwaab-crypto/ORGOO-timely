@@ -13787,6 +13787,36 @@ function CallCenterView({ profile }) {
   const [page, setPage] = useState(1); // Дугаарын pagination
   const PAGE_SIZE = 100; // Дуудлагын pagination — нэг хуудсанд 100 дугаар
   const [expandedCallCards, setExpandedCallCards] = useState(() => new Set()); // 🆕 Бүх дуудлага харуулсан card-ууд (cycle key)
+  // 🕓 БҮРЭН ТҮҮХ: үндсэн цонх (60 хоног, хамгийн шинэ 3000 мөр) өдрийн ~3.5К бичилттэй үед
+  //    дөнгөж 1-2 хоног хамардаг тул хуучин мөрүүд (тэр дундаа "Дугаар бүртгэсэн") картаас
+  //    алга болдог байсан. Харагдаж буй хуудасны дугааруудын бүх цагийн түүхийг нэмж татна.
+  const [fullHist, setFullHist] = useState({}); // { phone: rows[] }
+  const fullHistReq = useRef(new Set());        // давхар татахаас сэргийлэх
+  const ensureHistories = (phones) => {
+    const need = (phones || []).filter((p) => p && !fullHistReq.current.has(p));
+    if (need.length === 0) return;
+    need.forEach((p) => fullHistReq.current.add(p));
+    (async () => {
+      try {
+        const rows = await fetchInChunks("biz_calls", need, {
+          select: "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url",
+          filterColumn: "phone",
+          chunkSize: 50,
+          parallel: 4,
+        });
+        const byPhone = {};
+        (rows || []).forEach((r) => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
+        setFullHist((prev) => {
+          const nx = { ...prev };
+          need.forEach((p) => { nx[p] = byPhone[p] || []; });
+          return nx;
+        });
+      } catch (e) {
+        console.error("[full-history]", e);
+        need.forEach((p) => fullHistReq.current.delete(p)); // дараагийн render дээр дахин оролдоно
+      }
+    })();
+  };
 
   // Popup нээгдэх үед барааны description + total stock татах
   useEffect(() => {
@@ -15384,6 +15414,8 @@ function CallCenterView({ profile }) {
               const startIdx = (safePage - 1) * PAGE_SIZE;
               const endIdx = startIdx + PAGE_SIZE;
               const pageCycles = sortedCycles.slice(startIdx, endIdx);
+              // 🕓 Энэ хуудасны дугааруудын бүрэн түүхийг ард нь татна (guard-тай, давхардахгүй)
+              ensureHistories(pageCycles.map((c) => c.phone));
 
               return (
                 <>
@@ -15405,7 +15437,32 @@ function CallCenterView({ profile }) {
                 // 📋 Дуудлагын түүх — ЭНЭ cycle-ийн дуудлагууд (цагаар: хуучин→шинэ)
                 //    Cancelled/delivered cycle тусдаа card, шинэ cycle тусдаа card болж харагдана.
                 //    (нэг cycle дотор "Дугаар бүртгэсэн" + "Захиалга болсон" 2 мөр харагдана)
-                const calls = [...cycle.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                // 🕓 Бүрэн түүх татагдсан бол: цонхны мөрүүдтэй нэгтгэж, ижил дүрмээр
+                //    мөчлөгт хувааж, энэ картын сүүлийн мөрийг агуулсан мөчлөгийг сонгоно —
+                //    ингэснээр 3000-мөрийн цонхонд багтаагүй хуучин мөрүүд ("Дугаар бүртгэсэн" г.м) буцаж харагдана.
+                let cardCalls = cycle.calls;
+                const fhRows = fullHist[phone];
+                if (fhRows && fhRows.length) {
+                  const byId = new Map();
+                  [...fhRows, ...cycle.calls].forEach((c) => byId.set(c.id, c));
+                  const asc = [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                  const groups = [];
+                  let cur = [], closed = false;
+                  asc.forEach((c) => {
+                    if (closed && (c.call_status === "pending" || !c.call_status)) {
+                      if (cur.length) groups.push(cur);
+                      cur = [];
+                      closed = false;
+                    }
+                    cur.push(c);
+                    if (c.call_status === "ordered" || c.call_status === "cancelled") closed = true;
+                  });
+                  if (cur.length) groups.push(cur);
+                  const lastId = cycle.calls[cycle.calls.length - 1]?.id;
+                  const match = groups.find((g) => g.some((c) => c.id === lastId));
+                  if (match) cardCalls = match;
+                }
+                const calls = [...cardCalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 const latestCall = calls[calls.length - 1];
                 // 💬 Операторын бичсэн сэтгэгдэл — статусын "[...]" тэмдэглэгээ биш, бодит notes.
                 //    Сүүлийн дуудлага notes-гүй байж болзошгүй (шинэ pending хоосон), тиймээс
@@ -15553,7 +15610,7 @@ function CallCenterView({ profile }) {
                       </span>
                       <div className="flex items-center gap-1" style={{ color: T.muted, fontFamily: FM }}>
                         <Clock size={11} />
-                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo(cycle.registeredDate || calls[0]?.created_at || latestCall.created_at)}</span>
+                        <span className="text-[11px]">Бүртгэгдсэн: {timeAgo((calls.find((c) => c.call_status === "pending" || !c.call_status) || calls[0])?.created_at || cycle.registeredDate || latestCall.created_at)}</span>
                       </div>
                       <div className="flex-1" />
                       {(() => {
@@ -15597,6 +15654,11 @@ function CallCenterView({ profile }) {
                       <div>
                         <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1.5 flex items-center gap-1">
                           📋 ДУУДЛАГЫН ТҮҮХ ({calls.length})
+                          {!fullHist[phone] && (
+                            <span className="flex items-center gap-1 normal-case" style={{ color: T.mutedSoft }}>
+                              <Loader2 className="spin" size={9} /> бүрэн түүх...
+                            </span>
+                          )}
                         </div>
                         {calls.length === 0 ? (
                           <div className="rounded-lg p-2.5 text-center" 
