@@ -13962,9 +13962,24 @@ function CallCenterView({ profile }) {
           .order("created_at", { ascending: false }).limit(4000);
         if (isMerchant && allowedPageIds.length > 0) oldPendQ = oldPendQ.in("fb_page_id", allowedPageIds);
         const { data: oldPend } = await oldPendQ;
+        // 🕳 СОХОР БҮС ЗАСВАР: 3000-мөрийн цонхны хил (~1-2 хоног) → 60 хоногийн
+        //    хоорондох шийдэгдээгүй дугаарууд хаана ч харагдахгүй байсан (823 дугаар илэрсэн).
+        //    RPC сервер талд шүүж зөвхөн шийдэгдээгүйг өгнө — resolved-ийг клиент рүү зөөхгүй.
+        //    RPC хараахан үүсээгүй бол алдааг log-лоод хуучин зан үйлээрээ үргэлжилнэ.
+        let gapPhones = [];
+        try {
+          const winBoundary = callData.length > 0 ? callData[callData.length - 1].created_at : calls60Days;
+          const { data: gapRows, error: gapErr } = await supabase.rpc("get_unresolved_pending_phones", {
+            p_before: winBoundary,
+            p_since: calls60Days,
+            p_pages: isMerchant && allowedPageIds.length > 0 ? allowedPageIds : null,
+          });
+          if (gapErr) console.error("[gap pendings rpc]", gapErr);
+          else gapPhones = (gapRows || []).map((r) => r.phone).filter(Boolean);
+        } catch (e) { console.error("[gap pendings]", e); }
         const inWin = new Set(callData.map((cc) => cc.phone));
-        const oldPhones = [...new Set((oldPend || []).map((r) => r.phone).filter(Boolean))]
-          .filter((ph) => !inWin.has(ph)).slice(0, 800);
+        const oldPhones = [...new Set([...(oldPend || []).map((r) => r.phone).filter(Boolean), ...gapPhones])]
+          .filter((ph) => !inWin.has(ph)).slice(0, 1500);
         if (oldPhones.length > 0) {
           const extraRows = await fetchInChunks("biz_calls", oldPhones, {
             select: callCols, filterColumn: "phone", chunkSize: 150, parallel: 8,
