@@ -39086,7 +39086,7 @@ function DriverDashboard({ profile }) {
 
         {/* Filter tabs */}
         <div className="glass rounded-2xl p-2 flex gap-1 flex-wrap">
-          <button onClick={() => setFilter("all")}
+          <button onClick={() => { setShowMyIssues(false); setFilter("all"); }}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "all" ? "#475569" : T.surfaceAlt,
@@ -39096,7 +39096,7 @@ function DriverDashboard({ profile }) {
             }}>
             📋 Бүх ({allTotal.toLocaleString()})
           </button>
-          <button onClick={() => setFilter("available")}
+          <button onClick={() => { setShowMyIssues(false); setFilter("available"); }}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
             style={{
               background: filter === "available" ? "#9333ea" : T.surfaceAlt,
@@ -39120,7 +39120,7 @@ function DriverDashboard({ profile }) {
 
           {/* 📍 Хуваарилах (миний бүсэд) */}
           {myZones.length > 0 && (
-            <button onClick={() => setFilter("myzone")}
+            <button onClick={() => { setShowMyIssues(false); setFilter("myzone"); }}
               className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
               style={{
                 background: filter === "myzone" ? "#10b981" : T.surfaceAlt,
@@ -39145,7 +39145,7 @@ function DriverDashboard({ profile }) {
 
           {/* ❓ Тодорхойгүй */}
           {counts.unknown > 0 && (
-            <button onClick={() => setFilter("unknown")}
+            <button onClick={() => { setShowMyIssues(false); setFilter("unknown"); }}
               className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
               style={{
                 background: filter === "unknown" ? "#f59e0b" : T.surfaceAlt,
@@ -39157,7 +39157,7 @@ function DriverDashboard({ profile }) {
             </button>
           )}
 
-          <button onClick={() => setFilter("active")}
+          <button onClick={() => { setShowMyIssues(false); setFilter("active"); }}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "active" ? "#0ea5e9" : T.surfaceAlt,
@@ -39167,7 +39167,7 @@ function DriverDashboard({ profile }) {
             }}>
             🚚 Хүргэх ({counts.active})
           </button>
-          <button onClick={() => setFilter("delivered")}
+          <button onClick={() => { setShowMyIssues(false); setFilter("delivered"); }}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "delivered" ? T.ok : T.surfaceAlt,
@@ -39177,7 +39177,7 @@ function DriverDashboard({ profile }) {
             }}>
             ✓ Хүргэсэн ({counts.delivered})
           </button>
-          <button onClick={() => setFilter("cancelled")}
+          <button onClick={() => { setShowMyIssues(false); setFilter("cancelled"); }}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
             style={{
               background: filter === "cancelled" ? T.err : T.surfaceAlt,
