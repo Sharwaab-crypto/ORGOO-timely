@@ -26606,6 +26606,13 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
               <span>{order.delivery_address}</span>
             </div>
           )}
+          {order.is_unknown && order.unknown_note && (
+            <div className="text-[11px] mt-1 px-2 py-1 rounded-lg inline-flex items-start gap-1"
+              style={{ background: "rgba(245,158,11,0.12)", color: "#B45309", border: "1px solid rgba(245,158,11,0.4)", fontFamily: FS, fontWeight: 600 }}>
+              <span>❓💬</span>
+              <span>{order.unknown_note}</span>
+            </div>
+          )}
           {order.driver_id && (() => {
             const driver = drivers.find((d) => d.id === order.driver_id);
             return driver ? (
@@ -28483,6 +28490,7 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
               📞 <a href="tel:${o.customer_phone || ''}" style="color:#3b82f6;text-decoration:none;font-weight:600;">${o.customer_phone || "—"}</a>
             </div>
             ${o.delivery_address ? `<div style="color:#475569;font-size:11px;margin-bottom:8px;display:flex;gap:5px;line-height:1.4;">📍 <span>${esc(o.delivery_address)}</span></div>` : ""}
+            ${o.is_unknown && o.unknown_note ? `<div style="background:rgba(245,158,11,0.12);color:#B45309;border:1px solid rgba(245,158,11,0.4);font-size:11px;font-weight:600;border-radius:8px;padding:4px 8px;margin-bottom:8px;">❓💬 ${esc(o.unknown_note)}</div>` : ""}
             ${(items[o.id] && items[o.id].length)
               ? `<div style="background:#f1f5f9;border-radius:8px;padding:${compact ? "5px 7px" : "7px 9px"};margin-bottom:${compact ? 6 : 8}px;${compact ? "max-height:92px;overflow-y:auto;" : ""}">
                    <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">🛍 Бараа (${items[o.id].length})</div>
