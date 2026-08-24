@@ -13810,10 +13810,17 @@ function CcIssuesPanel({ profile, onCountChange }) {
   const setStatus = async (it, status) => {
     if (busyId) return;
     if (status === "deleted" && !confirm("🗑 Энэ сэтгэгдлийг самбараас устгах уу?")) return;
+    let resolutionNote;
+    if (status === "fixed") {
+      const note = prompt("✅ Хэрхэн шийдвэрлэснээ товч бичнэ үү (жолоочид харагдана):");
+      if (note === null) return; // болиулав
+      resolutionNote = String(note).trim() || null;
+    }
     setBusyId(it.id);
     try {
       const patch = { status };
       if (status === "fixed" || status === "in_progress") { patch.resolved_by = profile.id; patch.resolved_at = new Date().toISOString(); }
+      if (status === "fixed") patch.resolution_note = resolutionNote;
       const { error } = await supabase.from("biz_delivery_issues").update(patch).eq("id", it.id);
       if (error) throw error;
       setIssues((prev) => (prev || []).map((x) => (x.id === it.id ? { ...x, ...patch } : x)));
@@ -13883,6 +13890,11 @@ function CcIssuesPanel({ profile, onCountChange }) {
                 {it.status !== "new" && it.resolved_at && (
                   <div className="text-[10px] mt-0.5" style={{ color: T.mutedSoft, fontFamily: FM }}>
                     Ангилсан: {people[it.resolved_by] || "?"} · {dfmt(it.resolved_at)}
+                  </div>
+                )}
+                {it.resolution_note && (
+                  <div className="text-[11px] mt-1 px-2 py-1 rounded-lg inline-block" style={{ background: T.okSoft, color: T.ok, fontFamily: FS }}>
+                    📝 Шийд: {it.resolution_note}
                   </div>
                 )}
               </div>
@@ -38237,6 +38249,101 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  DRIVER ISSUES PANEL — 💬 Жолоочийн өөрийн мэдэгдсэн асуудлууд (popup)
+//  Төлөв + операторын шийдлийн тайлбар realtime харагдана.
+// ═══════════════════════════════════════════════════════════════════════════
+function DriverIssuesPanel({ profile, onClose }) {
+  const [issues, setIssues] = useState([]);
+  const [orders, setOrders] = useState({});
+  const [people, setPeople] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    try {
+      const [{ data: rows, error }, { data: profs }] = await Promise.all([
+        supabase.from("biz_delivery_issues").select("*").eq("created_by", profile.id).order("created_at", { ascending: false }).limit(100),
+        supabase.from("profiles").select("id, name"),
+      ]);
+      if (error) throw error;
+      const pm = {};
+      (profs || []).forEach((p) => { pm[p.id] = p.name; });
+      setPeople(pm);
+      setIssues(rows || []);
+      const oids = [...new Set((rows || []).map((r) => r.order_id).filter(Boolean))];
+      if (oids.length) {
+        const ords = await fetchInChunks("biz_orders", oids, { select: "id, order_number, customer_phone", chunkSize: 150, parallel: 4 });
+        const om = {};
+        (ords || []).forEach((o) => { om[o.id] = o; });
+        setOrders(om);
+      } else setOrders({});
+    } catch (e) { console.error("[driver-issues]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  const debouncedDrvLoad = useDebouncedCallback(load, 600);
+  useEffect(() => {
+    const ch = supabase.channel("driver-issues-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_delivery_issues" }, debouncedDrvLoad)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const IST = {
+    new: { lbl: "🆕 Хүлээгдэж буй", color: T.err, bg: T.errSoft },
+    in_progress: { lbl: "🛠 Шийдвэрлэж байна", color: T.warn, bg: T.warnSoft },
+    fixed: { lbl: "✅ Зассан", color: T.ok, bg: T.okSoft },
+    deleted: { lbl: "🗑 Хаагдсан", color: T.muted, bg: "rgba(91,124,126,0.12)" },
+  };
+  const dfmt = (s) => {
+    if (!s) return "";
+    const d = new Date(s);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
+      <div className="glass rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: "85vh", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-3 flex-shrink-0" style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💬 Миний мэдэгдсэн асуудлууд ({issues.length})</div>
+          <button onClick={onClose} className="press-btn px-2 py-1 rounded-lg" style={{ color: T.muted }}>✕</button>
+        </div>
+        <div className="p-3 space-y-2 overflow-y-auto">
+          {loading ? (
+            <div className="text-center p-6"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
+          ) : issues.length === 0 ? (
+            <div className="text-center text-sm p-6" style={{ color: T.muted, fontFamily: FS }}>
+              Асуудал мэдэгдээгүй байна — захиалгын картын 💬 товчоор илгээнэ
+            </div>
+          ) : issues.map((it) => {
+            const st = IST[it.status] || IST.new;
+            const o = orders[it.order_id] || {};
+            return (
+              <div key={it.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, borderLeft: `3px solid ${st.color}` }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm min-w-0" style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>{it.comment}</div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] flex-shrink-0" style={{ background: st.bg, color: st.color, fontFamily: FM, fontWeight: 700 }}>{st.lbl}</span>
+                </div>
+                <div className="text-[10px] mt-1" style={{ color: T.muted, fontFamily: FM }}>
+                  {dfmt(it.created_at)}
+                  {o.order_number ? ` · 📦 ${o.order_number}` : ""}
+                  {o.customer_phone ? ` · 📞 ${o.customer_phone}` : ""}
+                </div>
+                {it.resolution_note && (
+                  <div className="text-[11px] mt-1.5 px-2 py-1.5 rounded-lg" style={{ background: T.okSoft, color: T.ok, fontFamily: FS }}>
+                    📝 {people[it.resolved_by] || "Оператор"}: {it.resolution_note}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function DriverDashboard({ profile }) {
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});
@@ -38264,6 +38371,22 @@ function DriverDashboard({ profile }) {
   const [ratingNote, setRatingNote] = useState("");
   const [pickupShort, setPickupShort] = useState(null); // ⚠ {types, total} — авах шаардлагатай бараа
   const [unknownTarget, setUnknownTarget] = useState(null); // ❓ Тодорхойгүй болгох popup-ийн захиалга
+  // 💬 Өөрийн мэдэгдсэн асуудлууд
+  const [showMyIssues, setShowMyIssues] = useState(false);
+  const [myIssueCount, setMyIssueCount] = useState(0); // хүлээгдэж буй + шийдвэрлэж буй
+  const loadMyIssueCount = async () => {
+    const { count, error } = await supabase.from("biz_delivery_issues")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", profile.id).in("status", ["new", "in_progress"]);
+    if (!error) setMyIssueCount(count || 0);
+  };
+  useEffect(() => { loadMyIssueCount(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("driver-issues-badge-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_delivery_issues" }, () => loadMyIssueCount())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
   const [unknownNote, setUnknownNote] = useState("");
   const [unknownSaving, setUnknownSaving] = useState(false);
 
@@ -39040,7 +39163,18 @@ function DriverDashboard({ profile }) {
             }}>
             ✕ Цуцалсан ({counts.cancelled})
           </button>
+          <button onClick={() => setShowMyIssues(true)}
+            className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
+            style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid #3b82f6", fontFamily: FS, fontWeight: 600, minWidth: "80px" }}>
+            💬 Асуудал
+            {myIssueCount > 0 && (
+              <span className="text-[10px] px-1.5 rounded-full font-bold" style={{ background: "#3b82f6", color: "white" }}>
+                {myIssueCount}
+              </span>
+            )}
+          </button>
         </div>
+        {showMyIssues && <DriverIssuesPanel profile={profile} onClose={() => setShowMyIssues(false)} />}
 
         {/* 🔍 Хайх — дугаар, нэр, хаяг, захиалгын ID */}
         <div className="glass rounded-2xl p-2 flex items-center gap-2">
