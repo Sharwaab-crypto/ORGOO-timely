@@ -21216,6 +21216,12 @@ function DriverSettlementView({ profile }) {
                 }
               }
 
+              // 💬 Тооцоо хаагдахад тухайн жолоочийн мэдэгдсэн БҮХ асуудлыг цэвэрлэнэ
+              //    (шийдэгдээгүй нь ч устна — тооцооны мөчлөг = асуудлын мөчлөг гэсэн бизнес дүрэм)
+              try {
+                await supabase.from("biz_delivery_issues").delete().eq("created_by", driver.id);
+              } catch (eDel) { console.warn("[issues-cleanup]", eDel); }
+
               alert(`✅ Тооцоо амжилттай хаагдлаа!\n\nТушаагдсан дүн: ${totalSubmitted.toLocaleString()}₮\nТайлан "Тооцооний тайлан" хэсэгт хадгалагдлаа.`);
               setActiveDriver(null);
               await loadAll();
@@ -26632,7 +26638,16 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
             <div className="text-[11px] mt-1 px-2 py-1 rounded-lg inline-flex items-start gap-1"
               style={{ background: "rgba(245,158,11,0.12)", color: "#B45309", border: "1px solid rgba(245,158,11,0.4)", fontFamily: FS, fontWeight: 600 }}>
               <span>❓💬</span>
-              <span>{order.unknown_note}</span>
+              <span>
+                {(order.unknown_note_by || order.unknown_note_at) && (
+                  <span style={{ color: "#92400E", fontWeight: 700 }}>
+                    {(drivers.find((d) => d.id === order.unknown_note_by) || {}).name || "Жолооч"}
+                    {order.unknown_note_at ? ` · ${new Date(order.unknown_note_at).toLocaleString("mn-MN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                    {": "}
+                  </span>
+                )}
+                {order.unknown_note}
+              </span>
             </div>
           )}
           {order.driver_id && (() => {
@@ -28512,7 +28527,7 @@ function OrdersMapView({ orders, drivers, onOrderClick, items = {}, profileId = 
               📞 <a href="tel:${o.customer_phone || ''}" style="color:#3b82f6;text-decoration:none;font-weight:600;">${o.customer_phone || "—"}</a>
             </div>
             ${o.delivery_address ? `<div style="color:#475569;font-size:11px;margin-bottom:8px;display:flex;gap:5px;line-height:1.4;">📍 <span>${esc(o.delivery_address)}</span></div>` : ""}
-            ${o.is_unknown && o.unknown_note ? `<div style="background:rgba(245,158,11,0.12);color:#B45309;border:1px solid rgba(245,158,11,0.4);font-size:11px;font-weight:600;border-radius:8px;padding:4px 8px;margin-bottom:8px;">❓💬 ${esc(o.unknown_note)}</div>` : ""}
+            ${o.is_unknown && o.unknown_note ? `<div style="background:rgba(245,158,11,0.12);color:#B45309;border:1px solid rgba(245,158,11,0.4);font-size:11px;font-weight:600;border-radius:8px;padding:4px 8px;margin-bottom:8px;">❓💬 <b>${(o.unknown_note_by || o.unknown_note_at) ? esc(((drivers || []).find((dd) => dd.id === o.unknown_note_by) || {}).name || "Жолооч") + (o.unknown_note_at ? " · " + new Date(o.unknown_note_at).toLocaleString("mn-MN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "") + ": " : ""}</b>${esc(o.unknown_note)}</div>` : ""}
             ${(items[o.id] && items[o.id].length)
               ? `<div style="background:#f1f5f9;border-radius:8px;padding:${compact ? "5px 7px" : "7px 9px"};margin-bottom:${compact ? 6 : 8}px;${compact ? "max-height:92px;overflow-y:auto;" : ""}">
                    <div style="color:#64748b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">🛍 Бараа (${items[o.id].length})</div>
@@ -39567,7 +39582,7 @@ function DriverDashboard({ profile }) {
                   if (!note) { alert("⚠ Шалтгаан/сэтгэгдэл заавал бичнэ үү!"); return; }
                   setUnknownSaving(true);
                   try {
-                    const { error } = await supabase.from("biz_orders").update({ is_unknown: true, driver_id: null, unknown_note: note }).eq("id", unknownTarget.id);
+                    const { error } = await supabase.from("biz_orders").update({ is_unknown: true, driver_id: null, unknown_note: note, unknown_note_by: profile.id, unknown_note_at: new Date().toISOString() }).eq("id", unknownTarget.id);
                     if (error) throw error;
                     // 📜 Түүхэнд сэтгэгдэлтэй бичилт (алдвал чимээгүй — audit trigger ерөнхийг нь бүртгэнэ)
                     try {
