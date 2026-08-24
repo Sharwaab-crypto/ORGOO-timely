@@ -20853,17 +20853,31 @@ function DriverSettlementView({ profile }) {
               }).select().single();
               if (stErr) throw stErr;
 
-              // 2. Захиалгуудыг холбох — 🛡 ЗӨВХӨН одоо ч settle-гүй (settlement_id IS NULL)
-              //    мөрийг atomic-аар авна. (Өмнө нөхцөлгүй дарж бичдэг байсан нь хуучирсан
-              //    дэлгэцтэй үед ХААГДСАН тооцооны захиалгыг хулгайлж, №1-ийг хоосолдог байсан!)
-              let claimed = 0;
-              for (const o of [...driver.deliveredOrders, ...driver.cancelledOrders]) {
-                const { data: cl } = await supabase.from("biz_orders")
-                  .update({ settlement_id: stData.id })
-                  .eq("id", o.id)
-                  .is("settlement_id", null)
-                  .select("id");
-                if (cl && cl.length > 0) claimed++;
+              // 2. Захиалгуудыг холбох — 🛡 ЖАГСААЛТААР БИШ, НӨХЦӨЛӨӨР нэг UPDATE:
+              //    дэлгэцэд ачаалагдсан жагсаалт дутуу/хуучирсан байсан ч жолоочийн settle-гүй
+              //    БҮХ захиалга серверээс шууд холбогдоно. (2026-08-24: тамга=50, холболт=26
+              //    зөрсөн осол — жагсаалтад 24 нь ачаалагдаагүй байснаас үүдсэн.)
+              const { data: cl, error: clErr } = await supabase.from("biz_orders")
+                .update({ settlement_id: stData.id })
+                .eq("driver_id", driver.id)
+                .in("status", ["delivered", "cancelled"])
+                .is("settlement_id", null)
+                .select("id, status, total_amount");
+              if (clErr) throw clErr;
+              const claimedRows = cl || [];
+              const claimed = claimedRows.length;
+              // 🛡 ТАМГА = ХОЛБОГДСОН БОДИТ ҮР ДҮН — тамга ба жагсаалт хэзээ ч зөрөхгүй
+              const claimedDelivered = claimedRows.filter((x) => x.status === "delivered");
+              const claimedDeliveredTotal = claimedDelivered.reduce((s, x) => s + Number(x.total_amount || 0), 0);
+              if (claimed > 0) {
+                await supabase.from("biz_settlements").update({
+                  order_count: claimedDelivered.length,
+                  delivered_total: claimedDeliveredTotal,
+                  settlement_amount: claimedDeliveredTotal - Number(driver.paidAlready || 0),
+                }).eq("id", stData.id);
+                if (claimedDelivered.length !== Number(driver.delivered || 0)) {
+                  console.warn("[тооцоо-нээх] Дэлгэц vs бодит холболт зөрөв:", driver.delivered, "→", claimedDelivered.length, "— тамгыг бодитоор бичив");
+                }
               }
               if (claimed === 0) {
                 // Бүгд аль хэдийн өөр тооцоонд — хуучирсан дэлгэц. Хоосон нээлтийг цэвэрлэнэ.
@@ -21858,30 +21872,29 @@ function DriverSettlementView({ profile }) {
           }).select().single();
           if (stErr) throw stErr;
 
-          // 2. Захиалгуудыг settlement-руу холбох (bulk update)
-          const orderIds = [
-            ...d.deliveredOrders.map((o) => o.id),
-            ...d.cancelledOrders.map((o) => o.id),
-          ];
-          if (orderIds.length > 0) {
-            // 🛡 ЗӨВХӨН одоо ч settle-гүй (settlement_id IS NULL) мөрийг atomic-аар авна —
-            //    хуучирсан дэлгэцтэй үед ХААГДСАН тооцооноос хулгайлахаас сэргийлнэ.
-            const CH = 200;
-            let claimed = 0;
-            for (let i = 0; i < orderIds.length; i += CH) {
-              const chunk = orderIds.slice(i, i + CH);
-              const { data: cl, error: updErr } = await supabase.from("biz_orders")
-                .update({ settlement_id: stData.id })
-                .in("id", chunk)
-                .is("settlement_id", null)
-                .select("id");
-              if (updErr) throw updErr;
-              claimed += (cl || []).length;
-            }
-            if (claimed === 0) {
-              await supabase.from("biz_settlements").delete().eq("id", stData.id).eq("status", "open");
-              throw new Error("захиалгууд нь өөр тооцоонд орсон байна (дэлгэц хуучирсан)");
-            }
+          // 2. Захиалгуудыг холбох — 🛡 ЖАГСААЛТААР БИШ, НӨХЦӨЛӨӨР (bulk flow, ижил засвар)
+          const { data: clB, error: updErr } = await supabase.from("biz_orders")
+            .update({ settlement_id: stData.id })
+            .eq("driver_id", d.id)
+            .in("status", ["delivered", "cancelled"])
+            .is("settlement_id", null)
+            .select("id, status, total_amount");
+          if (updErr) throw updErr;
+          const claimedRowsB = clB || [];
+          if (claimedRowsB.length === 0) {
+            await supabase.from("biz_settlements").delete().eq("id", stData.id).eq("status", "open");
+            throw new Error("захиалгууд нь өөр тооцоонд орсон байна (дэлгэц хуучирсан)");
+          }
+          // 🛡 Тамга = холболтын бодит үр дүн
+          const claimedDeliveredB = claimedRowsB.filter((x) => x.status === "delivered");
+          const claimedDeliveredTotalB = claimedDeliveredB.reduce((s, x) => s + Number(x.total_amount || 0), 0);
+          await supabase.from("biz_settlements").update({
+            order_count: claimedDeliveredB.length,
+            delivered_total: claimedDeliveredTotalB,
+            settlement_amount: claimedDeliveredTotalB - Number(d.paidAlready || 0),
+          }).eq("id", stData.id);
+          if (claimedDeliveredB.length !== Number(d.delivered || 0)) {
+            console.warn("[тооцоо-нээх(bulk)] Дэлгэц vs бодит зөрөв:", d.delivered, "→", claimedDeliveredB.length);
           }
           
           successCount++;
@@ -22840,7 +22853,7 @@ function SettlementReportsView({ profile }) {
 
   // Шүүсэн жагсаалт
   const filteredReports = reports.filter((r) => {
-    const d = new Date(r.settled_at);
+    const d = new Date(r.settled_at || r.created_at); // нээлттэй (settled_at=null) үед 1970 гарахаас сэргийлнэ
     if (filterYear !== "all" && d.getFullYear() !== Number(filterYear)) return false;
     if (filterMonth !== "all" && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterDriver !== "all" && r.driver_id !== filterDriver) return false;
@@ -22871,7 +22884,7 @@ function SettlementReportsView({ profile }) {
   const totalSettlements = filteredReports.length;
 
   // Хэрэглэгчдэд харагдах боломжит он/сар
-  const yearsAvail = [...new Set(reports.map((r) => new Date(r.settled_at).getFullYear()))].sort((a, b) => b - a);
+  const yearsAvail = [...new Set(reports.map((r) => new Date(r.settled_at || r.created_at).getFullYear()))].sort((a, b) => b - a);
   const monthsAvail = [
     { v: "1", n: "1-р сар" }, { v: "2", n: "2-р сар" }, { v: "3", n: "3-р сар" },
     { v: "4", n: "4-р сар" }, { v: "5", n: "5-р сар" }, { v: "6", n: "6-р сар" },
@@ -22908,7 +22921,7 @@ function SettlementReportsView({ profile }) {
               🚚 {drv?.name || "Хүргэгч"}
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-              {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+              {r.settled_at ? new Date(r.settled_at).toLocaleString("mn-MN") : `Нээгдсэн: ${new Date(r.created_at).toLocaleString("mn-MN")}`} · {r.period_label}
             </div>
           </div>
           <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}
@@ -23172,13 +23185,13 @@ function SettlementReportsView({ profile }) {
                   <div style={{ background: "rgba(59,130,246,0.1)" }} className="rounded-lg p-2">
                     <div style={{ color: "#3b82f6", fontFamily: FM }} className="text-[9px] uppercase">💰 Урьдч.</div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: "#3b82f6" }} className="text-base tabular-nums">
-                      {settlementOrders.filter(o => Number(o.prepaid_amount || 0) > 0).length}
+                      {settlementOrders.filter(o => (r.status === "open" ? Math.max(Number(o.prepaid_amount || 0), Number(o.paid_amount || 0)) : Number(o.prepaid_amount || 0)) > 0).length}
                     </div>
                   </div>
                   <div style={{ background: "rgba(16,185,129,0.06)" }} className="rounded-lg p-2">
                     <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">💸 Урьдч.дүн</div>
                     <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xs tabular-nums">
-                      {settlementOrders.reduce((s, o) => s + Number(o.prepaid_amount || 0), 0).toLocaleString()}₮
+                      {settlementOrders.reduce((s, o) => s + (r.status === "open" ? Math.max(Number(o.prepaid_amount || 0), Number(o.paid_amount || 0)) : Number(o.prepaid_amount || 0)), 0).toLocaleString()}₮
                     </div>
                   </div>
                 </div>
@@ -23638,7 +23651,7 @@ function SettlementReportsView({ profile }) {
                         🚚 {drv?.name || "Хүргэгч"}
                       </div>
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-                        {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+                        {r.settled_at ? new Date(r.settled_at).toLocaleString("mn-MN") : `Нээгдсэн: ${new Date(r.created_at).toLocaleString("mn-MN")}`} · {r.period_label}
                       </div>
                     </div>
                     <div className="text-right">
@@ -37770,7 +37783,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
               Хаагдсан тооцоо
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
-              {new Date(r.settled_at).toLocaleString("mn-MN")} · {r.period_label}
+              {r.settled_at ? new Date(r.settled_at).toLocaleString("mn-MN") : `Нээгдсэн: ${new Date(r.created_at).toLocaleString("mn-MN")}`} · {r.period_label}
             </div>
           </div>
         </div>
