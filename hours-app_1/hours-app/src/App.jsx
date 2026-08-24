@@ -13978,8 +13978,11 @@ function CallCenterView({ profile }) {
           else gapPhones = (gapRows || []).map((r) => r.phone).filter(Boolean);
         } catch (e) { console.error("[gap pendings]", e); }
         const inWin = new Set(callData.map((cc) => cc.phone));
-        const oldPhones = [...new Set([...(oldPend || []).map((r) => r.phone).filter(Boolean), ...gapPhones])]
-          .filter((ph) => !inWin.has(ph)).slice(0, 1500);
+        // ⚠ ДАРААЛАЛ ЧУХАЛ: сохор бүсийн (шинэ, яаралтай) дугаарууд ЭХЭНДЭЭ — эс бөгөөс
+        //    >60 хоногийн хуучин олон мянган pending урд орж, slice таслахад сохор бүсийнхэн
+        //    бүгд тайрагдаж байсан (824 дугаар RPC-ээс ирсэн ч жагсаалтад орохгүй байсны шалтгаан).
+        const oldPhones = [...new Set([...gapPhones, ...(oldPend || []).map((r) => r.phone).filter(Boolean)])]
+          .filter((ph) => !inWin.has(ph)).slice(0, 2000);
         if (oldPhones.length > 0) {
           const extraRows = await fetchInChunks("biz_calls", oldPhones, {
             select: callCols, filterColumn: "phone", chunkSize: 150, parallel: 8,
