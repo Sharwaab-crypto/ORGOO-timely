@@ -1,4 +1,8 @@
-// BUILD: v2026.08.24-gap-fix (sohor bus RPC + buren tuuh + stock-prep + order-requests + callpro rollback)
+// BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
+// ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
+//   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
+const BUILD_VERSION = "v2026.08.24-gap-fix2";
+console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -13952,6 +13956,11 @@ function CallCenterView({ profile }) {
         ordersQuery,
       ]);
       let callData = callRes.data || [];
+      // 🔔 ХАМГААЛАЛТ: цонхны хязгаарт хүрсэн бол хилийн огноог ил мэдээлнэ —
+      //    "хуучин мөр харагдахгүй байна" гэх гомдлыг секундэд оношлох гарц
+      if (callData.length >= 3000) {
+        console.info("⚠ biz_calls цонх 3000-мөрийн хязгаартаа хүрэв — үзэгдэх хамгийн хуучин цэг:", callData[callData.length - 1]?.created_at);
+      }
       // ⏳ "ЗАЛГАХ ДУГААР = БҮХ ЦАГ": 60-хоногийн цонхноос ГАДУУРХ шийдэгдээгүй
       //    байж болзошгүй pending-тэй дугааруудын БҮРЭН түүхийг нэмж татна.
       //    (Хуучин unresolved нь calling таб-д гарч, resolved нь дотоод логикоор автоматаар шүүгдэнэ.
@@ -13981,8 +13990,13 @@ function CallCenterView({ profile }) {
         // ⚠ ДАРААЛАЛ ЧУХАЛ: сохор бүсийн (шинэ, яаралтай) дугаарууд ЭХЭНДЭЭ — эс бөгөөс
         //    >60 хоногийн хуучин олон мянган pending урд орж, slice таслахад сохор бүсийнхэн
         //    бүгд тайрагдаж байсан (824 дугаар RPC-ээс ирсэн ч жагсаалтад орохгүй байсны шалтгаан).
-        const oldPhones = [...new Set([...gapPhones, ...(oldPend || []).map((r) => r.phone).filter(Boolean)])]
-          .filter((ph) => !inWin.has(ph)).slice(0, 2000);
+        const combinedPhones = [...new Set([...gapPhones, ...(oldPend || []).map((r) => r.phone).filter(Boolean)])]
+          .filter((ph) => !inWin.has(ph));
+        const oldPhones = combinedPhones.slice(0, 2000);
+        // 🔔 ХАМГААЛАЛТ: таслалт ЧИМЭЭГҮЙ өнгөрөхгүй — хэтэрвэл console-д тоотой нь мэдээлнэ
+        if (combinedPhones.length > oldPhones.length) {
+          console.warn("[залгах-дугаар] 2000-ын багтаамж хэтэрч таслагдлаа:", combinedPhones.length, "→", oldPhones.length, "— хязгаарыг нэмэх эсвэл хуучныг цэвэрлэх хэрэгтэй");
+        }
         if (oldPhones.length > 0) {
           const extraRows = await fetchInChunks("biz_calls", oldPhones, {
             select: callCols, filterColumn: "phone", chunkSize: 150, parallel: 8,
