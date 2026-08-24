@@ -13757,7 +13757,8 @@ function LowStockAlertBanner() {
 // ═══════════════════════════════════════════════════════════════════════════
 function CcIssuesPanel({ profile, onCountChange }) {
   const [issues, setIssues] = useState([]);   // null = хүснэгт байхгүй
-  const [orders, setOrders] = useState({});   // { order_id: {order_number, customer_phone} }
+  const [orders, setOrders] = useState({});   // { order_id: {order_number, customer_phone, total_amount} }
+  const [itemsMap, setItemsMap] = useState({}); // { order_id: [{product_name, quantity}] }
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -13776,11 +13777,15 @@ function CcIssuesPanel({ profile, onCountChange }) {
       setIssues(rows || []);
       const oids = [...new Set((rows || []).map((r) => r.order_id).filter(Boolean))];
       if (oids.length) {
-        const ords = await fetchInChunks("biz_orders", oids, { select: "id, order_number, customer_phone", chunkSize: 150, parallel: 4 });
+        const ords = await fetchInChunks("biz_orders", oids, { select: "id, order_number, customer_phone, total_amount", chunkSize: 150, parallel: 4 });
         const om = {};
         (ords || []).forEach((o) => { om[o.id] = o; });
         setOrders(om);
-      } else setOrders({});
+        const its = await fetchInChunks("biz_order_items", oids, { select: "order_id, product_name, quantity", filterColumn: "order_id", chunkSize: 150, parallel: 4 });
+        const im = {};
+        (its || []).forEach((x) => { (im[x.order_id] = im[x.order_id] || []).push(x); });
+        setItemsMap(im);
+      } else { setOrders({}); setItemsMap({}); }
     } catch (e) {
       console.error("[cc-issues]", e);
       setIssues(null);
@@ -13887,6 +13892,23 @@ function CcIssuesPanel({ profile, onCountChange }) {
                   {o.order_number ? ` · 📦 ${o.order_number}` : ""}
                   {o.customer_phone ? ` · 📞 ${o.customer_phone}` : ""}
                 </div>
+                {((itemsMap[it.order_id] || []).length > 0 || o.total_amount != null) && (
+                  <div className="text-[10px] mt-1 flex flex-wrap items-center gap-1" style={{ fontFamily: FM }}>
+                    {(itemsMap[it.order_id] || []).slice(0, 4).map((x, i) => (
+                      <span key={i} className="px-1.5 py-0.5 rounded" style={{ background: T.surfaceAlt, color: T.inkSoft }}>
+                        🛍 {x.product_name} ×{x.quantity}
+                      </span>
+                    ))}
+                    {(itemsMap[it.order_id] || []).length > 4 && (
+                      <span style={{ color: T.mutedSoft }}>+{(itemsMap[it.order_id] || []).length - 4}</span>
+                    )}
+                    {o.total_amount != null && (
+                      <span className="px-1.5 py-0.5 rounded" style={{ background: T.okSoft, color: T.ok, fontWeight: 700 }}>
+                        💰 {Number(o.total_amount).toLocaleString()}₮
+                      </span>
+                    )}
+                  </div>
+                )}
                 {it.status !== "new" && it.resolved_at && (
                   <div className="text-[10px] mt-0.5" style={{ color: T.mutedSoft, fontFamily: FM }}>
                     Ангилсан: {people[it.resolved_by] || "?"} · {dfmt(it.resolved_at)}
@@ -38261,7 +38283,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
 //  DRIVER ISSUES PANEL — 💬 Жолоочийн өөрийн мэдэгдсэн асуудлууд (popup)
 //  Төлөв + операторын шийдлийн тайлбар realtime харагдана.
 // ═══════════════════════════════════════════════════════════════════════════
-function DriverIssuesPanel({ profile, onClose }) {
+function DriverIssuesPanel({ profile }) {
   const [issues, setIssues] = useState([]);
   const [orders, setOrders] = useState({});
   const [people, setPeople] = useState({});
@@ -38309,14 +38331,11 @@ function DriverIssuesPanel({ profile, onClose }) {
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
-      <div className="glass rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: "85vh", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-3 flex-shrink-0" style={{ borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💬 Миний мэдэгдсэн асуудлууд ({issues.length})</div>
-          <button onClick={onClose} className="press-btn px-2 py-1 rounded-lg" style={{ color: T.muted }}>✕</button>
-        </div>
-        <div className="p-3 space-y-2 overflow-y-auto">
+  return (
+    <div className="space-y-2">
+      <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm px-1">
+        💬 Миний мэдэгдсэн асуудлууд ({issues.length})
+      </div>
           {loading ? (
             <div className="text-center p-6"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
           ) : issues.length === 0 ? (
@@ -38345,10 +38364,7 @@ function DriverIssuesPanel({ profile, onClose }) {
               </div>
             );
           })}
-        </div>
-      </div>
-    </div>,
-    document.body
+    </div>
   );
 }
 
@@ -39171,9 +39187,9 @@ function DriverDashboard({ profile }) {
             }}>
             ✕ Цуцалсан ({counts.cancelled})
           </button>
-          <button onClick={() => setShowMyIssues(true)}
+          <button onClick={() => setShowMyIssues((v) => !v)}
             className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1"
-            style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid #3b82f6", fontFamily: FS, fontWeight: 600, minWidth: "80px" }}>
+            style={{ background: showMyIssues ? "#3b82f6" : "rgba(59,130,246,0.1)", color: showMyIssues ? "white" : "#3b82f6", border: "1px solid #3b82f6", fontFamily: FS, fontWeight: 600, minWidth: "80px" }}>
             💬 Асуудал
             {myIssueCount > 0 && (
               <span className="text-[10px] px-1.5 rounded-full font-bold" style={{ background: "#3b82f6", color: "white" }}>
@@ -39182,7 +39198,6 @@ function DriverDashboard({ profile }) {
             )}
           </button>
         </div>
-        {showMyIssues && <DriverIssuesPanel profile={profile} onClose={() => setShowMyIssues(false)} />}
 
         {/* 🔍 Хайх — дугаар, нэр, хаяг, захиалгын ID */}
         <div className="glass rounded-2xl p-2 flex items-center gap-2">
@@ -39217,7 +39232,9 @@ function DriverDashboard({ profile }) {
         </div>
 
         {/* Orders list / Map */}
-        {loading ? (
+        {showMyIssues ? (
+          <DriverIssuesPanel profile={profile} />
+        ) : loading ? (
           <div className="glass rounded-2xl p-8 text-center">
             <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
           </div>
