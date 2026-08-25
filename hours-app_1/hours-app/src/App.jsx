@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.24-settle-guard";
+const BUILD_VERSION = "v2026.08.25-cc-cache";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14021,6 +14021,9 @@ function CallCenterView({ profile }) {
   //    алга болдог байсан. Харагдаж буй хуудасны дугааруудын бүх цагийн түүхийг нэмж татна.
   const [fullHist, setFullHist] = useState({}); // { phone: rows[] }
   const fullHistReq = useRef(new Set());        // давхар татахаас сэргийлэх
+  // 🚀 Сохор бүс/хуучин pending-ийн түүх + бараа — 5 минутын session кэш
+  //    (realtime бүрд 30+ хүсэлтийн шуурга давтагдаж самбар гацдаг байсны засвар)
+  const supplCacheRef = useRef({ at: 0, rows: [], phones: null, prodRows: [] });
   const ensureHistories = (phones) => {
     const need = (phones || []).filter((p) => p && !fullHistReq.current.has(p));
     if (need.length === 0) return;
@@ -14191,6 +14194,13 @@ function CallCenterView({ profile }) {
       //    (Хуучин unresolved нь calling таб-д гарч, resolved нь дотоод логикоор автоматаар шүүгдэнэ.
       //     Merchant дээр page-шүүлттэй адилхан — хоёр талын жагсаалт таарна.)
       try {
+        // 🚀 ГАЦАА ЗАСВАР (08/25): энэ блок ~15-30 хүсэлт үүсгэдэг тул 5 минутын кэштэй.
+        //    Шийдэгдэлт нь цонхны шинэ мөрөөр ирдэг учир кэш хуучирсан ч cycle зөв хаагдана.
+        const SUPPL_TTL = 5 * 60 * 1000;
+        if (supplCacheRef.current.rows.length > 0 && Date.now() - supplCacheRef.current.at < SUPPL_TTL) {
+          const inWinC = new Set(callData.map((cc) => cc.phone));
+          callData = callData.concat(supplCacheRef.current.rows.filter((r) => !inWinC.has(r.phone)));
+        } else {
         let oldPendQ = supabase.from("biz_calls").select("phone")
           .eq("call_status", "pending").lt("created_at", calls60Days)
           .order("created_at", { ascending: false }).limit(4000);
@@ -14226,7 +14236,12 @@ function CallCenterView({ profile }) {
           const extraRows = await fetchInChunks("biz_calls", oldPhones, {
             select: callCols, filterColumn: "phone", chunkSize: 150, parallel: 8,
           });
-          if (Array.isArray(extraRows) && extraRows.length > 0) callData = callData.concat(extraRows);
+          const okRows = Array.isArray(extraRows) ? extraRows : [];
+          if (okRows.length > 0) callData = callData.concat(okRows);
+          supplCacheRef.current = { at: Date.now(), rows: okRows, phones: new Set(okRows.map((r) => r.phone)), prodRows: [] };
+        } else {
+          supplCacheRef.current = { at: Date.now(), rows: [], phones: new Set(), prodRows: [] };
+        }
         }
       } catch (e) { console.error("[old pendings]", e); }
       const ordData = ordRes.data;
@@ -14242,7 +14257,11 @@ function CallCenterView({ profile }) {
           //    ДЭЛГЭЦЭНД харагдах утаснуудын (callData доторх) pending барааг chunk-оор
           //    ЗЭРЭГЦЭЭ татна. Өмнө 60 хоногт ч 30,000+ pending байсан тул 30 дараалсан
           //    хүсэлт (~13 сек) үүсгэж байсан — одоо 5-10 зэрэгцээ жижиг хүсэлт.
-          const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))];
+          // 🚀 Кэш: supplement-ийн хуучин дугааруудын бараа өөрчлөгддөггүй — кэшээс авна
+          const cachedProd = supplCacheRef.current.prodRows || [];
+          const cachedProdPhones = new Set(cachedProd.map((r) => r.phone));
+          const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))]
+            .filter((p) => !cachedProdPhones.has(p));
           // ⚠ 200-утасны багцад limit(1000) хүрч ХУУЧИН pending-үүд тайрагддаг байсан
           //   (7-р сарын бараатай pending map-д ордоггүй) → 50 болгож багтаамж 4×.
           // ⚡ Lossless + зэрэгцээ: chunk бүр дотроо page-лэдэг (тайралтгүй),
@@ -14258,8 +14277,13 @@ function CallCenterView({ profile }) {
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
           //    хуучин шийдэгдээгүй pending эсвэл захиалгын бараа шинэ дуудлагын картад
           //    буруугаар нэмэгдэхгүй.)
+          const withProductsAll = [...cachedProd, ...(withProducts || [])];
+          // Шинээр татсанаас supplement-ийн дугаарынхыг кэшид хадгална (дараагийн load-уудад)
+          if (cachedProd.length === 0 && supplCacheRef.current.phones) {
+            supplCacheRef.current.prodRows = withProductsAll.filter((r) => supplCacheRef.current.phones.has(r.phone));
+          }
           const latestPendingByPhone = {}; // phone → {created_at, products}
-          (withProducts || []).forEach((c) => {
+          withProductsAll.forEach((c) => {
             if (!c.interested_products || !Array.isArray(c.interested_products)) return;
             if (c.call_status !== "pending" && c.call_status) return; // зөвхөн pending (эсвэл статусгүй)
             const prev = latestPendingByPhone[c.phone];
