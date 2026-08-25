@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.24-note-sign";
+const BUILD_VERSION = "v2026.08.24-settle-guard";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21168,13 +21168,20 @@ function DriverSettlementView({ profile }) {
                 }).eq("id", driver.openSettle.id);
                 if (updErr) throw updErr;
 
-                // Захиалгуудын paid_amount шинэчлэх (delivered)
-                // 💰 prepaid_amount-руу хуучин paid_amount хадгалах (тайланд харагдуулах)
-                for (const o of driver.deliveredOrders) {
+                // 🛡 K2 ЗАСВАР (аудит 08/24): тамгалалтыг ДЭЛГЭЦИЙН жагсаалтаар биш —
+                //    энэ тооцоонд СЕРВЕР дээр бодитоор холбогдсон мөрүүдээр хийнэ.
+                //    (Хуучирсан дэлгэцтэй үед шинээр холбогдсон захиалгын paid орхигддог байсан.)
+                const { data: freshDel, error: fdErr } = await supabase.from("biz_orders")
+                  .select("id, total_amount, paid_amount, prepaid_amount")
+                  .eq("settlement_id", driver.openSettle.id).eq("status", "delivered");
+                if (fdErr) throw fdErr;
+                if ((freshDel || []).length !== driver.deliveredOrders.length) {
+                  console.warn("[тооцоо-хаах] Дэлгэц vs сервер зөрөв:", driver.deliveredOrders.length, "→", (freshDel || []).length, "— серверийн жагсаалтаар тамгалав");
+                }
+                for (const o of freshDel || []) {
                   await supabase.from("biz_orders").update({
                     // 💰 Хаахаас ӨМНӨ төлөгдсөн (шилжүүлэг г.м) дүнг тайланд харуулахын тулд
                     //    prepaid-д хадгална. max() — үүсгэлтийн урьдчилгааг дарахгүй.
-                    //    (Давхар-хаалтын бохирдол claim-guard-аар хаагдсан.)
                     prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
                     paid_amount: Number(o.total_amount || 0),
                   }).eq("id", o.id);
@@ -21199,19 +21206,38 @@ function DriverSettlementView({ profile }) {
                 }).select().single();
                 if (stErr) throw stErr;
 
-                for (const o of driver.deliveredOrders) {
+                // 🛡 K1 ЗАСВАР (аудит 08/24): өмнө нь дэлгэцийн жагсаалтаар, guard-ГҮЙ холбодог
+                //    байсан — хаагдсан тооцооноос захиалга булаах + дутуу холболт (50/26 осол)
+                //    хоёуланг нь нэг мөсөн хаана: нөхцөлөөр bulk claim + тамга=бодит үр дүн.
+                const { data: clD, error: clDErr } = await supabase.from("biz_orders")
+                  .update({ settlement_id: stData.id })
+                  .eq("driver_id", driver.id)
+                  .in("status", ["delivered", "cancelled"])
+                  .is("settlement_id", null)
+                  .select("id, status, total_amount, paid_amount, prepaid_amount");
+                if (clDErr) throw clDErr;
+                const clRows = clD || [];
+                if (clRows.length === 0) {
+                  await supabase.from("biz_settlements").delete().eq("id", stData.id);
+                  throw new Error("Захиалгууд өөр тооцоонд орсон байна (дэлгэц хуучирсан) — хуудсаа шинэчлээд дахин үзнэ үү");
+                }
+                const clDel = clRows.filter((x) => x.status === "delivered");
+                const clDelTotal = clDel.reduce((s, x) => s + Number(x.total_amount || 0), 0);
+                const clPaidAlready = clDel.reduce((s, x) => s + Number(x.paid_amount || 0), 0);
+                // Тамга = холболтын БОДИТ үр дүн (тоолол, дүн, урьдчилгаа)
+                await supabase.from("biz_settlements").update({
+                  order_count: clDel.length,
+                  delivered_total: clDelTotal,
+                  paid_already: clPaidAlready,
+                  settlement_amount: clDelTotal - clPaidAlready,
+                }).eq("id", stData.id);
+                if (clDel.length !== Number(driver.delivered || 0)) {
+                  console.warn("[шууд-хаах] Дэлгэц vs бодит зөрөв:", driver.delivered, "→", clDel.length, "— тамгыг бодитоор бичив");
+                }
+                for (const o of clDel) {
                   await supabase.from("biz_orders").update({
-                    settlement_id: stData.id,
-                    // 💰 Хаахаас ӨМНӨ төлөгдсөн (шилжүүлэг г.м) дүнг тайланд харуулахын тулд
-                    //    prepaid-д хадгална. max() — үүсгэлтийн урьдчилгааг дарахгүй.
-                    //    (Давхар-хаалтын бохирдол claim-guard-аар хаагдсан.)
                     prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
                     paid_amount: Number(o.total_amount || 0),
-                  }).eq("id", o.id);
-                }
-                for (const o of driver.cancelledOrders) {
-                  await supabase.from("biz_orders").update({
-                    settlement_id: stData.id,
                   }).eq("id", o.id);
                 }
               }
