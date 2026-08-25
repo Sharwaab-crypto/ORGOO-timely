@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.25-cc-cache";
+const BUILD_VERSION = "v2026.08.25-cc-cache2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14023,7 +14023,25 @@ function CallCenterView({ profile }) {
   const fullHistReq = useRef(new Set());        // давхар татахаас сэргийлэх
   // 🚀 Сохор бүс/хуучин pending-ийн түүх + бараа — 5 минутын session кэш
   //    (realtime бүрд 30+ хүсэлтийн шуурга давтагдаж самбар гацдаг байсны засвар)
-  const supplCacheRef = useRef({ at: 0, rows: [], phones: null, prodRows: [] });
+  const supplCacheRef = useRef(null);
+  if (supplCacheRef.current === null) {
+    // 🚀 sessionStorage-оос сэргээнэ — хуудас refresh хийсэн ч 5 минутын дотор шуурга давтагдахгүй
+    let hydrated = { at: 0, rows: [], phones: null, prodRows: [] };
+    try {
+      const s = sessionStorage.getItem("cc_suppl_cache_v1");
+      if (s) {
+        const p = JSON.parse(s);
+        hydrated = { at: p.at || 0, rows: p.rows || [], prodRows: p.prodRows || [], phones: new Set((p.rows || []).map((r) => r.phone)) };
+      }
+    } catch (e) { /* parse/quota — хоосноос эхэлнэ */ }
+    supplCacheRef.current = hydrated;
+  }
+  const saveSupplCache = () => {
+    try {
+      const c = supplCacheRef.current;
+      sessionStorage.setItem("cc_suppl_cache_v1", JSON.stringify({ at: c.at, rows: c.rows, prodRows: c.prodRows }));
+    } catch (e) { /* хэмжээ хэтэрвэл алгасна — дараагийн load шинээр татна */ }
+  };
   const ensureHistories = (phones) => {
     const need = (phones || []).filter((p) => p && !fullHistReq.current.has(p));
     if (need.length === 0) return;
@@ -14239,8 +14257,10 @@ function CallCenterView({ profile }) {
           const okRows = Array.isArray(extraRows) ? extraRows : [];
           if (okRows.length > 0) callData = callData.concat(okRows);
           supplCacheRef.current = { at: Date.now(), rows: okRows, phones: new Set(okRows.map((r) => r.phone)), prodRows: [] };
+          saveSupplCache();
         } else {
           supplCacheRef.current = { at: Date.now(), rows: [], phones: new Set(), prodRows: [] };
+          saveSupplCache();
         }
         }
       } catch (e) { console.error("[old pendings]", e); }
@@ -14281,6 +14301,7 @@ function CallCenterView({ profile }) {
           // Шинээр татсанаас supplement-ийн дугаарынхыг кэшид хадгална (дараагийн load-уудад)
           if (cachedProd.length === 0 && supplCacheRef.current.phones) {
             supplCacheRef.current.prodRows = withProductsAll.filter((r) => supplCacheRef.current.phones.has(r.phone));
+            saveSupplCache();
           }
           const latestPendingByPhone = {}; // phone → {created_at, products}
           withProductsAll.forEach((c) => {
