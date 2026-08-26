@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.25-shift-report";
+const BUILD_VERSION = "v2026.08.25-shift-report2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2579,6 +2579,7 @@ function AdminDashboard({ profile }) {
               {!isMarketing && (
                 <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               )}
+              <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
@@ -2721,6 +2722,7 @@ function AdminDashboard({ profile }) {
                 {view === "stockcount" && "Тооллого"}
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
+                {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "marketing" && "Маркетинг"}
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
@@ -2740,6 +2742,7 @@ function AdminDashboard({ profile }) {
                 {view === "approvals" && "Хүсэлт"}
                 {view === "leaves" && "Чөлөө"}
                 {view === "ledger" && "Тэмдэглэл"}
+                {view === "op-shift-report" && "Ээлжийн тайлан"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${employees.length} ажилтан · ${activeCount} ажиллаж байна`}
@@ -3009,6 +3012,10 @@ function AdminDashboard({ profile }) {
 
         {view === "callcenter" && (
           <CallCenterView profile={profile} />
+        )}
+
+        {view === "op-shift-report" && (
+          <OperatorShiftReportView profile={profile} canEdit={true} />
         )}
 
         {view === "operator-kpi" && (
@@ -33827,7 +33834,7 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  Ногдох = нийт хандалт ÷ сонгогдсон ажилчдын тоо.
 //  Хувь = ажилтны ordered мөр ÷ ногдох × 100. Хил: Өглөө 00–15, Орой 15–21 (SHIFTS-ээс өөрчилнө).
 // ═══════════════════════════════════════════════════════════════════════════
-function OperatorShiftReportView({ profile }) {
+function OperatorShiftReportView({ profile, canEdit = false }) {
   const SHIFTS = [
     { key: "morning", label: "🌅 Өглөө ээлж", sub: "00:00 – 15:00", startH: 0, endH: 15 },
     { key: "evening", label: "🌇 Орой ээлж", sub: "15:00 – 21:00", startH: 15, endH: 21 },
@@ -33840,16 +33847,34 @@ function OperatorShiftReportView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState({ morning: [], evening: [] });
 
-  // Сонголт өдөр бүрээр localStorage-д (Ө5 сургамж: try/catch-тай)
-  useEffect(() => {
+  // 🗄 Ээлжийн бүрэлдэхүүн — op_shift_selections хүснэгтэд БҮГДЭД НЭГ:
+  //    админ/ахлах сонгоно, оператор зөвхөн харна; realtime тул өөрчлөлт шууд тусна.
+  const loadSel = async () => {
     try {
-      const s = localStorage.getItem(`opShiftSel:${date}`);
-      setSel(s ? JSON.parse(s) : { morning: [], evening: [] });
-    } catch (e) { setSel({ morning: [], evening: [] }); }
+      const { data, error } = await supabase.from("op_shift_selections")
+        .select("shift, worker_ids").eq("date", date);
+      if (error) throw error;
+      const nx = { morning: [], evening: [] };
+      (data || []).forEach((r) => {
+        if (nx[r.shift] !== undefined) nx[r.shift] = Array.isArray(r.worker_ids) ? r.worker_ids : [];
+      });
+      setSel(nx);
+    } catch (e) { console.error("[shift-report sel]", e); }
+  };
+  useEffect(() => { loadSel(); }, [date]);
+  useEffect(() => {
+    const ch = supabase.channel("op-shift-sel-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "op_shift_selections" }, () => loadSel())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [date]);
-  const saveSel = (nx) => {
-    setSel(nx);
-    try { localStorage.setItem(`opShiftSel:${date}`, JSON.stringify(nx)); } catch (e) { /* quota */ }
+  const saveSel = async (shiftKey, ids) => {
+    setSel((p) => ({ ...p, [shiftKey]: ids }));
+    const { error } = await supabase.from("op_shift_selections").upsert(
+      { date, shift: shiftKey, worker_ids: ids, updated_by: profile.id, updated_at: new Date().toISOString() },
+      { onConflict: "date,shift" }
+    );
+    if (error) alert("⚠ Сонголт хадгалагдсангүй: " + error.message);
   };
 
   // Операторын хэлтсийн идэвхтэй ажилчид (хэлтэс олдохгүй бол бүх идэвхтэй)
@@ -33915,8 +33940,9 @@ function OperatorShiftReportView({ profile }) {
         const selected = sel[sh.key] || [];
         const nogdoh = selected.length > 0 ? d.handalt / selected.length : 0;
         const toggle = (id) => {
+          if (!canEdit) return; // оператор зөвхөн ажиглана
           const has = selected.includes(id);
-          saveSel({ ...sel, [sh.key]: has ? selected.filter((x) => x !== id) : [...selected, id] });
+          saveSel(sh.key, has ? selected.filter((x) => x !== id) : [...selected, id]);
         };
         const pieData = Object.entries(d.byWorker)
           .map(([id, cnt]) => ({ name: nameOf(id), value: cnt }))
@@ -33947,24 +33973,27 @@ function OperatorShiftReportView({ profile }) {
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              {staff.map((p) => {
+              {(canEdit ? staff : staff.filter((p) => selected.includes(p.id))).map((p) => {
                 const on = selected.includes(p.id);
                 return (
-                  <button key={p.id} onClick={() => toggle(p.id)}
+                  <button key={p.id} onClick={() => toggle(p.id)} disabled={!canEdit}
                     className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
                     style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
                     {p.name}
                   </button>
                 );
               })}
-              {staff.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ажилтны жагсаалт хоосон байна</span>}
+              {canEdit && staff.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ажилтны жагсаалт хоосон байна</span>}
+              {!canEdit && selected.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ахлах ажилтан энэ ээлжийн бүрэлдэхүүнийг сонгоогүй байна</span>}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 items-start">
               <div className="space-y-1.5">
                 {selected.length === 0 ? (
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs p-2">
-                    Ээлжинд ажилласан хүмүүсээ дээрээс сонгоно уу — ногдох хандалт, хөрвүүлэлтийн хувь автоматаар бодогдоно.
+                    {canEdit
+                      ? "Ээлжинд ажилласан хүмүүсээ дээрээс сонгоно уу — ногдох хандалт, хөрвүүлэлтийн хувь автоматаар бодогдоно."
+                      : "Бүрэлдэхүүн сонгогдмогц ногдох хандалт, хувь энд харагдана."}
                   </div>
                 ) : selected.map((id) => {
                   const cnt = d.byWorker[id] || 0;
@@ -40856,6 +40885,7 @@ function ManagerDashboard({ profile }) {
             <SidebarSection label="Хүсэлтүүд" icon={Inbox}>
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
+              <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
             </SidebarSection>
           </nav>
 
@@ -40905,6 +40935,7 @@ function ManagerDashboard({ profile }) {
                 {view === "tasks" && "Даалгавар"}
                 {view === "approvals" && "Хүсэлт"}
                 {view === "ledger" && "Тэмдэглэл"}
+                {view === "op-shift-report" && "Ээлжийн тайлан"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${team.length} ажилтан · ${activeCount} ажиллаж байна`}
@@ -40975,6 +41006,9 @@ function ManagerDashboard({ profile }) {
             employees={team} sites={sites}
             canEdit={true}
             onEditSession={(s) => setEditingSession(s)} />
+        )}
+        {view === "op-shift-report" && (
+          <OperatorShiftReportView profile={profile} canEdit={true} />
         )}
         {view === "approvals" && (
           <ApprovalsView
