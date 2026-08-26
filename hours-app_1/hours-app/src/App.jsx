@@ -33846,6 +33846,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState({ morning: [], evening: [] });
+  const [pickerFor, setPickerFor] = useState(null); // аль ээлжийн сонгогч нээлттэй
 
   // 🗄 Ээлжийн бүрэлдэхүүн — op_shift_selections хүснэгтэд БҮГДЭД НЭГ:
   //    админ/ахлах сонгоно, оператор зөвхөн харна; realtime тул өөрчлөлт шууд тусна.
@@ -33889,7 +33890,8 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         (deps || []).forEach((d) => { depName[d.id] = (d.name || "").toLowerCase(); });
         const act = (profs || []).filter((p) => p.is_active !== false);
         const ops = act.filter((p) => (depName[p.department_id] || "").includes("оператор"));
-        setStaff((ops.length > 0 ? ops : act).sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+        if (ops.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments-ийн нэр/profiles.department_id холбоосыг шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
+        setStaff(ops.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
       } catch (e) { console.error("[shift-report staff]", e); }
     })();
   }, []);
@@ -33972,18 +33974,43 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {(canEdit ? staff : staff.filter((p) => selected.includes(p.id))).map((p) => {
-                const on = selected.includes(p.id);
-                return (
-                  <button key={p.id} onClick={() => toggle(p.id)} disabled={!canEdit}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {staff.filter((p) => selected.includes(p.id)).map((p) => (
+                <span key={p.id} className="px-2.5 py-1.5 rounded-lg text-[11px] inline-flex items-center gap-1.5"
+                  style={{ background: T.highlight, color: "#fff", fontFamily: FM, fontWeight: 600 }}>
+                  🎧 {p.name}
+                  {canEdit && (
+                    <button onClick={() => toggle(p.id)} title="Хасах"
+                      className="press-btn leading-none" style={{ color: "rgba(255,255,255,0.85)" }}>✕</button>
+                  )}
+                </span>
+              ))}
+              {canEdit && (
+                <div className="relative">
+                  <button onClick={() => setPickerFor(pickerFor === sh.key ? null : sh.key)}
                     className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
-                    style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
-                    {p.name}
+                    style={{ background: T.surfaceAlt, color: T.highlight, border: `1px dashed ${T.highlight}`, fontFamily: FM, fontWeight: 700 }}>
+                    {pickerFor === sh.key ? "✔ Болсон" : "➕ Ажилтан сонгох"}
                   </button>
-                );
-              })}
-              {canEdit && staff.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ажилтны жагсаалт хоосон байна</span>}
+                  {pickerFor === sh.key && (
+                    <div className="absolute z-30 mt-1 rounded-xl p-1.5 shadow-lg"
+                      style={{ background: T.bg, border: `1px solid ${T.borderStrong}`, minWidth: 190, maxHeight: 240, overflowY: "auto" }}>
+                      {staff.filter((p) => !selected.includes(p.id)).map((p) => (
+                        <button key={p.id} onClick={() => toggle(p.id)}
+                          className="press-btn w-full text-left px-2.5 py-1.5 rounded-lg text-[11px]"
+                          style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }}>
+                          🎧 {p.name}
+                        </button>
+                      ))}
+                      {staff.filter((p) => !selected.includes(p.id)).length === 0 && (
+                        <div className="px-2.5 py-1.5 text-[11px]" style={{ color: T.muted, fontFamily: FS }}>
+                          {staff.length === 0 ? "«Оператор» хэлтсийн ажилтан олдсонгүй" : "Бүгд сонгогдсон ✓"}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {!canEdit && selected.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ахлах ажилтан энэ ээлжийн бүрэлдэхүүнийг сонгоогүй байна</span>}
             </div>
 
