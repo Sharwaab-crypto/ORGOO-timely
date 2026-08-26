@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-picker-z";
+const BUILD_VERSION = "v2026.08.27-pie-percent";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34086,14 +34086,27 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center p-4">Захиалга оруулаагүй</div>
                 ) : (
                   <>
-                    <div style={{ width: "100%", height: 160 }}>
+                    <div className="relative" style={{ width: "100%", height: 180 }}>
                       <ResponsiveContainer>
                         <PieChart>
-                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={62} paddingAngle={2}>
+                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={56} paddingAngle={2}
+                            labelLine={false}
+                            label={({ percent, x, y }) => (
+                              <text x={x} y={y} fill={T.inkSoft} fontSize={9} fontFamily={FM} fontWeight={700} textAnchor="middle" dominantBaseline="central">
+                                {`${Math.round((percent || 0) * 100)}%`}
+                              </text>
+                            )}>
                             {pieData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
                           </Pie>
                         </PieChart>
                       </ResponsiveContainer>
+                      {/* 🎯 Гол: нийт хандалтын хэдэн % нь захиалга болсон (хөрвүүлэлт) */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <div style={{ color: handalt > 0 ? T.ok : T.muted, fontFamily: FS, fontWeight: 800 }} className="text-base leading-none">
+                          {handalt > 0 ? `${Math.round((totalOrdered / handalt) * 100)}%` : "—"}
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase mt-0.5">хөрвүүлэлт</div>
+                      </div>
                     </div>
                     <div className="space-y-0.5 mt-1">
                       {pieData.map((x, i) => (
@@ -34101,6 +34114,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PALETTE[i % PALETTE.length] }} />
                           <span style={{ color: T.inkSoft }} className="flex-1 truncate">{x.name}</span>
                           <span style={{ color: T.ink, fontWeight: 700 }}>{x.value}</span>
+                          <span style={{ color: T.muted, fontWeight: 600 }}>({totalOrdered > 0 ? Math.round((x.value / totalOrdered) * 100) : 0}%)</span>
                         </div>
                       ))}
                     </div>
