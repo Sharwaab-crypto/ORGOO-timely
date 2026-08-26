@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-shift-manual";
+const BUILD_VERSION = "v2026.08.27-dept-fix";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33861,7 +33861,11 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         const depName = {};
         (deps || []).forEach((d) => { depName[d.id] = (d.name || "").toLowerCase(); });
         const act = (profs || []).filter((p) => p.is_active !== false);
-        const ops = act.filter((p) => (depName[p.department_id] || "").includes("оператор"));
+        // Хэлтсийн нэр кирилл ("Оператор") ч, латин ("Operator") ч бичигдсэн байж болно
+        const ops = act.filter((p) => {
+          const dn = depName[p.department_id] || "";
+          return dn.includes("оператор") || dn.includes("operator");
+        });
         if (ops.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments/department_id-г шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
         setStaff(ops.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
       } catch (e) { console.error("[shift-report staff]", e); }
