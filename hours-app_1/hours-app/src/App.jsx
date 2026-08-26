@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-dept-fix";
+const BUILD_VERSION = "v2026.08.27-picker-z";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33968,7 +33968,8 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
           .filter((x) => x.value > 0)
           .sort((a, b) => b.value - a.value);
         return (
-          <div key={sh.key} className="glass rounded-2xl p-4 space-y-3" style={{ borderLeft: `3px solid ${st.color}` }}>
+          <div key={sh.key} className="glass rounded-2xl p-4 space-y-3 relative"
+            style={{ borderLeft: `3px solid ${st.color}`, zIndex: pickerFor === sh.key ? 40 : "auto" }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <div>
