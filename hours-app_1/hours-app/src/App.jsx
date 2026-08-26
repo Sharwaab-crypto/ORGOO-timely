@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-shift-picker";
+const BUILD_VERSION = "v2026.08.27-shift-manual";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33829,10 +33829,11 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  MANAGER DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
-//  OPERATOR SHIFT REPORT — Ээлжийн тайлан (Өглөө/Орой)
-//  Хандалт = ээлжид ГАРААР БҮРТГЭГДСЭН дугаар (biz_calls pending мөр).
-//  Ногдох = нийт хандалт ÷ сонгогдсон ажилчдын тоо.
-//  Хувь = ажилтны ordered мөр ÷ ногдох × 100. Хил: Өглөө 00–15, Орой 15–21 (SHIFTS-ээс өөрчилнө).
+//  OPERATOR SHIFT REPORT — Ээлжийн тайлан (Өглөө/Орой) — ГАР ОРУУЛГА
+//  Нийт хандалт + ажилтан бүрийн захиалгыг админ/ахлах ГАРААР оруулна.
+//  Ногдох = хандалт ÷ сонгогдсон тоо; Хувь = ажилтны захиалга ÷ ногдох × 100.
+//  Ээлж дуусмагц (Өглөө 15:00, Орой 21:00) карт 📦 Архивлагдана — админ/ахлах
+//  засаж болно, оператор ЯМАГТ зөвхөн харна. Бүх утга op_shift_selections-д (realtime).
 // ═══════════════════════════════════════════════════════════════════════════
 function OperatorShiftReportView({ profile, canEdit = false }) {
   const SHIFTS = [
@@ -33841,44 +33842,15 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   ];
   const PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#ec4899", "#84cc16", "#f97316", "#64748b"];
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const emptyShift = () => ({ worker_ids: [], handalt_total: null, worker_orders: {} });
+
   const [date, setDate] = useState(todayStr());
   const [staff, setStaff] = useState([]);
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState({ morning: [], evening: [] });
   const [pickerFor, setPickerFor] = useState(null); // аль ээлжийн сонгогч нээлттэй
+  const [loading, setLoading] = useState(true);
+  const [shData, setShData] = useState({ morning: emptyShift(), evening: emptyShift() });
 
-  // 🗄 Ээлжийн бүрэлдэхүүн — op_shift_selections хүснэгтэд БҮГДЭД НЭГ:
-  //    админ/ахлах сонгоно, оператор зөвхөн харна; realtime тул өөрчлөлт шууд тусна.
-  const loadSel = async () => {
-    try {
-      const { data, error } = await supabase.from("op_shift_selections")
-        .select("shift, worker_ids").eq("date", date);
-      if (error) throw error;
-      const nx = { morning: [], evening: [] };
-      (data || []).forEach((r) => {
-        if (nx[r.shift] !== undefined) nx[r.shift] = Array.isArray(r.worker_ids) ? r.worker_ids : [];
-      });
-      setSel(nx);
-    } catch (e) { console.error("[shift-report sel]", e); }
-  };
-  useEffect(() => { loadSel(); }, [date]);
-  useEffect(() => {
-    const ch = supabase.channel("op-shift-sel-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "op_shift_selections" }, () => loadSel())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [date]);
-  const saveSel = async (shiftKey, ids) => {
-    setSel((p) => ({ ...p, [shiftKey]: ids }));
-    const { error } = await supabase.from("op_shift_selections").upsert(
-      { date, shift: shiftKey, worker_ids: ids, updated_by: profile.id, updated_at: new Date().toISOString() },
-      { onConflict: "date,shift" }
-    );
-    if (error) alert("⚠ Сонголт хадгалагдсангүй: " + error.message);
-  };
-
-  // Операторын хэлтсийн идэвхтэй ажилчид (хэлтэс олдохгүй бол бүх идэвхтэй)
+  // «Оператор» хэлтсийн идэвхтэй ажилчид (fallback-гүй)
   useEffect(() => {
     (async () => {
       try {
@@ -33890,38 +33862,68 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         (deps || []).forEach((d) => { depName[d.id] = (d.name || "").toLowerCase(); });
         const act = (profs || []).filter((p) => p.is_active !== false);
         const ops = act.filter((p) => (depName[p.department_id] || "").includes("оператор"));
-        if (ops.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments-ийн нэр/profiles.department_id холбоосыг шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
+        if (ops.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments/department_id-г шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
         setStaff(ops.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
       } catch (e) { console.error("[shift-report staff]", e); }
     })();
   }, []);
 
-  // Тухайн өдрийн 00:00–21:00 бүх pending/ordered мөр (нэг татаад ээлжээр хуваана)
-  const loadRows = async () => {
+  // Ээлжийн өгөгдөл — БҮГДЭД НЭГ (op_shift_selections), realtime
+  const loadSel = async () => {
     setLoading(true);
     try {
-      const start = new Date(`${date}T00:00:00`);
-      const end = new Date(`${date}T21:00:00`);
-      const { data, error } = await supabase.from("biz_calls")
-        .select("created_by, call_status, created_at")
-        .gte("created_at", start.toISOString()).lt("created_at", end.toISOString())
-        .in("call_status", ["pending", "ordered"]).limit(8000);
+      const { data, error } = await supabase.from("op_shift_selections").select("*").eq("date", date);
       if (error) throw error;
-      if ((data || []).length >= 8000) console.warn("[shift-report] 8000 мөрийн хязгаарт хүрэв — тоо дутуу байж болзошгүй");
-      setRows(data || []);
-    } catch (e) { console.error("[shift-report]", e); setRows([]); }
+      const nx = { morning: emptyShift(), evening: emptyShift() };
+      (data || []).forEach((r) => {
+        if (nx[r.shift] !== undefined) {
+          nx[r.shift] = {
+            worker_ids: Array.isArray(r.worker_ids) ? r.worker_ids : [],
+            handalt_total: r.handalt_total,
+            worker_orders: r.worker_orders && typeof r.worker_orders === "object" ? r.worker_orders : {},
+          };
+        }
+      });
+      setShData(nx);
+    } catch (e) { console.error("[shift-report sel]", e); }
     finally { setLoading(false); }
   };
-  useEffect(() => { loadRows(); }, [date]);
+  useEffect(() => { loadSel(); }, [date]);
+  useEffect(() => {
+    const ch = supabase.channel("op-shift-sel-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "op_shift_selections" }, () => loadSel())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [date]);
 
-  const nameOf = (id) => (staff.find((s) => s.id === id) || {}).name || "Бусад";
-  const shiftData = (sh) => {
-    const inSh = rows.filter((r) => { const h = new Date(r.created_at).getHours(); return h >= sh.startH && h < sh.endH; });
-    const handalt = inSh.filter((r) => r.call_status === "pending").length;
-    const byWorker = {};
-    inSh.forEach((r) => { if (r.call_status === "ordered" && r.created_by) byWorker[r.created_by] = (byWorker[r.created_by] || 0) + 1; });
-    return { handalt, byWorker, totalOrdered: Object.values(byWorker).reduce((s, x) => s + x, 0) };
+  // Локал өөрчлөлт (бичих явцад) — DB-руу зөвхөн persist() үед
+  const patchLocal = (key, patch) => setShData((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
+  const persist = async (key, patchExtra) => {
+    if (!canEdit) return;
+    const cur = { ...(shData[key] || emptyShift()), ...(patchExtra || {}) };
+    if (patchExtra) patchLocal(key, patchExtra);
+    const { error } = await supabase.from("op_shift_selections").upsert(
+      {
+        date, shift: key,
+        worker_ids: cur.worker_ids,
+        handalt_total: cur.handalt_total,
+        worker_orders: cur.worker_orders,
+        updated_by: profile.id, updated_at: new Date().toISOString(),
+      },
+      { onConflict: "date,shift" }
+    );
+    if (error) alert("⚠ Хадгалагдсангүй: " + error.message);
   };
+
+  const shiftStatus = (sh) => {
+    const now = new Date();
+    const s = new Date(`${date}T${String(sh.startH).padStart(2, "0")}:00:00`);
+    const e = new Date(`${date}T${String(sh.endH).padStart(2, "0")}:00:00`);
+    if (now >= e) return { lbl: "📦 Архивлагдсан", color: T.muted, bg: "rgba(91,124,126,0.14)" };
+    if (now >= s) return { lbl: "🟢 Идэвхтэй", color: T.ok, bg: T.okSoft };
+    return { lbl: "⏳ Эхлээгүй", color: T.warn, bg: T.warnSoft };
+  };
+  const nameOf = (id) => (staff.find((s) => s.id === id) || {}).name || "?";
 
   return (
     <div className="space-y-3">
@@ -33930,45 +33932,67 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
           className="px-2 py-1.5 rounded-lg text-xs"
           style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
-        <button onClick={loadRows} className="press-btn px-2.5 py-1.5 rounded-lg text-xs"
+        <button onClick={loadSel} className="press-btn px-2.5 py-1.5 rounded-lg text-xs"
           style={{ background: T.surfaceAlt, color: T.inkSoft, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
           🔄 Шинэчлэх
         </button>
         {loading && <Loader2 className="spin" size={14} style={{ color: T.highlight }} />}
+        {!canEdit && (
+          <span className="px-2 py-1 rounded-lg text-[10px]" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FM, fontWeight: 600 }}>
+            👁 Зөвхөн харах горим
+          </span>
+        )}
       </div>
 
       {SHIFTS.map((sh) => {
-        const d = shiftData(sh);
-        const selected = sel[sh.key] || [];
-        const nogdoh = selected.length > 0 ? d.handalt / selected.length : 0;
+        const d = shData[sh.key] || emptyShift();
+        const selected = d.worker_ids || [];
+        const handalt = d.handalt_total === null || d.handalt_total === undefined || d.handalt_total === "" ? null : Number(d.handalt_total);
+        const nogdoh = selected.length > 0 && handalt > 0 ? handalt / selected.length : 0;
+        const totalOrdered = selected.reduce((s, id) => s + (Number((d.worker_orders || {})[id]) || 0), 0);
+        const st = shiftStatus(sh);
         const toggle = (id) => {
-          if (!canEdit) return; // оператор зөвхөн ажиглана
+          if (!canEdit) return;
           const has = selected.includes(id);
-          saveSel(sh.key, has ? selected.filter((x) => x !== id) : [...selected, id]);
+          const ids = has ? selected.filter((x) => x !== id) : [...selected, id];
+          const wo = { ...(d.worker_orders || {}) };
+          if (has) delete wo[id];
+          persist(sh.key, { worker_ids: ids, worker_orders: wo });
         };
-        const pieData = Object.entries(d.byWorker)
-          .map(([id, cnt]) => ({ name: nameOf(id), value: cnt }))
-          .sort((a, b) => b.value - a.value).slice(0, 9);
-        const others = d.totalOrdered - pieData.reduce((s, x) => s + x.value, 0);
-        if (others > 0) pieData.push({ name: "Бусад", value: others });
+        const pieData = selected
+          .map((id) => ({ name: nameOf(id), value: Number((d.worker_orders || {})[id]) || 0 }))
+          .filter((x) => x.value > 0)
+          .sort((a, b) => b.value - a.value);
         return (
-          <div key={sh.key} className="glass rounded-2xl p-4 space-y-3">
+          <div key={sh.key} className="glass rounded-2xl p-4 space-y-3" style={{ borderLeft: `3px solid ${st.color}` }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{sh.label}</div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{sh.sub}</div>
-              </div>
-              <div className="flex gap-4 text-center">
+              <div className="flex items-center gap-2">
                 <div>
-                  <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 800 }} className="text-lg">{d.handalt}</div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт хандалт</div>
+                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{sh.label}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{sh.sub}</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px]" style={{ background: st.bg, color: st.color, fontFamily: FM, fontWeight: 700 }}>{st.lbl}</span>
+              </div>
+              <div className="flex gap-4 text-center items-end">
+                <div>
+                  {canEdit ? (
+                    <input type="number" min="0" placeholder="—"
+                      value={d.handalt_total === null || d.handalt_total === undefined ? "" : d.handalt_total}
+                      onChange={(e) => patchLocal(sh.key, { handalt_total: e.target.value === "" ? null : Math.max(0, parseInt(e.target.value) || 0) })}
+                      onBlur={() => persist(sh.key)}
+                      className="w-20 text-center rounded-lg px-1 py-0.5 text-lg"
+                      style={{ background: T.surfaceAlt, color: T.highlight, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 800 }} />
+                  ) : (
+                    <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 800 }} className="text-lg">{handalt === null ? "—" : handalt}</div>
+                  )}
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт хандалт{canEdit ? " ✏" : ""}</div>
                 </div>
                 <div>
-                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 800 }} className="text-lg">{d.totalOrdered}</div>
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 800 }} className="text-lg">{totalOrdered}</div>
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Захиалга</div>
                 </div>
                 <div>
-                  <div style={{ color: T.warn, fontFamily: FS, fontWeight: 800 }} className="text-lg">{selected.length > 0 ? nogdoh.toFixed(1) : "—"}</div>
+                  <div style={{ color: T.warn, fontFamily: FS, fontWeight: 800 }} className="text-lg">{nogdoh > 0 ? nogdoh.toFixed(1) : "—"}</div>
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ногдох</div>
                 </div>
               </div>
@@ -34011,7 +34035,9 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                   )}
                 </div>
               )}
-              {!canEdit && selected.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ахлах ажилтан энэ ээлжийн бүрэлдэхүүнийг сонгоогүй байна</span>}
+              {!canEdit && selected.length === 0 && (
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ахлах ажилтан энэ ээлжийн бүрэлдэхүүнийг сонгоогүй байна</span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 items-start">
@@ -34019,17 +34045,27 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                 {selected.length === 0 ? (
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs p-2">
                     {canEdit
-                      ? "Ээлжинд ажилласан хүмүүсээ дээрээс сонгоно уу — ногдох хандалт, хөрвүүлэлтийн хувь автоматаар бодогдоно."
-                      : "Бүрэлдэхүүн сонгогдмогц ногдох хандалт, хувь энд харагдана."}
+                      ? "➕ товчоор ээлжийн бүрэлдэхүүнээ сонгоод, хандалт болон ажилтан бүрийн захиалгыг гараар оруулна."
+                      : "Бүрэлдэхүүн сонгогдмогц үзүүлэлтүүд энд харагдана."}
                   </div>
                 ) : selected.map((id) => {
-                  const cnt = d.byWorker[id] || 0;
+                  const cnt = Number((d.worker_orders || {})[id]) || 0;
                   const pct = nogdoh > 0 ? (cnt / nogdoh) * 100 : 0;
                   return (
                     <div key={id} className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: T.surfaceAlt }}>
                       <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs flex-1 min-w-0 truncate">{nameOf(id)}</span>
-                      <span style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }} className="text-xs">{cnt} захиалга</span>
-                      <div className="w-28 h-2 rounded-full overflow-hidden hidden sm:block" style={{ background: T.border }}>
+                      {canEdit ? (
+                        <input type="number" min="0" placeholder="0"
+                          value={(d.worker_orders || {})[id] === undefined || (d.worker_orders || {})[id] === null ? "" : (d.worker_orders || {})[id]}
+                          onChange={(e) => patchLocal(sh.key, { worker_orders: { ...(d.worker_orders || {}), [id]: e.target.value === "" ? null : Math.max(0, parseInt(e.target.value) || 0) } })}
+                          onBlur={() => persist(sh.key)}
+                          className="w-16 text-center rounded-lg px-1 py-1 text-xs"
+                          style={{ background: T.bg, color: T.ok, border: `1px solid ${T.borderStrong}`, fontFamily: FM, fontWeight: 700 }} />
+                      ) : (
+                        <span style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }} className="text-xs">{cnt}</span>
+                      )}
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">захиалга</span>
+                      <div className="w-24 h-2 rounded-full overflow-hidden hidden sm:block" style={{ background: T.border }}>
                         <div style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? T.ok : pct >= 50 ? T.warn : T.err, height: "100%" }} />
                       </div>
                       <span style={{ color: pct >= 100 ? T.ok : pct >= 50 ? T.warn : T.err, fontFamily: FS, fontWeight: 800 }} className="text-xs w-14 text-right">
@@ -34040,9 +34076,9 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                 })}
               </div>
               <div className="rounded-xl p-2" style={{ background: T.surfaceAlt }}>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1 text-center">Бүх ажилчдын захиалга</div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1 text-center">Ажилчдын захиалга</div>
                 {pieData.length === 0 ? (
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center p-4">Захиалга алга</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center p-4">Захиалга оруулаагүй</div>
                 ) : (
                   <>
                     <div style={{ width: "100%", height: 160 }}>
