@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.25-cc-cache2";
+const BUILD_VERSION = "v2026.08.25-shift-report";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33822,6 +33822,203 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  MANAGER DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
+//  OPERATOR SHIFT REPORT — Ээлжийн тайлан (Өглөө/Орой)
+//  Хандалт = ээлжид ГАРААР БҮРТГЭГДСЭН дугаар (biz_calls pending мөр).
+//  Ногдох = нийт хандалт ÷ сонгогдсон ажилчдын тоо.
+//  Хувь = ажилтны ordered мөр ÷ ногдох × 100. Хил: Өглөө 00–15, Орой 15–21 (SHIFTS-ээс өөрчилнө).
+// ═══════════════════════════════════════════════════════════════════════════
+function OperatorShiftReportView({ profile }) {
+  const SHIFTS = [
+    { key: "morning", label: "🌅 Өглөө ээлж", sub: "00:00 – 15:00", startH: 0, endH: 15 },
+    { key: "evening", label: "🌇 Орой ээлж", sub: "15:00 – 21:00", startH: 15, endH: 21 },
+  ];
+  const PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#ec4899", "#84cc16", "#f97316", "#64748b"];
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const [date, setDate] = useState(todayStr());
+  const [staff, setStaff] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sel, setSel] = useState({ morning: [], evening: [] });
+
+  // Сонголт өдөр бүрээр localStorage-д (Ө5 сургамж: try/catch-тай)
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(`opShiftSel:${date}`);
+      setSel(s ? JSON.parse(s) : { morning: [], evening: [] });
+    } catch (e) { setSel({ morning: [], evening: [] }); }
+  }, [date]);
+  const saveSel = (nx) => {
+    setSel(nx);
+    try { localStorage.setItem(`opShiftSel:${date}`, JSON.stringify(nx)); } catch (e) { /* quota */ }
+  };
+
+  // Операторын хэлтсийн идэвхтэй ажилчид (хэлтэс олдохгүй бол бүх идэвхтэй)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [{ data: profs }, { data: deps }] = await Promise.all([
+          supabase.from("profiles").select("id, name, is_active, department_id"),
+          supabase.from("departments").select("id, name"),
+        ]);
+        const depName = {};
+        (deps || []).forEach((d) => { depName[d.id] = (d.name || "").toLowerCase(); });
+        const act = (profs || []).filter((p) => p.is_active !== false);
+        const ops = act.filter((p) => (depName[p.department_id] || "").includes("оператор"));
+        setStaff((ops.length > 0 ? ops : act).sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+      } catch (e) { console.error("[shift-report staff]", e); }
+    })();
+  }, []);
+
+  // Тухайн өдрийн 00:00–21:00 бүх pending/ordered мөр (нэг татаад ээлжээр хуваана)
+  const loadRows = async () => {
+    setLoading(true);
+    try {
+      const start = new Date(`${date}T00:00:00`);
+      const end = new Date(`${date}T21:00:00`);
+      const { data, error } = await supabase.from("biz_calls")
+        .select("created_by, call_status, created_at")
+        .gte("created_at", start.toISOString()).lt("created_at", end.toISOString())
+        .in("call_status", ["pending", "ordered"]).limit(8000);
+      if (error) throw error;
+      if ((data || []).length >= 8000) console.warn("[shift-report] 8000 мөрийн хязгаарт хүрэв — тоо дутуу байж болзошгүй");
+      setRows(data || []);
+    } catch (e) { console.error("[shift-report]", e); setRows([]); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { loadRows(); }, [date]);
+
+  const nameOf = (id) => (staff.find((s) => s.id === id) || {}).name || "Бусад";
+  const shiftData = (sh) => {
+    const inSh = rows.filter((r) => { const h = new Date(r.created_at).getHours(); return h >= sh.startH && h < sh.endH; });
+    const handalt = inSh.filter((r) => r.call_status === "pending").length;
+    const byWorker = {};
+    inSh.forEach((r) => { if (r.call_status === "ordered" && r.created_by) byWorker[r.created_by] = (byWorker[r.created_by] || 0) + 1; });
+    return { handalt, byWorker, totalOrdered: Object.values(byWorker).reduce((s, x) => s + x, 0) };
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-3 flex-wrap">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Ээлжийн тайлан</span>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          className="px-2 py-1.5 rounded-lg text-xs"
+          style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+        <button onClick={loadRows} className="press-btn px-2.5 py-1.5 rounded-lg text-xs"
+          style={{ background: T.surfaceAlt, color: T.inkSoft, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+          🔄 Шинэчлэх
+        </button>
+        {loading && <Loader2 className="spin" size={14} style={{ color: T.highlight }} />}
+      </div>
+
+      {SHIFTS.map((sh) => {
+        const d = shiftData(sh);
+        const selected = sel[sh.key] || [];
+        const nogdoh = selected.length > 0 ? d.handalt / selected.length : 0;
+        const toggle = (id) => {
+          const has = selected.includes(id);
+          saveSel({ ...sel, [sh.key]: has ? selected.filter((x) => x !== id) : [...selected, id] });
+        };
+        const pieData = Object.entries(d.byWorker)
+          .map(([id, cnt]) => ({ name: nameOf(id), value: cnt }))
+          .sort((a, b) => b.value - a.value).slice(0, 9);
+        const others = d.totalOrdered - pieData.reduce((s, x) => s + x.value, 0);
+        if (others > 0) pieData.push({ name: "Бусад", value: others });
+        return (
+          <div key={sh.key} className="glass rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{sh.label}</div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{sh.sub}</div>
+              </div>
+              <div className="flex gap-4 text-center">
+                <div>
+                  <div style={{ color: T.highlight, fontFamily: FS, fontWeight: 800 }} className="text-lg">{d.handalt}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Нийт хандалт</div>
+                </div>
+                <div>
+                  <div style={{ color: T.ok, fontFamily: FS, fontWeight: 800 }} className="text-lg">{d.totalOrdered}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Захиалга</div>
+                </div>
+                <div>
+                  <div style={{ color: T.warn, fontFamily: FS, fontWeight: 800 }} className="text-lg">{selected.length > 0 ? nogdoh.toFixed(1) : "—"}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Ногдох</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {staff.map((p) => {
+                const on = selected.includes(p.id);
+                return (
+                  <button key={p.id} onClick={() => toggle(p.id)}
+                    className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                    style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
+                    {p.name}
+                  </button>
+                );
+              })}
+              {staff.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ажилтны жагсаалт хоосон байна</span>}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 items-start">
+              <div className="space-y-1.5">
+                {selected.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs p-2">
+                    Ээлжинд ажилласан хүмүүсээ дээрээс сонгоно уу — ногдох хандалт, хөрвүүлэлтийн хувь автоматаар бодогдоно.
+                  </div>
+                ) : selected.map((id) => {
+                  const cnt = d.byWorker[id] || 0;
+                  const pct = nogdoh > 0 ? (cnt / nogdoh) * 100 : 0;
+                  return (
+                    <div key={id} className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: T.surfaceAlt }}>
+                      <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs flex-1 min-w-0 truncate">{nameOf(id)}</span>
+                      <span style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }} className="text-xs">{cnt} захиалга</span>
+                      <div className="w-28 h-2 rounded-full overflow-hidden hidden sm:block" style={{ background: T.border }}>
+                        <div style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? T.ok : pct >= 50 ? T.warn : T.err, height: "100%" }} />
+                      </div>
+                      <span style={{ color: pct >= 100 ? T.ok : pct >= 50 ? T.warn : T.err, fontFamily: FS, fontWeight: 800 }} className="text-xs w-14 text-right">
+                        {nogdoh > 0 ? pct.toFixed(0) + "%" : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="rounded-xl p-2" style={{ background: T.surfaceAlt }}>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase tracking-wider mb-1 text-center">Бүх ажилчдын захиалга</div>
+                {pieData.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center p-4">Захиалга алга</div>
+                ) : (
+                  <>
+                    <div style={{ width: "100%", height: 160 }}>
+                      <ResponsiveContainer>
+                        <PieChart>
+                          <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={62} paddingAngle={2}>
+                            {pieData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-0.5 mt-1">
+                      {pieData.map((x, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ fontFamily: FM }}>
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PALETTE[i % PALETTE.length] }} />
+                          <span style={{ color: T.inkSoft }} className="flex-1 truncate">{x.name}</span>
+                          <span style={{ color: T.ink, fontWeight: 700 }}>{x.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  OPERATOR DASHBOARD — Зөвхөн дуудлага + захиалга
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36140,6 +36337,7 @@ function OperatorDashboard({ profile }) {
           <SidebarSection label="Бизнес" icon={ShoppingBag}>
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+            <SidebarTab active={view === "report"} onClick={() => { setView("report"); setSidebarOpen(false); }} icon={BarChart3}>Тайлан</SidebarTab>
           </SidebarSection>
         </nav>
 
@@ -36182,6 +36380,7 @@ function OperatorDashboard({ profile }) {
               {view === "calendar" && "📅 Календар"}
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
+              {view === "report" && "📊 Ээлжийн тайлан"}
             </h1>
           </div>
         </header>
@@ -36194,6 +36393,7 @@ function OperatorDashboard({ profile }) {
           {view === "calendar" && <OperatorCalendarView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
+          {view === "report" && <OperatorShiftReportView profile={profile} />}
         </div>
       </main>
     </div>
