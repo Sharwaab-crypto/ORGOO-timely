@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-kpi-pages";
+const BUILD_VERSION = "v2026.08.27-shift-fbpages";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33867,11 +33867,13 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   ];
   const PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#ec4899", "#84cc16", "#f97316", "#64748b"];
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-  const emptyShift = () => ({ worker_ids: [], handalt_total: null, worker_orders: {} });
+  const emptyShift = () => ({ worker_ids: [], handalt_total: null, worker_orders: {}, page_ids: [] });
 
   const [date, setDate] = useState(todayStr());
   const [staff, setStaff] = useState([]);
-  const [pickerFor, setPickerFor] = useState(null); // аль ээлжийн сонгогч нээлттэй
+  const [pickerFor, setPickerFor] = useState(null); // аль ээлжийн ажилтан-сонгогч нээлттэй
+  const [pagePickerFor, setPagePickerFor] = useState(null); // аль ээлжийн page-сонгогч нээлттэй
+  const [shPages, setShPages] = useState([]); // Facebook pages жагсаалт
   const [loading, setLoading] = useState(true);
   const [shData, setShData] = useState({ morning: emptyShift(), evening: emptyShift() });
 
@@ -33879,10 +33881,12 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   useEffect(() => {
     (async () => {
       try {
-        const [{ data: profs }, { data: deps }] = await Promise.all([
+        const [{ data: profs }, { data: deps }, { data: pgs }] = await Promise.all([
           supabase.from("profiles").select("id, name, is_active, department_id"),
           supabase.from("departments").select("id, name"),
+          supabase.from("biz_fb_pages").select("id, name").order("name"),
         ]);
+        setShPages(pgs || []);
         const depName = {};
         (deps || []).forEach((d) => { depName[d.id] = (d.name || "").toLowerCase(); });
         const act = (profs || []).filter((p) => p.is_active !== false);
@@ -33910,6 +33914,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
             worker_ids: Array.isArray(r.worker_ids) ? r.worker_ids : [],
             handalt_total: r.handalt_total,
             worker_orders: r.worker_orders && typeof r.worker_orders === "object" ? r.worker_orders : {},
+            page_ids: Array.isArray(r.page_ids) ? r.page_ids : [],
           };
         }
       });
@@ -33937,6 +33942,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         worker_ids: cur.worker_ids,
         handalt_total: cur.handalt_total,
         worker_orders: cur.worker_orders,
+        page_ids: cur.page_ids || [],
         updated_by: profile.id, updated_at: new Date().toISOString(),
       },
       { onConflict: "date,shift" }
@@ -33980,6 +33986,12 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         const nogdoh = selected.length > 0 && handalt > 0 ? handalt / selected.length : 0;
         const totalOrdered = selected.reduce((s, id) => s + (Number((d.worker_orders || {})[id]) || 0), 0);
         const st = shiftStatus(sh);
+        const selPageIds = d.page_ids || [];
+        const togglePage = (id) => {
+          if (!canEdit) return;
+          const has = selPageIds.includes(id);
+          persist(sh.key, { page_ids: has ? selPageIds.filter((x) => x !== id) : [...selPageIds, id] });
+        };
         const toggle = (id) => {
           if (!canEdit) return;
           const has = selected.includes(id);
@@ -33994,7 +34006,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
           .sort((a, b) => b.value - a.value);
         return (
           <div key={sh.key} className="glass rounded-2xl p-4 space-y-3 relative"
-            style={{ borderLeft: `3px solid ${st.color}`, zIndex: pickerFor === sh.key ? 40 : "auto" }}>
+            style={{ borderLeft: `3px solid ${st.color}`, zIndex: pickerFor === sh.key || pagePickerFor === sh.key ? 40 : "auto" }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <div>
@@ -34067,6 +34079,49 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
               )}
               {!canEdit && selected.length === 0 && (
                 <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Ахлах ажилтан энэ ээлжийн бүрэлдэхүүнийг сонгоогүй байна</span>
+              )}
+            </div>
+
+            {/* 📄 Ээлжид холбогдсон Facebook pages */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {shPages.filter((pg) => selPageIds.includes(pg.id)).map((pg) => (
+                <span key={pg.id} className="px-2.5 py-1.5 rounded-lg text-[11px] inline-flex items-center gap-1.5"
+                  style={{ background: "rgba(139,92,246,0.12)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.45)", fontFamily: FM, fontWeight: 700 }}>
+                  📄 {pg.name}
+                  {canEdit && (
+                    <button onClick={() => togglePage(pg.id)} title="Хасах"
+                      className="press-btn leading-none" style={{ color: "#7C3AED" }}>✕</button>
+                  )}
+                </span>
+              ))}
+              {canEdit && (
+                <div className="relative">
+                  <button onClick={() => setPagePickerFor(pagePickerFor === sh.key ? null : sh.key)}
+                    className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                    style={{ background: T.surfaceAlt, color: "#7C3AED", border: "1px dashed #7C3AED", fontFamily: FM, fontWeight: 700 }}>
+                    {pagePickerFor === sh.key ? "✔ Болсон" : "➕ Page сонгох"}
+                  </button>
+                  {pagePickerFor === sh.key && (
+                    <div className="absolute z-30 mt-1 rounded-xl p-1.5 shadow-lg"
+                      style={{ background: T.bg, border: `1px solid ${T.borderStrong}`, minWidth: 190, maxHeight: 240, overflowY: "auto" }}>
+                      {shPages.filter((pg) => !selPageIds.includes(pg.id)).map((pg) => (
+                        <button key={pg.id} onClick={() => togglePage(pg.id)}
+                          className="press-btn w-full text-left px-2.5 py-1.5 rounded-lg text-[11px]"
+                          style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }}>
+                          📄 {pg.name}
+                        </button>
+                      ))}
+                      {shPages.filter((pg) => !selPageIds.includes(pg.id)).length === 0 && (
+                        <div className="px-2.5 py-1.5 text-[11px]" style={{ color: T.muted, fontFamily: FS }}>
+                          {shPages.length === 0 ? "Page олдсонгүй" : "Бүгд холбогдсон ✓"}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!canEdit && selPageIds.length === 0 && (
+                <span style={{ color: T.mutedSoft, fontFamily: FS }} className="text-[11px]">Page холбогдоогүй</span>
               )}
             </div>
 
