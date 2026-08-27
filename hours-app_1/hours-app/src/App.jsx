@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-title-fix";
+const BUILD_VERSION = "v2026.08.27-shift-archive";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -33873,6 +33873,13 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   const [pickerFor, setPickerFor] = useState(null); // аль ээлжийн ажилтан-сонгогч нээлттэй
   const [pagePickerFor, setPagePickerFor] = useState(null); // аль ээлжийн page-сонгогч нээлттэй
   const [shPages, setShPages] = useState([]); // Facebook pages жагсаалт
+  // 📦 Архивын горим
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archPeriod, setArchPeriod] = useState("week"); // yesterday | week | month | custom
+  const [archFrom, setArchFrom] = useState(todayStr());
+  const [archTo, setArchTo] = useState(todayStr());
+  const [archRows, setArchRows] = useState([]);
+  const [archLoading, setArchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [shData, setShData] = useState({ morning: emptyShift(), evening: emptyShift() });
 
@@ -33929,6 +33936,37 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
     return () => { supabase.removeChannel(ch); };
   }, [date]);
 
+  // 📦 Архив: сонгосон хугацааны муж
+  const archRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const fmt = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    if (archPeriod === "yesterday") { const y = new Date(today); y.setDate(y.getDate() - 1); return { from: fmt(y), to: fmt(y), label: "Өчигдөр" }; }
+    if (archPeriod === "week") { const s = new Date(today); s.setDate(s.getDate() - 6); return { from: fmt(s), to: fmt(today), label: "Энэ 7 хоног" }; }
+    if (archPeriod === "month") { return { from: fmt(today).slice(0, 8) + "01", to: fmt(today), label: "Энэ сар" }; }
+    return { from: archFrom, to: archTo, label: `${archFrom} – ${archTo}` };
+  }, [archPeriod, archFrom, archTo]);
+
+  const loadArch = async () => {
+    setArchLoading(true);
+    try {
+      const { data, error } = await supabase.from("op_shift_selections").select("*")
+        .gte("date", archRange.from).lte("date", archRange.to)
+        .order("date", { ascending: false });
+      if (error) throw error;
+      const now = new Date();
+      const rows = (data || []).filter((r) => {
+        const meta = SHIFTS.find((s) => s.key === r.shift);
+        if (!meta) return false;
+        // Зөвхөн ДУУССАН (архивлагдсан) ээлжүүд
+        return new Date(`${r.date}T${String(meta.endH).padStart(2, "0")}:00:00`) <= now;
+      }).sort((a, b) => (a.date === b.date ? (a.shift === "morning" ? -1 : 1) : (a.date < b.date ? 1 : -1)));
+      setArchRows(rows);
+    } catch (e) { console.error("[shift-archive]", e); setArchRows([]); }
+    finally { setArchLoading(false); }
+  };
+  useEffect(() => { if (archiveOpen) loadArch(); }, [archiveOpen, archRange]);
+
   // Локал өөрчлөлт (бичих явцад) — DB-руу зөвхөн persist() үед
   const patchLocal = (key, patch) => setShData((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
   const persist = async (key, patchExtra) => {
@@ -33959,17 +33997,60 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
   };
   const nameOf = (id) => (staff.find((s) => s.id === id) || {}).name || "?";
 
+  // 🧮 Ажилтан бүрийн нэгтгэл: хэдэн ээлж + нийт гүйцэтгэлийн %
+  const archSummary = useMemo(() => {
+    const m = {};
+    archRows.forEach((r) => {
+      const ids = Array.isArray(r.worker_ids) ? r.worker_ids : [];
+      const h = Number(r.handalt_total) || 0;
+      const per = ids.length > 0 && h > 0 ? h / ids.length : 0;
+      ids.forEach((id) => {
+        if (!m[id]) m[id] = { id, shifts: 0, orders: 0, allot: 0 };
+        m[id].shifts += 1;
+        m[id].orders += Number((r.worker_orders || {})[id]) || 0;
+        m[id].allot += per;
+      });
+    });
+    return Object.values(m)
+      .map((w) => ({ ...w, name: nameOf(w.id), pct: w.allot > 0 ? (w.orders / w.allot) * 100 : null }))
+      .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+  }, [archRows, staff]);
+
   return (
     <div className="space-y-3">
       <div className="glass rounded-2xl p-3 flex items-center gap-3 flex-wrap">
         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Ээлжийн тайлан</span>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-          className="px-2 py-1.5 rounded-lg text-xs"
-          style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
-        <button onClick={loadSel} className="press-btn px-2.5 py-1.5 rounded-lg text-xs"
-          style={{ background: T.surfaceAlt, color: T.inkSoft, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
-          🔄 Шинэчлэх
+        {!archiveOpen && (
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="px-2 py-1.5 rounded-lg text-xs"
+            style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+        )}
+        <button onClick={() => setArchiveOpen((v) => !v)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs"
+          style={{ background: archiveOpen ? T.highlight : T.surfaceAlt, color: archiveOpen ? "#fff" : T.inkSoft, border: `1px solid ${archiveOpen ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+          📦 Архив
         </button>
+        {archiveOpen && (
+          <>
+            {[["yesterday", "Өчигдөр"], ["week", "Энэ 7 хоног"], ["month", "Энэ сар"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => setArchPeriod(k)}
+                className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]"
+                style={{ background: archPeriod === k ? T.highlight : T.surfaceAlt, color: archPeriod === k ? "#fff" : T.ink, border: `1px solid ${archPeriod === k ? T.highlight : T.borderStrong}`, fontFamily: FM, fontWeight: 600 }}>
+                {lbl}
+              </button>
+            ))}
+            {archPeriod === "custom" && (
+              <>
+                <input type="date" value={archFrom} onChange={(e) => setArchFrom(e.target.value)}
+                  className="px-2 py-1 rounded-lg text-xs"
+                  style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+                <span style={{ color: T.muted }}>–</span>
+                <input type="date" value={archTo} onChange={(e) => setArchTo(e.target.value)}
+                  className="px-2 py-1 rounded-lg text-xs"
+                  style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+              </>
+            )}
+          </>
+        )}
         {loading && <Loader2 className="spin" size={14} style={{ color: T.highlight }} />}
         {!canEdit && (
           <span className="px-2 py-1 rounded-lg text-[10px]" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FM, fontWeight: 600 }}>
@@ -33978,7 +34059,83 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
         )}
       </div>
 
-      {SHIFTS.map((sh) => {
+      {archiveOpen ? (
+        <div className="space-y-3">
+          {archLoading ? (
+            <div className="glass rounded-2xl p-8 text-center">
+              <Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} />
+            </div>
+          ) : (
+            <>
+              <div className="glass rounded-2xl p-4">
+                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
+                  🧮 Ажилчдын нэгтгэл · {archRange.label} · {archRows.length} ээлж
+                </div>
+                {archSummary.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Энэ хугацаанд архивлагдсан ээлж алга</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {archSummary.map((w) => {
+                      const col = w.pct === null ? T.muted : w.pct >= 100 ? T.ok : w.pct >= 50 ? T.warn : T.err;
+                      return (
+                        <div key={w.id} className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: T.surfaceAlt }}>
+                          <span className="text-xs flex-1 min-w-0 truncate" style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>🎧 {w.name}</span>
+                          <span className="text-[10px]" style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }}>{w.shifts} ээлж</span>
+                          <span className="text-xs" style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }}>{w.orders} захиалга</span>
+                          <span className="text-xs w-14 text-right" style={{ color: col, fontFamily: FS, fontWeight: 800 }}>
+                            {w.pct === null ? "—" : Math.round(w.pct) + "%"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {archRows.map((r) => {
+                const meta = SHIFTS.find((s) => s.key === r.shift) || SHIFTS[0];
+                const ids = Array.isArray(r.worker_ids) ? r.worker_ids : [];
+                const h = Number(r.handalt_total) || 0;
+                const per = ids.length > 0 && h > 0 ? h / ids.length : 0;
+                const tot = ids.reduce((s, id) => s + (Number((r.worker_orders || {})[id]) || 0), 0);
+                return (
+                  <div key={`${r.date}-${r.shift}`} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.borderStrong}` }}>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{r.date} · {meta.label}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px]" style={{ background: "rgba(91,124,126,0.14)", color: T.muted, fontFamily: FM, fontWeight: 700 }}>📦 Архивлагдсан</span>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-xs" style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }}>{h > 0 ? h : "—"} хандалт</span>
+                        <span className="text-xs" style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }}>{tot} захиалга</span>
+                        <span className="text-xs" style={{ color: T.warn, fontFamily: FM, fontWeight: 700 }}>ногдох {per > 0 ? per.toFixed(1) : "—"}</span>
+                        {canEdit && (
+                          <button onClick={() => { setDate(r.date); setArchiveOpen(false); }}
+                            className="press-btn px-2 py-1 rounded-lg text-[11px]"
+                            style={{ background: T.surfaceAlt, color: T.highlight, border: `1px solid ${T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+                            📅 Нээж засах
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {ids.map((id) => {
+                        const c = Number((r.worker_orders || {})[id]) || 0;
+                        const p = per > 0 ? Math.round((c / per) * 100) : null;
+                        return (
+                          <span key={id} className="px-2 py-1 rounded-lg text-[10px]" style={{ background: T.surfaceAlt, color: T.inkSoft, fontFamily: FM, fontWeight: 600 }}>
+                            🎧 {nameOf(id)} · {c} захиалга{p === null ? "" : ` · ${p}%`}
+                          </span>
+                        );
+                      })}
+                      {ids.length === 0 && <span className="text-[10px]" style={{ color: T.mutedSoft, fontFamily: FS }}>Бүрэлдэхүүн сонгогдоогүй</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      ) : SHIFTS.map((sh) => {
         const d = shData[sh.key] || emptyShift();
         const selected = d.worker_ids || [];
         const handalt = d.handalt_total === null || d.handalt_total === undefined || d.handalt_total === "" ? null : Number(d.handalt_total);
