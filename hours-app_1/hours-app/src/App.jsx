@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-shift-fbpages";
+const BUILD_VERSION = "v2026.08.27-kpi-pages2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18251,7 +18251,7 @@ function OperatorKPIReportView({ profile }) {
           ? new Date(Date.now() + 86400000) : periodRange.end;
         const startIso = rangeStart.toISOString();
         const endIso = rangeEnd.toISOString();
-        const [callData, ordData, { data: opData }, { data: pgData }] = await Promise.all([
+        const [callData, ordData, { data: pgData }, { data: opData }] = await Promise.all([
           fetchAllRowsParallel(() => supabase.from("biz_calls")
             .select("phone, call_status, created_by, created_at, fb_page_id")
             .gte("created_at", startIso).lt("created_at", endIso)),
