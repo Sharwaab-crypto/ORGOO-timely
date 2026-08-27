@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-pie-percent";
+const BUILD_VERSION = "v2026.08.27-kpi-pages";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18196,6 +18196,9 @@ function OperatorKPIReportView({ profile }) {
     try { return localStorage.getItem("orgoo-kpi-report-period") || "today"; } catch { return "today"; }
   });
   const [phonePopup, setPhonePopup] = useState(null); // 🆕 {title, phones[], color}
+  // 📄 Page шүүлт: хоосон = Бүгд; сонгосон id-ууд — calls/orders хоёуланд үйлчилнэ
+  const [fbPages, setFbPages] = useState([]);
+  const [selPages, setSelPages] = useState([]);
   const [phoneSearch, setPhoneSearch] = useState(""); // 🆕 popup хайлт
   const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
@@ -18248,18 +18251,20 @@ function OperatorKPIReportView({ profile }) {
           ? new Date(Date.now() + 86400000) : periodRange.end;
         const startIso = rangeStart.toISOString();
         const endIso = rangeEnd.toISOString();
-        const [callData, ordData, { data: opData }] = await Promise.all([
+        const [callData, ordData, { data: opData }, { data: pgData }] = await Promise.all([
           fetchAllRowsParallel(() => supabase.from("biz_calls")
-            .select("phone, call_status, created_by, created_at")
+            .select("phone, call_status, created_by, created_at, fb_page_id")
             .gte("created_at", startIso).lt("created_at", endIso)),
           fetchAllRowsParallel(() => supabase.from("biz_orders")
-            .select("customer_phone, status, taken_by, total_amount, created_at")
+            .select("customer_phone, status, taken_by, total_amount, created_at, fb_page_id")
             .gte("created_at", startIso).lt("created_at", endIso)),
+          supabase.from("biz_fb_pages").select("id, name").order("name"),
           supabase.from("profiles")
             .select("id, name, role, job_title")
             .in("role", ["admin", "manager", "operator", "merchant"])
             .order("name"),
         ]);
+        setFbPages(pgData || []);
         logDev("[KPI Report] Calls:", callData?.length, "Orders:", ordData?.length, "Users:", opData?.length);
         setCalls(callData || []);
         setOrders(ordData || []);
@@ -18271,14 +18276,16 @@ function OperatorKPIReportView({ profile }) {
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
+    if (selPages.length > 0 && !selPages.includes(c.fb_page_id)) return false;
     const d = new Date(c.created_at);
     return d >= periodRange.start && d < periodRange.end;
-  }), [calls, periodRange]);
+  }), [calls, periodRange, selPages]);
 
   const filteredOrders = useMemo(() => orders.filter((o) => {
+    if (selPages.length > 0 && !selPages.includes(o.fb_page_id)) return false;
     const d = new Date(o.created_at);
     return d >= periodRange.start && d < periodRange.end;
-  }), [orders, periodRange]);
+  }), [orders, periodRange, selPages]);
 
   // Тус ажилтнаар групплэх
   const reportData = useMemo(() => {
@@ -18445,6 +18452,24 @@ function OperatorKPIReportView({ profile }) {
       {/* Period selector + Excel button */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">📄 Page:</span>
+          <button onClick={() => setSelPages([])}
+            className="press-btn px-3 py-1.5 rounded-full text-xs"
+            style={{ background: selPages.length === 0 ? T.highlight : T.surfaceAlt, color: selPages.length === 0 ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+            Бүх page
+          </button>
+          {fbPages.map((pg) => {
+            const on = selPages.includes(pg.id);
+            return (
+              <button key={pg.id}
+                onClick={() => setSelPages((prev) => on ? prev.filter((x) => x !== pg.id) : [...prev, pg.id])}
+                className="press-btn px-3 py-1.5 rounded-full text-xs"
+                style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "white" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+                {pg.name}
+              </button>
+            );
+          })}
+          <span className="w-full" />
           <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">🕐 Хугацаа:</span>
           {[
             { id: "today", label: "Өнөөдөр" },
