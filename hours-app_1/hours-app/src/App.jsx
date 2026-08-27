@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-shift-archive";
+const BUILD_VERSION = "v2026.08.27-dept-heads";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2289,11 +2289,13 @@ function AdminDashboard({ profile }) {
       if (data.id) {
         const { error } = await supabase.from("departments").update({
           name: data.name, description: data.description, manager_id: data.manager_id,
+          manager_ids: data.manager_ids || [],
         }).eq("id", data.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("departments").insert({
           name: data.name, description: data.description, manager_id: data.manager_id,
+          manager_ids: data.manager_ids || [],
         });
         if (error) throw error;
       }
@@ -33889,7 +33891,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
       try {
         const [{ data: profs }, { data: deps }, { data: pgs }] = await Promise.all([
           supabase.from("profiles").select("id, name, is_active, department_id"),
-          supabase.from("departments").select("id, name"),
+          supabase.from("departments").select("id, name, manager_id, manager_ids"),
           supabase.from("biz_fb_pages").select("id, name").order("name"),
         ]);
         setShPages(pgs || []);
@@ -33901,8 +33903,21 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
           const dn = depName[p.department_id] || "";
           return dn.includes("оператор") || dn.includes("operator");
         });
-        if (ops.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments/department_id-г шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
-        setStaff(ops.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+        // ⭐ Оператор хэлтсийн ахлагчид (олон байж болно) — жагсаалтад нэмнэ
+        const opDeptIds = (deps || [])
+          .filter((d) => { const dn = (d.name || "").toLowerCase(); return dn.includes("оператор") || dn.includes("operator"); })
+          .map((d) => d.id);
+        const headIdSet = new Set();
+        (deps || []).forEach((d) => {
+          if (!opDeptIds.includes(d.id)) return;
+          (Array.isArray(d.manager_ids) ? d.manager_ids : []).forEach((x) => { if (x) headIdSet.add(x); });
+          if (d.manager_id) headIdSet.add(d.manager_id);
+        });
+        const heads = act
+          .filter((p) => headIdSet.has(p.id) && !ops.some((o) => o.id === p.id))
+          .map((p) => ({ ...p, isHead: true }));
+        if (ops.length === 0 && heads.length === 0) console.warn("[shift-report] «Оператор» хэлтсийн ажилтан олдсонгүй — departments/department_id-г шалгана уу", { departments: (deps || []).length, activeProfiles: act.length });
+        setStaff([...ops, ...heads].sort((a, b) => (a.name || "").localeCompare(b.name || "")));
       } catch (e) { console.error("[shift-report staff]", e); }
     })();
   }, []);
@@ -34200,7 +34215,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
               {staff.filter((p) => selected.includes(p.id)).map((p) => (
                 <span key={p.id} className="px-2.5 py-1.5 rounded-lg text-[11px] inline-flex items-center gap-1.5"
                   style={{ background: T.highlight, color: "#fff", fontFamily: FM, fontWeight: 600 }}>
-                  🎧 {p.name}
+                  {p.isHead ? "⭐" : "🎧"} {p.name}
                   {canEdit && (
                     <button onClick={() => toggle(p.id)} title="Хасах"
                       className="press-btn leading-none" style={{ color: "rgba(255,255,255,0.85)" }}>✕</button>
@@ -34221,7 +34236,7 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                         <button key={p.id} onClick={() => toggle(p.id)}
                           className="press-btn w-full text-left px-2.5 py-1.5 rounded-lg text-[11px]"
                           style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }}>
-                          🎧 {p.name}
+                          {p.isHead ? "⭐" : "🎧"} {p.name}
                         </button>
                       ))}
                       {staff.filter((p) => !selected.includes(p.id)).length === 0 && (
@@ -41988,7 +42003,10 @@ function DepartmentsView({ departments, employees, managers, onEdit, onDelete, o
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
         {departments.map((dept, i) => {
-          const manager = dept.manager_id ? managers.find((m) => m.id === dept.manager_id) : null;
+          const headIds = Array.isArray(dept.manager_ids) && dept.manager_ids.length > 0
+            ? dept.manager_ids : (dept.manager_id ? [dept.manager_id] : []);
+          const deptHeads = headIds.map((hid) => managers.find((m) => m.id === hid)).filter(Boolean);
+          const manager = deptHeads[0] || null; // legacy шалгалтуудад
           const empCount = employees.filter((e) => e.department_id === dept.id).length;
           const sampleEmps = employees.filter((e) => e.department_id === dept.id).slice(0, 5);
 
@@ -42018,10 +42036,10 @@ function DepartmentsView({ departments, employees, managers, onEdit, onDelete, o
                   <ShieldCheck size={12} style={{ color: T.highlight }} />
                   <div className="flex-1 min-w-0">
                     <div style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-wider">
-                      Ахлагч
+                      {deptHeads.length > 1 ? "Ахлагчид" : "Ахлагч"}
                     </div>
                     <div style={{ fontFamily: FS, fontWeight: 500 }} className="text-sm truncate">
-                      {manager.name}
+                      {deptHeads.map((m) => m.name).join(", ")}
                     </div>
                   </div>
                 </div>
@@ -42092,7 +42110,11 @@ function DepartmentsView({ departments, employees, managers, onEdit, onDelete, o
 function DepartmentFormModal({ mode, dept, managers, onSave, onClose }) {
   const [name, setName] = useState(dept?.name || "");
   const [description, setDescription] = useState(dept?.description || "");
-  const [managerId, setManagerId] = useState(dept?.manager_id || "");
+  const [managerIds, setManagerIds] = useState(() => {
+    const arr = Array.isArray(dept?.manager_ids) ? dept.manager_ids.filter(Boolean) : [];
+    if (arr.length === 0 && dept?.manager_id) arr.push(dept.manager_id); // хуучин ганц ахлагчийг өвлөнө
+    return arr;
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -42104,7 +42126,8 @@ function DepartmentFormModal({ mode, dept, managers, onSave, onClose }) {
       id: dept?.id || null,
       name: name.trim(),
       description: description.trim() || null,
-      manager_id: managerId || null,
+      manager_id: managerIds[0] || null, // legacy талбар — эхний ахлагч
+      manager_ids: managerIds,
     });
     setBusy(false);
   };
@@ -42123,17 +42146,30 @@ function DepartmentFormModal({ mode, dept, managers, onSave, onClose }) {
             className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black resize-none" />
         </Field>
 
-        <Field label="Хэлтсийн ахлагч (заавал биш)">
-          <select value={managerId} onChange={(e) => setManagerId(e.target.value)}
-            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-black">
-            <option value="">— Сонгоогүй —</option>
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+        <Field label="Хэлтсийн ахлагч (заавал биш · олныг сонгож болно)">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {managerIds.map((mid) => {
+              const m = managers.find((x) => x.id === mid);
+              return (
+                <span key={mid} className="px-2.5 py-1.5 rounded-lg text-xs inline-flex items-center gap-1.5"
+                  style={{ background: T.highlight, color: "#fff", fontFamily: FM, fontWeight: 600 }}>
+                  ⭐ {m ? m.name : "?"}
+                  <button onClick={() => setManagerIds(managerIds.filter((x) => x !== mid))} title="Хасах"
+                    className="press-btn leading-none" style={{ color: "rgba(255,255,255,0.85)" }}>✕</button>
+                </span>
+              );
+            })}
+            <select value="" onChange={(e) => { const v = e.target.value; if (v && !managerIds.includes(v)) setManagerIds([...managerIds, v]); }}
+              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
+              className="px-3 py-2 rounded-lg border text-sm outline-none focus:border-black">
+              <option value="">➕ Ахлагч нэмэх...</option>
+              {managers.filter((m) => !managerIds.includes(m.id)).map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
           <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
-            Ахлагч сонгосон үед тэр хэлтсийн бүх ажилтныг автомат хариуцна
+            Ахлагч бүр хэлтсийн ажилтнуудыг хариуцна; ээлжийн тайлангийн сонгогчид ⭐-тэй гарна
           </p>
         </Field>
 
