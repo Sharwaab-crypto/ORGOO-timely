@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-kpi-pages2";
+const BUILD_VERSION = "v2026.08.27-title-fix";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2742,7 +2742,6 @@ function AdminDashboard({ profile }) {
                 {view === "approvals" && "Хүсэлт"}
                 {view === "leaves" && "Чөлөө"}
                 {view === "ledger" && "Тэмдэглэл"}
-                {view === "op-shift-report" && "Ээлжийн тайлан"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${employees.length} ажилтан · ${activeCount} ажиллаж байна`}
