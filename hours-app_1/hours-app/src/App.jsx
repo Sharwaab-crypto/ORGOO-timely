@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.08.27-dept-heads";
+const BUILD_VERSION = "v2026.09.02-cancel-class";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15573,12 +15573,14 @@ function CallCenterView({ profile }) {
                       // ⚠ Cycle статус — cycle ДОТОР ordered/cancelled БАЙСАН эсэхээр (сүүлийн дуудлагаар БИШ).
                       //    ordered болсны дараа хүргэлт/баталгаажуулах гэж дахин залгасан (unreachable г.м)
                       //    нь "залгах дугаар" биш — захиалга аль хэдийн болсон.
-                      const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
-                      const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
+                      // 🛡 ХАМГИЙН СҮҮЛИЙН ШИЙДВЭРЛЭЛТ ЯЛНА (2026-09-02):
+                      //    ordered-ийн ДАРАА цуцлагдсан бол cycle = cancelled — "Захиалга болсон"-д
+                      //    наалдаж ажлын дэлгэцэд эргэлдэхгүй. (Урвуугаар нь дахин ordered бол ordered.)
+                      const lastRes1 = [...currentCycle].reverse().find((c) => c.call_status === "ordered" || c.call_status === "cancelled");
                       cycleList.push({
                         phone,
                         calls: currentCycle,
-                        status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
+                        status: lastRes1 ? (lastRes1.call_status === "cancelled" ? "cancelled" : "ordered") : "calling",
                         latestDate: lastCall.created_at,
                         firstDate: currentCycle[0].created_at,
                         registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
@@ -15601,12 +15603,12 @@ function CallCenterView({ profile }) {
                 if (currentCycle.length > 0) {
                   const lastCall = currentCycle[currentCycle.length - 1];
                   const pendingCall = currentCycle.find((c) => c.call_status === "pending" || !c.call_status);
-                  const hasOrdered = currentCycle.some((c) => c.call_status === "ordered");
-                  const hasCancelled = currentCycle.some((c) => c.call_status === "cancelled");
+                  // 🛡 Хамгийн сүүлийн шийдвэрлэлт ялна (дээрхтэй ижил дүрэм)
+                  const lastRes2 = [...currentCycle].reverse().find((c) => c.call_status === "ordered" || c.call_status === "cancelled");
                   cycleList.push({
                     phone,
                     calls: currentCycle,
-                    status: hasOrdered ? "ordered" : hasCancelled ? "cancelled" : "calling",
+                    status: lastRes2 ? (lastRes2.call_status === "cancelled" ? "cancelled" : "ordered") : "calling",
                     latestDate: lastCall.created_at,
                     firstDate: currentCycle[0].created_at,
                     registeredDate: pendingCall ? pendingCall.created_at : currentCycle[0].created_at,
