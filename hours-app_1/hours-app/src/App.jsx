@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.02-cancel-class";
+const BUILD_VERSION = "v2026.09.02-cancel-class2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14939,7 +14939,9 @@ function CallCenterView({ profile }) {
                 const last = cyCalls[cyCalls.length - 1];
                 const cyStatus = last.call_status === "ordered" ? "ordered"
                               : last.call_status === "cancelled" ? "cancelled" : "calling";
-                if (cyStatus === "cancelled" && inPeriod(last.created_at)) canC++;
+                // 🛡 Зөвхөн бүртгэлтэй (pending агуулсан) цуцлалт тоологдоно —
+                //    захиалга-цуцлалтын ганц мөрөн тэмдэглэгээ badge-д орохгүй
+                if (cyStatus === "cancelled" && inPeriod(last.created_at) && cyCalls.some((c) => c.call_status === "pending" || !c.call_status)) canC++;
                 // Захиалга болсон: ordered cycle БА захиалга идэвхтэй
                 if (cyStatus === "ordered" && info.activeOrder && inPeriod(last.created_at)) {
                   if (!seenOrdPhone.has(phone)) { seenOrdPhone.add(phone); ordC++; }
@@ -15696,8 +15698,11 @@ function CallCenterView({ profile }) {
                   return inListPeriod(cy.latestDate);
                 }
                 if (activeTab === "cancelled") {
-                  // Цуцлагдсан cycle — cancelled статустай cycle
+                  // Устгагдсан = ОПЕРАТОРЫН цуцалсан ДУГААРУУД.
+                  // 🛡 2026-09-02: Захиалга БОЛООД дараа нь цуцлагдсан cycle энд орохгүй —
+                  //    тэр нь захиалгын түүх тул зөвхөн "Бүгд"-д харагдана.
                   if (cy.status !== "cancelled") return false;
+                  if (cy.calls.some((c) => c.call_status === "ordered")) return false;
                   return inListPeriod(cy.latestDate);
                 }
                 if (activeTab === "delivered") {
