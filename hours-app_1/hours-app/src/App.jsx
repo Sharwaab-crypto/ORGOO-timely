@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.03-mkt-pool";
+const BUILD_VERSION = "v2026.09.03-mkt-pool-z";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17551,7 +17551,7 @@ function MarketingView({ profile }) {
   return (
     <div className="space-y-4">
       {/* ====== 🛒 АЖИЛЛАХ БАРАА — нийтийн сан ====== */}
-      <div className="glass rounded-2xl p-4">
+      <div className="glass rounded-2xl p-4 relative" style={{ zIndex: poolSearchLc ? 40 : "auto" }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">🛒</span>
