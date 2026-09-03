@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.03-mkt-pool-z";
+const BUILD_VERSION = "v2026.09.03-driver-settle";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -38739,6 +38739,11 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   const [activeReport, setActiveReport] = useState(null);
   const [reportOrders, setReportOrders] = useState([]); // тухайн тооцооны захиалгууд
   const [loadingOrders, setLoadingOrders] = useState(false);
+  // 📅 Он/сар шүүлт + 30-аар pagination + амжилттай хүргэлтийн тоо
+  const [ym, setYm] = useState("all"); // "all" | "YYYY-MM"
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 30;
+  const [delivStats, setDelivStats] = useState({ all: null, month: null });
 
   const loadReports = async () => {
     setLoading(true);
@@ -38754,6 +38759,40 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   };
 
   useEffect(() => { loadReports(); }, []);
+
+  // ✅ Амжилттай хүргэсэн хүргэлт — бүх цаг + сонгосон сар (серверийн head-count)
+  useEffect(() => {
+    (async () => {
+      try {
+        const base = () => supabase.from("biz_orders").select("id", { count: "exact", head: true })
+          .eq("driver_id", profile.id).eq("status", "delivered");
+        const { count: allC } = await base();
+        let monthC = null;
+        if (ym !== "all") {
+          const [y, m] = ym.split("-").map(Number);
+          const s = new Date(y, m - 1, 1), e = new Date(y, m, 1);
+          const { count } = await base().gte("delivered_at", s.toISOString()).lt("delivered_at", e.toISOString());
+          monthC = count || 0;
+        }
+        setDelivStats({ all: allC || 0, month: monthC });
+      } catch (e) { console.error("[driver deliv stats]", e); }
+    })();
+  }, [ym]);
+
+  // Он/сарын түлхүүр ба шүүлт
+  const ymOf = (r) => {
+    const d = new Date(r.settled_at || r.created_at);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const monthsAvail = [...new Set(reports.map(ymOf))].sort((a, b) => (a < b ? 1 : -1));
+  const filteredReports = ym === "all" ? reports : reports.filter((r) => ymOf(r) === ym);
+  const closedInView = filteredReports.filter((r) => r.status === "closed");
+  const closedOrdersSum = closedInView.reduce((s, r) => s + Number(r.order_count || 0), 0);
+  const closedAmountSum = closedInView.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
+  const pageCount = Math.max(1, Math.ceil(filteredReports.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageReports = filteredReports.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const ymLabel = (k) => { const [y, m] = k.split("-"); return `${y} оны ${Number(m)}-р сар`; };
 
   // 📦 Тухайн тооцоонд хамаарах захиалгуудыг татах (settlement_id-аар)
   useEffect(() => {
@@ -38979,21 +39018,58 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
         </div>
       </div>
 
+      {/* 📅 Он/сар шүүлт + амжилттай хүргэлтийн тоо */}
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📅 Хугацаа</span>
+          <select value={ym} onChange={(e) => { setYm(e.target.value); setPage(1); }}
+            className="px-2 py-1.5 rounded-lg text-xs"
+            style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+            <option value="all">Бүх цаг</option>
+            {monthsAvail.map((k) => <option key={k} value={k}>{ymLabel(k)}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl p-2" style={{ background: T.okSoft || "rgba(16,185,129,0.08)" }}>
+            <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">
+              {delivStats.all === null ? "…" : delivStats.all.toLocaleString()}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✅ Нийт амжилттай</div>
+          </div>
+          <div className="rounded-xl p-2" style={{ background: T.surfaceAlt }}>
+            <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">
+              {ym === "all" ? "—" : delivStats.month === null ? "…" : delivStats.month.toLocaleString()}
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Сарын амжилттай</div>
+          </div>
+          <div className="rounded-xl p-2" style={{ background: T.surfaceAlt }}>
+            <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">{closedInView.length}</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Хаагдсан тооцоо · {closedOrdersSum} захиалга</div>
+          </div>
+        </div>
+        {closedAmountSum > 0 && (
+          <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] text-center">
+            Хаагдсан тооцоогоор тушаасан: <b style={{ color: T.ink }}>{closedAmountSum.toLocaleString()}₮</b>
+          </div>
+        )}
+      </div>
+
       {/* Хаагдсан тооцоонуудын түүх */}
       <div>
         <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2 flex items-center gap-2">
-          📊 Тооцооний тайлан ({reports.length})
+          📊 Тооцооний тайлан ({filteredReports.length})
+          {pageCount > 1 && <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {safePage}/{pageCount} хуудас</span>}
         </div>
 
         {loading ? (
           <div className="glass rounded-2xl p-8 text-center">
             <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
           </div>
-        ) : reports.length === 0 ? (
+        ) : filteredReports.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📊</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Хаагдсан тооцоо алга
+              {ym === "all" ? "Хаагдсан тооцоо алга" : `${ymLabel(ym)}-д тооцоо алга`}
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
               Удирдах ажилтан тооцоог хаасны дараа энд харагдана
@@ -39001,7 +39077,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {reports.map((r) => (
+            {pageReports.map((r) => (
               <button key={r.id} onClick={() => setActiveReport(r)}
                 className="press-btn glass lift rounded-2xl p-3 w-full text-left"
                 style={{ borderLeft: `4px solid ${T.ok}` }}>
@@ -39047,6 +39123,21 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
                 </div>
               </button>
             ))}
+            {pageCount > 1 && (
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  style={{ background: T.surfaceAlt, color: safePage <= 1 ? T.mutedSoft : T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                  ‹ Өмнөх
+                </button>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">{safePage} / {pageCount}</span>
+                <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={safePage >= pageCount}
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                  style={{ background: T.surfaceAlt, color: safePage >= pageCount ? T.mutedSoft : T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                  Дараах ›
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
