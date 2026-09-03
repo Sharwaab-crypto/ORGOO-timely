@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.03-driver-settle2";
+const BUILD_VERSION = "v2026.09.03-hooks-fix";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -44680,30 +44680,6 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
   // Хэрэв нэг өдөр л байгаа бол bar chart харуулах (KPI бүрд) — зөвхөн day grouping үед
   const isSingleDay = groupBy === "day" && dateList.length === 1;
 
-  if (deptKpis.length === 0) {
-    return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">KPI байхгүй</p>
-      </div>
-    );
-  }
-
-  if (filteredEntries.length === 0 && groupBy === "day") {
-    return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">Сонгосон хугацаанд тоо оруулаагүй байна</p>
-      </div>
-    );
-  }
-
-  if ((groupBy === "week" || groupBy === "month") && (!allEntries || allEntries.length === 0)) {
-    return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">Тоон утга оруулаагүй байна</p>
-      </div>
-    );
-  }
-
   // Single day → 1 bar chart with all KPIs as bars
   if (isSingleDay) {
     const singleDayDate = dateList[0];
@@ -44954,6 +44930,33 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
       totalSum: Object.values(totalsByKpi).reduce((s, v) => s + v, 0),
     };
   }, [chartData, deptKpis]);
+
+  // 🛡 React #300 засвар (2026-09-03): хоосон төлвийн эрт return-үүдийг БҮХ hook-ийн
+  //    АРД шилжүүлэв — өмнө нь 6 useMemo-оос өмнө байрлаж, "Гар" хугацаанд тоо
+  //    байхгүй үед hook-ийн тоо цөөрч апп бүхэлдээ унадаг байсан.
+  if (deptKpis.length === 0) {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">KPI байхгүй</p>
+      </div>
+    );
+  }
+
+  if (filteredEntries.length === 0 && groupBy === "day") {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">Сонгосон хугацаанд тоо оруулаагүй байна</p>
+      </div>
+    );
+  }
+
+  if ((groupBy === "week" || groupBy === "month") && (!allEntries || allEntries.length === 0)) {
+    return (
+      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
+        <p className="text-sm">Тоон утга оруулаагүй байна</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
