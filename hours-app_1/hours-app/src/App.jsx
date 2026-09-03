@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.02-cancel-class2";
+const BUILD_VERSION = "v2026.09.03-mkt-pool";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17500,10 +17500,130 @@ function MarketingView({ profile }) {
     } catch (e) { alert("Алдаа: " + e.message); }
   };
 
+  // ═══ 🛒 АЖИЛЛАХ БАРАА (нийтийн сан) — mkt_work_pool ═══
+  //    Админ/ахлах хайж нэмнэ; гишүүд өөрийн бараанд 📥 Авах-аар нэмнэ (mkt_products).
+  const [workPool, setWorkPool] = useState([]);
+  const [poolSearch, setPoolSearch] = useState("");
+  const [poolBusy, setPoolBusy] = useState(null);
+  const loadPool = async () => {
+    try {
+      const { data, error } = await supabase.from("mkt_work_pool").select("*").order("added_at", { ascending: false });
+      if (error) throw error;
+      setWorkPool(data || []);
+    } catch (e) { console.error("[mkt pool]", e); }
+  };
+  useEffect(() => { loadPool(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("mkt-work-pool-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "mkt_work_pool" }, () => loadPool())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const addToPool = async (productId) => {
+    if (workPool.some((w) => w.product_id === productId)) return;
+    try {
+      const { data, error } = await supabase.from("mkt_work_pool").insert({ product_id: productId, added_by: profile.id }).select().single();
+      if (error) throw error;
+      if (data) setWorkPool((prev) => [data, ...prev.filter((w) => w.id !== data.id)]);
+      setPoolSearch("");
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const removeFromPool = async (id) => {
+    if (!confirm("Ажиллах бараанаас хасах уу?")) return;
+    try {
+      await supabase.from("mkt_work_pool").delete().eq("id", id);
+      setWorkPool((prev) => prev.filter((w) => w.id !== id));
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const takeFromPool = async (productId) => {
+    if (poolBusy) return;
+    setPoolBusy(productId);
+    try { await addMktProduct(profile.id, productId); } finally { setPoolBusy(null); }
+  };
+  const isPoolMember = employees.some((e) => e.id === profile.id);
+  const poolSearchLc = poolSearch.trim().toLowerCase();
+  const poolCandidates = poolSearchLc
+    ? products.filter((p) => (p.name?.toLowerCase().includes(poolSearchLc) || p.sku?.toLowerCase().includes(poolSearchLc)) && !workPool.some((w) => w.product_id === p.id)).slice(0, 20)
+    : [];
+
   if (loading) return <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Ачаалж байна...</div>;
 
   return (
     <div className="space-y-4">
+      {/* ====== 🛒 АЖИЛЛАХ БАРАА — нийтийн сан ====== */}
+      <div className="glass rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-lg">🛒</span>
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Ажиллах бараа</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+              {workPool.length} бараа · нийт үлдэгдэл {workPool.reduce((s, w) => s + Number(prodById[w.product_id]?.stock || 0), 0).toLocaleString()}
+            </span>
+          </div>
+          {isPoolMember && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">📥 Авах — өөрийн ажиллаж буй бараанд нэмнэ</span>}
+        </div>
+
+        {canEdit && (
+          <div className="relative mb-3">
+            <input value={poolSearch} onChange={(e) => setPoolSearch(e.target.value)} placeholder="🔍 Бараа хайж нэмэх (нэр / SKU)..."
+              className="w-full rounded-lg px-2.5 py-2 text-sm outline-none"
+              style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+            {poolSearchLc && (
+              <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl p-1.5 shadow-lg max-h-60 overflow-auto"
+                style={{ background: T.bg, border: `1px solid ${T.borderStrong}` }}>
+                {poolCandidates.map((p) => (
+                  <button key={p.id} onClick={() => addToPool(p.id)}
+                    className="press-btn w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2"
+                    style={{ color: T.ink, fontFamily: FS }}>
+                    <span className="truncate">{p.name} <span style={{ color: T.muted, fontFamily: FM }}>· {p.sku}</span></span>
+                    <span style={{ color: Number(p.stock || 0) > 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 700 }} className="flex-shrink-0">{Number(p.stock || 0).toLocaleString()} ш</span>
+                  </button>
+                ))}
+                {poolCandidates.length === 0 && <div className="px-2.5 py-1.5 text-xs" style={{ color: T.muted, fontFamily: FS }}>Олдсонгүй эсвэл бүгд нэмэгдсэн</div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {workPool.length === 0 ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
+            {canEdit ? "Дээрх хайлтаар ажиллах бараагаа нэмнэ үү." : "Ахлах ажилтан ажиллах бараа нэмээгүй байна."}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {workPool.map((w) => {
+              const p = prodById[w.product_id];
+              const stock = Number(p?.stock || 0);
+              const mine = isPoolMember && mktProducts.some((mp) => mp.employee_id === profile.id && mp.product_id === w.product_id && mp.status === "active");
+              const takenBy = employees.filter((e) => mktProducts.some((mp) => mp.employee_id === e.id && mp.product_id === w.product_id && mp.status === "active"));
+              return (
+                <div key={w.id} className="rounded-xl p-2.5 flex items-center gap-2"
+                  style={{ background: T.surfaceAlt || "#F8FAFC", border: `1px solid ${T.border || "#E5E7EB"}` }}>
+                  <div className="min-w-0 flex-1">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{p?.name || "?"}</div>
+                    <div className="text-[10px] flex flex-wrap gap-x-1.5" style={{ fontFamily: FM }}>
+                      <span style={{ color: T.muted }}>{p?.sku || ""}</span>
+                      <span style={{ color: stock > 0 ? T.ok : T.err, fontWeight: 700 }}>үлдэгдэл {stock.toLocaleString()}</span>
+                      {takenBy.length > 0 && <span style={{ color: T.highlight }}>👤 {takenBy.map((e) => e.name).join(", ")}</span>}
+                    </div>
+                  </div>
+                  {isPoolMember && (mine
+                    ? <span className="text-[10px] px-2 py-1 rounded-lg flex-shrink-0" style={{ background: T.okSoft || "#DCFCE7", color: T.ok, fontFamily: FM, fontWeight: 700 }}>✓ Авсан</span>
+                    : <button onClick={() => takeFromPool(w.product_id)} disabled={poolBusy === w.product_id}
+                        className="press-btn text-[11px] px-2 py-1 rounded-lg flex-shrink-0"
+                        style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>📥 Авах</button>)}
+                  {canEdit && (
+                    <button onClick={() => removeFromPool(w.id)} title="Санаас хасах"
+                      className="press-btn text-[11px] px-1.5 py-1 rounded-lg flex-shrink-0"
+                      style={{ background: T.errSoft || "#FEE2E2", color: T.err }}>✕</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* ====== SECTION A: ажилтан × ангилал/бараа ====== */}
       <div className="glass rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
