@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.03-driver-settle";
+const BUILD_VERSION = "v2026.09.03-driver-settle2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -38744,6 +38744,9 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 30;
   const [delivStats, setDelivStats] = useState({ all: null, month: null });
+  const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const [customFrom, setCustomFrom] = useState(todayIso().slice(0, 8) + "01"); // гараар: эхлэл (сарын 1)
+  const [customTo, setCustomTo] = useState(todayIso());                          // гараар: төгсгөл (өнөөдөр)
 
   const loadReports = async () => {
     setLoading(true);
@@ -38768,7 +38771,14 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
           .eq("driver_id", profile.id).eq("status", "delivered");
         const { count: allC } = await base();
         let monthC = null;
-        if (ym !== "all") {
+        if (ym === "custom") {
+          if (customFrom && customTo) {
+            const s = new Date(`${customFrom}T00:00:00`);
+            const e = new Date(new Date(`${customTo}T00:00:00`).getTime() + 86400000);
+            const { count } = await base().gte("delivered_at", s.toISOString()).lt("delivered_at", e.toISOString());
+            monthC = count || 0;
+          }
+        } else if (ym !== "all") {
           const [y, m] = ym.split("-").map(Number);
           const s = new Date(y, m - 1, 1), e = new Date(y, m, 1);
           const { count } = await base().gte("delivered_at", s.toISOString()).lt("delivered_at", e.toISOString());
@@ -38777,7 +38787,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
         setDelivStats({ all: allC || 0, month: monthC });
       } catch (e) { console.error("[driver deliv stats]", e); }
     })();
-  }, [ym]);
+  }, [ym, customFrom, customTo]);
 
   // Он/сарын түлхүүр ба шүүлт
   const ymOf = (r) => {
@@ -38785,7 +38795,12 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
   const monthsAvail = [...new Set(reports.map(ymOf))].sort((a, b) => (a < b ? 1 : -1));
-  const filteredReports = ym === "all" ? reports : reports.filter((r) => ymOf(r) === ym);
+  const inCustom = (r) => {
+    if (!customFrom || !customTo) return true;
+    const d = new Date(r.settled_at || r.created_at);
+    return d >= new Date(`${customFrom}T00:00:00`) && d < new Date(new Date(`${customTo}T00:00:00`).getTime() + 86400000);
+  };
+  const filteredReports = ym === "all" ? reports : ym === "custom" ? reports.filter(inCustom) : reports.filter((r) => ymOf(r) === ym);
   const closedInView = filteredReports.filter((r) => r.status === "closed");
   const closedOrdersSum = closedInView.reduce((s, r) => s + Number(r.order_count || 0), 0);
   const closedAmountSum = closedInView.reduce((s, r) => s + Number(r.total_submitted || 0), 0);
@@ -38793,6 +38808,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
   const safePage = Math.min(page, pageCount);
   const pageReports = filteredReports.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const ymLabel = (k) => { const [y, m] = k.split("-"); return `${y} оны ${Number(m)}-р сар`; };
+  const periodLabel = ym === "all" ? "Бүх цаг" : ym === "custom" ? `${customFrom} – ${customTo}` : ymLabel(ym);
 
   // 📦 Тухайн тооцоонд хамаарах захиалгуудыг татах (settlement_id-аар)
   useEffect(() => {
@@ -39027,7 +39043,19 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
             style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
             <option value="all">Бүх цаг</option>
             {monthsAvail.map((k) => <option key={k} value={k}>{ymLabel(k)}</option>)}
+            <option value="custom">📅 Гараар</option>
           </select>
+          {ym === "custom" && (
+            <>
+              <input type="date" value={customFrom} onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
+                className="px-2 py-1 rounded-lg text-xs"
+                style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+              <span style={{ color: T.muted }}>–</span>
+              <input type="date" value={customTo} onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
+                className="px-2 py-1 rounded-lg text-xs"
+                style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+            </>
+          )}
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-xl p-2" style={{ background: T.okSoft || "rgba(16,185,129,0.08)" }}>
@@ -39040,7 +39068,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
             <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">
               {ym === "all" ? "—" : delivStats.month === null ? "…" : delivStats.month.toLocaleString()}
             </div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">Сарын амжилттай</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">{ym === "custom" ? "Хугацааны амжилттай" : "Сарын амжилттай"}</div>
           </div>
           <div className="rounded-xl p-2" style={{ background: T.surfaceAlt }}>
             <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">{closedInView.length}</div>
@@ -39069,7 +39097,7 @@ function DriverSettlementsView({ profile, myOwed, myDeliveredTotal }) {
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">📊</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              {ym === "all" ? "Хаагдсан тооцоо алга" : `${ymLabel(ym)}-д тооцоо алга`}
+              {ym === "all" ? "Хаагдсан тооцоо алга" : `${periodLabel}-д тооцоо алга`}
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-1">
               Удирдах ажилтан тооцоог хаасны дараа энд харагдана
