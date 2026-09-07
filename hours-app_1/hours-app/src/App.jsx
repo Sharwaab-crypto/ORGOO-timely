@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.07-real-stock";
+const BUILD_VERSION = "v2026.09.07-driver-name";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21290,6 +21290,7 @@ function DriverSettlementView({ profile }) {
               // 1. Open settlement үүсгэх
               const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
                 driver_id: driver.id,
+                driver_name: driver.name || null, // 📌 snapshot — хэрэглэгч устгагдсан ч нэр үлдэнэ
                 cash_amount: 0, bank_amount: 0, expense_amount: 0,
                 total_submitted: 0,
                 settlement_amount: driver.owed,
@@ -21395,6 +21396,7 @@ function DriverSettlementView({ profile }) {
                 // Шууд хаах (open алхамгүйгээр) — хуучин flow
                 const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
                   driver_id: driver.id,
+                  driver_name: driver.name || null, // 📌 snapshot
                   cash_amount: cash, cash_notes: cashNotes.trim() || null,
                   bank_amount: bank, bank_notes: bankNotes.trim() || null,
                   expense_amount: expense, expense_notes: expenseNotes.trim() || null,
@@ -22341,6 +22343,7 @@ function DriverSettlementView({ profile }) {
           // 1. Open settlement үүсгэх
           const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
             driver_id: d.id,
+            driver_name: d.name || null, // 📌 snapshot (bulk нээх)
             cash_amount: 0, bank_amount: 0, expense_amount: 0,
             total_submitted: 0,
             settlement_amount: d.owed,
@@ -23401,7 +23404,7 @@ function SettlementReportsView({ profile }) {
           </div>
           <div className="flex-1 min-w-0">
             <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-              🚚 {drv?.name || "Хүргэгч"}
+              🚚 {drv?.name || r.driver_name || "Хүргэгч"}
             </div>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
               {r.settled_at ? new Date(r.settled_at).toLocaleString("mn-MN") : `Нээгдсэн: ${new Date(r.created_at).toLocaleString("mn-MN")}`} · {r.period_label}
@@ -24131,7 +24134,7 @@ function SettlementReportsView({ profile }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                        🚚 {drv?.name || "Хүргэгч"}
+                        🚚 {drv?.name || r.driver_name || "Хүргэгч"}
                       </div>
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
                         {r.settled_at ? new Date(r.settled_at).toLocaleString("mn-MN") : `Нээгдсэн: ${new Date(r.created_at).toLocaleString("mn-MN")}`} · {r.period_label}
