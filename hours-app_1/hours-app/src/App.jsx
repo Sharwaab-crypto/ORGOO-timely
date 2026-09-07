@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.07-driver-name";
+const BUILD_VERSION = "v2026.09.07-email-edit";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -4988,7 +4988,7 @@ function MerchantPageSelector({ selectedIds = [], onChange }) {
 
 function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], departments = [], onSave, onClose }) {
   const [name, setName] = useState(employee?.name || "");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(employee?.email || ""); // засварлахад одоогийн имэйл
   const [password, setPassword] = useState("");
   const [jobTitle, setJobTitle] = useState(employee?.job_title || "");
   const [rate, setRate] = useState(employee?.hourly_rate ? String(employee.hourly_rate) : "");
@@ -5055,6 +5055,16 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
     if (hasSchedule && days.length === 0) return setErr("Ажлын өдөр сонгоно уу");
 
     setBusy(true);
+    // ✉️ Засварлах горимд имэйл өөрчлөгдсөн бол нэвтрэх имэйлийг (auth) RPC-ээр солино
+    if (mode !== "add" && employee?.id) {
+      const newEmail = email.trim().toLowerCase();
+      const oldEmail = (employee?.email || "").trim().toLowerCase();
+      if (newEmail && newEmail !== oldEmail) {
+        if (!newEmail.includes("@")) { setBusy(false); return setErr("Зөв имэйл оруулна уу"); }
+        const { error: eErr } = await supabase.rpc("admin_change_user_email", { p_user: employee.id, p_email: newEmail });
+        if (eErr) { setBusy(false); return setErr("Имэйл солиход алдаа: " + eErr.message); }
+      }
+    }
     const formData = {
       email: email.trim(), name: name.trim(),
       role, // employee | manager
@@ -5093,6 +5103,14 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
           <Field label="Нэр" required>
             <Input value={name} onChange={setName} placeholder="Бат-Эрдэнэ" autoFocus />
           </Field>
+          {mode !== "add" && (
+            <Field label="Имэйл (нэвтрэх)">
+              <Input value={email} onChange={setEmail} placeholder="bat@example.com" />
+              <p style={{ color: T.muted }} className="text-[11px] mt-1.5">
+                Солиход ажилтан шинэ имэйлээрээ нэвтэрнэ (нууц үг хэвээр). Зөвхөн админ солино.
+              </p>
+            </Field>
+          )}
           {mode === "add" && (
             <>
               <Field label="Имэйл" required>
