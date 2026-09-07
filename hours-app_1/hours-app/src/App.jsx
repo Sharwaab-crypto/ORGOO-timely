@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.03-hooks-fix";
+const BUILD_VERSION = "v2026.09.07-real-stock";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -24696,8 +24696,9 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                             style={{
                               background: T.surface,
                               // ⚠ Нөөц 20-иос доош → тод улаан хүрээ + glow (dark/light хоёуланд тодорно)
-                              border: Number(p.stock || 0) < 20 ? "2px solid #EF4444" : `1px solid ${T.border}`,
-                              boxShadow: Number(p.stock || 0) < 20 ? "0 0 0 1px rgba(239,68,68,0.35), 0 0 12px rgba(239,68,68,0.45)" : "none",
+                              // 🛡 2026-09-07: inv_products.stock хуучирсан (сөрөг) — inv_stock-оос тооцсон ЖИНХЭНЭ үлдэгдлээр
+                              border: Number(realStockByProduct[p.id] ?? p.stock ?? 0) < 20 ? "2px solid #EF4444" : `1px solid ${T.border}`,
+                              boxShadow: Number(realStockByProduct[p.id] ?? p.stock ?? 0) < 20 ? "0 0 0 1px rgba(239,68,68,0.35), 0 0 12px rgba(239,68,68,0.45)" : "none",
                             }}>
                             {/* Top: SKU + Тайлбар pill */}
                             <div className="flex items-center gap-1 p-1.5"
@@ -24723,12 +24724,12 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                               <span
                                 title="Нийт үлдэгдэл (бүх агуулах)"
                                 style={{
-                                  background: Number(p.stock || 0) < 20 ? "rgba(239,68,68,0.22)" : "rgba(16,185,129,0.15)",
-                                  color: Number(p.stock || 0) < 20 ? "#EF4444" : "#10B981",
+                                  background: Number(realStockByProduct[p.id] ?? p.stock ?? 0) < 20 ? "rgba(239,68,68,0.22)" : "rgba(16,185,129,0.15)",
+                                  color: Number(realStockByProduct[p.id] ?? p.stock ?? 0) < 20 ? "#EF4444" : "#10B981",
                                   fontFamily: FD, fontWeight: 700,
                                 }}
                                 className="text-[9px] px-1.5 py-0.5 rounded tabular-nums">
-                                📦 {Number(p.stock || 0)}
+                                📦 {Number(realStockByProduct[p.id] ?? p.stock ?? 0)}
                               </span>
                               {pendingQtyByProduct[p.id] > 0 && (
                                 <span
