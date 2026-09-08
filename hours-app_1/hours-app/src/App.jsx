@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.09-wh-move";
+const BUILD_VERSION = "v2026.09.09-wh-move2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -10207,10 +10207,10 @@ function WarehousesView({ profile }) {
               </div>
 
               {/* Сонгосон бараанууд */}
-              {showActionModal === "receive" && actionWarehouse && actionItems.length === 0 && (
+              {(showActionModal === "receive" || showActionModal === "move") && actionWarehouse && actionItems.length === 0 && (
                 <div className="mb-3 rounded-lg p-3 text-center" style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}` }}>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-                    📭 Энэ хүргэгчийн агуулахад бараа алга байна
+                    {showActionModal === "move" ? "📭 Эх агуулахад үлдэгдэлтэй бараа алга байна" : "📭 Энэ хүргэгчийн агуулахад бараа алга байна"}
                   </div>
                   <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
                     Татах зүйлгүй — өөр хүргэгч сонгох эсвэл хайлтаас гараар нэмнэ үү
@@ -10247,8 +10247,13 @@ function WarehousesView({ profile }) {
                               {it.product_sku}
                             </div>
                           )}
+                          {it.maxQty !== undefined && (
+                            <div style={{ color: Number(it.maxQty) > 0 ? T.ok : T.err, fontFamily: FM, fontWeight: 700 }} className="text-[10px]">
+                              📦 үлдэгдэл {Number(it.maxQty)}
+                            </div>
+                          )}
                         </div>
-                        {/* Тоо input — − qty + */}
+                        {/* Тоо input — − qty + (үлдэгдлээс хэтрэхгүй) */}
                         <div className="flex items-center gap-1">
                           <button onClick={() => {
                             setActionItems(actionItems.map((x) => 
@@ -10265,7 +10270,7 @@ function WarehousesView({ profile }) {
                             onChange={(e) => {
                               const q = Number(e.target.value) || 0;
                               setActionItems(actionItems.map((x) => 
-                                x.product_id === it.product_id ? { ...x, quantity: q } : x
+                                x.product_id === it.product_id ? { ...x, quantity: Math.min(q, x.maxQty ?? Infinity) } : x
                               ));
                             }}
                             style={{ background: T.bg, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FD }}
@@ -10273,7 +10278,7 @@ function WarehousesView({ profile }) {
                           <button onClick={() => {
                             setActionItems(actionItems.map((x) => 
                               x.product_id === it.product_id 
-                                ? { ...x, quantity: Number(x.quantity) + 1 }
+                                ? { ...x, quantity: Math.min(Number(x.quantity) + 1, x.maxQty ?? Infinity) }
                                 : x
                             ));
                           }}
