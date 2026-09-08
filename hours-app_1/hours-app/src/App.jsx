@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.09-wh-move2";
+const BUILD_VERSION = "v2026.09.09-wh-move3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -10051,18 +10051,18 @@ function WarehousesView({ profile }) {
           setActionNote("");
           setProductSearch("");
         }}
-          className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
-          style={{ borderLeft: `3px solid #0ea5e9` }}>
-          <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-lg">
+          className="press-btn rounded-2xl p-3 flex items-center justify-center gap-3 col-span-2"
+          style={{ background: "linear-gradient(135deg, #0ea5e9, #0369a1)", boxShadow: "0 8px 20px rgba(14,165,233,0.35)" }}>
+          <div style={{ background: "rgba(255,255,255,0.22)", color: "#fff" }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl">
             🔀
           </div>
           <div className="text-left">
-            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+            <div style={{ fontFamily: FS, fontWeight: 800, color: "#fff" }} className="text-base">
               Шилжүүлэх
             </div>
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-              Дурын агуулахаас дурын агуулах руу
+            <div style={{ color: "rgba(255,255,255,0.85)", fontFamily: FM }} className="text-[11px]">
+              Дурын агуулахаас дурын агуулах руу бараа шилжүүлэх
             </div>
           </div>
         </button>
