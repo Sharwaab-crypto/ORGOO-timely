@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.07-email-edit";
+const BUILD_VERSION = "v2026.09.09-wh-move";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -9745,9 +9745,10 @@ function WarehousesView({ profile }) {
         const mainWh = warehouses.find((w) => w.type === "main");
         if (!selWh) return;
 
-        if (showActionModal === "transfer") {
-          // 🔄 Бараа өгөх → үндсэн агуулахад байгаа бүх бараа (admin гараар тоо оруулна)
-          const srcStock = stock.filter((s) => s.warehouse_id === mainWh?.id && Number(s.quantity) > 0);
+        if (showActionModal === "transfer" || showActionModal === "move") {
+          // 🔄 Бараа өгөх → үндсэн агуулахын бараа; 🔀 Шилжүүлэх → сонгосон ЭХ агуулахын бараа
+          const srcWhId = showActionModal === "move" ? selWh.id : mainWh?.id;
+          const srcStock = stock.filter((s) => s.warehouse_id === srcWhId && Number(s.quantity) > 0);
           const items = srcStock.map((s) => {
             const product = products.find((p) => p.id === s.product_id);
             if (!product) return null;
@@ -9905,11 +9906,16 @@ function WarehousesView({ profile }) {
   //   Хүсэлт үүсэн, admin өөрөө зөвшөөрнө
   const handleAction = async () => {
     if (!actionWarehouse) {
-      alert(showActionModal === "receive" 
+      alert(showActionModal === "receive"
         ? "⚠ Хаанаас татах driver-ийн агуулахыг сонгоно уу"
+        : showActionModal === "move" ? "⚠ ЭХ агуулахыг сонгоно уу"
         : "⚠ Хаашаа өгөх driver-ийн агуулахыг сонгоно уу"
       );
       return;
+    }
+    if (showActionModal === "move") {
+      if (!actionToWarehouse) { alert("⚠ ХҮЛЭЭН АВАХ агуулахыг сонгоно уу"); return; }
+      if (actionToWarehouse === actionWarehouse) { alert("⚠ Эх ба хүлээн авах агуулах ижил байж болохгүй"); return; }
     }
     if (actionItems.length === 0) {
       alert("⚠ Бараа сонгоно уу");
@@ -9935,6 +9941,11 @@ function WarehousesView({ profile }) {
         fromWh = actionWarehouse;
         toWh = mainWh.id;
         isReturn = true;
+      } else if (showActionModal === "move") {
+        // 🔀 Дурын агуулах → дурын агуулах (ЭХ = actionWarehouse, ХҮЛЭЭН АВАХ = actionToWarehouse)
+        fromWh = actionWarehouse;
+        toWh = actionToWarehouse;
+        isReturn = warehouses.find((w) => w.id === toWh)?.type === "main"; // үндсэн рүү бол буцаалт
       } else {
         // 🔄 Үндсэн → Driver = авах төрөл
         fromWh = mainWh.id;
@@ -10032,6 +10043,29 @@ function WarehousesView({ profile }) {
             </div>
           </div>
         </button>
+        <button onClick={() => {
+          setShowActionModal("move");
+          setActionWarehouse(null);
+          setActionToWarehouse(null);
+          setActionItems([]);
+          setActionNote("");
+          setProductSearch("");
+        }}
+          className="press-btn glass rounded-2xl p-3 flex items-center gap-2"
+          style={{ borderLeft: `3px solid #0ea5e9` }}>
+          <div style={{ background: "rgba(14,165,233,0.1)", color: "#0ea5e9" }}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-lg">
+            🔀
+          </div>
+          <div className="text-left">
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
+              Шилжүүлэх
+            </div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+              Дурын агуулахаас дурын агуулах руу
+            </div>
+          </div>
+        </button>
       </div>
       
       {/* Original list ↓ */}
@@ -10116,8 +10150,8 @@ function WarehousesView({ profile }) {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base flex items-center gap-2">
-                  <span>{showActionModal === "receive" ? "📥" : "🔄"}</span>
-                  <span>{showActionModal === "receive" ? "Бараа авах хүсэлт" : "Бараа өгөх хүсэлт"}</span>
+                  <span>{showActionModal === "receive" ? "📥" : showActionModal === "move" ? "🔀" : "🔄"}</span>
+                  <span>{showActionModal === "receive" ? "Бараа авах хүсэлт" : showActionModal === "move" ? "Агуулах хооронд шилжүүлэх" : "Бараа өгөх хүсэлт"}</span>
                 </div>
                 <button onClick={() => setShowActionModal(null)} style={{ color: T.muted }}>
                   <X size={18} />
@@ -10126,24 +10160,47 @@ function WarehousesView({ profile }) {
 
               <div className="mb-3">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
-                  {showActionModal === "receive" ? "🚚 Хэн хүргэгчээс татах вэ?" : "🚚 Хэн хүргэгчид өгөх вэ?"}
+                  {showActionModal === "receive" ? "🚚 Хэн хүргэгчээс татах вэ?" : showActionModal === "move" ? "📤 ЭХ агуулах (хаанаас)" : "🚚 Хэн хүргэгчид өгөх вэ?"}
                 </label>
                 <select value={actionWarehouse || ""}
                   onChange={(e) => setActionWarehouse(e.target.value)}
                   style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
                   className="w-full px-3 py-2.5 rounded-lg text-sm">
-                  <option value="">— Хүргэгчийг сонгоно уу —</option>
+                  <option value="">{showActionModal === "move" ? "— Эх агуулахыг сонгоно уу —" : "— Хүргэгчийг сонгоно уу —"}</option>
                   {warehouses
-                    .filter((w) => w.type !== "main" && w.driver_id) // зөвхөн driver-ийн агуулах
+                    .filter((w) => showActionModal === "move" ? true : (w.type !== "main" && w.driver_id)) // move: бүх агуулах
                     .map((w) => {
                       const dr = drivers.find((d) => d.id === w.driver_id);
                       return (
                         <option key={w.id} value={w.id}>
-                          🚚 {dr?.name || "Driver"} — {w.name}
+                          {w.type === "main" ? "🏢" : "🚚"} {w.type === "main" ? w.name : `${dr?.name || "Driver"} — ${w.name}`}
                         </option>
                       );
                     })}
                 </select>
+                {showActionModal === "move" && (
+                  <>
+                    <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 mt-3 block">
+                      📥 ХҮЛЭЭН АВАХ агуулах (хаашаа)
+                    </label>
+                    <select value={actionToWarehouse || ""}
+                      onChange={(e) => setActionToWarehouse(e.target.value)}
+                      style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+                      className="w-full px-3 py-2.5 rounded-lg text-sm">
+                      <option value="">— Хүлээн авах агуулахыг сонгоно уу —</option>
+                      {warehouses
+                        .filter((w) => w.id !== actionWarehouse)
+                        .map((w) => {
+                          const dr = drivers.find((d) => d.id === w.driver_id);
+                          return (
+                            <option key={w.id} value={w.id}>
+                              {w.type === "main" ? "🏢" : "🚚"} {w.type === "main" ? w.name : `${dr?.name || "Driver"} — ${w.name}`}
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </>
+                )}
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1 italic">
                   💡 Хүсэлт үүсгэгдсний дараа "Бараа хүсэлт" хэсгээс өөрөө батална уу
                 </div>
