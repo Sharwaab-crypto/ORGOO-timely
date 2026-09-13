@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.13-prod-cache";
+const BUILD_VERSION = "v2026.09.13-fix-rating";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -40772,14 +40772,17 @@ function DriverDashboard({ profile }) {
                     let operatorId = ratingOrder.order.operator_id;
                     if (!operatorId && ratingOrder.order.customer_phone) {
                       // Тус утсанд хийгдсэн дуудлагуудаас operator олох
+                      // 🛠 2026-09-13: biz_calls-д operator_id багана байхгүй (created_by зөв) —
+                      //    өдөрт ~50 удаа "column does not exist" алдаа үүсгэж, оператор холбогддоггүй байсан.
                       const { data: callData } = await supabase
                         .from("biz_calls")
-                        .select("operator_id")
+                        .select("created_by")
                         .eq("phone", ratingOrder.order.customer_phone)
+                        .not("created_by", "is", null)
                         .order("created_at", { ascending: false })
                         .limit(1);
                       if (callData && callData.length > 0) {
-                        operatorId = callData[0].operator_id;
+                        operatorId = callData[0].created_by;
                       }
                     }
                     
