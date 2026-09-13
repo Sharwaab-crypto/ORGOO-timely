@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.09-wh-move3";
+const BUILD_VERSION = "v2026.09.13-prod-cache";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14111,6 +14111,9 @@ function CallCenterView({ profile }) {
   const fullHistReq = useRef(new Set());        // давхар татахаас сэргийлэх
   // 🚀 Сохор бүс/хуучин pending-ийн түүх + бараа — 5 минутын session кэш
   //    (realtime бүрд 30+ хүсэлтийн шуурга давтагдаж самбар гацдаг байсны засвар)
+  // 🚀 Дугаар → сонирхсон барааны мөрүүд (санах ой, 10 мин TTL; realtime-ээр хүчингүй болно)
+  //    Өмнө нь ачаалалт бүрд цонхны ~900 дугаарыг 6-14 query-ээр дахин асуудаг байсан.
+  const winProdCacheRef = useRef(new Map());
   const supplCacheRef = useRef(null);
   if (supplCacheRef.current === null) {
     // 🚀 sessionStorage-оос сэргээнэ — хуудас refresh хийсэн ч 5 минутын дотор шуурга давтагдахгүй
@@ -14368,8 +14371,18 @@ function CallCenterView({ profile }) {
           // 🚀 Кэш: supplement-ийн хуучин дугааруудын бараа өөрчлөгддөггүй — кэшээс авна
           const cachedProd = supplCacheRef.current.prodRows || [];
           const cachedProdPhones = new Set(cachedProd.map((r) => r.phone));
-          const displayPhones = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))]
+          const displayPhonesAll = [...new Set((callData || []).map((c) => c.phone).filter(Boolean))]
             .filter((p) => !cachedProdPhones.has(p));
+          // 🚀 Санах ойн кэш: TTL дотор байгаа дугаарыг дахин асуухгүй
+          const PROD_TTL = 10 * 60 * 1000;
+          const nowTs = Date.now();
+          const memHitRows = [];
+          const displayPhones = [];
+          displayPhonesAll.forEach((p) => {
+            const c = winProdCacheRef.current.get(p);
+            if (c && nowTs - c.at < PROD_TTL) memHitRows.push(...c.rows);
+            else displayPhones.push(p);
+          });
           // ⚠ 200-утасны багцад limit(1000) хүрч ХУУЧИН pending-үүд тайрагддаг байсан
           //   (7-р сарын бараатай pending map-д ордоггүй) → 50 болгож багтаамж 4×.
           // ⚡ Lossless + зэрэгцээ: chunk бүр дотроо page-лэдэг (тайралтгүй),
@@ -14385,7 +14398,14 @@ function CallCenterView({ profile }) {
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
           //    хуучин шийдэгдээгүй pending эсвэл захиалгын бараа шинэ дуудлагын картад
           //    буруугаар нэмэгдэхгүй.)
-          const withProductsAll = [...cachedProd, ...(withProducts || [])];
+          // Шинээр татсаныг дугаар бүрээр кэшлэнэ (бараагүй дугаарыг ч хоосон гэж тэмдэглэнэ — дахин асуухгүй)
+          {
+            const byPhone = {};
+            (withProducts || []).forEach((r) => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
+            displayPhones.forEach((p) => winProdCacheRef.current.set(p, { at: nowTs, rows: byPhone[p] || [] }));
+            if (winProdCacheRef.current.size > 6000) winProdCacheRef.current.clear(); // санах ойн хязгаар
+          }
+          const withProductsAll = [...cachedProd, ...memHitRows, ...(withProducts || [])];
           // Шинээр татсанаас supplement-ийн дугаарынхыг кэшид хадгална (дараагийн load-уудад)
           if (cachedProd.length === 0 && supplCacheRef.current.phones) {
             supplCacheRef.current.prodRows = withProductsAll.filter((r) => supplCacheRef.current.phones.has(r.phone));
@@ -14573,6 +14593,9 @@ function CallCenterView({ profile }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "biz_calls" },
         (payload) => {
+          // 🚀 Өөрчлөгдсөн дугаарын барааны кэшийг хүчингүй болгоно (дараагийн ачаалалт шинээр татна)
+          const chPhone = payload?.new?.phone || payload?.old?.phone;
+          if (chPhone) winProdCacheRef.current.delete(chPhone);
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
           bumpBadge();
@@ -22264,6 +22287,12 @@ function DriverSettlementView({ profile }) {
                         total_amount: newTotal,
                         delivery_fee: deliveryFeeVal,
                       };
+                      // 📝 Засварын модалаар цуцалсан ч хэн/хэзээ гэдгийг бичнэ (өмнө хоосон үлддэг байсан)
+                      if (newStatus === "cancelled" && originalStatus !== "cancelled") {
+                        updates.cancelled_by = profile.id;
+                        updates.cancelled_at = new Date().toISOString();
+                        updates.cancel_note = "Захиалгын засварын модалаар цуцлав";
+                      }
                       if (newStatus === "delivered") {
                         updates.paid_amount = Number(editOrder.paidAmount) || 0;
                       } else {
