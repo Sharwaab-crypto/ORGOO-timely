@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.15-calling-split";
+const BUILD_VERSION = "v2026.09.15-calling-split2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15783,9 +15783,17 @@ function CallCenterView({ profile }) {
                   if (cy.status !== "calling") return false;
                   // 🆕/🔁 Дэд шүүлт: огт залгаагүй = cycle-д зөвхөн бүртгэлийн (pending) мөр; давтан = залгасан мөртэй
                   if (callingSub !== "all") {
-                    const attempted = (cy.calls || []).some((c) => c.call_status && c.call_status !== "pending");
-                    if (callingSub === "fresh" && attempted) return false;
-                    if (callingSub === "repeat" && !attempted) return false;
+                    const attempts = (cy.calls || []).filter((c) => c.call_status && c.call_status !== "pending");
+                    const attempted = attempts.length > 0;
+                    if (callingSub === "fresh") { if (attempted) return false; }
+                    else {
+                      if (!attempted) return false;
+                      // ⏰ Сүүлийн залгалтаас хойш 29 минут хэтэрсэн бол "одоо залгах", эс бөгөөс "хүлээх"
+                      const lastAt = Math.max(...attempts.map((c) => new Date(c.created_at).getTime()));
+                      const overdue = Date.now() - lastAt > 29 * 60 * 1000;
+                      if (callingSub === "due" && !overdue) return false;
+                      if (callingSub === "wait" && overdue) return false;
+                    }
                   }
                   // Зөвхөн ЭНЭ cycle нь хамгийн сүүлийн (хамгийн шинэ) cycle мөн эсэхийг шалгах:
                   //   хэрэв энэ utas-д calling cycle байгаа бол энэ нь хамгийн сүүлийнх (шинэ pending) —
@@ -15871,17 +15879,23 @@ function CallCenterView({ profile }) {
                   {/* 🆕/🔁 Залгах дугаарын дэд шүүлт */}
                   {activeTab === "calling" && (() => {
                     const callingAll = sortedCycleList.filter((c) => c.status === "calling");
-                    const isAttempted = (c) => (c.calls || []).some((x) => x.call_status && x.call_status !== "pending");
-                    const nFresh = callingAll.filter((c) => !isAttempted(c)).length;
-                    const nRepeat = callingAll.length - nFresh;
-                    const chips = [["all", `Бүгд ${callingAll.length}`], ["fresh", `🆕 Огт залгаагүй ${nFresh}`], ["repeat", `🔁 Давтан залгах ${nRepeat}`]];
+                    const attemptsOf = (c) => (c.calls || []).filter((x) => x.call_status && x.call_status !== "pending");
+                    const nowMs = Date.now();
+                    let nFresh = 0, nDue = 0, nWait = 0;
+                    callingAll.forEach((c) => {
+                      const at = attemptsOf(c);
+                      if (at.length === 0) { nFresh += 1; return; }
+                      const lastAt = Math.max(...at.map((x) => new Date(x.created_at).getTime()));
+                      if (nowMs - lastAt > 29 * 60 * 1000) nDue += 1; else nWait += 1;
+                    });
+                    const chips = [["all", `Бүгд ${callingAll.length}`], ["fresh", `🆕 Огт залгаагүй ${nFresh}`], ["due", `⏰ Давтан · 29 мин хэтэрсэн ${nDue}`], ["wait", `⏳ Давтан · хүлээж буй ${nWait}`]];
                     return (
                       <div className="flex gap-1.5 flex-wrap px-1 mb-2">
                         {chips.map(([k, lbl]) => (
                           <button key={k} onClick={() => { setCallingSub(k); setPage(1); }}
                             className="press-btn px-3 py-1.5 rounded-full text-[11px]"
                             style={{
-                              background: callingSub === k ? (k === "fresh" ? T.ok : k === "repeat" ? T.warn : T.highlight) : T.surfaceAlt,
+                              background: callingSub === k ? (k === "fresh" ? T.ok : k === "due" ? T.err : k === "wait" ? T.warn : T.highlight) : T.surfaceAlt,
                               color: callingSub === k ? "#fff" : T.inkSoft,
                               border: `1px solid ${callingSub === k ? "transparent" : T.borderStrong}`,
                               fontFamily: FM, fontWeight: 700,
