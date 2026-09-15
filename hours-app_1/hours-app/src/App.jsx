@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.13-fix-rating";
+const BUILD_VERSION = "v2026.09.15-calling-split";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14087,6 +14087,8 @@ function CallCenterView({ profile }) {
   const [productInfo, setProductInfo] = useState(null); // { product, totalStock } — popup доторх product info
   const [stockPopup, setStockPopup] = useState(null); // { product, stocks }
   const [page, setPage] = useState(1); // Дугаарын pagination
+  // 📞 "Залгах дугаар" дэд шүүлт: all | fresh (огт залгаагүй) | repeat (давтан залгах)
+  const [callingSub, setCallingSub] = useState("all");
   const PAGE_SIZE = 100; // Дуудлагын pagination — нэг хуудсанд 100 дугаар
   const [expandedCallCards, setExpandedCallCards] = useState(() => new Set()); // 🆕 Бүх дуудлага харуулсан card-ууд (cycle key)
   // ⚠ Асуудал цэс: жолоочийн захиалга дээр үлдээсэн сэтгэгдлүүд
@@ -15779,6 +15781,12 @@ function CallCenterView({ profile }) {
                   //    Өмнөх cycle-д ordered/cancelled байсан ч ХАМААРАХГҮЙ —
                   //    cancelled-ийн дараа дугаар ДАХИН бүртгэгдсэн бол шинэ cycle = дахин залгах ёстой.
                   if (cy.status !== "calling") return false;
+                  // 🆕/🔁 Дэд шүүлт: огт залгаагүй = cycle-д зөвхөн бүртгэлийн (pending) мөр; давтан = залгасан мөртэй
+                  if (callingSub !== "all") {
+                    const attempted = (cy.calls || []).some((c) => c.call_status && c.call_status !== "pending");
+                    if (callingSub === "fresh" && attempted) return false;
+                    if (callingSub === "repeat" && !attempted) return false;
+                  }
                   // Зөвхөн ЭНЭ cycle нь хамгийн сүүлийн (хамгийн шинэ) cycle мөн эсэхийг шалгах:
                   //   хэрэв энэ utas-д calling cycle байгаа бол энэ нь хамгийн сүүлийнх (шинэ pending) —
                   //   идэвхтэй захиалгатай бол ч (ховор) calling cycle давуу.
@@ -15860,6 +15868,30 @@ function CallCenterView({ profile }) {
 
               return (
                 <>
+                  {/* 🆕/🔁 Залгах дугаарын дэд шүүлт */}
+                  {activeTab === "calling" && (() => {
+                    const callingAll = sortedCycleList.filter((c) => c.status === "calling");
+                    const isAttempted = (c) => (c.calls || []).some((x) => x.call_status && x.call_status !== "pending");
+                    const nFresh = callingAll.filter((c) => !isAttempted(c)).length;
+                    const nRepeat = callingAll.length - nFresh;
+                    const chips = [["all", `Бүгд ${callingAll.length}`], ["fresh", `🆕 Огт залгаагүй ${nFresh}`], ["repeat", `🔁 Давтан залгах ${nRepeat}`]];
+                    return (
+                      <div className="flex gap-1.5 flex-wrap px-1 mb-2">
+                        {chips.map(([k, lbl]) => (
+                          <button key={k} onClick={() => { setCallingSub(k); setPage(1); }}
+                            className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+                            style={{
+                              background: callingSub === k ? (k === "fresh" ? T.ok : k === "repeat" ? T.warn : T.highlight) : T.surfaceAlt,
+                              color: callingSub === k ? "#fff" : T.inkSoft,
+                              border: `1px solid ${callingSub === k ? "transparent" : T.borderStrong}`,
+                              fontFamily: FM, fontWeight: 700,
+                            }}>
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {/* Counter — нийт тоо */}
                   <div className="flex items-center justify-between flex-wrap gap-2 px-1 mb-1">
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
