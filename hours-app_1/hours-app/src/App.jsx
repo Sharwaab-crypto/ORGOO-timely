@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board4";
+const BUILD_VERSION = "v2026.09.17-mkt-board5";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17331,6 +17331,8 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
   const [drag, setDrag] = useState(null);       // чирж буй картын id
   const [editing, setEditing] = useState(null); // засварлаж буй карт (object) | {new: col}
   const [adding, setAdding] = useState({});     // { col: "гарчиг" }
+  const [colPage, setColPage] = useState({});   // { col: хуудас } — багана бүрд 2 карт
+  const COL_PAGE = 2;
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -17426,6 +17428,9 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
       <div className="flex gap-3 items-start overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
         {COLS.map((col) => {
           const list = byCol(col.key);
+          const pages = Math.max(1, Math.ceil(list.length / COL_PAGE));
+          const cp = Math.min(Math.max(1, colPage[col.key] || 1), pages);
+          const visible = list.slice((cp - 1) * COL_PAGE, cp * COL_PAGE);
           return (
             <div key={col.key} className="rounded-2xl p-2.5 space-y-2 flex-shrink-0"
               style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderTop: `3px solid ${col.color}`, minHeight: 160, width: 270 }}
@@ -17444,7 +17449,7 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                   <button onClick={() => deleteColumn(col)} title="Устгах" className="press-btn text-[10px] px-1">✕</button>
                 </div>
               </div>
-              {list.map((c) => {
+              {visible.map((c) => {
                 const due = dueInfo(c.due_date);
                 return (
                   <div key={c.id} draggable
@@ -17473,12 +17478,21 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                     <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs leading-snug">{c.title}</div>
                     {c.description && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 line-clamp-2">{c.description}</div>}
                     <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <span style={{ color: T.inkSoft, fontFamily: FM }} className="text-[10px] truncate">{c.assignee_id ? `👤 ${nameOf(c.assignee_id) || "?"}` : ""}</span>
+                      <span />
                       {due && <span style={{ color: due.color, fontFamily: FM, fontWeight: 700 }} className="text-[10px] flex-shrink-0">{due.txt}</span>}
                     </div>
                   </div>
                 );
               })}
+              {pages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-0.5">
+                  <button onClick={() => setColPage((p) => ({ ...p, [col.key]: Math.max(1, cp - 1) }))} disabled={cp <= 1}
+                    className="press-btn px-2 py-0.5 rounded-lg text-[11px]" style={{ background: T.bg, color: cp <= 1 ? T.mutedSoft : T.ink, border: `1px solid ${T.border}`, fontFamily: FM }}>‹</button>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{cp} / {pages}</span>
+                  <button onClick={() => setColPage((p) => ({ ...p, [col.key]: Math.min(pages, cp + 1) }))} disabled={cp >= pages}
+                    className="press-btn px-2 py-0.5 rounded-lg text-[11px]" style={{ background: T.bg, color: cp >= pages ? T.mutedSoft : T.ink, border: `1px solid ${T.border}`, fontFamily: FM }}>›</button>
+                </div>
+              )}
               <button onClick={() => setEditing({ status: col.key, labels: [] })}
                 className="press-btn w-full rounded-lg py-1.5 text-[11px]"
                 style={{ background: T.bg, color: col.color, border: `1px dashed ${col.color}`, fontFamily: FS, fontWeight: 700 }}>
@@ -17501,15 +17515,8 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
               className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
             <textarea value={editing.description || ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="Тайлбар" rows={3}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
-            <div className="grid grid-cols-2 gap-2">
-              <select value={editing.assignee_id || ""} onChange={(e) => setEditing({ ...editing, assignee_id: e.target.value || null })}
-                className="rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
-                <option value="">— Хариуцагч —</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-              <input type="date" value={editing.due_date || ""} onChange={(e) => setEditing({ ...editing, due_date: e.target.value || null })}
-                className="rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
-            </div>
+            <input type="date" value={editing.due_date || ""} onChange={(e) => setEditing({ ...editing, due_date: e.target.value || null })}
+              className="w-full rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
             <select value={editing.status || "todo"} onChange={(e) => setEditing({ ...editing, status: e.target.value })}
               className="w-full rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
               {COLS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
