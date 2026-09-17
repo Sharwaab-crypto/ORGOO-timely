@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board6";
+const BUILD_VERSION = "v2026.09.17-mkt-boards";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17262,15 +17262,60 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
     { key: "done", label: "✅ Дууссан", color: "#22c55e", position: 4 },
   ];
   const COL_COLORS = ["#6366f1", "#f59e0b", "#0ea5e9", "#22c55e", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6", "#64748b"];
+  // 🗂 САМБАРУУД (workspace) — mkt_boards; идэвхтэй самбарын id-г localStorage-д санана
+  const [boards, setBoards] = useState(null);
+  const [boardId, setBoardId] = useState(() => { try { return localStorage.getItem("mkt-board-id") || null; } catch (e) { return null; } });
+  const boardIdRef = useRef(null);
+  boardIdRef.current = boardId;
+  useEffect(() => { try { if (boardId) localStorage.setItem("mkt-board-id", boardId); } catch (e) { /* quota */ } }, [boardId]);
+  const loadBoards = async () => {
+    try {
+      const { data, error } = await supabase.from("mkt_boards").select("*").eq("archived", false).order("position", { ascending: true });
+      if (error) throw error;
+      const list = data || [];
+      setBoards(list);
+      setBoardId((prev) => (prev && list.some((b) => b.id === prev)) ? prev : (list[0]?.id || null));
+    } catch (e) { console.error("[mkt boards]", e); setBoards([]); }
+  };
+  useEffect(() => { loadBoards(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("mkt-boards-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "mkt_boards" }, () => loadBoards())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  // Шинэ самбарын үндсэн 4 багана (түлхүүр нь самбарын id-гаар угтвартай — давхцахгүй)
+  const defaultColsFor = (bid) => DEFAULT_COLS.map((c) => ({ key: `${bid.slice(0, 8)}_${c.key}`, label: c.label, color: c.color, position: c.position, board_id: bid }));
+  const addBoard = async () => {
+    const name = prompt("Шинэ самбарын нэр:");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase.from("mkt_boards").insert({ name: name.trim(), position: (boards || []).length + 1, created_by: profile.id }).select().single();
+    if (error) { alert("Алдаа: " + error.message); return; }
+    await supabase.from("mkt_board_columns").insert(defaultColsFor(data.id));
+    setBoardId(data.id);
+  };
+  const renameBoard = async (b) => {
+    const name = prompt("Самбарын нэр:", b.name);
+    if (!name || !name.trim() || name.trim() === b.name) return;
+    await supabase.from("mkt_boards").update({ name: name.trim() }).eq("id", b.id);
+  };
+  const archiveBoard = async (b) => {
+    if ((boards || []).length <= 1) { alert("Хамгийн багадаа нэг самбар үлдэх ёстой."); return; }
+    if (!confirm(`"${b.name}" самбарыг архивлах уу? (Багана, картууд нь хамт нуугдана)`)) return;
+    await supabase.from("mkt_boards").update({ archived: true }).eq("id", b.id);
+  };
+
   const [colsDb, setColsDb] = useState(null);
   const loadCols = async () => {
+    const bid = boardIdRef.current;
+    if (!bid) { setColsDb([]); return; }
     try {
-      const { data, error } = await supabase.from("mkt_board_columns").select("*").eq("archived", false).order("position", { ascending: true });
+      const { data, error } = await supabase.from("mkt_board_columns").select("*").eq("archived", false).eq("board_id", bid).order("position", { ascending: true });
       if (error) throw error;
       setColsDb((data || []).map((c) => ({ key: c.key, label: c.label, color: c.color || "#64748b", position: c.position, id: c.id })));
     } catch (e) { console.error("[mkt board cols]", e); setColsDb([]); }
   };
-  useEffect(() => { loadCols(); }, []);
+  useEffect(() => { loadCols(); }, [boardId]);
   useEffect(() => {
     const ch = supabase.channel("mkt-board-cols-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "mkt_board_columns" }, () => loadCols())
@@ -17287,14 +17332,14 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
     const color = COL_COLORS[COLS.length % COL_COLORS.length];
     // Үндсэн 4 багана DB-д хараахан байхгүй бол эхлээд тэднийг хадгална (дараалал хадгалагдахын тулд)
     if (!colsDb || colsDb.length === 0) {
-      await supabase.from("mkt_board_columns").upsert(DEFAULT_COLS.map((c) => ({ key: c.key, label: c.label, color: c.color, position: c.position })), { onConflict: "key" });
+      await supabase.from("mkt_board_columns").upsert(defaultColsFor(boardIdRef.current), { onConflict: "key" });
     }
-    const { error } = await supabase.from("mkt_board_columns").insert({ key, label: name.trim(), color, position: pos });
+    const { error } = await supabase.from("mkt_board_columns").insert({ key, label: name.trim(), color, position: pos, board_id: boardIdRef.current });
     if (error) alert("Алдаа: " + error.message);
   };
   const ensureColsSaved = async () => {
     if (!colsDb || colsDb.length === 0) {
-      await supabase.from("mkt_board_columns").upsert(DEFAULT_COLS.map((c) => ({ key: c.key, label: c.label, color: c.color, position: c.position })), { onConflict: "key" });
+      await supabase.from("mkt_board_columns").upsert(defaultColsFor(boardIdRef.current), { onConflict: "key" });
     }
   };
   const renameColumn = async (col) => {
@@ -17334,14 +17379,16 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
+    const bid = boardIdRef.current;
+    if (!bid) { setCards([]); return; }
     try {
       const { data, error } = await supabase.from("mkt_board_cards").select("*")
-        .eq("archived", false).order("position", { ascending: true }).limit(500);
+        .eq("archived", false).eq("board_id", bid).order("position", { ascending: true }).limit(500);
       if (error) throw error;
       setCards(data || []);
     } catch (e) { console.error("[mkt board]", e); setCards([]); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [boardId]);
   const debouncedBoardLoad = useDebouncedCallback(load, 500);
   useEffect(() => {
     const ch = supabase.channel("mkt-board-rt")
@@ -17358,7 +17405,7 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
     if (!title) return;
     const pos = byCol(col).length + 1;
     setAdding((p) => ({ ...p, [col]: "" }));
-    const { error } = await supabase.from("mkt_board_cards").insert({ title, status: col, position: pos, created_by: profile.id });
+    const { error } = await supabase.from("mkt_board_cards").insert({ title, status: col, position: pos, created_by: profile.id, board_id: boardIdRef.current });
     if (error) alert("Алдаа: " + error.message);
   };
 
@@ -17391,7 +17438,7 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
       if (!payload.title) { alert("Гарчиг хоосон байна"); return; }
       const { error } = c.id
         ? await supabase.from("mkt_board_cards").update(payload).eq("id", c.id)
-        : await supabase.from("mkt_board_cards").insert({ ...payload, position: byCol(c.status).length + 1, created_by: profile.id });
+        : await supabase.from("mkt_board_cards").insert({ ...payload, position: byCol(c.status).length + 1, created_by: profile.id, board_id: boardIdRef.current });
       if (error) throw error;
       setEditing(null);
     } catch (e) { alert("Алдаа: " + e.message); }
@@ -17420,8 +17467,33 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
 
   return (
     <div className="space-y-2">
+      {/* 🗂 Самбар (workspace) сонгогч */}
+      <div className="glass rounded-2xl p-2 flex items-center gap-1.5 flex-wrap">
+        {(boards || []).map((b) => {
+          const on = b.id === boardId;
+          return (
+            <span key={b.id} className="inline-flex items-center gap-1">
+              <button onClick={() => setBoardId(b.id)} onDoubleClick={() => renameBoard(b)} title="Давхар дарж нэр солино"
+                className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? T.highlight : T.borderStrong}`, fontFamily: FS, fontWeight: 700 }}>
+                🗂 {b.name}
+              </button>
+              {on && (
+                <>
+                  <button onClick={() => renameBoard(b)} title="Нэр солих" className="press-btn text-[11px] px-1" style={{ color: T.muted }}>✏</button>
+                  <button onClick={() => archiveBoard(b)} title="Архивлах" className="press-btn text-[11px] px-1" style={{ color: T.muted }}>✕</button>
+                </>
+              )}
+            </span>
+          );
+        })}
+        <button onClick={addBoard} className="press-btn px-3 py-1.5 rounded-lg text-xs"
+          style={{ background: T.surfaceAlt, color: T.highlight, border: `1px dashed ${T.highlight}`, fontFamily: FS, fontWeight: 700 }}>
+          ➕ Самбар
+        </button>
+      </div>
       <div className="flex items-center justify-between flex-wrap gap-2 px-1">
-        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Самбар <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {cards.length} карт · картыг чирж зөөнө</span></div>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 {(boards || []).find((b) => b.id === boardId)?.name || "Самбар"} <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {cards.length} карт · картыг чирж зөөнө</span></div>
       </div>
       <div className="flex gap-3 items-start overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
         {COLS.map((col) => {
