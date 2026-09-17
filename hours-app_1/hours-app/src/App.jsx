@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board5";
+const BUILD_VERSION = "v2026.09.17-sales-fast";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -20371,7 +20371,12 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
           if (isMerchant) q = q.in("fb_page_id", allowedPageIds);
           return q;
         };
-        const makeItmQ = () => supabase.from("biz_order_items").select("*");
+        // 🚀 2026-09-17: biz_order_items-ийг бүхэлд нь (100К+ мөр, 10 MB) татахаа больж,
+        //    топ-10 барааг сервер талд нэгтгэдэг RPC-ээр (нэг хүсэлт) авна.
+        const makeItmQ = () => supabase.rpc("sales_top_products", {
+          p_start: isAllPeriod ? null : pStart, p_end: isAllPeriod ? null : pEnd,
+          p_page_ids: isMerchant ? allowedPageIds : null, p_limit: 10,
+        });
         let fbQ = supabase.from("biz_fb_pages").select("*");
         if (isMerchant) {
           if (allowedPageIds.length === 0) {
@@ -20385,7 +20390,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
         const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
           fetchAllRowsParallel(makeCallQ),
           fetchAllRowsParallel(makeOrdQ),
-          fetchAllRowsParallel(makeItmQ),
+          makeItmQ().then((r) => { if (r.error) throw r.error; return r.data || []; }),
           supabase.from("inv_products").select("id, name, image_url, sku"),
           fbQ,
         ]);
@@ -20523,28 +20528,19 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 
   // Top бараа (хүргэгдсэн захиалгуудаас)
   const topProducts = useMemo(() => {
-    const productMap = {};
-    const deliveredOrderIds = new Set(filteredOrders.filter((o) => o.status === "delivered").map((o) => o.id));
-
-    items.forEach((it) => {
-      if (!deliveredOrderIds.has(it.order_id)) return;
-      if (!productMap[it.product_id]) {
-        const prod = products.find((p) => p.id === it.product_id);
-        productMap[it.product_id] = {
-          id: it.product_id,
-          name: it.product_name || prod?.name || "—",
-          image: prod?.image_url || null,
-          sku: prod?.sku || "",
-          qty: 0,
-          revenue: 0,
-        };
-      }
-      productMap[it.product_id].qty += Number(it.quantity || 0);
-      productMap[it.product_id].revenue += Number(it.total_amount || 0);
-    });
-
-    return Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  }, [filteredOrders, items, products]);
+    // items = sales_top_products RPC-ийн нэгтгэсэн мөрүүд (product_id, name, image_url, sku, qty, revenue)
+    return (items || []).map((r) => {
+      const prod = products.find((p) => p.id === r.product_id);
+      return {
+        id: r.product_id,
+        name: r.name || prod?.name || "—",
+        image: r.image_url || prod?.image_url || null,
+        sku: r.sku || prod?.sku || "",
+        qty: Number(r.qty || 0),
+        revenue: Number(r.revenue || 0),
+      };
+    }).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [items, products]);
 
   // Нийт стат
   const totals = useMemo(() => {
