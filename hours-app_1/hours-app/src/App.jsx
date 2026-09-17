@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-boards";
+const BUILD_VERSION = "v2026.09.17-mkt-links";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17370,8 +17370,22 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
     await ensureColsSaved();
     await supabase.from("mkt_board_columns").update({ archived: true }).eq("key", col.key);
   };
-  const LABELS = ["Контент", "Зар", "Дизайн", "Видео", "Судалгаа", "Яаралтай"];
-  const LABEL_COLORS = { "Контент": "#6366f1", "Зар": "#f59e0b", "Дизайн": "#ec4899", "Видео": "#0ea5e9", "Судалгаа": "#84cc16", "Яаралтай": "#ef4444" };
+  // 🔗 Тайлбар доторх линкийг таньж, шинэ таб-д нээгддэг <a> болгоно
+  const URL_RE = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  const linkify = (text) => {
+    if (!text) return null;
+    const parts = String(text).split(URL_RE);
+    return parts.map((p, i) => {
+      if (!p) return null;
+      if (/^(https?:\/\/|www\.)/i.test(p)) {
+        const href = p.startsWith("http") ? p : `https://${p}`;
+        return <a key={i} href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+          style={{ color: "#0ea5e9", textDecoration: "underline", wordBreak: "break-all" }}>{p}</a>;
+      }
+      return <span key={i}>{p}</span>;
+    });
+  };
+  const extractLinks = (text) => (String(text || "").match(URL_RE) || []);
   const [cards, setCards] = useState(null);
   const [drag, setDrag] = useState(null);       // чирж буй картын id
   const [editing, setEditing] = useState(null); // засварлаж буй карт (object) | {new: col}
@@ -17531,20 +17545,15 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                     }}
                     onClick={() => setEditing({ ...c, labels: Array.isArray(c.labels) ? c.labels : [], images: Array.isArray(c.images) ? c.images : [] })}
                     className="glass rounded-xl p-2.5 cursor-grab active:cursor-grabbing"
-                    style={{ opacity: drag === c.id ? 0.4 : 1, borderLeft: c.labels?.includes("Яаралтай") ? `3px solid ${T.err}` : `3px solid transparent` }}>
+                    style={{ opacity: drag === c.id ? 0.4 : 1 }}>
                     {Array.isArray(c.images) && c.images.length > 0 && (
                       <div className="relative mb-1.5 -mx-2.5 -mt-2.5">
                         <img src={c.images[0]} alt="" className="w-full object-cover rounded-t-xl" style={{ height: 110 }} />
                         {c.images.length > 1 && <span className="absolute bottom-1 right-1 text-[9px] px-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.55)", color: "#fff", fontFamily: FM }}>🖼 {c.images.length}</span>}
                       </div>
                     )}
-                    {Array.isArray(c.labels) && c.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-1">
-                        {c.labels.map((l) => <span key={l} className="text-[9px] px-1.5 rounded-full" style={{ background: LABEL_COLORS[l] || "#64748b", color: "#fff", fontFamily: FM, fontWeight: 700 }}>{l}</span>)}
-                      </div>
-                    )}
                     <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs leading-snug">{c.title}</div>
-                    {c.description && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 line-clamp-2">{c.description}</div>}
+                    {c.description && <div style={{ color: T.muted, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[10px] mt-1 line-clamp-3">{linkify(c.description)}</div>}
                     <div className="flex items-center justify-between mt-1.5 gap-2">
                       <span />
                       {due && <span style={{ color: due.color, fontFamily: FM, fontWeight: 700 }} className="text-[10px] flex-shrink-0">{due.txt}</span>}
@@ -17575,6 +17584,14 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
               className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
             <textarea value={editing.description || ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="Тайлбар" rows={3}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+            {extractLinks(editing.description).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {extractLinks(editing.description).map((u, i) => (
+                  <a key={i} href={u.startsWith("http") ? u : `https://${u}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[11px] px-2 py-1 rounded-lg truncate" style={{ background: "rgba(14,165,233,0.12)", color: "#0ea5e9", fontFamily: FM, maxWidth: 260 }}>🔗 {u}</a>
+                ))}
+              </div>
+            )}
             <input type="date" value={editing.due_date || ""} onChange={(e) => setEditing({ ...editing, due_date: e.target.value || null })}
               className="w-full rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
             <select value={editing.status || "todo"} onChange={(e) => setEditing({ ...editing, status: e.target.value })}
@@ -17602,16 +17619,6 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                 <input type="file" accept="image/*" multiple className="hidden" disabled={uploading}
                   onChange={async (e) => { const urls = await uploadImages(e.target.files, editing.id); if (urls.length) setEditing((p) => ({ ...p, images: [...(p.images || []), ...urls] })); e.target.value = ""; }} />
               </label>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {LABELS.map((l) => {
-                const on = (editing.labels || []).includes(l);
-                return (
-                  <button key={l} onClick={() => setEditing({ ...editing, labels: on ? editing.labels.filter((x) => x !== l) : [...(editing.labels || []), l] })}
-                    className="press-btn text-[10px] px-2 py-1 rounded-full"
-                    style={{ background: on ? (LABEL_COLORS[l] || "#64748b") : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{l}</button>
-                );
-              })}
             </div>
             <div className="flex items-center justify-between gap-2 pt-1">
               {editing.id ? (
