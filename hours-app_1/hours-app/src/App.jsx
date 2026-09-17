@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.15-calling-split2";
+const BUILD_VERSION = "v2026.09.17-mkt-board";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17198,6 +17198,214 @@ function CallCenterView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  OPERATOR KPI REPORT — Admin/Manager-д харагдах ажилтны KPI тайлан
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  MKT BOARD — Маркетингийн Trello маягийн самбар (mkt_board_cards)
+//  Багана: todo → doing → review → done. Drag&drop, хариуцагч, дуусах огноо, шошго, realtime.
+// ═══════════════════════════════════════════════════════════════════════════
+function MktBoardView({ profile, employees = [] }) {
+  const COLS = [
+    { key: "todo", label: "📝 Хийх", color: "#6366f1" },
+    { key: "doing", label: "🔧 Хийж буй", color: "#f59e0b" },
+    { key: "review", label: "👀 Хянуулах", color: "#0ea5e9" },
+    { key: "done", label: "✅ Дууссан", color: "#22c55e" },
+  ];
+  const LABELS = ["Контент", "Зар", "Дизайн", "Видео", "Судалгаа", "Яаралтай"];
+  const LABEL_COLORS = { "Контент": "#6366f1", "Зар": "#f59e0b", "Дизайн": "#ec4899", "Видео": "#0ea5e9", "Судалгаа": "#84cc16", "Яаралтай": "#ef4444" };
+  const [cards, setCards] = useState(null);
+  const [drag, setDrag] = useState(null);       // чирж буй картын id
+  const [editing, setEditing] = useState(null); // засварлаж буй карт (object) | {new: col}
+  const [adding, setAdding] = useState({});     // { col: "гарчиг" }
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      const { data, error } = await supabase.from("mkt_board_cards").select("*")
+        .eq("archived", false).order("position", { ascending: true }).limit(500);
+      if (error) throw error;
+      setCards(data || []);
+    } catch (e) { console.error("[mkt board]", e); setCards([]); }
+  };
+  useEffect(() => { load(); }, []);
+  const debouncedBoardLoad = useDebouncedCallback(load, 500);
+  useEffect(() => {
+    const ch = supabase.channel("mkt-board-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "mkt_board_cards" }, debouncedBoardLoad)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  const nameOf = (id) => (employees.find((e) => e.id === id) || {}).name || (id === profile.id ? profile.name : "");
+  const byCol = (col) => (cards || []).filter((c) => c.status === col).sort((a, b) => (a.position || 0) - (b.position || 0));
+
+  const addCard = async (col) => {
+    const title = (adding[col] || "").trim();
+    if (!title) return;
+    const pos = byCol(col).length + 1;
+    setAdding((p) => ({ ...p, [col]: "" }));
+    const { error } = await supabase.from("mkt_board_cards").insert({ title, status: col, position: pos, created_by: profile.id });
+    if (error) alert("Алдаа: " + error.message);
+  };
+
+  // Картыг баганад/байрлалд зөөх — зорилтот баганын байрлалыг дахин дугаарлана
+  const moveCard = async (cardId, toCol, beforeId = null) => {
+    const moving = (cards || []).find((c) => c.id === cardId);
+    if (!moving) return;
+    const list = byCol(toCol).filter((c) => c.id !== cardId);
+    const idx = beforeId ? list.findIndex((c) => c.id === beforeId) : -1;
+    if (idx >= 0) list.splice(idx, 0, moving); else list.push(moving);
+    // локал шинэчлэл (мэдрэмжтэй байлгах)
+    setCards((prev) => prev.map((c) => {
+      const i = list.findIndex((x) => x.id === c.id);
+      return i >= 0 ? { ...c, status: toCol, position: i + 1 } : c;
+    }));
+    const updates = list.map((c, i) => ({ id: c.id, status: toCol, position: i + 1 }));
+    for (const u of updates) {
+      await supabase.from("mkt_board_cards").update({ status: u.status, position: u.position, updated_at: new Date().toISOString() }).eq("id", u.id);
+    }
+  };
+
+  const saveCard = async (c) => {
+    setBusy(true);
+    try {
+      const payload = {
+        title: (c.title || "").trim(), description: c.description || null, assignee_id: c.assignee_id || null,
+        due_date: c.due_date || null, labels: c.labels || [], status: c.status, updated_at: new Date().toISOString(),
+      };
+      if (!payload.title) { alert("Гарчиг хоосон байна"); return; }
+      const { error } = c.id
+        ? await supabase.from("mkt_board_cards").update(payload).eq("id", c.id)
+        : await supabase.from("mkt_board_cards").insert({ ...payload, position: byCol(c.status).length + 1, created_by: profile.id });
+      if (error) throw error;
+      setEditing(null);
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const archiveCard = async (id) => {
+    if (!confirm("Картыг архивлах уу?")) return;
+    await supabase.from("mkt_board_cards").update({ archived: true, updated_at: new Date().toISOString() }).eq("id", id);
+    setEditing(null);
+  };
+
+  const dueInfo = (d) => {
+    if (!d) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dd = new Date(`${d}T00:00:00`);
+    const diff = Math.round((dd - today) / 86400000);
+    if (diff < 0) return { txt: `⏰ ${-diff} хоног хэтэрсэн`, color: T.err };
+    if (diff === 0) return { txt: "⏰ Өнөөдөр", color: T.warn };
+    if (diff <= 3) return { txt: `📅 ${diff} хоног`, color: T.warn };
+    return { txt: `📅 ${d.slice(5)}`, color: T.muted };
+  };
+
+  if (cards === null) {
+    return <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-1">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {cards.length} карт · картыг чирж зөөнө</span></div>
+        <button onClick={() => setEditing({ status: "todo", labels: [] })}
+          className="press-btn px-3 py-1.5 rounded-lg text-xs"
+          style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>➕ Шинэ карт</button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
+        {COLS.map((col) => {
+          const list = byCol(col.key);
+          return (
+            <div key={col.key} className="rounded-2xl p-2.5 space-y-2"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderTop: `3px solid ${col.color}`, minHeight: 160 }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); if (drag) { moveCard(drag, col.key); setDrag(null); } }}>
+              <div className="flex items-center justify-between px-1">
+                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-xs">{col.label}</span>
+                <span className="text-[10px] px-1.5 rounded-full" style={{ background: col.color, color: "#fff", fontFamily: FM, fontWeight: 700 }}>{list.length}</span>
+              </div>
+              {list.map((c) => {
+                const due = dueInfo(c.due_date);
+                return (
+                  <div key={c.id} draggable
+                    onDragStart={() => setDrag(c.id)}
+                    onDragEnd={() => setDrag(null)}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag && drag !== c.id) { moveCard(drag, col.key, c.id); setDrag(null); } }}
+                    onClick={() => setEditing({ ...c, labels: Array.isArray(c.labels) ? c.labels : [] })}
+                    className="glass rounded-xl p-2.5 cursor-grab active:cursor-grabbing"
+                    style={{ opacity: drag === c.id ? 0.4 : 1, borderLeft: c.labels?.includes("Яаралтай") ? `3px solid ${T.err}` : `3px solid transparent` }}>
+                    {Array.isArray(c.labels) && c.labels.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {c.labels.map((l) => <span key={l} className="text-[9px] px-1.5 rounded-full" style={{ background: LABEL_COLORS[l] || "#64748b", color: "#fff", fontFamily: FM, fontWeight: 700 }}>{l}</span>)}
+                      </div>
+                    )}
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs leading-snug">{c.title}</div>
+                    {c.description && <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1 line-clamp-2">{c.description}</div>}
+                    <div className="flex items-center justify-between mt-1.5 gap-2">
+                      <span style={{ color: T.inkSoft, fontFamily: FM }} className="text-[10px] truncate">{c.assignee_id ? `👤 ${nameOf(c.assignee_id) || "?"}` : ""}</span>
+                      {due && <span style={{ color: due.color, fontFamily: FM, fontWeight: 700 }} className="text-[10px] flex-shrink-0">{due.txt}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex gap-1">
+                <input value={adding[col.key] || ""} onChange={(e) => setAdding((p) => ({ ...p, [col.key]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") addCard(col.key); }}
+                  placeholder="+ Карт нэмэх (Enter)"
+                  className="flex-1 min-w-0 rounded-lg px-2 py-1.5 text-[11px] outline-none"
+                  style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {editing && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setEditing(null)}>
+          <div className="glass rounded-2xl w-full max-w-md p-4 space-y-3" style={{ background: T.bg }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{editing.id ? "✏️ Карт засах" : "➕ Шинэ карт"}</div>
+            <input value={editing.title || ""} onChange={(e) => setEditing({ ...editing, title: e.target.value })} placeholder="Гарчиг"
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+            <textarea value={editing.description || ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="Тайлбар" rows={3}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+            <div className="grid grid-cols-2 gap-2">
+              <select value={editing.assignee_id || ""} onChange={(e) => setEditing({ ...editing, assignee_id: e.target.value || null })}
+                className="rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                <option value="">— Хариуцагч —</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <input type="date" value={editing.due_date || ""} onChange={(e) => setEditing({ ...editing, due_date: e.target.value || null })}
+                className="rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+            </div>
+            <select value={editing.status || "todo"} onChange={(e) => setEditing({ ...editing, status: e.target.value })}
+              className="w-full rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+              {COLS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+            <div className="flex flex-wrap gap-1.5">
+              {LABELS.map((l) => {
+                const on = (editing.labels || []).includes(l);
+                return (
+                  <button key={l} onClick={() => setEditing({ ...editing, labels: on ? editing.labels.filter((x) => x !== l) : [...(editing.labels || []), l] })}
+                    className="press-btn text-[10px] px-2 py-1 rounded-full"
+                    style={{ background: on ? (LABEL_COLORS[l] || "#64748b") : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{l}</button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              {editing.id ? (
+                <button onClick={() => archiveCard(editing.id)} className="press-btn text-xs px-3 py-2 rounded-lg" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FS, fontWeight: 600 }}>🗄 Архивлах</button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(null)} className="press-btn text-xs px-3 py-2 rounded-lg" style={{ background: T.surfaceAlt, color: T.inkSoft, border: `1px solid ${T.borderStrong}`, fontFamily: FS }}>Болих</button>
+                <button onClick={() => saveCard(editing)} disabled={busy} className="press-btn text-xs px-4 py-2 rounded-lg" style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>Хадгалах</button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 function MarketingView({ profile }) {
   const [allProfiles, setAllProfiles] = useState([]);
   const [members, setMembers] = useState([]); // mkt_members
@@ -17651,6 +17859,7 @@ function MarketingView({ profile }) {
 
   // ═══ 🛒 АЖИЛЛАХ БАРАА (нийтийн сан) — mkt_work_pool ═══
   //    Админ/ахлах хайж нэмнэ; гишүүд өөрийн бараанд 📥 Авах-аар нэмнэ (mkt_products).
+  const [boardOpen, setBoardOpen] = useState(true); // 📋 Trello самбар нээлттэй эсэх
   const [workPool, setWorkPool] = useState([]);
   const [poolSearch, setPoolSearch] = useState("");
   const [poolBusy, setPoolBusy] = useState(null);
@@ -17699,6 +17908,15 @@ function MarketingView({ profile }) {
 
   return (
     <div className="space-y-4">
+      {/* ====== 📋 TRELLO САМБАР ====== */}
+      <div className="glass rounded-2xl p-3">
+        <button onClick={() => setBoardOpen((v) => !v)} className="press-btn w-full flex items-center justify-between">
+          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар (Trello)</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{boardOpen ? "▲ Хаах" : "▼ Нээх"}</span>
+        </button>
+        {boardOpen && <div className="mt-3"><MktBoardView profile={profile} employees={employees} /></div>}
+      </div>
+
       {/* ====== 🛒 АЖИЛЛАХ БАРАА — нийтийн сан ====== */}
       <div className="glass rounded-2xl p-4 relative" style={{ zIndex: poolSearchLc ? 40 : "auto" }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
