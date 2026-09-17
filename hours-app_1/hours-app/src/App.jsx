@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board3";
+const BUILD_VERSION = "v2026.09.17-mkt-board4";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2589,6 +2589,7 @@ function AdminDashboard({ profile }) {
             {(profile.role === "admin" || profile.role === "manager" || profile.role === "marketing") && (
               <SidebarSection label="Маркетинг" icon={TrendingUp}>
                 <SidebarTab active={view === "marketing"} onClick={() => { setView("marketing"); setSidebarOpen(false); }} icon={BarChart3}>📣 Маркетинг</SidebarTab>
+                <SidebarTab active={view === "mkt-board"} onClick={() => { setView("mkt-board"); setSidebarOpen(false); }} icon={Calendar}>📋 Маркетингийн самбар</SidebarTab>
               </SidebarSection>
             )}
 
@@ -2726,6 +2727,7 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "marketing" && "Маркетинг"}
+                {view === "mkt-board" && "Маркетингийн самбар"}
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
@@ -3025,6 +3027,10 @@ function AdminDashboard({ profile }) {
 
         {view === "marketing" && (
           <MarketingView profile={profile} />
+        )}
+
+        {view === "mkt-board" && (
+          <MktBoardView profile={profile} />
         )}
 
         {view === "sales" && (
@@ -17202,7 +17208,52 @@ function CallCenterView({ profile }) {
 //  MKT BOARD — Маркетингийн Trello маягийн самбар (mkt_board_cards)
 //  Багана: todo → doing → review → done. Drag&drop, хариуцагч, дуусах огноо, шошго, realtime.
 // ═══════════════════════════════════════════════════════════════════════════
-function MktBoardView({ profile, employees = [] }) {
+function MktBoardView({ profile, employees: employeesProp = [] }) {
+  // Хариуцагчийн жагсаалт: prop ирээгүй бол маркетингийн гишүүд (mkt_members), байхгүй бол бүх идэвхтэй ажилтан
+  const [employeesSelf, setEmployeesSelf] = useState([]);
+  useEffect(() => {
+    if (employeesProp.length > 0) return;
+    (async () => {
+      try {
+        const [{ data: profs }, { data: mem }] = await Promise.all([
+          supabase.from("profiles").select("id, name, is_active"),
+          supabase.from("mkt_members").select("employee_id"),
+        ]);
+        const act = (profs || []).filter((p) => p.is_active !== false);
+        const ids = new Set((mem || []).map((m) => m.employee_id));
+        const list = ids.size > 0 ? act.filter((p) => ids.has(p.id)) : act;
+        setEmployeesSelf(list.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+      } catch (e) { console.error("[mkt board staff]", e); }
+    })();
+  }, []);
+  const employees = employeesProp.length > 0 ? employeesProp : employeesSelf;
+
+  // 🖼 Зураг — Supabase Storage 'mkt-board' bucket
+  const [uploading, setUploading] = useState(false);
+  const uploadImages = async (files, cardId) => {
+    const urls = [];
+    setUploading(true);
+    try {
+      for (const f of Array.from(files || [])) {
+        if (!f.type.startsWith("image/")) continue;
+        if (f.size > 8 * 1024 * 1024) { alert(`${f.name}: 8 MB-аас том зураг`); continue; }
+        const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+        const path = `${cardId || "new"}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+        const { error } = await supabase.storage.from("mkt-board").upload(path, f, { upsert: false, contentType: f.type });
+        if (error) { alert("Зураг оруулахад алдаа: " + error.message); continue; }
+        const { data } = supabase.storage.from("mkt-board").getPublicUrl(path);
+        if (data?.publicUrl) urls.push(data.publicUrl);
+      }
+    } finally { setUploading(false); }
+    return urls;
+  };
+  // Карт дээр зураг чирж тавих → шууд хавсаргана
+  const dropImagesOnCard = async (card, files) => {
+    const urls = await uploadImages(files, card.id);
+    if (urls.length === 0) return;
+    const images = [...(Array.isArray(card.images) ? card.images : []), ...urls];
+    await supabase.from("mkt_board_cards").update({ images, updated_at: new Date().toISOString() }).eq("id", card.id);
+  };
   // Баганууд DB-ээс (mkt_board_columns); хоосон бол үндсэн 4-ийг үзүүлнэ
   const DEFAULT_COLS = [
     { key: "todo", label: "📝 Хийх", color: "#6366f1", position: 1 },
@@ -17335,6 +17386,7 @@ function MktBoardView({ profile, employees = [] }) {
       const payload = {
         title: (c.title || "").trim(), description: c.description || null, assignee_id: c.assignee_id || null,
         due_date: c.due_date || null, labels: c.labels || [], status: c.status, updated_at: new Date().toISOString(),
+        images: Array.isArray(c.images) ? c.images : [],
       };
       if (!payload.title) { alert("Гарчиг хоосон байна"); return; }
       const { error } = c.id
@@ -17399,10 +17451,20 @@ function MktBoardView({ profile, employees = [] }) {
                     onDragStart={() => setDrag(c.id)}
                     onDragEnd={() => setDrag(null)}
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag && drag !== c.id) { moveCard(drag, col.key, c.id); setDrag(null); } }}
-                    onClick={() => setEditing({ ...c, labels: Array.isArray(c.labels) ? c.labels : [] })}
+                    onDrop={(e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      if (e.dataTransfer?.files?.length) { dropImagesOnCard(c, e.dataTransfer.files); return; } // 🖼 зураг чирж тавив
+                      if (drag && drag !== c.id) { moveCard(drag, col.key, c.id); setDrag(null); }
+                    }}
+                    onClick={() => setEditing({ ...c, labels: Array.isArray(c.labels) ? c.labels : [], images: Array.isArray(c.images) ? c.images : [] })}
                     className="glass rounded-xl p-2.5 cursor-grab active:cursor-grabbing"
                     style={{ opacity: drag === c.id ? 0.4 : 1, borderLeft: c.labels?.includes("Яаралтай") ? `3px solid ${T.err}` : `3px solid transparent` }}>
+                    {Array.isArray(c.images) && c.images.length > 0 && (
+                      <div className="relative mb-1.5 -mx-2.5 -mt-2.5">
+                        <img src={c.images[0]} alt="" className="w-full object-cover rounded-t-xl" style={{ height: 110 }} />
+                        {c.images.length > 1 && <span className="absolute bottom-1 right-1 text-[9px] px-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.55)", color: "#fff", fontFamily: FM }}>🖼 {c.images.length}</span>}
+                      </div>
+                    )}
                     {Array.isArray(c.labels) && c.labels.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1">
                         {c.labels.map((l) => <span key={l} className="text-[9px] px-1.5 rounded-full" style={{ background: LABEL_COLORS[l] || "#64748b", color: "#fff", fontFamily: FM, fontWeight: 700 }}>{l}</span>)}
@@ -17452,6 +17514,28 @@ function MktBoardView({ profile, employees = [] }) {
               className="w-full rounded-lg px-2 py-2 text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
               {COLS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
+            {/* 🖼 Зурагнууд — сонгох эсвэл чирж тавих */}
+            <div className="rounded-xl p-2 text-center"
+              style={{ border: `2px dashed ${T.borderStrong}`, background: T.surfaceAlt }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={async (e) => { e.preventDefault(); const urls = await uploadImages(e.dataTransfer.files, editing.id); if (urls.length) setEditing((p) => ({ ...p, images: [...(p.images || []), ...urls] })); }}>
+              {(editing.images || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2 justify-center">
+                  {editing.images.map((u, i) => (
+                    <div key={i} className="relative">
+                      <img src={u} alt="" className="w-16 h-16 object-cover rounded-lg" />
+                      <button onClick={() => setEditing((p) => ({ ...p, images: p.images.filter((_, j) => j !== i) }))}
+                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[10px]" style={{ background: T.err, color: "#fff" }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="cursor-pointer text-[11px]" style={{ color: T.highlight, fontFamily: FS, fontWeight: 700 }}>
+                {uploading ? "⏳ Оруулж байна..." : "🖼 Зураг сонгох эсвэл энд чирж тавь"}
+                <input type="file" accept="image/*" multiple className="hidden" disabled={uploading}
+                  onChange={async (e) => { const urls = await uploadImages(e.target.files, editing.id); if (urls.length) setEditing((p) => ({ ...p, images: [...(p.images || []), ...urls] })); e.target.value = ""; }} />
+              </label>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {LABELS.map((l) => {
                 const on = (editing.labels || []).includes(l);
@@ -17932,7 +18016,6 @@ function MarketingView({ profile }) {
 
   // ═══ 🛒 АЖИЛЛАХ БАРАА (нийтийн сан) — mkt_work_pool ═══
   //    Админ/ахлах хайж нэмнэ; гишүүд өөрийн бараанд 📥 Авах-аар нэмнэ (mkt_products).
-  const [boardOpen, setBoardOpen] = useState(true); // 📋 Trello самбар нээлттэй эсэх
   const [workPool, setWorkPool] = useState([]);
   const [poolSearch, setPoolSearch] = useState("");
   const [poolBusy, setPoolBusy] = useState(null);
@@ -17981,15 +18064,6 @@ function MarketingView({ profile }) {
 
   return (
     <div className="space-y-4">
-      {/* ====== 📋 TRELLO САМБАР ====== */}
-      <div className="glass rounded-2xl p-3">
-        <button onClick={() => setBoardOpen((v) => !v)} className="press-btn w-full flex items-center justify-between">
-          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар</span>
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{boardOpen ? "▲ Хаах" : "▼ Нээх"}</span>
-        </button>
-        {boardOpen && <div className="mt-3"><MktBoardView profile={profile} employees={employees} /></div>}
-      </div>
-
       {/* ====== 🛒 АЖИЛЛАХ БАРАА — нийтийн сан ====== */}
       <div className="glass rounded-2xl p-4 relative" style={{ zIndex: poolSearchLc ? 40 : "auto" }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
