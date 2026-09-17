@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-sales-fast";
+const BUILD_VERSION = "v2026.09.17-mkt-board6";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17331,8 +17331,6 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
   const [drag, setDrag] = useState(null);       // чирж буй картын id
   const [editing, setEditing] = useState(null); // засварлаж буй карт (object) | {new: col}
   const [adding, setAdding] = useState({});     // { col: "гарчиг" }
-  const [colPage, setColPage] = useState({});   // { col: хуудас } — багана бүрд 2 карт
-  const COL_PAGE = 2;
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -17428,9 +17426,6 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
       <div className="flex gap-3 items-start overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
         {COLS.map((col) => {
           const list = byCol(col.key);
-          const pages = Math.max(1, Math.ceil(list.length / COL_PAGE));
-          const cp = Math.min(Math.max(1, colPage[col.key] || 1), pages);
-          const visible = list.slice((cp - 1) * COL_PAGE, cp * COL_PAGE);
           return (
             <div key={col.key} className="rounded-2xl p-2.5 space-y-2 flex-shrink-0"
               style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderTop: `3px solid ${col.color}`, minHeight: 160, width: 270 }}
@@ -17449,7 +17444,8 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                   <button onClick={() => deleteColumn(col)} title="Устгах" className="press-btn text-[10px] px-1">✕</button>
                 </div>
               </div>
-              {visible.map((c) => {
+              <div className="space-y-2 overflow-y-auto pr-0.5" style={{ maxHeight: "60vh", scrollbarWidth: "thin" }}>
+              {list.map((c) => {
                 const due = dueInfo(c.due_date);
                 return (
                   <div key={c.id} draggable
@@ -17484,15 +17480,7 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
                   </div>
                 );
               })}
-              {pages > 1 && (
-                <div className="flex items-center justify-center gap-2 pt-0.5">
-                  <button onClick={() => setColPage((p) => ({ ...p, [col.key]: Math.max(1, cp - 1) }))} disabled={cp <= 1}
-                    className="press-btn px-2 py-0.5 rounded-lg text-[11px]" style={{ background: T.bg, color: cp <= 1 ? T.mutedSoft : T.ink, border: `1px solid ${T.border}`, fontFamily: FM }}>‹</button>
-                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{cp} / {pages}</span>
-                  <button onClick={() => setColPage((p) => ({ ...p, [col.key]: Math.min(pages, cp + 1) }))} disabled={cp >= pages}
-                    className="press-btn px-2 py-0.5 rounded-lg text-[11px]" style={{ background: T.bg, color: cp >= pages ? T.mutedSoft : T.ink, border: `1px solid ${T.border}`, fontFamily: FM }}>›</button>
-                </div>
-              )}
+              </div>
               <button onClick={() => setEditing({ status: col.key, labels: [] })}
                 className="press-btn w-full rounded-lg py-1.5 text-[11px]"
                 style={{ background: T.bg, color: col.color, border: `1px dashed ${col.color}`, fontFamily: FS, fontWeight: 700 }}>
