@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board2";
+const BUILD_VERSION = "v2026.09.17-mkt-board3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17369,10 +17369,7 @@ function MktBoardView({ profile, employees = [] }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between flex-wrap gap-2 px-1">
-        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {cards.length} карт · картыг чирж зөөнө</span></div>
-        <button onClick={() => setEditing({ status: "todo", labels: [] })}
-          className="press-btn px-3 py-1.5 rounded-lg text-xs"
-          style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>➕ Шинэ карт</button>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Самбар <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {cards.length} карт · картыг чирж зөөнө</span></div>
       </div>
       <div className="flex gap-3 items-start overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
         {COLS.map((col) => {
@@ -17420,13 +17417,11 @@ function MktBoardView({ profile, employees = [] }) {
                   </div>
                 );
               })}
-              <div className="flex gap-1">
-                <input value={adding[col.key] || ""} onChange={(e) => setAdding((p) => ({ ...p, [col.key]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === "Enter") addCard(col.key); }}
-                  placeholder="+ Карт нэмэх (Enter)"
-                  className="flex-1 min-w-0 rounded-lg px-2 py-1.5 text-[11px] outline-none"
-                  style={{ background: T.bg, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
-              </div>
+              <button onClick={() => setEditing({ status: col.key, labels: [] })}
+                className="press-btn w-full rounded-lg py-1.5 text-[11px]"
+                style={{ background: T.bg, color: col.color, border: `1px dashed ${col.color}`, fontFamily: FS, fontWeight: 700 }}>
+                ➕ Карт нэмэх
+              </button>
             </div>
           );
         })}
@@ -17989,7 +17984,7 @@ function MarketingView({ profile }) {
       {/* ====== 📋 TRELLO САМБАР ====== */}
       <div className="glass rounded-2xl p-3">
         <button onClick={() => setBoardOpen((v) => !v)} className="press-btn w-full flex items-center justify-between">
-          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар (Trello)</span>
+          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📋 Маркетингийн самбар</span>
           <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{boardOpen ? "▲ Хаах" : "▼ Нээх"}</span>
         </button>
         {boardOpen && <div className="mt-3"><MktBoardView profile={profile} employees={employees} /></div>}
