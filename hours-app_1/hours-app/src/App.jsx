@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-board";
+const BUILD_VERSION = "v2026.09.17-mkt-board2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17203,12 +17203,77 @@ function CallCenterView({ profile }) {
 //  Багана: todo → doing → review → done. Drag&drop, хариуцагч, дуусах огноо, шошго, realtime.
 // ═══════════════════════════════════════════════════════════════════════════
 function MktBoardView({ profile, employees = [] }) {
-  const COLS = [
-    { key: "todo", label: "📝 Хийх", color: "#6366f1" },
-    { key: "doing", label: "🔧 Хийж буй", color: "#f59e0b" },
-    { key: "review", label: "👀 Хянуулах", color: "#0ea5e9" },
-    { key: "done", label: "✅ Дууссан", color: "#22c55e" },
+  // Баганууд DB-ээс (mkt_board_columns); хоосон бол үндсэн 4-ийг үзүүлнэ
+  const DEFAULT_COLS = [
+    { key: "todo", label: "📝 Хийх", color: "#6366f1", position: 1 },
+    { key: "doing", label: "🔧 Хийж буй", color: "#f59e0b", position: 2 },
+    { key: "review", label: "👀 Хянуулах", color: "#0ea5e9", position: 3 },
+    { key: "done", label: "✅ Дууссан", color: "#22c55e", position: 4 },
   ];
+  const COL_COLORS = ["#6366f1", "#f59e0b", "#0ea5e9", "#22c55e", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6", "#64748b"];
+  const [colsDb, setColsDb] = useState(null);
+  const loadCols = async () => {
+    try {
+      const { data, error } = await supabase.from("mkt_board_columns").select("*").eq("archived", false).order("position", { ascending: true });
+      if (error) throw error;
+      setColsDb((data || []).map((c) => ({ key: c.key, label: c.label, color: c.color || "#64748b", position: c.position, id: c.id })));
+    } catch (e) { console.error("[mkt board cols]", e); setColsDb([]); }
+  };
+  useEffect(() => { loadCols(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("mkt-board-cols-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "mkt_board_columns" }, () => loadCols())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const COLS = colsDb && colsDb.length > 0 ? colsDb : DEFAULT_COLS;
+
+  const addColumn = async () => {
+    const name = prompt("Шинэ баганын нэр:");
+    if (!name || !name.trim()) return;
+    const key = "col_" + Math.random().toString(36).slice(2, 8);
+    const pos = COLS.length + 1;
+    const color = COL_COLORS[COLS.length % COL_COLORS.length];
+    // Үндсэн 4 багана DB-д хараахан байхгүй бол эхлээд тэднийг хадгална (дараалал хадгалагдахын тулд)
+    if (!colsDb || colsDb.length === 0) {
+      await supabase.from("mkt_board_columns").upsert(DEFAULT_COLS.map((c) => ({ key: c.key, label: c.label, color: c.color, position: c.position })), { onConflict: "key" });
+    }
+    const { error } = await supabase.from("mkt_board_columns").insert({ key, label: name.trim(), color, position: pos });
+    if (error) alert("Алдаа: " + error.message);
+  };
+  const ensureColsSaved = async () => {
+    if (!colsDb || colsDb.length === 0) {
+      await supabase.from("mkt_board_columns").upsert(DEFAULT_COLS.map((c) => ({ key: c.key, label: c.label, color: c.color, position: c.position })), { onConflict: "key" });
+    }
+  };
+  const renameColumn = async (col) => {
+    const name = prompt("Баганын нэр:", col.label);
+    if (!name || !name.trim() || name.trim() === col.label) return;
+    await ensureColsSaved();
+    await supabase.from("mkt_board_columns").update({ label: name.trim() }).eq("key", col.key);
+  };
+  const recolorColumn = async (col) => {
+    const i = COL_COLORS.indexOf(col.color);
+    const next = COL_COLORS[(i + 1) % COL_COLORS.length];
+    await ensureColsSaved();
+    await supabase.from("mkt_board_columns").update({ color: next }).eq("key", col.key);
+  };
+  const moveColumn = async (col, dir) => {
+    const idx = COLS.findIndex((c) => c.key === col.key);
+    const j = idx + dir;
+    if (j < 0 || j >= COLS.length) return;
+    await ensureColsSaved();
+    const other = COLS[j];
+    await supabase.from("mkt_board_columns").update({ position: j + 1 }).eq("key", col.key);
+    await supabase.from("mkt_board_columns").update({ position: idx + 1 }).eq("key", other.key);
+  };
+  const deleteColumn = async (col) => {
+    if (byCol(col.key).length > 0) { alert("Энэ баганад карт байна — эхлээд картуудыг өөр багана руу зөөнө үү."); return; }
+    if (COLS.length <= 1) { alert("Хамгийн багадаа нэг багана үлдэх ёстой."); return; }
+    if (!confirm(`"${col.label}" баганыг устгах уу?`)) return;
+    await ensureColsSaved();
+    await supabase.from("mkt_board_columns").update({ archived: true }).eq("key", col.key);
+  };
   const LABELS = ["Контент", "Зар", "Дизайн", "Видео", "Судалгаа", "Яаралтай"];
   const LABEL_COLORS = { "Контент": "#6366f1", "Зар": "#f59e0b", "Дизайн": "#ec4899", "Видео": "#0ea5e9", "Судалгаа": "#84cc16", "Яаралтай": "#ef4444" };
   const [cards, setCards] = useState(null);
@@ -17309,17 +17374,26 @@ function MktBoardView({ profile, employees = [] }) {
           className="press-btn px-3 py-1.5 rounded-lg text-xs"
           style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>➕ Шинэ карт</button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
+      <div className="flex gap-3 items-start overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
         {COLS.map((col) => {
           const list = byCol(col.key);
           return (
-            <div key={col.key} className="rounded-2xl p-2.5 space-y-2"
-              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderTop: `3px solid ${col.color}`, minHeight: 160 }}
+            <div key={col.key} className="rounded-2xl p-2.5 space-y-2 flex-shrink-0"
+              style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderTop: `3px solid ${col.color}`, minHeight: 160, width: 270 }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); if (drag) { moveCard(drag, col.key); setDrag(null); } }}>
-              <div className="flex items-center justify-between px-1">
-                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-xs">{col.label}</span>
-                <span className="text-[10px] px-1.5 rounded-full" style={{ background: col.color, color: "#fff", fontFamily: FM, fontWeight: 700 }}>{list.length}</span>
+              <div className="flex items-center justify-between px-1 gap-1">
+                <button onClick={() => renameColumn(col)} title="Нэр солих" className="press-btn text-left min-w-0 flex-1 truncate"
+                  style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }}>
+                  <span className="text-xs">{col.label}</span>
+                </button>
+                <span className="text-[10px] px-1.5 rounded-full flex-shrink-0" style={{ background: col.color, color: "#fff", fontFamily: FM, fontWeight: 700 }}>{list.length}</span>
+                <div className="flex items-center gap-0.5 flex-shrink-0" style={{ color: T.muted }}>
+                  <button onClick={() => moveColumn(col, -1)} title="Зүүн" className="press-btn text-[10px] px-1">◀</button>
+                  <button onClick={() => moveColumn(col, 1)} title="Баруун" className="press-btn text-[10px] px-1">▶</button>
+                  <button onClick={() => recolorColumn(col)} title="Өнгө" className="press-btn text-[10px] px-1">🎨</button>
+                  <button onClick={() => deleteColumn(col)} title="Устгах" className="press-btn text-[10px] px-1">✕</button>
+                </div>
               </div>
               {list.map((c) => {
                 const due = dueInfo(c.due_date);
@@ -17356,6 +17430,10 @@ function MktBoardView({ profile, employees = [] }) {
             </div>
           );
         })}
+        <button onClick={addColumn} className="press-btn rounded-2xl p-3 flex-shrink-0 text-xs"
+          style={{ width: 200, minHeight: 80, background: T.surfaceAlt, color: T.highlight, border: `2px dashed ${T.highlight}`, fontFamily: FS, fontWeight: 700 }}>
+          ➕ Багана нэмэх
+        </button>
       </div>
 
       {editing && createPortal(
