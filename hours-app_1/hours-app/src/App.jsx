@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.17-mkt-links";
+const BUILD_VERSION = "v2026.09.18-sales-breakdown";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -20626,40 +20626,35 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 
   // 🆕 Барааны задаргаа popup — захиалгын статусаар (delivered/cancelled/all) барааг нэгтгэнэ
   const [breakdownModal, setBreakdownModal] = useState(null); // { title, statusFilter } | null
-  const productBreakdown = useMemo(() => {
-    if (!breakdownModal) return null;
-    const { statusFilter } = breakdownModal;
-    // Шүүсэн захиалгууд (статусаар)
-    const ordIds = new Set(
-      filteredOrders
-        .filter((o) => statusFilter === "all" ? true : o.status === statusFilter)
-        .map((o) => o.id)
-    );
-    // Тэдгээр захиалгын бараа нэгтгэх
-    const prodMap = {}; // product_id → { name, sku, image_url, qty, amount }
-    (items || []).forEach((it) => {
-      if (!ordIds.has(it.order_id)) return;
-      const pid = it.product_id;
-      if (!prodMap[pid]) {
-        const p = products.find((x) => x.id === pid);
-        prodMap[pid] = {
-          name: it.product_name || p?.name || "—",
-          sku: p?.sku || "",
-          image_url: p?.image_url || null,
-          qty: 0, amount: 0,
-        };
+  // 🚀 2026-09-18: барааны задаргааг клиент дээр (бүх items) биш, статусаар нэгтгэдэг RPC-ээр татна
+  const [productBreakdown, setProductBreakdown] = useState(null);
+  useEffect(() => {
+    if (!breakdownModal) { setProductBreakdown(null); return; }
+    let cancelled = false;
+    setProductBreakdown({ loading: true, list: [], totalProducts: 0, totalQty: 0, totalAmount: 0 });
+    (async () => {
+      try {
+        const isAllPeriod = periodRange.label === "Бүгд";
+        const { data, error } = await supabase.rpc("sales_product_breakdown", {
+          p_start: isAllPeriod ? null : periodRange.start.toISOString(),
+          p_end: isAllPeriod ? null : periodRange.end.toISOString(),
+          p_page_ids: isMerchant ? allowedPageIds : null,
+          p_status: breakdownModal.statusFilter || "all",
+        });
+        if (error) throw error;
+        if (cancelled) return;
+        const list = (data || []).map((r) => {
+          const p = products.find((x) => x.id === r.product_id);
+          return { name: r.name || p?.name || "—", sku: r.sku || p?.sku || "", image_url: r.image_url || p?.image_url || null, qty: Number(r.qty || 0), amount: Number(r.amount || 0) };
+        }).sort((a, b) => b.qty - a.qty);
+        setProductBreakdown({ list, totalProducts: list.length, totalQty: list.reduce((s, p) => s + p.qty, 0), totalAmount: list.reduce((s, p) => s + p.amount, 0) });
+      } catch (e) {
+        console.error("[sales breakdown]", e);
+        if (!cancelled) setProductBreakdown({ list: [], totalProducts: 0, totalQty: 0, totalAmount: 0, error: e.message });
       }
-      prodMap[pid].qty += Number(it.quantity || 0);
-      prodMap[pid].amount += Number(it.quantity || 0) * Number(it.price || it.unit_price || 0);
-    });
-    const list = Object.values(prodMap).sort((a, b) => b.qty - a.qty);
-    return {
-      list,
-      totalProducts: list.length,
-      totalQty: list.reduce((s, p) => s + p.qty, 0),
-      totalAmount: list.reduce((s, p) => s + p.amount, 0),
-    };
-  }, [breakdownModal, filteredOrders, items, products]);
+    })();
+    return () => { cancelled = true; };
+  }, [breakdownModal, periodRange, isMerchant, allowedPageIds, products]);
 
   // Excel export
   const exportExcel = () => {
@@ -20914,7 +20909,11 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                   </div>
                 </div>
                 {/* Барааны grid */}
-                {productBreakdown.list.length === 0 ? (
+                {productBreakdown.loading ? (
+                  <div className="p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
+                ) : productBreakdown.error ? (
+                  <div className="p-8 text-center text-xs" style={{ color: T.err, fontFamily: FS }}>⚠ {productBreakdown.error} — SQL Editor-т sales_product_breakdown функцийг үүсгэнэ үү</div>
+                ) : productBreakdown.list.length === 0 ? (
                   <div className="p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Бараа байхгүй</div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 pt-0">
