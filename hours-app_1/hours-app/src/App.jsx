@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-delivery-board2";
+const BUILD_VERSION = "v2026.09.22-delivery-board3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19718,7 +19718,7 @@ function DeliveryDashboardView({ profile }) {
         {[
           ["⏳ Хүлээгдэж буй", tot.pending, fmtT(tot.pendingAmt), T.warn, "одоо гар дээр (бүх цаг)"],
           [`✅ Хүргэсэн · ${range.label}`, tot.delivered, fmtT(tot.deliveredAmt), T.ok, "амжилттай хүргэлт"],
-          [`❌ Цуцалсан · ${range.label}`, tot.cancelled, "", T.err, "жолоочтой захиалгын цуцлалт"],
+          [`❌ Цуцалсан · ${range.label}`, tot.cancelled, tot.delivered + tot.cancelled > 0 ? `${((tot.cancelled / (tot.delivered + tot.cancelled)) * 100).toFixed(1)}% (хүргэсэн+цуцалсанаас)` : "", T.err, "жолоочтой захиалгын цуцлалт"],
           ["📦 Тушаагаагүй", tot.unsettledN, fmtT(tot.owed), T.highlight, "хүргэсэн ч тооцоонд ороогүй (бүх цаг)"],
           ["🧾 Нээлттэй тооцоо", tot.openN, `${stats.length} жолооч`, "#9333ea", "нээгдсэн, хаагдаагүй"],
         ].map(([lbl, n, sub, color, hint], i) => (
@@ -19765,6 +19765,22 @@ function DeliveryDashboardView({ profile }) {
                     {boxBtn("delivered", T.okSoft || "#DCFCE7", T.ok, s.deliveredN, "✅ Хүргэсэн", s.deliveredAmt)}
                     {boxBtn("cancelled", T.errSoft || "#FEE2E2", T.err, s.cancelledN, "❌ Цуцалсан", s.cancelledAmt)}
                   </div>
+                  {(() => {
+                    const base = s.deliveredN + s.cancelledN;
+                    const pct = base > 0 ? (s.cancelledN / base) * 100 : null;
+                    const color = pct === null ? T.muted : pct >= 20 ? T.err : pct >= 10 ? T.warn : T.ok;
+                    return (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, background: T.border }}>
+                          <div style={{ width: `${pct || 0}%`, height: "100%", background: color, borderRadius: 999 }} />
+                        </div>
+                        <span style={{ color, fontFamily: FM, fontWeight: 800 }} className="text-[11px] tabular-nums flex-shrink-0">
+                          {pct === null ? "—" : `❌ ${pct.toFixed(1)}%`}
+                        </span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex-shrink-0">цуцлалт · {s.cancelledN}/{base}</span>
+                      </div>
+                    );
+                  })()}
                   {(s.open || s.lastClosed) && (
                     <div className="mt-2 pt-1.5 text-[10px] flex flex-wrap gap-x-3" style={{ borderTop: `1px dashed ${T.border}`, color: T.muted, fontFamily: FM }}>
                       {s.open && <span>🧾 Нээлттэй: {s.open.order_count || 0} зах · 💵 {fmtT(s.open.cash_amount)} · 🏦 {fmtT(s.open.bank_amount)} · зарлага {fmtT(s.open.expense_amount)}</span>}
