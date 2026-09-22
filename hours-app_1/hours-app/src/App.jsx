@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-mkt-boost2";
+const BUILD_VERSION = "v2026.09.22-mkt-boost3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17886,7 +17886,7 @@ function MarketingView({ profile }) {
       const row = { date: dt.slice(5) };
       emps.forEach((e) => {
         const b = byBoost[e.id + "|" + dt] || 0, h = byKey[e.id + "|" + dt] || 0;
-        row[e.name] = b > 0 ? Math.round((h / b) * 1000 * 10) / 10 : null;
+        row[e.name] = b > 0 ? Math.round((h / b) * 1000) / 1000 : null; // хандалт ÷ boost
         row[e.name + "_boost"] = b; row[e.name + "_reach"] = h;
       });
       return row;
@@ -17917,10 +17917,13 @@ function MarketingView({ profile }) {
     return () => { cancelled = true; };
   }, [cmpMonth]);
   const pieData = useMemo(() => {
-    const byEmp = {};
-    reachInRange.forEach((r) => { byEmp[r.employee_id] = (byEmp[r.employee_id] || 0) + Number(r.reach || 0); });
+    const byEmp = {}, byBoost = {};
+    reachInRange.forEach((r) => {
+      byEmp[r.employee_id] = (byEmp[r.employee_id] || 0) + Number(r.reach || 0);
+      byBoost[r.employee_id] = (byBoost[r.employee_id] || 0) + Number(r.boost_cost || 0);
+    });
     return Object.entries(byEmp)
-      .map(([id, value]) => ({ name: profById[id]?.name || "—", value }))
+      .map(([id, value]) => ({ name: profById[id]?.name || "—", value, boost: byBoost[id] || 0, costPer: value > 0 && (byBoost[id] || 0) > 0 ? (byBoost[id] || 0) / value : null })) // 💸 1 хандалтын өртөг
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value);
   }, [reachInRange, profById]);
@@ -18474,13 +18477,13 @@ function MarketingView({ profile }) {
       {empCompare.hasBoost && (
         <div className="glass rounded-2xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💸 Boost үр ашиг <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· 1,000₮ boost тутамд хэдэн хандалт (хандалт ÷ boost × 1000)</span></div>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💸 Boost үр ашиг <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· хандалт ÷ boost (1₮-д ногдох хандалт)</span></div>
             <div className="flex gap-2 flex-wrap">
               {empCompare.emps.map((e) => {
                 const b = empCompare.boostTotals[e.id] || 0, h = empCompare.totals[e.id] || 0;
                 return (
                   <span key={e.id} className="text-[10px] px-2 py-1 rounded-full" style={{ background: T.surfaceAlt, color: e.color, border: `1px solid ${e.color}`, fontFamily: FM, fontWeight: 700 }}>
-                    {e.name}: {b.toLocaleString()}₮ → {h.toLocaleString()} хандалт{b > 0 ? ` · ${Math.round((h / b) * 1000)} /1000₮ · ${(b / Math.max(1, h)).toFixed(1)}₮ нэг хандалт` : ""}
+                    {e.name}: {b.toLocaleString()}₮ → {h.toLocaleString()} хандалт{b > 0 ? ` · ${(h / b).toFixed(3)} · 1 хандалт = ${(b / Math.max(1, h)).toFixed(1)}₮` : ""}
                   </span>
                 );
               })}
@@ -18492,7 +18495,7 @@ function MarketingView({ profile }) {
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
               <YAxis tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
               <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12 }}
-                formatter={(v, name, p) => [v === null ? "boost байхгүй" : `${v} хандалт /1000₮ (${(p.payload[name + "_reach"] || 0).toLocaleString()} хандалт, ${(p.payload[name + "_boost"] || 0).toLocaleString()}₮)`, name]} />
+                formatter={(v, name, p) => [v === null ? "boost байхгүй" : `${v} (${(p.payload[name + "_reach"] || 0).toLocaleString()} хандалт ÷ ${(p.payload[name + "_boost"] || 0).toLocaleString()}₮)`, name]} />
               <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
               {empCompare.emps.map((e) => (
                 <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} connectNulls={false} />
@@ -18761,6 +18764,12 @@ function MarketingView({ profile }) {
                       </div>
                       <div style={{ height: 5, borderRadius: 3, background: T.border || "#E5E7EB", overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${pct}%`, background: PIE_COLORS[i % PIE_COLORS.length], borderRadius: 3 }} />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">💸 Boost {d.boost > 0 ? `${d.boost.toLocaleString()}₮` : "—"}</span>
+                        <span style={{ color: d.costPer !== null ? "#b45309" : T.mutedSoft, fontFamily: FM, fontWeight: 700 }} className="text-[10px]">
+                          {d.costPer !== null ? `1 хандалт = ${d.costPer.toFixed(1)}₮` : "1 хандалт = —"}
+                        </span>
                       </div>
                     </div>
                   );
