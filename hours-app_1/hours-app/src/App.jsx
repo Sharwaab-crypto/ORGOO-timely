@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-mkt-boost4";
+const BUILD_VERSION = "v2026.09.22-delivery-board";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19600,562 +19600,208 @@ function OperatorKPIReportView({ profile }) {
   );
 }
 // ═══════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════
-//  🚚 DELIVERY DASHBOARD — Хүргэлтийн самбар (admin/manager-руу)
+//  🚚 DELIVERY DASHBOARD — Хүргэлтийн самбар (2026-09-22 шинэчлэл)
+//  Жолооч бүрийн: ⏳ хүлээгдэж буй · ✅ хүргэсэн · ❌ цуцалсан (сонгосон хугацаанд)
+//  + 💰 тооцооны мэдээлэл (нээлттэй тооцоо, тушаагаагүй хуримтлал, сүүлийн хаалт). Зөвхөн уншина.
 // ═══════════════════════════════════════════════════════════════════════════
 function DeliveryDashboardView({ profile }) {
-  const [drivers, setDrivers] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [period, setPeriod] = useState("today");
-  const [customStart, setCustomStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
-  const [customEnd, setCustomEnd] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
-  const [dailyGoal, setDailyGoal] = useState(() => {
-    try { return Number(localStorage.getItem("orgoo-delivery-daily-goal")) || 30; }
-    catch { return 30; }
-  });
+  const [customStart, setCustomStart] = useState(() => isoDay(new Date()));
+  const [customEnd, setCustomEnd] = useState(() => isoDay(new Date()));
+  const [loading, setLoading] = useState(true);
+  const [drivers, setDrivers] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [delivered, setDelivered] = useState([]);
+  const [cancelled, setCancelled] = useState([]);
+  const [unsettled, setUnsettled] = useState([]);
+  const [settlements, setSettlements] = useState([]);
+  const [openDrv, setOpenDrv] = useState(null);
+  const [sortBy, setSortBy] = useState("owed"); // owed | delivered | pending | name
 
-  // Daily goal-ийг localStorage-д хадгалах
-  useEffect(() => {
-    try { localStorage.setItem("orgoo-delivery-daily-goal", String(dailyGoal)); } catch {}
-  }, [dailyGoal]);
-
-  const loadAll = async () => {
-    setLoading(true);
-    try {
-      // ⚡ ГАЦАА ЗАСВАР: сүүлийн 60 хоногийн driver-тэй захиалга (өмнө бүх 879+ татдаг)
-      const ord60 = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
-      const [{ data: drvData }, ordData] = await Promise.all([
-        supabase.from("profiles").select("id, name, job_title").eq("role", "driver").order("name"),
-        fetchAllRows(supabase.from("biz_orders").select("*").not("driver_id", "is", null).gte("created_at", ord60).order("created_at", { ascending: false })),
-      ]);
-      setDrivers(drvData || []);
-      setOrders(ordData || []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { loadAll(); }, []);
-
-  // Realtime — debounced (2.5 сек): олон өөрчлөлт зэрэг ирэхэд нэг л удаа loadAll.
-  //    (optimistic хувилбар гацаа үүсгэсэн тул найдвартай debounced-руу буцаасан)
-  const debouncedReload = useDebouncedCallback(loadAll, 2500);
-  useEffect(() => {
-    const ch = supabase.channel("delivery-dashboard-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
-
-  // ═════════════════════════════════════════════════════════════════════════
-  // ОДОО + ӨМНӨХ period (харьцуулахын тулд)
-  // ═════════════════════════════════════════════════════════════════════════
-  const { currentRange, previousRange } = useMemo(() => {
-    const mnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ulaanbaatar" }));
-    const DAY = 86400000;
-
-    if (period === "today") {
-      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate());
-      const end = new Date(start.getTime() + DAY);
-      return {
-        currentRange: { start, end, label: "Өнөөдөр" },
-        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Өчигдөр" },
-      };
-    }
-    if (period === "yesterday") {
-      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate() - 1);
-      const end = new Date(start.getTime() + DAY);
-      return {
-        currentRange: { start, end, label: "Өчигдөр" },
-        previousRange: { start: new Date(start.getTime() - DAY), end: start, label: "Урьд өдөр" },
-      };
-    }
-    if (period === "week") {
-      const end = new Date(mnNow.getFullYear(), mnNow.getMonth(), mnNow.getDate() + 1);
-      const start = new Date(end.getTime() - 7 * DAY);
-      return {
-        currentRange: { start, end, label: "7 хоног" },
-        previousRange: { start: new Date(start.getTime() - 7 * DAY), end: start, label: "Өмнөх 7 хоног" },
-      };
-    }
-    if (period === "month") {
-      const start = new Date(mnNow.getFullYear(), mnNow.getMonth(), 1);
-      const end = new Date(mnNow.getFullYear(), mnNow.getMonth() + 1, 1);
-      return {
-        currentRange: { start, end, label: "Энэ сар" },
-        previousRange: {
-          start: new Date(mnNow.getFullYear(), mnNow.getMonth() - 1, 1),
-          end: start,
-          label: "Өнгөрсөн сар",
-        },
-      };
-    }
-    if (period === "custom") {
-      const [sy, sm, sd] = customStart.split("-").map(Number);
-      const [ey, em, ed] = customEnd.split("-").map(Number);
-      let start = new Date(sy, sm - 1, sd);
-      let end = new Date(ey, em - 1, ed);
-      if (end < start) { const tmp = start; start = end; end = tmp; }
-      end = new Date(end.getTime() + DAY); // дуусах өдрийг бүтэн хамруулна
-      const spanDays = Math.max(1, Math.round((end - start) / DAY));
-      const sLabel = customStart <= customEnd ? customStart : customEnd;
-      const eLabel = customStart <= customEnd ? customEnd : customStart;
-      return {
-        currentRange: { start, end, label: sLabel === eLabel ? sLabel : `${sLabel} → ${eLabel}` },
-        previousRange: { start: new Date(start.getTime() - spanDays * DAY), end: start, label: "Өмнөх ижил хугацаа" },
-      };
-    }
-    return {
-      currentRange: { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31), label: "Бүгд" },
-      previousRange: null,
-    };
+  // Хугацааны муж (УБ-ын өдөр)
+  const range = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let s = new Date(today), e = new Date(today); e.setDate(e.getDate() + 1);
+    let label = "Өнөөдөр";
+    if (period === "yesterday") { s.setDate(s.getDate() - 1); e = new Date(today); label = "Өчигдөр"; }
+    else if (period === "7d") { s.setDate(s.getDate() - 6); label = "7 хоног"; }
+    else if (period === "month") { s = new Date(today.getFullYear(), today.getMonth(), 1); label = "Энэ сар"; }
+    else if (period === "custom") { s = new Date(`${customStart}T00:00:00`); e = new Date(`${customEnd}T00:00:00`); e.setDate(e.getDate() + 1); label = `${customStart} → ${customEnd}`; }
+    return { s, e, label };
   }, [period, customStart, customEnd]);
 
-  const periodRange = currentRange;
-
-  const filteredOrders = useMemo(() => orders.filter((o) => {
-    const d = new Date(o.created_at);
-    return d >= currentRange.start && d < currentRange.end;
-  }), [orders, currentRange]);
-
-  const previousFilteredOrders = useMemo(() => {
-    if (!previousRange) return [];
-    return orders.filter((o) => {
-      const d = new Date(o.created_at);
-      return d >= previousRange.start && d < previousRange.end;
-    });
-  }, [orders, previousRange]);
-
-  const computeStats = (driverList, ordList) => driverList.map((d) => {
-    const driverOrders = ordList.filter((o) => o.driver_id === d.id);
-    const delivered = driverOrders.filter((o) => o.status === "delivered");
-    const cancelled = driverOrders.filter((o) => o.status === "cancelled");
-    const pending = driverOrders.filter((o) =>
-      o.status === "new" || o.status === "assigned" || o.status === "out_for_delivery"
-    );
-    const deliveredAmount = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
-    const deliveryFee = delivered.reduce((s, o) => s + Number(o.delivery_fee || 0), 0);
-    return {
-      ...d,
-      total: driverOrders.length,
-      delivered: delivered.length,
-      cancelled: cancelled.length,
-      pending: pending.length,
-      deliveredAmount,
-      deliveryFee,
-      deliveryRate: driverOrders.length > 0
-        ? Math.round((delivered.length / driverOrders.length) * 100)
-        : 0,
-    };
-  });
-
-  const driverStats = useMemo(
-    () => computeStats(drivers, filteredOrders).sort((a, b) => b.delivered - a.delivered),
-    [drivers, filteredOrders]
-  );
-
-  const previousDriverStats = useMemo(
-    () => computeStats(drivers, previousFilteredOrders),
-    [drivers, previousFilteredOrders]
-  );
-
-  const prevStatsMap = useMemo(() => {
-    const map = {};
-    previousDriverStats.forEach((d) => { map[d.id] = d; });
-    return map;
-  }, [previousDriverStats]);
-
-  const totalStats = useMemo(() => driverStats.reduce((acc, d) => ({
-    total: acc.total + d.total,
-    delivered: acc.delivered + d.delivered,
-    cancelled: acc.cancelled + d.cancelled,
-    pending: acc.pending + d.pending,
-    deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
-    deliveryFee: acc.deliveryFee + d.deliveryFee,
-  }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 }),
-  [driverStats]);
-
-  const previousTotalStats = useMemo(() => previousDriverStats.reduce((acc, d) => ({
-    total: acc.total + d.total,
-    delivered: acc.delivered + d.delivered,
-    cancelled: acc.cancelled + d.cancelled,
-    pending: acc.pending + d.pending,
-    deliveredAmount: acc.deliveredAmount + d.deliveredAmount,
-    deliveryFee: acc.deliveryFee + d.deliveryFee,
-  }), { total: 0, delivered: 0, cancelled: 0, pending: 0, deliveredAmount: 0, deliveryFee: 0 }),
-  [previousDriverStats]);
-
-  const goalForPeriod = useMemo(() => {
-    if (period === "today" || period === "yesterday") return dailyGoal;
-    if (period === "week") return dailyGoal * 7;
-    if (period === "month") {
-      const y = currentRange.start.getFullYear();
-      const m = currentRange.start.getMonth();
-      const daysInMonth = new Date(y, m + 1, 0).getDate();
-      return dailyGoal * daysInMonth;
-    }
-    return 0;
-  }, [period, dailyGoal, currentRange]);
-
-  const goalProgress = goalForPeriod > 0
-    ? Math.min(100, Math.round((totalStats.delivered / goalForPeriod) * 100))
-    : 0;
-
-  const TrendBadge = ({ current, previous, invert = false }) => {
-    if (!previousRange) return null;
-    if (previous === 0 && current === 0) return null;
-    if (previous === 0 && current > 0) {
-      return (
-        <span style={{ color: invert ? T.err : T.ok, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
-          ↑ Шинэ
-        </span>
-      );
-    }
-    if (previous > 0 && current === 0) {
-      return (
-        <span style={{ color: invert ? T.ok : T.err, fontFamily: FM, fontWeight: 600 }} className="text-[10px]">
-          ↓ -100%
-        </span>
-      );
-    }
-    const diff = current - previous;
-    const pct = Math.round((diff / previous) * 100);
-    const isFlat = diff === 0;
-    const isUp = diff > 0;
-    const color = isFlat ? T.muted : (isUp !== invert ? T.ok : T.err);
-    const arrow = isFlat ? "→" : isUp ? "↑" : "↓";
-    return (
-      <span style={{ color, fontFamily: FM, fontWeight: 600 }} className="text-[10px] tabular-nums">
-        {arrow} {pct > 0 ? "+" : ""}{pct}%
-      </span>
-    );
+  const load = async () => {
+    setLoading(true);
+    try {
+      const sIso = range.s.toISOString(), eIso = range.e.toISOString();
+      const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
+        supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name"),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status").in("status", ["assigned", "pending"]).not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso).not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, cancelled_at").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso).not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at").eq("status", "delivered").is("settlement_id", null).not("driver_id", "is", null)),
+        supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000),
+      ]);
+      setDrivers((drvRes.data || []).filter((d) => d.is_active !== false));
+      setPending(pendRes || []); setDelivered(delRes || []); setCancelled(canRes || []); setUnsettled(unsRes || []);
+      setSettlements(stRes.data || []);
+    } catch (e) { console.error("[delivery dashboard]", e); }
+    finally { setLoading(false); }
   };
+  useEffect(() => { load(); }, [range]);
 
-  const ProgressBar = ({ value, max = 100, color = T.highlight, height = 6 }) => {
-    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
-    return (
-      <div style={{
-        height,
-        background: T.surfaceAlt,
-        borderRadius: height,
-        overflow: "hidden",
-      }} className="w-full">
-        <div style={{
-          width: `${pct}%`,
-          height: "100%",
-          background: color,
-          borderRadius: height,
-          transition: "width 400ms ease",
-        }} />
-      </div>
-    );
-  };
+  // Жолооч бүрийн нэгтгэл
+  const stats = useMemo(() => {
+    const owedOf = (o) => Math.max(0, Number(o.total_amount || 0) - Math.max(Number(o.paid_amount || 0), Number(o.prepaid_amount || 0)));
+    return drivers.map((d) => {
+      const p = pending.filter((o) => o.driver_id === d.id);
+      const dl = delivered.filter((o) => o.driver_id === d.id);
+      const c = cancelled.filter((o) => o.driver_id === d.id);
+      const u = unsettled.filter((o) => o.driver_id === d.id);
+      const mine = settlements.filter((s) => s.driver_id === d.id);
+      const open = mine.find((s) => s.status === "open") || null;
+      const lastClosed = mine.find((s) => s.status === "closed") || null;
+      const sum = (arr, f) => arr.reduce((s, o) => s + f(o), 0);
+      return {
+        d, pending: p, pendingAmt: sum(p, (o) => Number(o.total_amount || 0)),
+        deliveredN: dl.length, deliveredAmt: sum(dl, (o) => Number(o.total_amount || 0)),
+        cancelledN: c.length, cancelledAmt: sum(c, (o) => Number(o.total_amount || 0)),
+        unsettledN: u.length, unsettledOwed: sum(u, owedOf),
+        unsettledOldest: u.length ? u.reduce((m, o) => (o.delivered_at < m ? o.delivered_at : m), u[0].delivered_at) : null,
+        open, lastClosed,
+      };
+    }).sort((a, b) => sortBy === "name" ? (a.d.name || "").localeCompare(b.d.name || "")
+      : sortBy === "delivered" ? b.deliveredN - a.deliveredN
+      : sortBy === "pending" ? b.pending.length - a.pending.length
+      : b.unsettledOwed - a.unsettledOwed);
+  }, [drivers, pending, delivered, cancelled, unsettled, settlements, sortBy]);
 
-  if (loading && drivers.length === 0) {
-    return (
-      <div className="glass rounded-2xl p-8 text-center">
-        <Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} />
-      </div>
-    );
-  }
+  const tot = useMemo(() => stats.reduce((a, s) => ({
+    pending: a.pending + s.pending.length, pendingAmt: a.pendingAmt + s.pendingAmt,
+    delivered: a.delivered + s.deliveredN, deliveredAmt: a.deliveredAmt + s.deliveredAmt,
+    cancelled: a.cancelled + s.cancelledN, unsettledN: a.unsettledN + s.unsettledN, owed: a.owed + s.unsettledOwed,
+    openN: a.openN + (s.open ? 1 : 0),
+  }), { pending: 0, pendingAmt: 0, delivered: 0, deliveredAmt: 0, cancelled: 0, unsettledN: 0, owed: 0, openN: 0 }), [stats]);
+
+  const fmtT = (n) => `${Math.round(Number(n || 0)).toLocaleString()}₮`;
+  const fmtD = (t) => t ? new Date(t).toLocaleDateString("en-GB") : "—";
+  const daysAgo = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 86400000) : null;
 
   return (
     <div className="space-y-3">
-      {/* Period selector */}
-      <div className="glass rounded-2xl p-3">
-        <div className="flex items-center gap-1 flex-wrap">
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-xs mr-1">
-            📅 Хугацаа:
-          </span>
-          {[
-            { id: "today", label: "Өнөөдөр" },
-            { id: "yesterday", label: "Өчигдөр" },
-            { id: "week", label: "7 хоног" },
-            { id: "month", label: "Энэ сар" },
-            { id: "all", label: "Бүгд" },
-            { id: "custom", label: "📆 Гар" },
-          ].map((p) => (
-            <button key={p.id} onClick={() => setPeriod(p.id)}
-              className="press-btn px-3 py-1.5 rounded-full text-xs"
-              style={{
-                background: period === p.id ? T.highlight : T.surface,
-                color: period === p.id ? "white" : T.ink,
-                fontFamily: FS, fontWeight: 600,
-                border: `1px solid ${T.border}`,
-              }}>
-              {p.label}
-            </button>
-          ))}
-          {period === "custom" && (
-            <>
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                className="rounded-full px-3 py-1.5 text-xs outline-none"
-                style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
-              <span style={{ color: T.muted, fontFamily: FM }} className="text-xs">→</span>
-              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                className="rounded-full px-3 py-1.5 text-xs outline-none"
-                style={{ background: T.surface, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} />
-            </>
-          )}
-        </div>
-        {previousRange && (
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-2">
-            ↔️ Харьцуулна: <strong>{currentRange.label}</strong> vs <strong>{previousRange.label}</strong>
-          </div>
+      {/* Хугацаа + эрэмбэ */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setPeriod(k)} className="press-btn px-3 py-1.5 rounded-full text-xs"
+            style={{ background: period === k ? T.highlight : T.surfaceAlt, color: period === k ? "#fff" : T.inkSoft, border: `1px solid ${period === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
+        ))}
+        {period === "custom" && (
+          <>
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+            <span style={{ color: T.muted }}>–</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+          </>
         )}
+        <span className="flex-1" />
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+          <option value="owed">Эрэмбэ: тушаах дүн</option>
+          <option value="delivered">Эрэмбэ: хүргэсэн</option>
+          <option value="pending">Эрэмбэ: хүлээгдэж буй</option>
+          <option value="name">Эрэмбэ: нэр</option>
+        </select>
+        <button onClick={load} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>🔄</button>
       </div>
 
-      {/* 🎯 ЗОРИЛГО PROGRESS */}
-      {goalForPeriod > 0 && (
-        <div className="glass rounded-2xl p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">
-                🎯 Зорилго
-              </div>
-              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                ({periodRange.label})
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                value={dailyGoal}
-                min={1}
-                onChange={(e) => setDailyGoal(Math.max(1, Number(e.target.value) || 1))}
-                className="w-14 px-2 py-1 rounded-md text-xs text-center"
-                style={{
-                  background: T.surface,
-                  color: T.ink,
-                  fontFamily: FM,
-                  border: `1px solid ${T.border}`,
-                }}
-              />
-              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                /өдөр
-              </span>
-            </div>
+      {/* Нийт үзүүлэлт */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        {[
+          ["⏳ Хүлээгдэж буй", tot.pending, fmtT(tot.pendingAmt), T.warn, "одоо гар дээр (бүх цаг)"],
+          [`✅ Хүргэсэн · ${range.label}`, tot.delivered, fmtT(tot.deliveredAmt), T.ok, "амжилттай хүргэлт"],
+          [`❌ Цуцалсан · ${range.label}`, tot.cancelled, "", T.err, "жолоочтой захиалгын цуцлалт"],
+          ["📦 Тушаагаагүй", tot.unsettledN, fmtT(tot.owed), T.highlight, "хүргэсэн ч тооцоонд ороогүй (бүх цаг)"],
+          ["🧾 Нээлттэй тооцоо", tot.openN, `${stats.length} жолооч`, "#9333ea", "нээгдсэн, хаагдаагүй"],
+        ].map(([lbl, n, sub, color, hint], i) => (
+          <div key={i} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${color}` }} title={hint}>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{lbl}</div>
+            <div style={{ color, fontFamily: FD, fontWeight: 800 }} className="text-2xl tabular-nums leading-tight">{n}</div>
+            <div style={{ color: T.inkSoft, fontFamily: FM }} className="text-[11px]">{sub}</div>
           </div>
-          <div className="flex items-center justify-between mb-1.5">
-            <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-lg tabular-nums">
-              {totalStats.delivered}
-              <span style={{ color: T.muted, fontWeight: 400 }} className="text-sm"> / {goalForPeriod}</span>
-            </div>
-            <div style={{
-              color: goalProgress >= 100 ? T.ok : goalProgress >= 70 ? T.warn : T.err,
-              fontFamily: FD, fontWeight: 700,
-            }} className="text-lg tabular-nums">
-              {goalProgress}%
-            </div>
-          </div>
-          <ProgressBar
-            value={totalStats.delivered}
-            max={goalForPeriod}
-            color={goalProgress >= 100 ? T.ok : goalProgress >= 70 ? T.warn : T.highlight}
-            height={8}
-          />
-          {goalProgress >= 100 && (
-            <div style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }} className="text-[10px] mt-1.5 text-center">
-              🎉 Зорилго биеллээ!
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Нийт стат + Trend */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            🚚 Хүргэгч
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-xl mt-1">
-            {drivers.length}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3" style={{ background: T.okSoft }}>
-          <div className="flex items-center justify-between">
-            <div style={{ color: T.ok, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              ✓ Амжилттай
-            </div>
-            <TrendBadge current={totalStats.delivered} previous={previousTotalStats.delivered} />
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-xl mt-1">
-            {totalStats.delivered}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3" style={{ background: T.errSoft }}>
-          <div className="flex items-center justify-between">
-            <div style={{ color: T.err, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              ✕ Цуцалсан
-            </div>
-            <TrendBadge current={totalStats.cancelled} previous={previousTotalStats.cancelled} invert />
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-xl mt-1">
-            {totalStats.cancelled}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3" style={{ background: T.warnSoft }}>
-          <div className="flex items-center justify-between">
-            <div style={{ color: T.warn, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              ⏳ Хүлээгдэж
-            </div>
-            <TrendBadge current={totalStats.pending} previous={previousTotalStats.pending} invert />
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-xl mt-1">
-            {totalStats.pending}
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Нийт мөнгө + trend */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="glass rounded-2xl p-3">
-          <div className="flex items-center justify-between">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              💰 Амжилттай нийт дүн
-            </div>
-            <TrendBadge current={totalStats.deliveredAmount} previous={previousTotalStats.deliveredAmount} />
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg mt-1 tabular-nums">
-            {totalStats.deliveredAmount.toLocaleString()}₮
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-3">
-          <div className="flex items-center justify-between">
-            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-              🚀 Хүргэлтийн хөлс
-            </div>
-            <TrendBadge current={totalStats.deliveryFee} previous={previousTotalStats.deliveryFee} />
-          </div>
-          <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-lg mt-1 tabular-nums">
-            {totalStats.deliveryFee.toLocaleString()}₮
-          </div>
-        </div>
-      </div>
-
-      {/* Хүргэгч тус бүрийн жагсаалт */}
-      <div className="space-y-2">
-        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm px-1">
-          🚚 Хүргэгч тус бүрийн ажил
-        </div>
-        {driverStats.length === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center">
-            <div className="text-4xl mb-2">🚚</div>
-            <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
-              Хүргэгч алга
-            </div>
-          </div>
-        ) : (
-          driverStats.map((d) => {
-            const prev = prevStatsMap[d.id];
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {stats.map((s) => {
+            const isOpen = openDrv === s.d.id;
+            const oldest = daysAgo(s.unsettledOldest);
             return (
-              <div key={d.id} className="glass rounded-2xl p-3"
-                style={{
-                  borderLeft: `3px solid ${
-                    d.total === 0 ? T.muted :
-                    d.deliveryRate >= 80 ? T.ok :
-                    d.deliveryRate >= 50 ? T.warn : T.err
-                  }`,
-                }}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div style={{ background: "#0ea5e9", color: "white" }}
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-                    {d.name?.charAt(0) || "🚚"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">
-                      🚚 {d.name}
+              <div key={s.d.id} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${s.unsettledOwed > 0 ? T.highlight : T.border}` }}>
+                <button onClick={() => setOpenDrv(isOpen ? null : s.d.id)} className="press-btn w-full text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 800 }}>{(s.d.name || "?").charAt(0)}</div>
+                      <div className="min-w-0">
+                        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm truncate">🚚 {s.d.name}</div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
+                          {s.open ? `🧾 Нээлттэй тооцоо · ${fmtD(s.open.period_start || s.open.created_at)}-ээс` : s.lastClosed ? `Сүүлийн тооцоо ${fmtD(s.lastClosed.settled_at)} · ${fmtT(s.lastClosed.total_submitted)}` : "Тооцоо хийгээгүй"}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] flex items-center gap-1.5 flex-wrap">
-                      <span>Нийт: {d.total}</span>
-                      <span>·</span>
-                      <span>Амжилт: {d.deliveryRate}%</span>
-                      {prev && <TrendBadge current={d.delivered} previous={prev.delivered} />}
-                    </div>
-                  </div>
-                  {d.total > 0 && (
                     <div className="text-right">
-                      <div style={{
-                        color: d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err,
-                        fontFamily: FD, fontWeight: 700,
-                      }} className="text-base">
-                        {d.deliveryRate}%
+                      <div style={{ color: s.unsettledOwed > 0 ? T.highlight : T.muted, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{fmtT(s.unsettledOwed)}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">тушаах · {s.unsettledN} захиалга{oldest !== null && oldest >= 3 ? ` · ⚠ ${oldest} хоног` : ""}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 mt-2">
+                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.warnSoft || "#FEF3C7" }}>
+                      <div style={{ color: T.warn, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.pending.length}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">⏳ Хүлээгдэж · {fmtT(s.pendingAmt)}</div>
+                    </div>
+                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.okSoft || "#DCFCE7" }}>
+                      <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.deliveredN}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✅ Хүргэсэн · {fmtT(s.deliveredAmt)}</div>
+                    </div>
+                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.errSoft || "#FEE2E2" }}>
+                      <div style={{ color: T.err, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.cancelledN}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">❌ Цуцалсан · {fmtT(s.cancelledAmt)}</div>
+                    </div>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="mt-2 pt-2 space-y-1" style={{ borderTop: `1px dashed ${T.border}` }}>
+                    {s.open && (
+                      <div className="text-[11px] flex flex-wrap gap-x-3" style={{ color: T.inkSoft, fontFamily: FM }}>
+                        <span>🧾 Нээлттэй тооцоо: {s.open.order_count || 0} захиалга</span>
+                        <span>💵 Бэлэн {fmtT(s.open.cash_amount)}</span><span>🏦 Данс {fmtT(s.open.bank_amount)}</span><span>🧾 Зарлага {fmtT(s.open.expense_amount)}</span>
                       </div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">
-                        амжилт
+                    )}
+                    {s.lastClosed && (
+                      <div className="text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
+                        Сүүлийн хаалт: {fmtD(s.lastClosed.settled_at)} · {s.lastClosed.order_count || 0} захиалга · тушаасан {fmtT(s.lastClosed.total_submitted)} (бэлэн {fmtT(s.lastClosed.cash_amount)} / данс {fmtT(s.lastClosed.bank_amount)} / зарлага {fmtT(s.lastClosed.expense_amount)})
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                {d.total > 0 && (
-                  <div className="mb-2">
-                    <ProgressBar
-                      value={d.delivered}
-                      max={d.total}
-                      color={d.deliveryRate >= 80 ? T.ok : d.deliveryRate >= 50 ? T.warn : T.err}
-                      height={5}
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 gap-1.5">
-                  <div className="rounded-lg p-2 text-center" style={{ background: T.okSoft }}>
-                    <div style={{ color: T.ok, fontFamily: FM }} className="text-[9px] uppercase">
-                      ✓ Амжилт
-                    </div>
-                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.ok }} className="text-base">
-                      {d.delivered}
-                    </div>
-                  </div>
-                  <div className="rounded-lg p-2 text-center" style={{ background: T.errSoft }}>
-                    <div style={{ color: T.err, fontFamily: FM }} className="text-[9px] uppercase">
-                      ✕ Цуцалсан
-                    </div>
-                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.err }} className="text-base">
-                      {d.cancelled}
-                    </div>
-                  </div>
-                  <div className="rounded-lg p-2 text-center" style={{ background: T.warnSoft }}>
-                    <div style={{ color: T.warn, fontFamily: FM }} className="text-[9px] uppercase">
-                      ⏳ Хүлээ.
-                    </div>
-                    <div style={{ fontFamily: FD, fontWeight: 700, color: T.warn }} className="text-base">
-                      {d.pending}
-                    </div>
-                  </div>
-                </div>
-
-                {d.delivered > 0 && (
-                  <div className="mt-2 pt-2 flex items-center justify-between text-xs"
-                    style={{ borderTop: `1px solid ${T.border}` }}>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                      💰 Нийт орлого
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {prev && <TrendBadge current={d.deliveredAmount} previous={prev.deliveredAmount} />}
-                      <div style={{ color: T.highlight, fontFamily: FD, fontWeight: 700 }} className="tabular-nums">
-                        {d.deliveredAmount.toLocaleString()}₮
+                    )}
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-[11px] mt-1">⏳ Гар дээрх захиалга ({s.pending.length})</div>
+                    {s.pending.length === 0 ? (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Хүлээгдэж буй захиалга алга</div>
+                    ) : s.pending.slice(0, 30).map((o) => (
+                      <div key={o.id} className="text-[11px] flex items-center gap-2" style={{ color: T.inkSoft, fontFamily: FM }}>
+                        <span style={{ color: T.ink }}>{o.order_number}</span>
+                        <span>{fmtT(o.total_amount)}</span>
+                        <span className="truncate" style={{ color: T.muted, fontFamily: FS }}>{o.delivery_address || ""}</span>
+                        <span style={{ color: T.muted }} className="ml-auto flex-shrink-0">{o.status === "assigned" ? "хуваарилсан" : "хүлээгдэж буй"}</span>
                       </div>
-                    </div>
+                    ))}
+                    {s.pending.length > 30 && <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">… бусад {s.pending.length - 30}</div>}
                   </div>
                 )}
               </div>
             );
-          })
-        )}
-      </div>
-
-      {/* Footer info */}
-      <div className="glass rounded-2xl p-3 text-center"
-        style={{ background: T.surfaceAlt }}>
-        <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-          📊 Хугацаа: <strong>{periodRange.label}</strong> · Нийт захиалга: <strong>{totalStats.total}</strong>
-          {previousRange && (
-            <> · Өмнөх: <strong>{previousTotalStats.total}</strong></>
-          )}
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 }
