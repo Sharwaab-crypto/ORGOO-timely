@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-cancelled-chart2";
+const BUILD_VERSION = "v2026.09.22-mkt-boost";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17662,6 +17662,7 @@ function MarketingView({ profile }) {
   const [reachEmp, setReachEmp] = useState("");
   const [reachDate, setReachDate] = useState(todayStr);
   const [reachVal, setReachVal] = useState("");
+  const [boostVal, setBoostVal] = useState(""); // 💸 Boost cost (₮) — хандалттай хамт өдөр/ажилтнаар
   const [saving, setSaving] = useState(false);
   const monthStartStr = todayStr.slice(0, 8) + "01";
   const [fromDate, setFromDate] = useState(todayStr); // default: Өнөөдөр
@@ -17829,12 +17830,13 @@ function MarketingView({ profile }) {
     setSaving(true);
     try {
       const existing = reach.find((r) => r.employee_id === reachEmp && r.reach_date === reachDate);
+      const boostCost = boostVal === "" || isNaN(Number(boostVal)) ? null : Number(boostVal);
       if (existing) {
-        await supabase.from("mkt_reach").update({ reach: Number(reachVal), created_by: profile.id }).eq("id", existing.id);
+        await supabase.from("mkt_reach").update({ reach: Number(reachVal), boost_cost: boostCost ?? existing.boost_cost ?? null, created_by: profile.id }).eq("id", existing.id);
       } else {
-        await supabase.from("mkt_reach").insert({ employee_id: reachEmp, reach_date: reachDate, reach: Number(reachVal), created_by: profile.id });
+        await supabase.from("mkt_reach").insert({ employee_id: reachEmp, reach_date: reachDate, reach: Number(reachVal), boost_cost: boostCost, created_by: profile.id });
       }
-      setReachVal("");
+      setReachVal(""); setBoostVal("");
       await loadAll();
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setSaving(false); }
@@ -17877,7 +17879,22 @@ function MarketingView({ profile }) {
     emps.forEach((e) => {
       totals[e.id] = dates.reduce((s, dt) => s + (byKey[e.id + "|" + dt] || 0), 0);
     });
-    return { rows, emps, days: dates.length, totals };
+    // 💸 Boost cost: өдөр/ажилтнаар; харьцаа = хандалт ÷ boost × 1000 (1000₮ тутамд хэдэн хандалт)
+    const byBoost = {};
+    reachInRange.forEach((r) => { const k = r.employee_id + "|" + r.reach_date; byBoost[k] = (byBoost[k] || 0) + Number(r.boost_cost || 0); });
+    const boostRows = dates.map((dt) => {
+      const row = { date: dt.slice(5) };
+      emps.forEach((e) => {
+        const b = byBoost[e.id + "|" + dt] || 0, h = byKey[e.id + "|" + dt] || 0;
+        row[e.name] = b > 0 ? Math.round((h / b) * 1000 * 10) / 10 : null;
+        row[e.name + "_boost"] = b; row[e.name + "_reach"] = h;
+      });
+      return row;
+    });
+    const boostTotals = {};
+    emps.forEach((e) => { boostTotals[e.id] = dates.reduce((s, dt) => s + (byBoost[e.id + "|" + dt] || 0), 0); });
+    const hasBoost = Object.values(boostTotals).some((v) => v > 0);
+    return { rows, emps, days: dates.length, totals, boostRows, boostTotals, hasBoost };
   }, [reachInRange, fromDate, toDate, profById]);
 
   // 🎯 Ажилтан бүрийн сарын зорилт (харьцуулалтын мужийн САРААР)
@@ -18444,6 +18461,38 @@ function MarketingView({ profile }) {
         </div>
       )}
 
+      {/* 💸 Boost үр ашиг — хандалт ÷ boost cost */}
+      {empCompare.hasBoost && (
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💸 Boost үр ашиг <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· 1,000₮ boost тутамд хэдэн хандалт (хандалт ÷ boost × 1000)</span></div>
+            <div className="flex gap-2 flex-wrap">
+              {empCompare.emps.map((e) => {
+                const b = empCompare.boostTotals[e.id] || 0, h = empCompare.totals[e.id] || 0;
+                return (
+                  <span key={e.id} className="text-[10px] px-2 py-1 rounded-full" style={{ background: T.surfaceAlt, color: e.color, border: `1px solid ${e.color}`, fontFamily: FM, fontWeight: 700 }}>
+                    {e.name}: {b.toLocaleString()}₮ → {h.toLocaleString()} хандалт{b > 0 ? ` · ${Math.round((h / b) * 1000)} /1000₮ · ${(b / Math.max(1, h)).toFixed(1)}₮ нэг хандалт` : ""}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={empCompare.boostRows} margin={{ top: 10, right: 10, left: -14, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.border || "#E5E7EB"} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
+              <YAxis tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
+              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12 }}
+                formatter={(v, name, p) => [v === null ? "boost байхгүй" : `${v} хандалт /1000₮ (${(p.payload[name + "_reach"] || 0).toLocaleString()} хандалт, ${(p.payload[name + "_boost"] || 0).toLocaleString()}₮)`, name]} />
+              <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
+              {empCompare.emps.map((e) => (
+                <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} connectNulls={false} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {/* 🎯 Ажилтан бүрийн зорилт тохируулах modal */}
       {showTargetEditor && (
         <div onClick={() => !targetSaving && setShowTargetEditor(false)}
@@ -18588,6 +18637,10 @@ function MarketingView({ profile }) {
               <div>
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Хандалт</div>
                 <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-24 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+              </div>
+              <div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">💸 Boost cost ₮</div>
+                <input type="number" value={boostVal} onChange={(e) => setBoostVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-28 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
               </div>
               <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
             </div>
