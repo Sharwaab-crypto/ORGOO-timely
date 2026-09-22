@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-cancelled-numbers2";
+const BUILD_VERSION = "v2026.09.22-cancelled-numbers3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34624,16 +34624,13 @@ function CancelledNumbersView({ profile }) {
       const pm = {}; (profRes.data || []).forEach((p) => { pm[p.id] = p.name; }); setProfilesMap(pm);
       const gm = {}; (pgRes.data || []).forEach((p) => { gm[p.id] = p.name; }); setPagesMap(gm);
 
-      // Дугаараар нэгтгэх
+      // Дугаараар нэгтгэх — ЗӨВХӨН дуудлага нь цуцлагдсан дугаарууд.
+      // Захиалга болчихоод цуцлагдсан (тэр өдөр цуцлагдсан захиалгатай) дугаарыг ХАСНА.
+      const orderCancelledPhones = new Set((ordRes.data || []).map((o) => o.customer_phone).filter(Boolean));
       const byPhone = {};
-      (ordRes.data || []).forEach((o) => {
-        const ph = o.customer_phone; if (!ph) return;
-        const r = (byPhone[ph] = byPhone[ph] || { phone: ph, name: o.customer_name, page: o.fb_page_id, orders: [], callRows: [], at: o.cancelled_at, by: o.cancelled_by });
-        r.orders.push(o);
-        if (!r.at || (o.cancelled_at && o.cancelled_at > r.at)) { r.at = o.cancelled_at; r.by = o.cancelled_by; }
-      });
       (callRes.data || []).forEach((c) => {
         const ph = c.phone; if (!ph) return;
+        if (orderCancelledPhones.has(ph)) return;
         const r = (byPhone[ph] = byPhone[ph] || { phone: ph, name: c.customer_name, page: c.fb_page_id, orders: [], callRows: [], at: c.created_at, by: c.created_by });
         r.callRows.push(c);
         if (!r.name && c.customer_name) r.name = c.customer_name;
@@ -34643,7 +34640,7 @@ function CancelledNumbersView({ profile }) {
       // Тэр дугааруудын БҮХ дуудлагын түүх (сэтгэгдэлтэй)
       let hist = [];
       if (phones.length > 0) {
-        hist = await fetchInChunks("biz_calls", phones, { select: "id, phone, call_status, notes, created_at, created_by, customer_name", filterColumn: "phone", chunkSize: 150, parallel: 4 });
+        hist = await fetchInChunks("biz_calls", phones, { select: "id, phone, call_status, notes, created_at, created_by, customer_name, interested_products", filterColumn: "phone", chunkSize: 150, parallel: 4 });
       }
       const histBy = {};
       (hist || []).forEach((c) => { (histBy[c.phone] = histBy[c.phone] || []).push(c); });
@@ -34652,7 +34649,14 @@ function CancelledNumbersView({ profile }) {
         const h = (histBy[ph] || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         const comments = h.filter((c) => c.notes && c.notes.trim());
         if (!r.name) r.name = (h.find((c) => c.customer_name) || {}).customer_name || "";
-        return { ...r, history: h, comments };
+        // 🛍 Сонирхсон бараа — тэр дугаарын бүх мөрөөс нэгтгэнэ (давхардалгүй)
+        const prodMap = {};
+        h.forEach((c) => (Array.isArray(c.interested_products) ? c.interested_products : []).forEach((p) => {
+          const key = p?.product_id || p?.id || p?.name; if (!key) return;
+          if (!prodMap[key]) prodMap[key] = { name: p.name || "?", price: p.sale_price, qty: 0 };
+          prodMap[key].qty += Number(p.quantity || 1);
+        }));
+        return { ...r, history: h, comments, products: Object.values(prodMap) };
       }).sort((a, b) => new Date(b.at) - new Date(a.at));
       setRows(list);
     } catch (e) { console.error("[cancelled numbers]", e); setRows([]); }
@@ -34724,6 +34728,16 @@ function CancelledNumbersView({ profile }) {
                       <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-[10px]">💬 {r.comments.length} {isOpen ? "▲" : "▼"}</span>
                     </div>
                   </div>
+                  {r.products && r.products.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">🛍</span>
+                      {r.products.map((p, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,165,233,0.12)", color: "#0284c7", fontFamily: FM, fontWeight: 700 }}>
+                          {p.name}{p.price ? ` · ${Number(p.price).toLocaleString()}₮` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {(reasons.length > 0 || cancelNotes.length > 0) && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {reasons.map((x, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.warnSoft || "#FEF3C7", color: T.warn, fontFamily: FM, fontWeight: 700 }}>{x}</span>)}
