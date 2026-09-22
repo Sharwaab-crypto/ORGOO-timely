@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-mkt-boost";
+const BUILD_VERSION = "v2026.09.22-mkt-boost2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -17973,7 +17973,10 @@ function MarketingView({ profile }) {
     if (!bulkOpen) return;
     const seed = {};
     reach.forEach((r) => {
-      if (r.reach_date >= bulkFrom && r.reach_date <= bulkTo) seed[`${r.employee_id}_${r.reach_date}`] = String(r.reach ?? "");
+      if (r.reach_date >= bulkFrom && r.reach_date <= bulkTo) {
+        seed[`${r.employee_id}_${r.reach_date}`] = String(r.reach ?? "");
+        seed[`${r.employee_id}_${r.reach_date}_b`] = r.boost_cost == null ? "" : String(r.boost_cost); // 💸 boost
+      }
     });
     setBulkValues(seed);
   }, [bulkOpen, bulkFrom, bulkTo, reach]);
@@ -17988,16 +17991,22 @@ function MarketingView({ profile }) {
         for (const day of bulkDays) {
           const key = `${emp.id}_${day}`;
           const raw = bulkValues[key];
-          if (raw === undefined || raw === "") continue;
+          const rawB = bulkValues[key + "_b"];
+          const boost = rawB === undefined || rawB === "" || isNaN(Number(rawB)) ? null : Number(rawB);
+          const ex = existMap[key];
+          if (raw === undefined || raw === "") {
+            // хандалт хоосон ч boost л өөрчлөгдсөн бол шинэчилнэ
+            if (ex && boost !== null && Number(ex.boost_cost || 0) !== boost) toUpdate.push({ id: ex.id, reach: Number(ex.reach || 0), boost });
+            continue;
+          }
           const val = Number(raw);
           if (isNaN(val)) continue;
-          const ex = existMap[key];
-          if (ex) { if (Number(ex.reach) !== val) toUpdate.push({ id: ex.id, reach: val }); }
-          else toInsert.push({ employee_id: emp.id, reach_date: day, reach: val, created_by: profile.id });
+          if (ex) { if (Number(ex.reach) !== val || (boost !== null && Number(ex.boost_cost || 0) !== boost)) toUpdate.push({ id: ex.id, reach: val, boost: boost ?? ex.boost_cost ?? null }); }
+          else toInsert.push({ employee_id: emp.id, reach_date: day, reach: val, boost_cost: boost, created_by: profile.id });
         }
       }
       if (toInsert.length) await supabase.from("mkt_reach").insert(toInsert);
-      for (const u of toUpdate) await supabase.from("mkt_reach").update({ reach: u.reach, created_by: profile.id }).eq("id", u.id);
+      for (const u of toUpdate) await supabase.from("mkt_reach").update({ reach: u.reach, boost_cost: u.boost ?? null, created_by: profile.id }).eq("id", u.id);
       await loadAll();
       alert(`Хадгалагдлаа: ${toInsert.length} шинэ, ${toUpdate.length} шинэчлэл`);
     } catch (e) { alert("Алдаа: " + e.message); }
@@ -18679,7 +18688,11 @@ function MarketingView({ profile }) {
                             return (
                               <td key={d} className="px-0.5 py-0.5">
                                 <input type="number" value={bulkValues[key] ?? ""} onChange={(e) => setBulkValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                  className="rounded text-[11px] text-center outline-none" style={{ width: 52, padding: "3px 2px", background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                                  placeholder="хандалт" title="Хандалт"
+                                  className="rounded text-[11px] text-center outline-none block" style={{ width: 64, padding: "3px 2px", background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
+                                <input type="number" value={bulkValues[key + "_b"] ?? ""} onChange={(e) => setBulkValues((prev) => ({ ...prev, [key + "_b"]: e.target.value }))}
+                                  placeholder="boost ₮" title="Boost cost ₮"
+                                  className="rounded text-[10px] text-center outline-none block mt-0.5" style={{ width: 64, padding: "2px 2px", background: "rgba(245,158,11,0.08)", color: "#b45309", fontFamily: FM, border: `1px solid rgba(245,158,11,0.35)` }} />
                               </td>
                             );
                           })}
