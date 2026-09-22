@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-cancelled-numbers3";
+const BUILD_VERSION = "v2026.09.22-cancelled-numbers4";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34670,7 +34670,9 @@ function CancelledNumbersView({ profile }) {
     if (selPage !== "all" && (r.page || "none") !== selPage) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    return r.phone.includes(q) || (r.name || "").toLowerCase().includes(q) || r.comments.some((c) => (c.notes || "").toLowerCase().includes(q));
+    return r.phone.includes(q) || (r.name || "").toLowerCase().includes(q)
+      || r.comments.some((c) => (c.notes || "").toLowerCase().includes(q))
+      || (r.products || []).some((p) => (p.name || "").toLowerCase().includes(q)); // 🛍 бараагаар
   });
   const totalComments = visible.reduce((s, r) => s + r.comments.length, 0);
 
@@ -34683,7 +34685,7 @@ function CancelledNumbersView({ profile }) {
         <button onClick={() => { const d = new Date(`${date}T00:00:00`); d.setDate(d.getDate() - 1); setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); }}
           className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>‹ Өмнөх</button>
         <button onClick={() => setDate(todayIso())} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>Өнөөдөр</button>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Дугаар, нэр, сэтгэгдлээр хайх"
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Дугаар, нэр, бараа, сэтгэгдлээр хайх"
           className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
         <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">❌ {visible.length} дугаар · 💬 {totalComments} сэтгэгдэл</span>
         <button onClick={() => setOpen(Object.keys(open).length ? {} : Object.fromEntries(visible.map((r) => [r.phone, true])))}
@@ -34732,7 +34734,8 @@ function CancelledNumbersView({ profile }) {
                     <div className="mt-1.5 flex flex-wrap gap-1 items-center">
                       <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">🛍</span>
                       {r.products.map((p, i) => (
-                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,165,233,0.12)", color: "#0284c7", fontFamily: FM, fontWeight: 700 }}>
+                        <span key={i} onClick={(e) => { e.stopPropagation(); setSearch(p.name); }} title="Энэ бараагаар шүүх"
+                          className="text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer" style={{ background: "rgba(14,165,233,0.12)", color: "#0284c7", fontFamily: FM, fontWeight: 700 }}>
                           {p.name}{p.price ? ` · ${Number(p.price).toLocaleString()}₮` : ""}
                         </span>
                       ))}
