@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-mkt-stockprep";
+const BUILD_VERSION = "v2026.09.22-cancelled-numbers";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2582,6 +2582,7 @@ function AdminDashboard({ profile }) {
                 <SidebarTab active={view === "operator-kpi"} onClick={() => { setView("operator-kpi"); setSidebarOpen(false); }} icon={TrendingUp}>Ажилчдын үзүүлэлт</SidebarTab>
               )}
               <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
+              <SidebarTab active={view === "op-cancelled"} onClick={() => { setView("op-cancelled"); setSidebarOpen(false); }} icon={Phone}>Цуцалсан дугаарууд</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
@@ -2726,6 +2727,7 @@ function AdminDashboard({ profile }) {
                 {view === "callcenter" && "Дуудлагын самбар"}
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
+                {view === "op-cancelled" && "Цуцалсан дугаарууд"}
                 {view === "marketing" && "Маркетинг"}
                 {view === "mkt-board" && "Маркетингийн самбар"}
                 {view === "sales" && "Борлуулалтын самбар"}
@@ -3019,6 +3021,10 @@ function AdminDashboard({ profile }) {
 
         {view === "op-shift-report" && (
           <OperatorShiftReportView profile={profile} canEdit={true} />
+        )}
+
+        {view === "op-cancelled" && (
+          <CancelledNumbersView profile={profile} />
         )}
 
         {view === "operator-kpi" && (
@@ -34581,6 +34587,160 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  Ээлж дуусмагц (Өглөө 15:00, Орой 21:00) карт 📦 Архивлагдана — админ/ахлах
 //  засаж болно, оператор ЯМАГТ зөвхөн харна. Бүх утга op_shift_selections-д (realtime).
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  CANCELLED NUMBERS — ❌ Цуцалсан дугаарууд: сонгосон өдөр цуцлагдсан бүх дугаар,
+//  цуцлалтын шалтгаан + тэр дугаарын бүх дуудлагын сэтгэгдэл (түүх)
+// ═══════════════════════════════════════════════════════════════════════════
+function CancelledNumbersView({ profile }) {
+  const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const [date, setDate] = useState(todayIso());
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);       // дугаар бүрийн нэгтгэл
+  const [profilesMap, setProfilesMap] = useState({});
+  const [pagesMap, setPagesMap] = useState({});
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState({});      // phone → true (сэтгэгдэл дэлгэсэн)
+  const STATUS_MN = { pending: "Бүртгэсэн", no_answer: "Авахгүй", unreachable: "Холбогдохгүй", callback: "Дахин залгах", ordered: "Захиалга болсон", cancelled: "Цуцалсан", busy: "Завгүй" };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const s = new Date(`${date}T00:00:00`), e = new Date(s.getTime() + 86400000);
+      const [ordRes, callRes, profRes, pgRes] = await Promise.all([
+        supabase.from("biz_orders").select("id, order_number, customer_phone, customer_name, fb_page_id, total_amount, cancelled_at, cancelled_by, cancel_reasons, cancel_note, notes, created_at")
+          .eq("status", "cancelled").gte("cancelled_at", s.toISOString()).lt("cancelled_at", e.toISOString()).order("cancelled_at", { ascending: false }).limit(1000),
+        supabase.from("biz_calls").select("id, phone, customer_name, fb_page_id, notes, created_at, created_by")
+          .eq("call_status", "cancelled").gte("created_at", s.toISOString()).lt("created_at", e.toISOString()).order("created_at", { ascending: false }).limit(2000),
+        supabase.from("profiles").select("id, name"),
+        supabase.from("biz_fb_pages").select("id, name"),
+      ]);
+      const pm = {}; (profRes.data || []).forEach((p) => { pm[p.id] = p.name; }); setProfilesMap(pm);
+      const gm = {}; (pgRes.data || []).forEach((p) => { gm[p.id] = p.name; }); setPagesMap(gm);
+
+      // Дугаараар нэгтгэх
+      const byPhone = {};
+      (ordRes.data || []).forEach((o) => {
+        const ph = o.customer_phone; if (!ph) return;
+        const r = (byPhone[ph] = byPhone[ph] || { phone: ph, name: o.customer_name, page: o.fb_page_id, orders: [], callRows: [], at: o.cancelled_at, by: o.cancelled_by });
+        r.orders.push(o);
+        if (!r.at || (o.cancelled_at && o.cancelled_at > r.at)) { r.at = o.cancelled_at; r.by = o.cancelled_by; }
+      });
+      (callRes.data || []).forEach((c) => {
+        const ph = c.phone; if (!ph) return;
+        const r = (byPhone[ph] = byPhone[ph] || { phone: ph, name: c.customer_name, page: c.fb_page_id, orders: [], callRows: [], at: c.created_at, by: c.created_by });
+        r.callRows.push(c);
+        if (!r.name && c.customer_name) r.name = c.customer_name;
+        if (!r.at || c.created_at > r.at) { r.at = c.created_at; r.by = c.created_by; }
+      });
+      const phones = Object.keys(byPhone);
+      // Тэр дугааруудын БҮХ дуудлагын түүх (сэтгэгдэлтэй)
+      let hist = [];
+      if (phones.length > 0) {
+        hist = await fetchInChunks("biz_calls", phones, { select: "id, phone, call_status, notes, created_at, created_by, customer_name", filterColumn: "phone", chunkSize: 150, parallel: 4 });
+      }
+      const histBy = {};
+      (hist || []).forEach((c) => { (histBy[c.phone] = histBy[c.phone] || []).push(c); });
+      const list = phones.map((ph) => {
+        const r = byPhone[ph];
+        const h = (histBy[ph] || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const comments = h.filter((c) => c.notes && c.notes.trim());
+        if (!r.name) r.name = (h.find((c) => c.customer_name) || {}).customer_name || "";
+        return { ...r, history: h, comments };
+      }).sort((a, b) => new Date(b.at) - new Date(a.at));
+      setRows(list);
+    } catch (e) { console.error("[cancelled numbers]", e); setRows([]); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [date]);
+
+  const fmt = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "") : "";
+  const visible = rows.filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return r.phone.includes(q) || (r.name || "").toLowerCase().includes(q) || r.comments.some((c) => (c.notes || "").toLowerCase().includes(q));
+  });
+  const totalComments = visible.reduce((s, r) => s + r.comments.length, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📅 Өдөр</span>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+        <button onClick={() => { const d = new Date(`${date}T00:00:00`); d.setDate(d.getDate() - 1); setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); }}
+          className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>‹ Өмнөх</button>
+        <button onClick={() => setDate(todayIso())} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>Өнөөдөр</button>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Дугаар, нэр, сэтгэгдлээр хайх"
+          className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">❌ {visible.length} дугаар · 💬 {totalComments} сэтгэгдэл</span>
+        <button onClick={() => setOpen(Object.keys(open).length ? {} : Object.fromEntries(visible.map((r) => [r.phone, true])))}
+          className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.highlight, border: `1px solid ${T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+          {Object.keys(open).length ? "▲ Бүгдийг хаах" : "▼ Бүгдийг дэлгэх"}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
+      ) : visible.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Энэ өдөр цуцлагдсан дугаар алга</div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map((r) => {
+            const isOpen = !!open[r.phone];
+            const reasons = r.orders.flatMap((o) => Array.isArray(o.cancel_reasons) ? o.cancel_reasons : (o.cancel_reasons ? [String(o.cancel_reasons)] : []));
+            const cancelNotes = r.orders.map((o) => o.cancel_note).filter(Boolean);
+            return (
+              <div key={r.phone} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.err}` }}>
+                <button onClick={() => setOpen((p) => ({ ...p, [r.phone]: !p[r.phone] }))} className="press-btn w-full text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">📞 {r.phone}</span>
+                      {r.name && <span style={{ color: T.inkSoft, fontFamily: FS }} className="text-xs">{r.name}</span>}
+                      {r.page && pagesMap[r.page] && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(147,51,234,0.1)", color: "#9333ea", fontFamily: FM }}>{pagesMap[r.page]}</span>}
+                      {r.orders.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FM, fontWeight: 700 }}>🛍 {r.orders.length} захиалга цуцлагдсан</span>}
+                      {r.callRows.length > 0 && r.orders.length === 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FM, fontWeight: 700 }}>📞 дуудлага цуцлагдсан</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{fmt(r.at)}{r.by && profilesMap[r.by] ? ` · ${profilesMap[r.by]}` : ""}</span>
+                      <span style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-[10px]">💬 {r.comments.length} {isOpen ? "▲" : "▼"}</span>
+                    </div>
+                  </div>
+                  {(reasons.length > 0 || cancelNotes.length > 0) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {reasons.map((x, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.warnSoft || "#FEF3C7", color: T.warn, fontFamily: FM, fontWeight: 700 }}>{x}</span>)}
+                      {cancelNotes.map((x, i) => <span key={"n" + i} style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px] italic">"{x}"</span>)}
+                    </div>
+                  )}
+                </button>
+                {isOpen && (
+                  <div className="mt-2 pt-2 space-y-1.5" style={{ borderTop: `1px dashed ${T.border}` }}>
+                    {r.orders.map((o) => (
+                      <div key={o.id} className="text-[11px] flex items-center gap-2 flex-wrap" style={{ color: T.inkSoft, fontFamily: FM }}>
+                        <span style={{ color: T.err }}>🛍 {o.order_number}</span><span>{Number(o.total_amount || 0).toLocaleString()}₮</span><span style={{ color: T.muted }}>үүссэн {fmt(o.created_at)}</span>
+                        {o.notes && <span style={{ color: T.ink, fontFamily: FS }}>· {o.notes}</span>}
+                      </div>
+                    ))}
+                    {r.history.length === 0 ? (
+                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Дуудлагын түүх алга</div>
+                    ) : r.history.map((c) => (
+                      <div key={c.id} className="flex items-start gap-2 text-[11px]">
+                        <span style={{ color: T.muted, fontFamily: FM }} className="flex-shrink-0 w-[118px] tabular-nums">{fmt(c.created_at)}</span>
+                        <span className="flex-shrink-0 px-1.5 rounded-full text-[10px]" style={{ background: c.call_status === "cancelled" ? (T.errSoft || "#FEE2E2") : T.surfaceAlt, color: c.call_status === "cancelled" ? T.err : T.inkSoft, fontFamily: FM, fontWeight: 700 }}>{STATUS_MN[c.call_status] || c.call_status || "—"}</span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="flex-shrink-0">{profilesMap[c.created_by] || ""}</span>
+                        <span style={{ color: c.notes ? T.ink : T.mutedSoft, fontFamily: FS, whiteSpace: "pre-wrap" }}>{c.notes || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OperatorShiftReportView({ profile, canEdit = false }) {
   const SHIFTS = [
     { key: "morning", label: "🌅 Өглөө ээлж", sub: "00:00 – 15:00", startH: 0, endH: 15 },
@@ -37420,6 +37580,7 @@ function OperatorDashboard({ profile }) {
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
             <SidebarTab active={view === "report"} onClick={() => { setView("report"); setSidebarOpen(false); }} icon={BarChart3}>Тайлан</SidebarTab>
+            <SidebarTab active={view === "cancelled"} onClick={() => { setView("cancelled"); setSidebarOpen(false); }} icon={Phone}>❌ Цуцалсан дугаарууд</SidebarTab>
           </SidebarSection>
         </nav>
 
@@ -37463,6 +37624,7 @@ function OperatorDashboard({ profile }) {
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
               {view === "report" && "📊 Ээлжийн тайлан"}
+              {view === "cancelled" && "❌ Цуцалсан дугаарууд"}
             </h1>
           </div>
         </header>
@@ -37476,6 +37638,7 @@ function OperatorDashboard({ profile }) {
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
           {view === "report" && <OperatorShiftReportView profile={profile} />}
+          {view === "cancelled" && <CancelledNumbersView profile={profile} />}
         </div>
       </main>
     </div>
@@ -42061,6 +42224,7 @@ function ManagerDashboard({ profile }) {
               <SidebarTab active={view === "approvals"} onClick={() => { setView("approvals"); setSidebarOpen(false); }} icon={Inbox} badge={pendingApprovals.length}>Хүсэлт</SidebarTab>
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
               <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
+              <SidebarTab active={view === "op-cancelled"} onClick={() => { setView("op-cancelled"); setSidebarOpen(false); }} icon={Phone}>Цуцалсан дугаарууд</SidebarTab>
             </SidebarSection>
           </nav>
 
@@ -42111,6 +42275,7 @@ function ManagerDashboard({ profile }) {
                 {view === "approvals" && "Хүсэлт"}
                 {view === "ledger" && "Тэмдэглэл"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
+                {view === "op-cancelled" && "Цуцалсан дугаарууд"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${team.length} ажилтан · ${activeCount} ажиллаж байна`}
@@ -42184,6 +42349,10 @@ function ManagerDashboard({ profile }) {
         )}
         {view === "op-shift-report" && (
           <OperatorShiftReportView profile={profile} canEdit={true} />
+        )}
+
+        {view === "op-cancelled" && (
+          <CancelledNumbersView profile={profile} />
         )}
         {view === "approvals" && (
           <ApprovalsView
