@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-cancelled-numbers";
+const BUILD_VERSION = "v2026.09.22-cancelled-numbers2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34600,12 +34600,19 @@ function CancelledNumbersView({ profile }) {
   const [pagesMap, setPagesMap] = useState({});
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState({});      // phone → true (сэтгэгдэл дэлгэсэн)
+  const [selPage, setSelPage] = useState("all"); // 📄 page шүүлт
   const STATUS_MN = { pending: "Бүртгэсэн", no_answer: "Авахгүй", unreachable: "Холбогдохгүй", callback: "Дахин залгах", ordered: "Захиалга болсон", cancelled: "Цуцалсан", busy: "Завгүй" };
+  // Цуцлахад тэр утасны бүх мөр "cancelled" болдог тул АНХНЫ статус тэмдэглэлийн "[...]" хаалтанд үлддэг — түүнийг сэргээнэ
+  const parseNote = (c) => {
+    const m = /^\s*\[([^\]]+)\]\s*([\s\S]*)$/.exec(c.notes || "");
+    if (m) return { label: m[1].trim(), text: m[2].trim(), isCancel: /цуцал/i.test(m[1]) };
+    return { label: STATUS_MN[c.call_status] || c.call_status || "—", text: c.notes || "", isCancel: c.call_status === "cancelled" };
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const s = new Date(`${date}T00:00:00`), e = new Date(s.getTime() + 86400000);
+      const s = new Date(`${date}T00:00:00+08:00`), e = new Date(s.getTime() + 86400000); // УБ-ын өдөр
       const [ordRes, callRes, profRes, pgRes] = await Promise.all([
         supabase.from("biz_orders").select("id, order_number, customer_phone, customer_name, fb_page_id, total_amount, cancelled_at, cancelled_by, cancel_reasons, cancel_note, notes, created_at")
           .eq("status", "cancelled").gte("cancelled_at", s.toISOString()).lt("cancelled_at", e.toISOString()).order("cancelled_at", { ascending: false }).limit(1000),
@@ -34653,8 +34660,10 @@ function CancelledNumbersView({ profile }) {
   };
   useEffect(() => { load(); }, [date]);
 
-  const fmt = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "") : "";
+  const fmt = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Ulaanbaatar" }).replace(",", "") : "";
+  const pageCounts = rows.reduce((m, r) => { const k = r.page || "none"; m[k] = (m[k] || 0) + 1; return m; }, {});
   const visible = rows.filter((r) => {
+    if (selPage !== "all" && (r.page || "none") !== selPage) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return r.phone.includes(q) || (r.name || "").toLowerCase().includes(q) || r.comments.some((c) => (c.notes || "").toLowerCase().includes(q));
@@ -34679,6 +34688,16 @@ function CancelledNumbersView({ profile }) {
         </button>
       </div>
 
+      {!loading && rows.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap px-1">
+          {[["all", `📄 Бүх page ${rows.length}`], ...Object.keys(pageCounts).sort((a, b) => pageCounts[b] - pageCounts[a]).map((k) => [k, `${k === "none" ? "Page-гүй" : (pagesMap[k] || "?")} ${pageCounts[k]}`])].map(([k, lbl]) => (
+            <button key={k} onClick={() => setSelPage(k)} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+              style={{ background: selPage === k ? T.highlight : T.surfaceAlt, color: selPage === k ? "#fff" : T.inkSoft, border: `1px solid ${selPage === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
       ) : visible.length === 0 ? (
@@ -34725,9 +34744,13 @@ function CancelledNumbersView({ profile }) {
                     ) : r.history.map((c) => (
                       <div key={c.id} className="flex items-start gap-2 text-[11px]">
                         <span style={{ color: T.muted, fontFamily: FM }} className="flex-shrink-0 w-[118px] tabular-nums">{fmt(c.created_at)}</span>
-                        <span className="flex-shrink-0 px-1.5 rounded-full text-[10px]" style={{ background: c.call_status === "cancelled" ? (T.errSoft || "#FEE2E2") : T.surfaceAlt, color: c.call_status === "cancelled" ? T.err : T.inkSoft, fontFamily: FM, fontWeight: 700 }}>{STATUS_MN[c.call_status] || c.call_status || "—"}</span>
-                        <span style={{ color: T.muted, fontFamily: FM }} className="flex-shrink-0">{profilesMap[c.created_by] || ""}</span>
-                        <span style={{ color: c.notes ? T.ink : T.mutedSoft, fontFamily: FS, whiteSpace: "pre-wrap" }}>{c.notes || "—"}</span>
+                        {(() => { const pn = parseNote(c); return (
+                          <>
+                            <span className="flex-shrink-0 px-1.5 rounded-full text-[10px]" style={{ background: pn.isCancel ? (T.errSoft || "#FEE2E2") : c.call_status === "ordered" ? (T.okSoft || "#DCFCE7") : T.surfaceAlt, color: pn.isCancel ? T.err : c.call_status === "ordered" ? T.ok : T.inkSoft, fontFamily: FM, fontWeight: 700 }}>{pn.label}</span>
+                            <span style={{ color: T.muted, fontFamily: FM }} className="flex-shrink-0">{profilesMap[c.created_by] || ""}</span>
+                            <span style={{ color: pn.text ? T.ink : T.mutedSoft, fontFamily: FS, whiteSpace: "pre-wrap" }}>{pn.text || "—"}</span>
+                          </>
+                        ); })()}
                       </div>
                     ))}
                   </div>
