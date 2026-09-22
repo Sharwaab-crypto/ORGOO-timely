@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-delivery-board";
+const BUILD_VERSION = "v2026.09.22-delivery-board2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19616,7 +19616,7 @@ function DeliveryDashboardView({ profile }) {
   const [cancelled, setCancelled] = useState([]);
   const [unsettled, setUnsettled] = useState([]);
   const [settlements, setSettlements] = useState([]);
-  const [openDrv, setOpenDrv] = useState(null);
+  const [popup, setPopup] = useState(null); // { s: жолоочийн stat, kind: "pending"|"delivered"|"cancelled" }
   const [sortBy, setSortBy] = useState("owed"); // owed | delivered | pending | name
 
   // Хугацааны муж (УБ-ын өдөр)
@@ -19638,8 +19638,8 @@ function DeliveryDashboardView({ profile }) {
       const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
         supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name"),
         fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status").in("status", ["assigned", "pending"]).not("driver_id", "is", null)),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso).not("driver_id", "is", null)),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, cancelled_at").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso).not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso).not("driver_id", "is", null)),
+        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso).not("driver_id", "is", null)),
         fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at").eq("status", "delivered").is("settlement_id", null).not("driver_id", "is", null)),
         supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000),
       ]);
@@ -19665,8 +19665,8 @@ function DeliveryDashboardView({ profile }) {
       const sum = (arr, f) => arr.reduce((s, o) => s + f(o), 0);
       return {
         d, pending: p, pendingAmt: sum(p, (o) => Number(o.total_amount || 0)),
-        deliveredN: dl.length, deliveredAmt: sum(dl, (o) => Number(o.total_amount || 0)),
-        cancelledN: c.length, cancelledAmt: sum(c, (o) => Number(o.total_amount || 0)),
+        deliveredN: dl.length, deliveredAmt: sum(dl, (o) => Number(o.total_amount || 0)), deliveredList: dl,
+        cancelledN: c.length, cancelledAmt: sum(c, (o) => Number(o.total_amount || 0)), cancelledList: c,
         unsettledN: u.length, unsettledOwed: sum(u, owedOf),
         unsettledOldest: u.length ? u.reduce((m, o) => (o.delivered_at < m ? o.delivered_at : m), u[0].delivered_at) : null,
         open, lastClosed,
@@ -19735,11 +19735,16 @@ function DeliveryDashboardView({ profile }) {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
           {stats.map((s) => {
-            const isOpen = openDrv === s.d.id;
             const oldest = daysAgo(s.unsettledOldest);
+            const boxBtn = (kind, bg, color, n, label, amt) => (
+              <button onClick={() => setPopup({ s, kind })} className="press-btn rounded-lg p-1.5 text-center w-full" style={{ background: bg }} title="Захиалгуудыг харах">
+                <div style={{ color, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{n}</div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">{label} · {fmtT(amt)}</div>
+              </button>
+            );
             return (
               <div key={s.d.id} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${s.unsettledOwed > 0 ? T.highlight : T.border}` }}>
-                <button onClick={() => setOpenDrv(isOpen ? null : s.d.id)} className="press-btn w-full text-left">
+                <div className="w-full text-left">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 800 }}>{(s.d.name || "?").charAt(0)}</div>
@@ -19756,51 +19761,81 @@ function DeliveryDashboardView({ profile }) {
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 mt-2">
-                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.warnSoft || "#FEF3C7" }}>
-                      <div style={{ color: T.warn, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.pending.length}</div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">⏳ Хүлээгдэж · {fmtT(s.pendingAmt)}</div>
-                    </div>
-                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.okSoft || "#DCFCE7" }}>
-                      <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.deliveredN}</div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">✅ Хүргэсэн · {fmtT(s.deliveredAmt)}</div>
-                    </div>
-                    <div className="rounded-lg p-1.5 text-center" style={{ background: T.errSoft || "#FEE2E2" }}>
-                      <div style={{ color: T.err, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{s.cancelledN}</div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">❌ Цуцалсан · {fmtT(s.cancelledAmt)}</div>
-                    </div>
+                    {boxBtn("pending", T.warnSoft || "#FEF3C7", T.warn, s.pending.length, "⏳ Хүлээгдэж", s.pendingAmt)}
+                    {boxBtn("delivered", T.okSoft || "#DCFCE7", T.ok, s.deliveredN, "✅ Хүргэсэн", s.deliveredAmt)}
+                    {boxBtn("cancelled", T.errSoft || "#FEE2E2", T.err, s.cancelledN, "❌ Цуцалсан", s.cancelledAmt)}
                   </div>
-                </button>
-                {isOpen && (
-                  <div className="mt-2 pt-2 space-y-1" style={{ borderTop: `1px dashed ${T.border}` }}>
-                    {s.open && (
-                      <div className="text-[11px] flex flex-wrap gap-x-3" style={{ color: T.inkSoft, fontFamily: FM }}>
-                        <span>🧾 Нээлттэй тооцоо: {s.open.order_count || 0} захиалга</span>
-                        <span>💵 Бэлэн {fmtT(s.open.cash_amount)}</span><span>🏦 Данс {fmtT(s.open.bank_amount)}</span><span>🧾 Зарлага {fmtT(s.open.expense_amount)}</span>
-                      </div>
-                    )}
-                    {s.lastClosed && (
-                      <div className="text-[11px]" style={{ color: T.muted, fontFamily: FM }}>
-                        Сүүлийн хаалт: {fmtD(s.lastClosed.settled_at)} · {s.lastClosed.order_count || 0} захиалга · тушаасан {fmtT(s.lastClosed.total_submitted)} (бэлэн {fmtT(s.lastClosed.cash_amount)} / данс {fmtT(s.lastClosed.bank_amount)} / зарлага {fmtT(s.lastClosed.expense_amount)})
-                      </div>
-                    )}
-                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-[11px] mt-1">⏳ Гар дээрх захиалга ({s.pending.length})</div>
-                    {s.pending.length === 0 ? (
-                      <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Хүлээгдэж буй захиалга алга</div>
-                    ) : s.pending.slice(0, 30).map((o) => (
-                      <div key={o.id} className="text-[11px] flex items-center gap-2" style={{ color: T.inkSoft, fontFamily: FM }}>
-                        <span style={{ color: T.ink }}>{o.order_number}</span>
-                        <span>{fmtT(o.total_amount)}</span>
-                        <span className="truncate" style={{ color: T.muted, fontFamily: FS }}>{o.delivery_address || ""}</span>
-                        <span style={{ color: T.muted }} className="ml-auto flex-shrink-0">{o.status === "assigned" ? "хуваарилсан" : "хүлээгдэж буй"}</span>
-                      </div>
-                    ))}
-                    {s.pending.length > 30 && <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">… бусад {s.pending.length - 30}</div>}
-                  </div>
-                )}
+                  {(s.open || s.lastClosed) && (
+                    <div className="mt-2 pt-1.5 text-[10px] flex flex-wrap gap-x-3" style={{ borderTop: `1px dashed ${T.border}`, color: T.muted, fontFamily: FM }}>
+                      {s.open && <span>🧾 Нээлттэй: {s.open.order_count || 0} зах · 💵 {fmtT(s.open.cash_amount)} · 🏦 {fmtT(s.open.bank_amount)} · зарлага {fmtT(s.open.expense_amount)}</span>}
+                      {s.lastClosed && <span>Сүүлийн хаалт {fmtD(s.lastClosed.settled_at)}: {s.lastClosed.order_count || 0} зах · {fmtT(s.lastClosed.total_submitted)}</span>}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* 📋 Popup — сонгосон жолоочийн захиалгууд */}
+      {popup && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setPopup(null)}>
+          <div className="glass rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" style={{ background: T.bg }} onClick={(e) => e.stopPropagation()}>
+            {(() => {
+              const { s, kind } = popup;
+              const meta = kind === "pending" ? { title: "⏳ Хүлээгдэж буй захиалга (гар дээр)", color: T.warn, list: s.pending }
+                : kind === "delivered" ? { title: `✅ Хүргэсэн · ${range.label}`, color: T.ok, list: s.deliveredList }
+                : { title: `❌ Цуцалсан · ${range.label}`, color: T.err, list: s.cancelledList };
+              const total = meta.list.reduce((a, o) => a + Number(o.total_amount || 0), 0);
+              const sorted = [...meta.list].sort((a, b) => new Date(b.delivered_at || b.cancelled_at || b.created_at || 0) - new Date(a.delivered_at || a.cancelled_at || a.created_at || 0));
+              return (
+                <>
+                  <div className="p-4 pb-2 flex items-center justify-between gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <div>
+                      <div style={{ color: meta.color, fontFamily: FS, fontWeight: 700 }} className="text-sm">{meta.title}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">🚚 {s.d.name} · {meta.list.length} захиалга · {fmtT(total)}</div>
+                    </div>
+                    <button onClick={() => setPopup(null)} className="press-btn px-3 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>✕ Хаах</button>
+                  </div>
+                  <div className="overflow-y-auto p-3 space-y-1.5" style={{ scrollbarWidth: "thin" }}>
+                    {sorted.length === 0 ? (
+                      <div className="p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>Захиалга алга</div>
+                    ) : sorted.map((o) => {
+                      const paid = Math.max(Number(o.paid_amount || 0), Number(o.prepaid_amount || 0));
+                      const reasons = Array.isArray(o.cancel_reasons) ? o.cancel_reasons : (o.cancel_reasons ? [String(o.cancel_reasons)] : []);
+                      const ts = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "") : "";
+                      return (
+                        <div key={o.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs">{o.order_number}</span>
+                              {o.customer_phone && <span style={{ color: T.inkSoft, fontFamily: FM }} className="text-xs">📞 {o.customer_phone}</span>}
+                              {kind === "pending" && <span className="text-[10px] px-1.5 rounded-full" style={{ background: T.warnSoft || "#FEF3C7", color: T.warn, fontFamily: FM }}>{o.status === "assigned" ? "хуваарилсан" : "хүлээгдэж буй"}</span>}
+                            </div>
+                            <div className="text-right">
+                              <div style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-sm tabular-nums">{fmtT(o.total_amount)}</div>
+                              {kind === "delivered" && paid > 0 && <div style={{ color: T.ok, fontFamily: FM }} className="text-[10px]">төлсөн {fmtT(paid)}</div>}
+                            </div>
+                          </div>
+                          {o.delivery_address && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5">📍 {o.delivery_address}</div>}
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5 text-[10px]" style={{ color: T.muted, fontFamily: FM }}>
+                            {kind === "delivered" && <span>хүргэсэн {ts(o.delivered_at)}{o.settlement_id ? " · 🧾 тооцоонд орсон" : " · 📦 тушаагаагүй"}</span>}
+                            {kind === "cancelled" && <span>цуцалсан {ts(o.cancelled_at)}</span>}
+                            {kind === "pending" && <span>үүссэн {ts(o.created_at)}</span>}
+                            {reasons.map((x, i) => <span key={i} className="px-1.5 rounded-full" style={{ background: T.errSoft || "#FEE2E2", color: T.err }}>{x}</span>)}
+                            {o.cancel_note && <span style={{ color: T.inkSoft, fontFamily: FS }} className="italic">"{o.cancel_note}"</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
