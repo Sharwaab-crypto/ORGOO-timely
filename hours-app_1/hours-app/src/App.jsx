@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-cancelled-numbers4";
+const BUILD_VERSION = "v2026.09.22-cancelled-chart";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34675,6 +34675,15 @@ function CancelledNumbersView({ profile }) {
       || (r.products || []).some((p) => (p.name || "").toLowerCase().includes(q)); // 🛍 бараагаар
   });
   const totalComments = visible.reduce((s, r) => s + r.comments.length, 0);
+  // 📊 Аль бараа цуцлагдсан дугааруудын ихэнхийг эзэлж буй — дугаарын тоогоор (нэг дугаарт нэг бараа нэг л удаа)
+  const [showChart, setShowChart] = useState(true);
+  const productShare = useMemo(() => {
+    const cnt = {};
+    visible.forEach((r) => { const seen = new Set(); (r.products || []).forEach((p) => { if (!p.name || seen.has(p.name)) return; seen.add(p.name); cnt[p.name] = (cnt[p.name] || 0) + 1; }); });
+    const total = visible.length || 1;
+    return Object.entries(cnt).map(([name, n]) => ({ name, n, pct: Math.round((n / total) * 100) })).sort((a, b) => b.n - a.n).slice(0, 12);
+  }, [visible]);
+  const CHART_COLORS = ["#ef4444", "#f59e0b", "#0ea5e9", "#8b5cf6", "#22c55e", "#ec4899", "#14b8a6", "#6366f1", "#f97316", "#84cc16", "#64748b", "#a855f7"];
 
   return (
     <div className="space-y-3">
@@ -34702,6 +34711,29 @@ function CancelledNumbersView({ profile }) {
               {lbl}
             </button>
           ))}
+        </div>
+      )}
+      {!loading && productShare.length > 0 && (
+        <div className="glass rounded-2xl p-3">
+          <button onClick={() => setShowChart((v) => !v)} className="press-btn w-full flex items-center justify-between">
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Цуцлалтад хамгийн их орсон бараа <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {visible.length} дугаарын хэдэн % нь тухайн барааг сонирхсон бэ</span></span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{showChart ? "▲" : "▼"}</span>
+          </button>
+          {showChart && (
+            <div className="mt-2" style={{ height: Math.max(160, productShare.length * 28 + 20) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={productShare} layout="vertical" margin={{ left: 8, right: 48, top: 4, bottom: 4 }}>
+                  <XAxis type="number" hide domain={[0, "dataMax"]} />
+                  <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 11, fill: T.inkSoft, fontFamily: FS }} tickFormatter={(v) => (v.length > 26 ? v.slice(0, 25) + "…" : v)} />
+                  <RechartsTooltip formatter={(v, _n, p) => [`${v} дугаар (${p.payload.pct}%)`, "Цуцлагдсан"]} contentStyle={{ fontFamily: FM, fontSize: 12, borderRadius: 8 }} />
+                  <Bar dataKey="n" radius={[0, 8, 8, 0]} onClick={(d) => d && d.name && setSearch(d.name)} cursor="pointer">
+                    {productShare.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    <LabelList dataKey="pct" position="right" formatter={(v) => `${v}%`} style={{ fontSize: 11, fill: T.ink, fontFamily: FM, fontWeight: 700 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
       {loading ? (
