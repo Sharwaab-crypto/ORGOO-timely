@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.18-sales-breakdown";
+const BUILD_VERSION = "v2026.09.22-mkt-stockprep";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -1776,7 +1776,7 @@ function ServerWarningView({ profile }) {
 function AdminDashboard({ profile }) {
   // 🎯 Marketing role — зөвхөн зарим view-руу хандана
   const isMarketing = profile.role === "marketing";
-  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory"];
+  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory", "stock-prep"]; // 📊 Нөөц бэлдэлт — маркетингд ч
 
   const [view, setView] = useState(() => {
     try {
@@ -2624,10 +2624,10 @@ function AdminDashboard({ profile }) {
             <SidebarSection label="Агуулах" icon={Warehouse}>
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
+              <SidebarTab active={view === "stock-prep"} onClick={() => { setView("stock-prep"); setSidebarOpen(false); }} icon={BarChart3}>Нөөц бэлдэлт</SidebarTab>
               {!isMarketing && (
                 <>
                   <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
-                  <SidebarTab active={view === "stock-prep"} onClick={() => { setView("stock-prep"); setSidebarOpen(false); }} icon={BarChart3}>Нөөц бэлдэлт</SidebarTab>
                   <SidebarTab active={view === "transfers"} onClick={() => { setView("transfers"); setSidebarOpen(false); }} icon={Send}>Бараа хүсэлт</SidebarTab>
                   <SidebarTab active={view === "stockcount"} onClick={() => { setView("stockcount"); setSidebarOpen(false); }} icon={ClipboardCheck}>Тооллого</SidebarTab>
                   <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={Send}>Барааны хөдөлгөөн</SidebarTab>
