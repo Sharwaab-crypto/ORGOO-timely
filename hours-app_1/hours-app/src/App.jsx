@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-mkt-boost3";
+const BUILD_VERSION = "v2026.09.22-mkt-boost4";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18477,13 +18477,13 @@ function MarketingView({ profile }) {
       {empCompare.hasBoost && (
         <div className="glass rounded-2xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💸 Boost үр ашиг <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· хандалт ÷ boost (1₮-д ногдох хандалт)</span></div>
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💸 Boost үр ашиг <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· хандалт ÷ boost (1$-д ногдох хандалт)</span></div>
             <div className="flex gap-2 flex-wrap">
               {empCompare.emps.map((e) => {
                 const b = empCompare.boostTotals[e.id] || 0, h = empCompare.totals[e.id] || 0;
                 return (
                   <span key={e.id} className="text-[10px] px-2 py-1 rounded-full" style={{ background: T.surfaceAlt, color: e.color, border: `1px solid ${e.color}`, fontFamily: FM, fontWeight: 700 }}>
-                    {e.name}: {b.toLocaleString()}₮ → {h.toLocaleString()} хандалт{b > 0 ? ` · ${(h / b).toFixed(3)} · 1 хандалт = ${(b / Math.max(1, h)).toFixed(1)}₮` : ""}
+                    {e.name}: ${b.toLocaleString()} → {h.toLocaleString()} хандалт{b > 0 ? ` · ${(h / b).toFixed(1)} · 1 хандалт = $${(b / Math.max(1, h)).toFixed(3)}` : ""}
                   </span>
                 );
               })}
@@ -18495,7 +18495,7 @@ function MarketingView({ profile }) {
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
               <YAxis tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
               <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12 }}
-                formatter={(v, name, p) => [v === null ? "boost байхгүй" : `${v} (${(p.payload[name + "_reach"] || 0).toLocaleString()} хандалт ÷ ${(p.payload[name + "_boost"] || 0).toLocaleString()}₮)`, name]} />
+                formatter={(v, name, p) => [v === null ? "boost байхгүй" : `${v} (${(p.payload[name + "_reach"] || 0).toLocaleString()} хандалт ÷ $${(p.payload[name + "_boost"] || 0).toLocaleString()})`, name]} />
               <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
               {empCompare.emps.map((e) => (
                 <Line key={e.id} type="monotone" dataKey={e.name} stroke={e.color} strokeWidth={2} dot={{ r: 2.5 }} connectNulls={false} />
@@ -18651,7 +18651,7 @@ function MarketingView({ profile }) {
                 <input type="number" value={reachVal} onChange={(e) => setReachVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-24 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
               </div>
               <div>
-                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">💸 Boost cost ₮</div>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">💸 Boost cost $</div>
                 <input type="number" value={boostVal} onChange={(e) => setBoostVal(e.target.value)} placeholder="0" className="rounded-lg px-2 py-1.5 text-sm w-28 outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FS, border: `1px solid ${T.border || "#E5E7EB"}` }} />
               </div>
               <button onClick={saveReach} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: T.ok, color: "white", fontFamily: FS, opacity: saving ? 0.6 : 1 }}>Хадгалах</button>
@@ -18694,7 +18694,7 @@ function MarketingView({ profile }) {
                                   placeholder="хандалт" title="Хандалт"
                                   className="rounded text-[11px] text-center outline-none block" style={{ width: 64, padding: "3px 2px", background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
                                 <input type="number" value={bulkValues[key + "_b"] ?? ""} onChange={(e) => setBulkValues((prev) => ({ ...prev, [key + "_b"]: e.target.value }))}
-                                  placeholder="boost ₮" title="Boost cost ₮"
+                                  placeholder="boost $" title="Boost cost $"
                                   className="rounded text-[10px] text-center outline-none block mt-0.5" style={{ width: 64, padding: "2px 2px", background: "rgba(245,158,11,0.08)", color: "#b45309", fontFamily: FM, border: `1px solid rgba(245,158,11,0.35)` }} />
                               </td>
                             );
@@ -18766,9 +18766,9 @@ function MarketingView({ profile }) {
                         <div style={{ height: "100%", width: `${pct}%`, background: PIE_COLORS[i % PIE_COLORS.length], borderRadius: 3 }} />
                       </div>
                       <div className="flex items-center justify-between mt-1">
-                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">💸 Boost {d.boost > 0 ? `${d.boost.toLocaleString()}₮` : "—"}</span>
+                        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">💸 Boost {d.boost > 0 ? `$${d.boost.toLocaleString()}` : "—"}</span>
                         <span style={{ color: d.costPer !== null ? "#b45309" : T.mutedSoft, fontFamily: FM, fontWeight: 700 }} className="text-[10px]">
-                          {d.costPer !== null ? `1 хандалт = ${d.costPer.toFixed(1)}₮` : "1 хандалт = —"}
+                          {d.costPer !== null ? `1 хандалт = $${d.costPer.toFixed(3)}` : "1 хандалт = —"}
                         </span>
                       </div>
                     </div>
