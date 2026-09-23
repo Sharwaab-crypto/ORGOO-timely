@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.23-merchant-fix2";
+const BUILD_VERSION = "v2026.09.23-driver-board";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19614,7 +19614,8 @@ function OperatorKPIReportView({ profile }) {
 //  Жолооч бүрийн: ⏳ хүлээгдэж буй · ✅ хүргэсэн · ❌ цуцалсан (сонгосон хугацаанд)
 //  + 💰 тооцооны мэдээлэл (нээлттэй тооцоо, тушаагаагүй хуримтлал, сүүлийн хаалт). Зөвхөн уншина.
 // ═══════════════════════════════════════════════════════════════════════════
-function DeliveryDashboardView({ profile }) {
+function DeliveryDashboardView({ profile, onlyDriverId = null }) {
+  // onlyDriverId: жолоочийн өөрийн самбар — зөвхөн өөрийн мэдээлэл, эрэмбэ нуугдана, line chart гарна
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [period, setPeriod] = useState("today");
   const [customStart, setCustomStart] = useState(() => isoDay(new Date()));
@@ -19645,15 +19646,16 @@ function DeliveryDashboardView({ profile }) {
     setLoading(true);
     try {
       const sIso = range.s.toISOString(), eIso = range.e.toISOString();
+      const withDrv = (q) => (onlyDriverId ? q.eq("driver_id", onlyDriverId) : q.not("driver_id", "is", null));
       const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
-        supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name"),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status").in("status", ["assigned", "pending"]).not("driver_id", "is", null)),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso).not("driver_id", "is", null)),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso).not("driver_id", "is", null)),
-        fetchAllRows(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at").eq("status", "delivered").is("settlement_id", null).not("driver_id", "is", null)),
-        supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000),
+        (onlyDriverId ? supabase.from("profiles").select("id, name, job_title, is_active").eq("id", onlyDriverId) : supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name")),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status").in("status", ["assigned", "pending"]))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at").eq("status", "delivered").is("settlement_id", null))),
+        withDrv(supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000)),
       ]);
-      setDrivers((drvRes.data || []).filter((d) => d.is_active !== false));
+      setDrivers((drvRes.data || []).filter((d) => d.is_active !== false && (!onlyDriverId || d.id === onlyDriverId)));
       setPending(pendRes || []); setDelivered(delRes || []); setCancelled(canRes || []); setUnsettled(unsRes || []);
       setSettlements(stRes.data || []);
     } catch (e) { console.error("[delivery dashboard]", e); }
@@ -19694,6 +19696,19 @@ function DeliveryDashboardView({ profile }) {
     openN: a.openN + (s.open ? 1 : 0),
   }), { pending: 0, pendingAmt: 0, delivered: 0, deliveredAmt: 0, cancelled: 0, unsettledN: 0, owed: 0, openN: 0 }), [stats]);
 
+  // 📈 Өдрөөр: хүргэсэн vs цуцалсан (сонгосон хугацаанд)
+  const daily = useMemo(() => {
+    const dayKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    const map = {};
+    const cur = new Date(range.s); cur.setHours(0, 0, 0, 0);
+    const end = new Date(range.e);
+    let guard = 0;
+    while (cur < end && guard < 400) { const k = dayKey(cur); map[k] = { date: k.slice(5), "Хүргэсэн": 0, "Цуцалсан": 0 }; cur.setDate(cur.getDate() + 1); guard++; }
+    delivered.forEach((o) => { const k = dayKey(o.delivered_at); if (map[k]) map[k]["Хүргэсэн"] += 1; });
+    cancelled.forEach((o) => { const k = dayKey(o.cancelled_at); if (map[k]) map[k]["Цуцалсан"] += 1; });
+    return Object.values(map);
+  }, [delivered, cancelled, range]);
+
   const fmtT = (n) => `${Math.round(Number(n || 0)).toLocaleString()}₮`;
   const fmtD = (t) => t ? new Date(t).toLocaleDateString("en-GB") : "—";
   const daysAgo = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 86400000) : null;
@@ -19714,12 +19729,12 @@ function DeliveryDashboardView({ profile }) {
           </>
         )}
         <span className="flex-1" />
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+        {!onlyDriverId && <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
           <option value="owed">Эрэмбэ: тушаах дүн</option>
           <option value="delivered">Эрэмбэ: хүргэсэн</option>
           <option value="pending">Эрэмбэ: хүлээгдэж буй</option>
           <option value="name">Эрэмбэ: нэр</option>
-        </select>
+        </select>}
         <button onClick={load} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}` }}>🔄</button>
       </div>
 
@@ -19730,7 +19745,7 @@ function DeliveryDashboardView({ profile }) {
           [`✅ Хүргэсэн · ${range.label}`, tot.delivered, fmtT(tot.deliveredAmt), T.ok, "амжилттай хүргэлт"],
           [`❌ Цуцалсан · ${range.label}`, tot.cancelled, tot.delivered + tot.cancelled > 0 ? `${((tot.cancelled / (tot.delivered + tot.cancelled)) * 100).toFixed(1)}% (хүргэсэн+цуцалсанаас)` : "", T.err, "жолоочтой захиалгын цуцлалт"],
           ["📦 Тушаагаагүй", tot.unsettledN, fmtT(tot.owed), T.highlight, "хүргэсэн ч тооцоонд ороогүй (бүх цаг)"],
-          ["🧾 Нээлттэй тооцоо", tot.openN, `${stats.length} жолооч`, "#9333ea", "нээгдсэн, хаагдаагүй"],
+          ["🧾 Нээлттэй тооцоо", tot.openN, onlyDriverId ? (tot.openN ? "хаагдаагүй" : "алга") : `${stats.length} жолооч`, "#9333ea", "нээгдсэн, хаагдаагүй"],
         ].map(([lbl, n, sub, color, hint], i) => (
           <div key={i} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${color}` }} title={hint}>
             <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{lbl}</div>
@@ -19740,10 +19755,26 @@ function DeliveryDashboardView({ profile }) {
         ))}
       </div>
 
+      {!loading && daily.length > 1 && (
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-1">📈 Хүргэсэн ба цуцалсан · өдрөөр <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {range.label}</span></div>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={daily} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
+              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
+              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2.5} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
       {loading ? (
         <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+        <div className={onlyDriverId ? "grid grid-cols-1 gap-2" : "grid grid-cols-1 lg:grid-cols-2 gap-2"}>
           {stats.map((s) => {
             const oldest = daysAgo(s.unsettledOldest);
             const boxBtn = (kind, bg, color, n, label, amt) => (
@@ -40524,6 +40555,16 @@ function DriverDashboard({ profile }) {
             <ClipboardCheck size={13} />
             Тооцоо
           </button>
+          <button onClick={() => setView("board")}
+            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+            style={{
+              background: view === "board" ? "#0ea5e9" : "transparent",
+              color: view === "board" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            <BarChart3 size={13} />
+            Самбар
+          </button>
         </div>
       </div>
 
@@ -41073,6 +41114,10 @@ function DriverDashboard({ profile }) {
 
         {view === "settlements" && (
           <DriverSettlementsView profile={profile} myOwed={myOwed} myDeliveredTotal={myDeliveredTotal} />
+        )}
+
+        {view === "board" && (
+          <DeliveryDashboardView profile={profile} onlyDriverId={profile.id} />
         )}
       </div>
 
