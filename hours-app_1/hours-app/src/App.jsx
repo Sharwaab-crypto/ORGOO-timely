@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.23-driver-board";
+const BUILD_VERSION = "v2026.09.23-driver-board2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19706,7 +19706,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     while (cur < end && guard < 400) { const k = dayKey(cur); map[k] = { date: k.slice(5), "Хүргэсэн": 0, "Цуцалсан": 0 }; cur.setDate(cur.getDate() + 1); guard++; }
     delivered.forEach((o) => { const k = dayKey(o.delivered_at); if (map[k]) map[k]["Хүргэсэн"] += 1; });
     cancelled.forEach((o) => { const k = dayKey(o.cancelled_at); if (map[k]) map[k]["Цуцалсан"] += 1; });
-    return Object.values(map);
+    return Object.values(map).map((r) => { const base = r["Хүргэсэн"] + r["Цуцалсан"]; return { ...r, pct: base > 0 ? Math.round((r["Цуцалсан"] / base) * 100) : null }; });
   }, [delivered, cancelled, range]);
 
   const fmtT = (n) => `${Math.round(Number(n || 0)).toLocaleString()}₮`;
@@ -19763,10 +19763,15 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
               <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
               <YAxis allowDecimals={false} tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
-              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }} />
+              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }}
+                formatter={(v, name, p) => [name === "Цуцалсан" && p.payload.pct !== null ? `${v} (${p.payload.pct}%)` : v, name]} />
               <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
-              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }}>
+                <LabelList dataKey="Хүргэсэн" position="top" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: T.ok, fontFamily: FM, fontWeight: 700 }} />
+              </Line>
+              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2.5} dot={{ r: 3 }}>
+                <LabelList dataKey="pct" position="bottom" formatter={(v) => (v === null || v === undefined ? "" : `${v}%`)} style={{ fontSize: 10, fill: T.err, fontFamily: FM, fontWeight: 700 }} />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
         </div>
