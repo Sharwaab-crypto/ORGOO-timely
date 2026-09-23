@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.23-merchant-fix";
+const BUILD_VERSION = "v2026.09.23-merchant-fix2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15794,6 +15794,15 @@ function CallCenterView({ profile }) {
                   //    Өмнөх cycle-д ordered/cancelled байсан ч ХАМААРАХГҮЙ —
                   //    cancelled-ийн дараа дугаар ДАХИН бүртгэгдсэн бол шинэ cycle = дахин залгах ёстой.
                   if (cy.status !== "calling") return false;
+                  // 🛡 2026-09-23: "ordered" дуудлагын мөр байхгүй (өөр page-д бүртгэгдсэн / хуучин) ч
+                  //    ЭНЭ cycle-ээс ХОЙШ үүссэн цуцлагдаагүй ЗАХИАЛГА байвал = захиалга болсон → залгах дугаарт оруулахгүй
+                  {
+                    const ord = orderStatusByPhone[cy.phone];
+                    if (ord && ord.status !== "cancelled") {
+                      const cyStart = Math.min(...(cy.calls || []).map((c) => new Date(c.created_at).getTime()));
+                      if (new Date(ord.created_at).getTime() >= cyStart - 5 * 60 * 1000) return false;
+                    }
+                  }
                   // 🆕/🔁 Дэд шүүлт: огт залгаагүй = cycle-д зөвхөн бүртгэлийн (pending) мөр; давтан = залгасан мөртэй
                   if (callingSub !== "all") {
                     const attempts = (cy.calls || []).filter((c) => c.call_status && c.call_status !== "pending");
