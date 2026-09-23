@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.22-delivery-board3";
+const BUILD_VERSION = "v2026.09.23-merchant-fix";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14535,8 +14535,10 @@ function CallCenterView({ profile }) {
         if (customerPhones.length > 0) {
           try {
             // ⚡ 3000+ утас нэг .in()-д → URL хэт урт → 400. Chunk-аар татна.
+            // 🔒 2026-09-23: зөвхөн ӨӨРИЙН page-ийн эсвэл page-гүй (хуучин) мөр — бусад мерчантын дуудлага орж ирэхгүй
             const phoneCalls = await fetchInChunks("biz_calls", customerPhones, {
-              select: "*", filterColumn: "phone", chunkSize: 150,
+              select: "*", filterColumn: "phone", chunkSize: 150, parallel: 4,
+              extraFilter: (q) => q.or(`fb_page_id.is.null,fb_page_id.in.(${allowedPageIds.join(",")})`),
             });
             const existingIds = new Set(allCalls.map(c => c.id));
             (phoneCalls || []).forEach(c => {
@@ -14547,7 +14549,6 @@ function CallCenterView({ profile }) {
             console.error("[Merchant phone calls]", e);
           }
         }
-        console.log("[Merchant CallCenter] Page calls:", (callData || []).length, "Phone-matched:", allCalls.length - (callData || []).length, "Total:", allCalls.length);
       }
 
       setRecentCalls(allCalls);
@@ -35490,52 +35491,71 @@ function MerchantDashboard({ profile }) {
 
 // ─── Merchant Overview — нийт стат ─────────────────────────────────────
 function MerchantOverview({ allowedPageIds, fbPages }) {
-  const [stats, setStats] = useState({ orders: 0, delivered: 0, revenue: 0, calls: 0 });
+  const [stats, setStats] = useState({ orders: 0, delivered: 0, cancelled: 0, revenue: 0, calls: 0 });
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
+  // 📅 Хугацааны шүүлт (2026-09-23): today | yesterday | 7d | month | all | custom
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [period, setPeriod] = useState("month");
+  const [customStart, setCustomStart] = useState(() => isoDay(new Date()));
+  const [customEnd, setCustomEnd] = useState(() => isoDay(new Date()));
+  const range = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let s = new Date(today), e = new Date(today); e.setDate(e.getDate() + 1); let label = "Өнөөдөр";
+    if (period === "yesterday") { s.setDate(s.getDate() - 1); e = new Date(today); label = "Өчигдөр"; }
+    else if (period === "7d") { s.setDate(s.getDate() - 6); label = "7 хоног"; }
+    else if (period === "month") { s = new Date(today.getFullYear(), today.getMonth(), 1); label = "Энэ сар"; }
+    else if (period === "all") { s = null; e = null; label = "Бүх цаг"; }
+    else if (period === "custom") { s = new Date(`${customStart}T00:00:00`); e = new Date(`${customEnd}T00:00:00`); e.setDate(e.getDate() + 1); label = `${customStart} → ${customEnd}`; }
+    return { s, e, label };
+  }, [period, customStart, customEnd]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        console.log("[Merchant] Loading with allowedPageIds:", allowedPageIds);
-        const [ordRes, callRes] = await Promise.all([
-          supabase.from("biz_orders").select("status, total_amount, fb_page_id").in("fb_page_id", allowedPageIds),
-          supabase.from("biz_calls").select("id, fb_page_id").in("fb_page_id", allowedPageIds),
+        // Сервер талын head-count — 1000-ын тааз үйлчлэхгүй; орлого нь хугацаанд багтсан хүргэгдсэн захиалгаас
+        const inRange = (q, col) => (range.s ? q.gte(col, range.s.toISOString()).lt(col, range.e.toISOString()) : q);
+        const base = () => supabase.from("biz_orders").select("id", { count: "exact", head: true }).in("fb_page_id", allowedPageIds);
+        const [ordC, delC, canC, callC, revRows] = await Promise.all([
+          inRange(base(), "created_at"),
+          inRange(base().eq("status", "delivered"), "delivered_at"),
+          inRange(base().eq("status", "cancelled"), "cancelled_at"),
+          inRange(supabase.from("biz_calls").select("id", { count: "exact", head: true }).in("fb_page_id", allowedPageIds), "created_at"),
+          fetchAllRows(inRange(supabase.from("biz_orders").select("total_amount").in("fb_page_id", allowedPageIds).eq("status", "delivered"), "delivered_at")),
         ]);
-        const orders = ordRes.data || [];
-        const calls = callRes.data || [];
-        const delivered = orders.filter(o => o.status === "delivered");
-        const revenue = delivered.reduce((s, o) => s + Number(o.total_amount || 0), 0);
-        
-        console.log("[Merchant] Orders fetched:", orders.length, "Calls:", calls.length);
-        if (ordRes.error) console.error("[Merchant] Orders error:", ordRes.error);
-        if (callRes.error) console.error("[Merchant] Calls error:", callRes.error);
-        
-        setStats({
-          orders: orders.length,
-          delivered: delivered.length,
-          revenue,
-          calls: calls.length,
-        });
-        setDebugInfo({
-          ordersErr: ordRes.error?.message,
-          callsErr: callRes.error?.message,
-          pageCount: allowedPageIds.length,
-        });
-      } catch (e) { 
+        const revenue = (revRows || []).reduce((s, o) => s + Number(o.total_amount || 0), 0);
+        setStats({ orders: ordC.count || 0, delivered: delC.count || 0, cancelled: canC.count || 0, revenue, calls: callC.count || 0 });
+        setDebugInfo({ ordersErr: ordC.error?.message, callsErr: callC.error?.message, pageCount: allowedPageIds.length });
+      } catch (e) {
         console.error("[Merchant] Exception:", e);
         setDebugInfo({ exception: e.message });
       }
       finally { setLoading(false); }
     })();
-  }, [allowedPageIds.join(",")]);
+  }, [allowedPageIds.join(","), range]);
 
   if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      {/* 📅 Хугацаа */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📅 Хугацаа</span>
+        {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setPeriod(k)} className="press-btn px-3 py-1.5 rounded-full text-xs"
+            style={{ background: period === k ? T.highlight : T.surfaceAlt, color: period === k ? "#fff" : T.inkSoft, border: `1px solid ${period === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
+        ))}
+        {period === "custom" && (
+          <>
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+            <span style={{ color: T.muted }}>–</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+          </>
+        )}
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] ml-auto">{range.label}</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
           <div className="text-2xl mb-1">💰</div>
           <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Орлого</div>
@@ -35557,6 +35577,14 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
             {stats.orders}
           </div>
         </div>
+        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.err}` }}>
+          <div className="text-2xl mb-1">❌</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Цуцлагдсан</div>
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
+            {stats.cancelled}
+            {stats.delivered + stats.cancelled > 0 && <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]"> · {((stats.cancelled / (stats.delivered + stats.cancelled)) * 100).toFixed(1)}%</span>}
+          </div>
+        </div>
         <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
           <div className="text-2xl mb-1">📞</div>
           <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Дуудлага</div>
@@ -35567,7 +35595,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
       </div>
       <div className="glass rounded-2xl p-4">
         <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-          💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой өгөгдлөөс тооцоологдсон.
+          💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой, сонгосон хугацааны ({range.label}) өгөгдлөөс тооцоологдсон. Захиалга — үүссэн огноогоор, хүргэгдсэн — хүргэсэн огноогоор, цуцлагдсан — цуцалсан огноогоор.
         </div>
         {/* Debug info — асуудалтай үед харагдана */}
         {(stats.orders === 0 && stats.calls === 0) && (
@@ -35580,8 +35608,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
               {debugInfo?.ordersErr && <div style={{ color: T.err }}>• Захиалгын алдаа: {debugInfo.ordersErr}</div>}
               {debugInfo?.callsErr && <div style={{ color: T.err }}>• Дуудлагын алдаа: {debugInfo.callsErr}</div>}
               <div className="pt-1">
-                <strong>Шалтгаан:</strong> Хуучин захиалга/дуудлагуудад FB Page тогтоогдоогүй байж магадгүй.
-                Admin-руу хандаж <code>backfill-fb-pages.sql</code> ажиллуулна уу.
+                <strong>Шалтгаан:</strong> Энэ хугацаанд захиалга/дуудлага байхгүй, эсвэл хуучин бичлэгүүдэд FB Page тогтоогдоогүй байж магадгүй — админд хандана уу.
               </div>
             </div>
           </div>
