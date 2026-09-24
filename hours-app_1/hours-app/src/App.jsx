@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-quick4";
+const BUILD_VERSION = "v2026.09.24-merchant-ui";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35505,10 +35505,13 @@ function MerchantDashboard({ profile }) {
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
           </SidebarSection>
 
-          <SidebarSection label="Бизнес" icon={ShoppingBag}>
+          <SidebarSection label="Захиалга бүртгэх" icon={ShoppingBag}>
             <SidebarTab active={view === "calls"} onClick={() => { setView("calls"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
             <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалт</SidebarTab>
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
+          </SidebarSection>
+
+          <SidebarSection label="Агуулах" icon={Warehouse}>
             <SidebarTab active={view === "stock"} onClick={() => { setView("stock"); setSidebarOpen(false); }} icon={Package}>Бараа, нөөц</SidebarTab>
           </SidebarSection>
 
@@ -35558,6 +35561,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
   const [stats, setStats] = useState({ orders: 0, delivered: 0, cancelled: 0, revenue: 0, calls: 0 });
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [daily, setDaily] = useState([]); // 📈 өдрийн цуврал
   // 📅 Хугацааны шүүлт (2026-09-23): today | yesterday | 7d | month | all | custom
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [period, setPeriod] = useState("month");
@@ -35581,15 +35585,29 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
         // Сервер талын head-count — 1000-ын тааз үйлчлэхгүй; орлого нь хугацаанд багтсан хүргэгдсэн захиалгаас
         const inRange = (q, col) => (range.s ? q.gte(col, range.s.toISOString()).lt(col, range.e.toISOString()) : q);
         const base = () => supabase.from("biz_orders").select("id", { count: "exact", head: true }).in("fb_page_id", allowedPageIds);
-        const [ordC, delC, canC, callC, revRows] = await Promise.all([
+        const [ordC, delC, canC, callC, revRows, ordRows, canRows] = await Promise.all([
           inRange(base(), "created_at"),
           inRange(base().eq("status", "delivered"), "delivered_at"),
           inRange(base().eq("status", "cancelled"), "cancelled_at"),
           inRange(supabase.from("biz_calls").select("id", { count: "exact", head: true }).in("fb_page_id", allowedPageIds), "created_at"),
-          fetchAllRows(inRange(supabase.from("biz_orders").select("total_amount").in("fb_page_id", allowedPageIds).eq("status", "delivered"), "delivered_at")),
+          fetchAllRows(inRange(supabase.from("biz_orders").select("total_amount, delivered_at").in("fb_page_id", allowedPageIds).eq("status", "delivered"), "delivered_at")),
+          // 📈 chart: үүссэн захиалга (created_at) + цуцлагдсан (cancelled_at) — "Бүх цаг"-д сүүлийн 90 хоног
+          fetchAllRows(supabase.from("biz_orders").select("created_at").in("fb_page_id", allowedPageIds).gte("created_at", (range.s || new Date(Date.now() - 90 * 86400000)).toISOString()).lt("created_at", (range.e || new Date(Date.now() + 86400000)).toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("cancelled_at").in("fb_page_id", allowedPageIds).eq("status", "cancelled").gte("cancelled_at", (range.s || new Date(Date.now() - 90 * 86400000)).toISOString()).lt("cancelled_at", (range.e || new Date(Date.now() + 86400000)).toISOString())),
         ]);
         const revenue = (revRows || []).reduce((s, o) => s + Number(o.total_amount || 0), 0);
         setStats({ orders: ordC.count || 0, delivered: delC.count || 0, cancelled: canC.count || 0, revenue, calls: callC.count || 0 });
+        // Өдрөөр нэгтгэх
+        const dayKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+        const map = {};
+        const s0 = range.s ? new Date(range.s) : new Date(Date.now() - 90 * 86400000); s0.setHours(0, 0, 0, 0);
+        const e0 = range.e ? new Date(range.e) : new Date(Date.now() + 86400000);
+        let g = 0; const cur = new Date(s0);
+        while (cur < e0 && g < 400) { const k = dayKey(cur); map[k] = { date: k.slice(5), "Захиалга": 0, "Хүргэсэн": 0, "Цуцалсан": 0, "Орлого": 0 }; cur.setDate(cur.getDate() + 1); g++; }
+        (ordRows || []).forEach((o) => { const k = dayKey(o.created_at); if (map[k]) map[k]["Захиалга"] += 1; });
+        (revRows || []).forEach((o) => { const k = dayKey(o.delivered_at); if (map[k]) { map[k]["Хүргэсэн"] += 1; map[k]["Орлого"] += Number(o.total_amount || 0); } });
+        (canRows || []).forEach((o) => { const k = dayKey(o.cancelled_at); if (map[k]) map[k]["Цуцалсан"] += 1; });
+        setDaily(Object.values(map));
         setDebugInfo({ ordersErr: ordC.error?.message, callsErr: callC.error?.message, pageCount: allowedPageIds.length });
       } catch (e) {
         console.error("[Merchant] Exception:", e);
@@ -35657,6 +35675,24 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
           </div>
         </div>
       </div>
+      {daily.length > 1 && (
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-1">📈 Захиалга · Хүргэсэн · Цуцалсан — өдрөөр <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {range.label}{!range.s ? " (сүүлийн 90 хоног)" : ""}</span></div>
+          <ResponsiveContainer width="100%" height={230}>
+            <LineChart data={daily} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
+              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }}
+                formatter={(v, name, p) => [name === "Хүргэсэн" ? `${v} (${Number(p.payload["Орлого"] || 0).toLocaleString()}₮)` : v, name]} />
+              <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
+              <Line type="monotone" dataKey="Захиалга" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2.5 }} />
+              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2} dot={{ r: 2.5 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
       <div className="glass rounded-2xl p-4">
         <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
           💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой, сонгосон хугацааны ({range.label}) өгөгдлөөс тооцоологдсон. Захиалга — үүссэн огноогоор, хүргэгдсэн — хүргэсэн огноогоор, цуцлагдсан — цуцалсан огноогоор.
