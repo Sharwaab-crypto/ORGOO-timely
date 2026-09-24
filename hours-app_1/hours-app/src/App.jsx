@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-quick3";
+const BUILD_VERSION = "v2026.09.24-merchant-quick4";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -25641,7 +25641,8 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound, directMode = false }) {
+  // directMode (мерчант шууд захиалга): ганц "Захиалга баталгаажуулах" товч; "шинэ дээр захиалга байна" шалгалтыг алгасна
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
   const [name, setName] = useState(initialName || "");
@@ -26738,8 +26739,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 return;
               }
 
-              // ⚡ ШИНЭ ДЭЭР ЗАХИАЛГА ШАЛГАХ — Хэрэв шинэ статустай захиалга бий бол
-              if (!isEditMode) {
+              // ⚡ ШИНЭ ДЭЭР ЗАХИАЛГА ШАЛГАХ — Хэрэв шинэ статустай захиалга бий бол (directMode-д алгасна)
+              if (!isEditMode && !directMode) {
                 try {
                   const { data: existingNew } = await supabase
                     .from("biz_orders")
@@ -26833,11 +26834,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             }}
             className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
             <CheckCircle2 size={14} />
-            {busy ? "Хадгалаж..." : `✓ Дуудаад авлаа (${items.length})`}
+            {busy ? "Хадгалаж..." : directMode ? `✅ Захиалга баталгаажуулах (${items.length})` : `✓ Дуудаад авлаа (${items.length})`}
           </button>
 
-          {/* 2-р мөр: Дараа холбогдох + Цуцалсан */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* 2-р мөр: Дараа холбогдох + Цуцалсан (directMode-д нуугдана) */}
+          {!directMode && <div className="grid grid-cols-2 gap-2">
             <button
               disabled={busy || !phone.trim()}
               onClick={() => {
@@ -26871,7 +26872,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               <X size={13} />
               ❌ Цуцалсан
             </button>
-          </div>
+          </div>}
 
           {/* Болих */}
           <button onClick={onClose} disabled={busy}
@@ -36898,7 +36899,7 @@ function MerchantQuickOrderModal({ allowedPageIds, fbPagesMap, profile, onSaved,
       profile={profile}
       onSave={handleSave}
       onClose={onClose}
-      onExistingOrderFound={({ orderInfo }) => alert(`⚠ Энэ дугаараар "Шинэ" төлөвтэй захиалга аль хэдийн бий: ${orderInfo.order_number}. Захиалга хэсгээс засна уу.`)}
+      directMode={true}
     />
   );
 }
