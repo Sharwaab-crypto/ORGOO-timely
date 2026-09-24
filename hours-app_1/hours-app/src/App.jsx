@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-moves";
+const BUILD_VERSION = "v2026.09.24-merchant-logo";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35473,12 +35473,12 @@ function MerchantDashboard({ profile }) {
         style={{ background: T.surface, borderRight: `1px solid ${T.border}` }}>
         <div className="p-4 border-b" style={{ borderColor: T.border }}>
           <div className="flex items-center gap-2">
-            <div style={{ background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "white", fontFamily: FS, fontWeight: 700 }}
+            <div style={{ background: "linear-gradient(135deg, #0ea5e9, #0369a1)", color: "white", fontFamily: FS, fontWeight: 700 }}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-sm">
-              🏪
+              🚚
             </div>
             <div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">CoreLink</div>
+              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">Coredelivery<span style={{ color: "#0ea5e9" }}>.</span></div>
               <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Merchant</div>
             </div>
           </div>
