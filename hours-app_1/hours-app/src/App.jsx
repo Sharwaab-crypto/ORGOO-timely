@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-quick";
+const BUILD_VERSION = "v2026.09.24-merchant-quick2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -36890,7 +36890,7 @@ function MerchantQuickOrderModal({ allowedPageIds, fbPagesMap, profile, onSaved,
         const { data, error } = await supabase.from("biz_orders").insert({
           order_number: orderNumber, customer_phone: ph, customer_name: name.trim() || null, delivery_address: address.trim() || null,
           source: "merchant", status: "new", subtotal, delivery_fee: fee, total_amount: total, balance_due: total, paid_amount: 0,
-          notes: note.trim() ? `[Мерчант] ${note.trim()}` : "[Мерчант шууд захиалга]", fb_page_id: pageId, created_by: profile.id,
+          notes: note.trim() ? `[Мерчант] ${note.trim()}` : "[Мерчант шууд захиалга]", fb_page_id: pageId, taken_by: profile.id,
         }).select("id").single();
         if (error) { if (/duplicate|unique/i.test(error.message)) continue; throw error; }
         orderId = data.id;
