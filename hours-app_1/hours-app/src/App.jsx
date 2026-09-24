@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-quick2";
+const BUILD_VERSION = "v2026.09.24-merchant-quick3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -36832,154 +36832,74 @@ function MerchantSalesView({ allowedPageIds, fbPages }) {
 
 // ─── Merchant Orders View ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════
-//  🏪 MERCHANT QUICK ORDER — дугаар бүртгэлгүйгээр шууд захиалга үүсгэх
-//  biz_orders (status new, source merchant) + biz_order_items + biz_calls ("ordered" мөр — түүх/тайланд орно)
+//  🏪 MERCHANT QUICK ORDER — дугаар бүртгэлгүйгээр шууд захиалга.
+//  Үндсэн "Захиалга авах" формыг (CallReceiveModal: давхар дугаар, хот/дүүрэг/хороо + pin,
+//  бараа хайлт, хүргэлтийн үнэ, урьдчилгаа, давхардлын шалгалт) ЯГ ТЭР ХЭВЭЭР дахин ашиглана.
+//  Бараа — зөвхөн мерчантын page-д хуваарилагдсан; хадгалахад biz_orders (source merchant) + items + biz_calls "ordered".
 // ═══════════════════════════════════════════════════════════════════════════
 function MerchantQuickOrderModal({ allowedPageIds, fbPagesMap, profile, onSaved, onClose }) {
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [note, setNote] = useState("");
-  const [pageId, setPageId] = useState(allowedPageIds[0] || "");
-  const [deliveryFee, setDeliveryFee] = useState("0");
-  const [products, setProducts] = useState([]);
-  const [q, setQ] = useState("");
-  const [lines, setLines] = useState([]); // { product_id, name, price, qty }
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
+  const [products, setProducts] = useState(null);
   useEffect(() => {
     (async () => {
-      // Мерчантын page-ийн бараа (page-гүй бараа ч орно)
-      const { data } = await supabase.from("inv_products").select("id, name, sku, sale_price, image_url, fb_page_id, is_active")
-        .or(`fb_page_id.in.(${allowedPageIds.join(",")}),fb_page_id.is.null`).order("name").limit(2000);
+      const { data } = await supabase.from("inv_products").select("*")
+        .in("fb_page_id", allowedPageIds).order("name").limit(3000); // 🔒 зөвхөн өөрийн page-ийн бараа
       setProducts((data || []).filter((p) => p.is_active !== false));
     })();
   }, [allowedPageIds.join(",")]);
 
-  const found = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return [];
-    return products.filter((p) => (p.name || "").toLowerCase().includes(s) || (p.sku || "").toLowerCase().includes(s)).slice(0, 12);
-  }, [q, products]);
-  const addLine = (p) => {
-    setLines((prev) => {
-      const ex = prev.find((l) => l.product_id === p.id);
-      if (ex) return prev.map((l) => (l.product_id === p.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...prev, { product_id: p.id, name: p.name, price: Number(p.sale_price || 0), qty: 1, image: p.image_url, pfb: p.fb_page_id }];
-    });
-    setQ("");
-  };
-  const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
-  const fee = Number(deliveryFee) || 0;
-  const total = subtotal + fee;
-
-  const save = async () => {
-    setErr("");
-    const ph = phone.replace(/\D/g, "");
-    if (ph.length < 8) return setErr("Утасны дугаар 8 оронтой байх ёстой");
-    if (lines.length === 0) return setErr("Дор хаяж нэг бараа нэмнэ үү");
-    if (!pageId) return setErr("Page сонгоно уу");
-    setSaving(true);
+  const handleSave = async (data) => {
     try {
+      if (data.action !== "ordered") { alert("Энэ форм зөвхөн захиалга үүсгэнэ"); return; }
+      if (!data.items || data.items.length === 0) { alert("Дор хаяж нэг бараа нэмнэ үү"); return; }
+      // Page: барааны page → эхний зөвшөөрөгдсөн page
+      const firstProd = products?.find((p) => p.id === data.items[0].product_id);
+      const pageId = (firstProd?.fb_page_id && allowedPageIds.includes(firstProd.fb_page_id)) ? firstProd.fb_page_id : allowedPageIds[0];
       const d = new Date();
       const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-      let orderId = null, orderNumber = null;
-      for (let attempt = 0; attempt < 3 && !orderId; attempt++) {
-        orderNumber = `MR-${dateStr}-${String(Date.now()).slice(-5)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
-        const { data, error } = await supabase.from("biz_orders").insert({
-          order_number: orderNumber, customer_phone: ph, customer_name: name.trim() || null, delivery_address: address.trim() || null,
-          source: "merchant", status: "new", subtotal, delivery_fee: fee, total_amount: total, balance_due: total, paid_amount: 0,
-          notes: note.trim() ? `[Мерчант] ${note.trim()}` : "[Мерчант шууд захиалга]", fb_page_id: pageId, taken_by: profile.id,
-        }).select("id").single();
-        if (error) { if (/duplicate|unique/i.test(error.message)) continue; throw error; }
-        orderId = data.id;
+      let order = null, lastErr = null;
+      for (let attempt = 0; attempt < 5 && !order; attempt++) {
+        const orderNumber = `MR-${dateStr}-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 9000) + 1000}`;
+        const { data: ins, error } = await supabase.from("biz_orders").insert({
+          order_number: orderNumber, customer_phone: data.phone, customer_phone2: data.phone2, customer_name: data.name,
+          delivery_address: data.address, delivery_lat: data.delivery_lat || null, delivery_lng: data.delivery_lng || null,
+          source: "merchant", status: "new", subtotal: data.subtotal, delivery_fee: data.deliveryFee, total_amount: data.totalAmount,
+          paid_amount: data.paidAmount, balance_due: data.balanceDue, notes: data.notes ? `[Мерчант] ${data.notes}` : "[Мерчант шууд захиалга]",
+          taken_by: profile.id, fb_page_id: pageId,
+        }).select().single();
+        if (!error) { order = ins; break; }
+        lastErr = error;
+        if (error.message?.includes("duplicate") || error.code === "23505") { await new Promise((r) => setTimeout(r, 120)); continue; }
+        throw error;
       }
-      if (!orderId) throw new Error("Захиалгын дугаар үүсгэж чадсангүй, дахин оролдоно уу");
-      const { error: iErr } = await supabase.from("biz_order_items").insert(lines.map((l) => ({
-        order_id: orderId, product_id: l.product_id, product_name: l.name, quantity: l.qty, unit_price: l.price, total_amount: l.price * l.qty,
+      if (!order) throw lastErr || new Error("Захиалга үүсгэх алдаа");
+      const { error: iErr } = await supabase.from("biz_order_items").insert(data.items.map((it) => ({
+        order_id: order.id, product_id: it.product_id, product_name: it.product_name, quantity: it.quantity, unit_price: it.unit_price, total_amount: it.total_amount, notes: it.notes || null,
       })));
       if (iErr) throw iErr;
       // Дуудлагын түүхэнд "захиалга болсон" мөр — Захиалга болсон таб, тайлангууд зөв тоолно
       await supabase.from("biz_calls").insert({
-        phone: ph, call_status: "ordered", customer_name: name.trim() || null, fb_page_id: pageId, created_by: profile.id,
-        notes: `[Мерчант шууд захиалга] #${orderNumber}`,
-        interested_products: lines.map((l) => ({ product_id: l.product_id, name: l.name, sale_price: l.price, quantity: l.qty })),
+        phone: data.phone, call_status: "ordered", customer_name: data.name || null, fb_page_id: pageId, created_by: profile.id,
+        notes: `[Мерчант шууд захиалга] #${order.order_number}`,
+        interested_products: data.items.map((it) => ({ product_id: it.product_id, name: it.product_name, sale_price: it.unit_price, quantity: it.quantity })),
       });
+      alert(`✅ Захиалга үүслээ: ${order.order_number}`);
       onSaved && onSaved();
       onClose();
-    } catch (e) { setErr("Алдаа: " + (e.message || e)); }
-    finally { setSaving(false); }
+    } catch (e) { alert("Алдаа: " + (e.message || e)); }
   };
 
-  const inp = { background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS };
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
-      <div className="glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4 space-y-3" style={{ background: T.bg, scrollbarWidth: "thin" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">🛍 Шинэ захиалга (шууд)</div>
-          <button onClick={onClose} className="press-btn text-xs px-2 py-1 rounded-lg" style={{ background: T.surfaceAlt, color: T.ink }}>✕</button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="📞 Утас (8 орон)" inputMode="numeric"
-            className="rounded-lg px-3 py-2 text-sm outline-none" style={{ ...inp, fontFamily: FD, fontWeight: 700 }} />
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="👤 Нэр" className="rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
-        </div>
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="📍 Хүргэлтийн хаяг" className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
-        <div className="grid grid-cols-2 gap-2">
-          <select value={pageId} onChange={(e) => setPageId(e.target.value)} className="rounded-lg px-2 py-2 text-xs" style={{ ...inp, fontFamily: FM }}>
-            {allowedPageIds.map((id) => <option key={id} value={id}>{fbPagesMap[id] || id.slice(0, 8)}</option>)}
-          </select>
-          <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} placeholder="🚚 Хүргэлтийн үнэ" className="rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
-        </div>
-
-        {/* Бараа хайж нэмэх */}
-        <div className="relative">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Бараа хайх (нэр, SKU)..." className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
-          {found.length > 0 && (
-            <div className="absolute left-0 right-0 mt-1 rounded-xl overflow-hidden z-10 max-h-56 overflow-y-auto" style={{ background: T.bg, border: `1px solid ${T.borderStrong}`, boxShadow: "0 8px 24px rgba(0,0,0,0.15)" }}>
-              {found.map((p) => (
-                <button key={p.id} onClick={() => addLine(p)} className="press-btn w-full flex items-center gap-2 px-2 py-1.5 text-left" style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {p.image_url ? <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded" style={{ background: T.surfaceAlt }} />}
-                  <div className="flex-1 min-w-0">
-                    <div style={{ color: T.ink, fontFamily: FS }} className="text-xs truncate">{p.name}</div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku} · {Number(p.sale_price || 0).toLocaleString()}₮</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {lines.length > 0 && (
-          <div className="space-y-1">
-            {lines.map((l) => (
-              <div key={l.product_id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
-                {l.image ? <img src={l.image} alt="" className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded" style={{ background: T.bg }} />}
-                <div className="flex-1 min-w-0">
-                  <div style={{ color: T.ink, fontFamily: FS }} className="text-xs truncate">{l.name}</div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{l.price.toLocaleString()}₮ × {l.qty} = {(l.price * l.qty).toLocaleString()}₮</div>
-                </div>
-                <button onClick={() => setLines((p) => p.map((x) => x.product_id === l.product_id ? { ...x, qty: Math.max(1, x.qty - 1) } : x))} className="press-btn w-6 h-6 rounded text-xs" style={{ background: T.bg, color: T.ink }}>−</button>
-                <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-sm w-5 text-center">{l.qty}</span>
-                <button onClick={() => setLines((p) => p.map((x) => x.product_id === l.product_id ? { ...x, qty: x.qty + 1 } : x))} className="press-btn w-6 h-6 rounded text-xs" style={{ background: T.bg, color: T.ink }}>+</button>
-                <button onClick={() => setLines((p) => p.filter((x) => x.product_id !== l.product_id))} className="press-btn w-6 h-6 rounded text-xs" style={{ background: T.errSoft || "#FEE2E2", color: T.err }}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="📝 Тэмдэглэл" rows={2} className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
-        <div className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: T.surfaceAlt }}>
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">Бараа {subtotal.toLocaleString()}₮ + хүргэлт {fee.toLocaleString()}₮</span>
-          <span style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-base">{total.toLocaleString()}₮</span>
-        </div>
-        {err && <div className="text-xs rounded-lg px-3 py-2" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FS }}>{err}</div>}
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="press-btn px-3 py-2 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.inkSoft, border: `1px solid ${T.borderStrong}`, fontFamily: FS }}>Болих</button>
-          <button onClick={save} disabled={saving} className="press-btn px-4 py-2 rounded-lg text-xs" style={{ background: T.ok, color: "#fff", fontFamily: FS, fontWeight: 700 }}>{saving ? "Хадгалж байна..." : "✅ Захиалга үүсгэх"}</button>
-        </div>
-      </div>
-    </div>,
+  if (products === null) return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}><Loader2 className="spin" size={24} style={{ color: "#fff" }} /></div>,
     document.body
+  );
+  return (
+    <CallReceiveModal
+      products={products}
+      profile={profile}
+      onSave={handleSave}
+      onClose={onClose}
+      onExistingOrderFound={({ orderInfo }) => alert(`⚠ Энэ дугаараар "Шинэ" төлөвтэй захиалга аль хэдийн бий: ${orderInfo.order_number}. Захиалга хэсгээс засна уу.`)}
+    />
   );
 }
 
