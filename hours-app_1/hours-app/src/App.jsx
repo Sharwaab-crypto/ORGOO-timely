@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.23-driver-board3";
+const BUILD_VERSION = "v2026.09.24-cancelled-op";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34424,6 +34424,7 @@ function CancelledNumbersView({ profile }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState({});      // phone → true (сэтгэгдэл дэлгэсэн)
   const [selPage, setSelPage] = useState("all"); // 📄 page шүүлт
+  const [selOp, setSelOp] = useState("all");     // 🎧 цуцалсан операторын шүүлт
   const STATUS_MN = { pending: "Бүртгэсэн", no_answer: "Авахгүй", unreachable: "Холбогдохгүй", callback: "Дахин залгах", ordered: "Захиалга болсон", cancelled: "Цуцалсан", busy: "Завгүй" };
   // Цуцлахад тэр утасны бүх мөр "cancelled" болдог тул АНХНЫ статус тэмдэглэлийн "[...]" хаалтанд үлддэг — түүнийг сэргээнэ
   const parseNote = (c) => {
@@ -34489,8 +34490,10 @@ function CancelledNumbersView({ profile }) {
 
   const fmt = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Ulaanbaatar" }).replace(",", "") : "";
   const pageCounts = rows.reduce((m, r) => { const k = r.page || "none"; m[k] = (m[k] || 0) + 1; return m; }, {});
+  const opCounts = rows.reduce((m, r) => { const k = r.by || "none"; m[k] = (m[k] || 0) + 1; return m; }, {});
   const visible = rows.filter((r) => {
     if (selPage !== "all" && (r.page || "none") !== selPage) return false;
+    if (selOp !== "all" && (r.by || "none") !== selOp) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return r.phone.includes(q) || (r.name || "").toLowerCase().includes(q)
@@ -34527,6 +34530,16 @@ function CancelledNumbersView({ profile }) {
         </button>
       </div>
 
+      {!loading && rows.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap px-1">
+          {[["all", `🎧 Бүх оператор ${rows.length}`], ...Object.keys(opCounts).sort((a, b) => opCounts[b] - opCounts[a]).map((k) => [k, `${k === "none" ? "Тодорхойгүй" : (profilesMap[k] || "?")} ${opCounts[k]}`])].map(([k, lbl]) => (
+            <button key={k} onClick={() => setSelOp(k)} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+              style={{ background: selOp === k ? "#9333ea" : T.surfaceAlt, color: selOp === k ? "#fff" : T.inkSoft, border: `1px solid ${selOp === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
       {!loading && rows.length > 0 && (
         <div className="flex gap-1.5 flex-wrap px-1">
           {[["all", `📄 Бүх page ${rows.length}`], ...Object.keys(pageCounts).sort((a, b) => pageCounts[b] - pageCounts[a]).map((k) => [k, `${k === "none" ? "Page-гүй" : (pagesMap[k] || "?")} ${pageCounts[k]}`])].map(([k, lbl]) => (
