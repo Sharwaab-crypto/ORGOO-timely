@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-ui";
+const BUILD_VERSION = "v2026.09.24-merchant-moves";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35513,6 +35513,7 @@ function MerchantDashboard({ profile }) {
 
           <SidebarSection label="Агуулах" icon={Warehouse}>
             <SidebarTab active={view === "stock"} onClick={() => { setView("stock"); setSidebarOpen(false); }} icon={Package}>Бараа, нөөц</SidebarTab>
+            <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={RefreshCw}>Барааны хөдөлгөөн</SidebarTab>
           </SidebarSection>
 
           <div className="pt-3 border-t" style={{ borderColor: T.border }}>
@@ -35540,6 +35541,7 @@ function MerchantDashboard({ profile }) {
               {view === "sales" && "📈 Борлуулалт"}
               {view === "orders" && "🛍 Захиалга"}
               {view === "stock" && "📦 Бараа, нөөц"}
+              {view === "movements" && "🔀 Барааны хөдөлгөөн"}
             </h1>
           </div>
         </header>
@@ -35550,6 +35552,7 @@ function MerchantDashboard({ profile }) {
           {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
           {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
           {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
+          {view === "movements" && <MerchantMovementsView allowedPageIds={allowedPageIds} />}
         </div>
       </main>
     </div>
@@ -37511,6 +37514,95 @@ function MerchantOrderEditModal({ order, items: initialItems, profile, onSaved, 
 }
 
 // ─── Merchant Stock View ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  🏪 MERCHANT MOVEMENTS — зөвхөн мерчантын page-ийн барааны хөдөлгөөн
+// ═══════════════════════════════════════════════════════════════════════════
+function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, compact = false }) {
+  const [rows, setRows] = useState(null);
+  const [prodMap, setProdMap] = useState({});
+  const [whMap, setWhMap] = useState({});
+  const [profMap, setProfMap] = useState({});
+  const [typeF, setTypeF] = useState(onlyIn ? "in" : "all");
+  const [q, setQ] = useState("");
+  const [range, setRange] = useState(days);
+  const TYPE_MN = { in: "📥 Орлого", out: "📤 Зарлага", transfer: "🔀 Шилжүүлэг", adjust: "🛠 Залруулга", adjustment: "🛠 Залруулга" };
+  const REASON_MN = { delivery: "Хүргэлт", supplier: "Нийлүүлэгч", purchase: "Худалдан авалт", return: "Буцаалт", order_cancelled: "Захиалга цуцлагдсан", order_edit_return: "Захиалгын засвар", adjustment: "Залруулга", count: "Тооллого", stock_count: "Тооллого" };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: prods } = await supabase.from("inv_products").select("id, name, sku, image_url").in("fb_page_id", allowedPageIds).limit(3000);
+        const pm = {}; (prods || []).forEach((p) => { pm[p.id] = p; }); setProdMap(pm);
+        const ids = Object.keys(pm);
+        if (ids.length === 0) { setRows([]); return; }
+        const since = new Date(Date.now() - range * 86400000).toISOString();
+        const [mv, whs, profs] = await Promise.all([
+          fetchInChunks("inv_movements", ids, { select: "id, product_id, warehouse_id, to_warehouse_id, movement_type, quantity, reason, notes, created_at, created_by", filterColumn: "product_id", chunkSize: 150, parallel: 4, extraFilter: (qq) => qq.gte("created_at", since).order("created_at", { ascending: false }) }),
+          supabase.from("inv_warehouses").select("id, name, type"),
+          supabase.from("profiles").select("id, name"),
+        ]);
+        const wm = {}; (whs.data || []).forEach((w) => { wm[w.id] = w; }); setWhMap(wm);
+        const fm = {}; (profs.data || []).forEach((p) => { fm[p.id] = p.name; }); setProfMap(fm);
+        setRows((mv || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      } catch (e) { console.error("[merchant movements]", e); setRows([]); }
+    })();
+  }, [allowedPageIds.join(","), range]);
+
+  const visible = useMemo(() => (rows || []).filter((m) => {
+    if (typeF !== "all" && m.movement_type !== typeF) return false;
+    if (q.trim()) { const s = q.toLowerCase(); const p = prodMap[m.product_id] || {}; if (!(p.name || "").toLowerCase().includes(s) && !(p.sku || "").toLowerCase().includes(s) && !(m.notes || "").toLowerCase().includes(s)) return false; }
+    return true;
+  }), [rows, typeF, q, prodMap]);
+  const fmt = (t) => new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "");
+  const sums = useMemo(() => visible.reduce((a, m) => { a[m.movement_type] = (a[m.movement_type] || 0) + Number(m.quantity || 0); return a; }, {}), [visible]);
+
+  if (rows === null) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>;
+  return (
+    <div className="space-y-2">
+      <div className={`${compact ? "" : "glass rounded-2xl p-3"} flex items-center gap-2 flex-wrap`}>
+        {!onlyIn && [["all", "Бүгд"], ["in", "📥 Орлого"], ["out", "📤 Зарлага"], ["transfer", "🔀 Шилжүүлэг"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setTypeF(k)} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+            style={{ background: typeF === k ? T.highlight : T.surfaceAlt, color: typeF === k ? "#fff" : T.inkSoft, border: `1px solid ${typeF === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
+        ))}
+        <select value={range} onChange={(e) => setRange(Number(e.target.value))} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+          <option value={7}>7 хоног</option><option value={30}>30 хоног</option><option value={60}>60 хоног</option><option value={90}>90 хоног</option><option value={365}>1 жил</option>
+        </select>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Бараа, SKU, тэмдэглэл" className="flex-1 min-w-[160px] px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{visible.length} мөр{sums.in ? ` · орлого ${sums.in}` : ""}{sums.out ? ` · зарлага ${sums.out}` : ""}</span>
+      </div>
+      {visible.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>Хөдөлгөөн алга</div>
+      ) : (
+        <div className="space-y-1.5" style={compact ? { maxHeight: "50vh", overflowY: "auto", scrollbarWidth: "thin" } : {}}>
+          {visible.slice(0, 500).map((m) => {
+            const p = prodMap[m.product_id] || {};
+            const wh = whMap[m.warehouse_id], to = whMap[m.to_warehouse_id];
+            const isIn = m.movement_type === "in", isOut = m.movement_type === "out";
+            const color = isIn ? T.ok : isOut ? T.err : "#9333ea";
+            return (
+              <div key={m.id} className="glass rounded-xl p-2.5 flex items-center gap-2" style={{ borderLeft: `3px solid ${color}` }}>
+                {p.image_url ? <img src={p.image_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" /> : <div className="w-9 h-9 rounded-lg flex-shrink-0" style={{ background: T.surfaceAlt }} />}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{p.name || "?"}</span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku || ""}</span>
+                    <span className="text-[10px] px-1.5 rounded-full" style={{ background: T.surfaceAlt, color, fontFamily: FM, fontWeight: 700 }}>{TYPE_MN[m.movement_type] || m.movement_type}</span>
+                    {m.reason && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{REASON_MN[m.reason] || m.reason}</span>}
+                  </div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
+                    {fmt(m.created_at)}{profMap[m.created_by] ? ` · ${profMap[m.created_by]}` : ""} · {wh ? wh.name : "—"}{to ? ` → ${to.name}` : ""}{m.notes ? ` · ${m.notes}` : ""}
+                  </div>
+                </div>
+                <div style={{ color, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums flex-shrink-0">{isIn ? "+" : isOut ? "−" : ""}{Number(m.quantity || 0)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MerchantStockView({ allowedPageIds }) {
   const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
@@ -37582,6 +37674,11 @@ function MerchantStockView({ allowedPageIds }) {
             </div>
           </div>
         ))}
+      </div>
+      {/* 📥 Бараа орлогдсон түүх — зөвхөн мерчантын бараа */}
+      <div className="mt-4 pt-3" style={{ borderTop: `1px dashed ${T.border}` }}>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">📥 Бараа орлогдсон түүх</div>
+        <MerchantMovementsView allowedPageIds={allowedPageIds} onlyIn={true} days={90} compact={true} />
       </div>
     </div>
   );
