@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-logo";
+const BUILD_VERSION = "v2026.09.24-merchant-top";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35565,6 +35565,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
   const [daily, setDaily] = useState([]); // 📈 өдрийн цуврал
+  const [topProducts, setTopProducts] = useState([]); // 🏆 топ-10 бараа
   // 📅 Хугацааны шүүлт (2026-09-23): today | yesterday | 7d | month | all | custom
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [period, setPeriod] = useState("month");
@@ -35611,6 +35612,11 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
         (revRows || []).forEach((o) => { const k = dayKey(o.delivered_at); if (map[k]) { map[k]["Хүргэсэн"] += 1; map[k]["Орлого"] += Number(o.total_amount || 0); } });
         (canRows || []).forEach((o) => { const k = dayKey(o.cancelled_at); if (map[k]) map[k]["Цуцалсан"] += 1; });
         setDaily(Object.values(map));
+        // 🏆 Топ-10 бараа (сервер талд нэгтгэсэн) — хүргэгдсэн захиалгаас
+        try {
+          const { data: tp } = await supabase.rpc("sales_top_products", { p_start: range.s ? range.s.toISOString() : null, p_end: range.e ? range.e.toISOString() : null, p_page_ids: allowedPageIds, p_limit: 10 });
+          setTopProducts(tp || []);
+        } catch (e2) { console.error("[Merchant top]", e2); setTopProducts([]); }
         setDebugInfo({ ordersErr: ordC.error?.message, callsErr: callC.error?.message, pageCount: allowedPageIds.length });
       } catch (e) {
         console.error("[Merchant] Exception:", e);
@@ -35689,11 +35695,47 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
               <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }}
                 formatter={(v, name, p) => [name === "Хүргэсэн" ? `${v} (${Number(p.payload["Орлого"] || 0).toLocaleString()}₮)` : v, name]} />
               <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
-              <Line type="monotone" dataKey="Захиалга" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2.5 }} />
-              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2} dot={{ r: 2.5 }} />
+              <Line type="monotone" dataKey="Захиалга" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2.5 }}>
+                <LabelList dataKey="Захиалга" position="top" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: "#0ea5e9", fontFamily: FM, fontWeight: 700 }} />
+              </Line>
+              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }}>
+                <LabelList dataKey="Хүргэсэн" position="top" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: T.ok, fontFamily: FM, fontWeight: 700 }} />
+              </Line>
+              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2} dot={{ r: 2.5 }}>
+                <LabelList dataKey="Цуцалсан" position="bottom" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: T.err, fontFamily: FM, fontWeight: 700 }} />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+      {/* 🏆 Топ-10 бараа */}
+      {topProducts.length > 0 && (
+        <div className="glass rounded-2xl p-3">
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">🏆 Хамгийн их борлуулалттай топ 10 бараа <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {range.label} · хүргэгдсэн захиалгаас</span></div>
+          <div className="space-y-1.5">
+            {topProducts.map((p, i) => {
+              const maxRev = Number(topProducts[0]?.revenue || 1);
+              return (
+                <div key={p.product_id || i} className="flex items-center gap-2 rounded-xl p-2" style={{ background: T.surfaceAlt }}>
+                  <div className="w-6 text-center flex-shrink-0" style={{ color: i < 3 ? "#f59e0b" : T.muted, fontFamily: FD, fontWeight: 800 }}>{i + 1}</div>
+                  {p.image_url ? <img src={p.image_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" /> : <div className="w-9 h-9 rounded-lg flex-shrink-0" style={{ background: T.bg }} />}
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{p.name}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, background: T.border }}>
+                        <div style={{ width: `${Math.max(3, (Number(p.revenue || 0) / maxRev) * 100)}%`, height: "100%", background: T.ok, borderRadius: 999 }} />
+                      </div>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex-shrink-0">{p.sku || ""}</span>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-sm tabular-nums">{Number(p.revenue || 0).toLocaleString()}₮</div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{Number(p.qty || 0)} ширхэг</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       <div className="glass rounded-2xl p-4">
