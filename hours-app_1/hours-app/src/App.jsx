@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.01-login";
+const BUILD_VERSION = "v2026.10.01-login-merchant";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14,6 +14,7 @@ import {
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
   Truck, DollarSign, Headphones, Warehouse, Menu, Search, Megaphone, Store,
+  Coins, XCircle, Trophy, Info, Link2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -35767,6 +35768,61 @@ function OrderHistorySection({ orderId }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  МЕРЧАНТ — Хяналтын самбар (шинэ загвар 2026-10-01): sidebar shell + KPI + SVG chart + топ-10
+//  Өнгөний token = нэвтрэх дэлгэцийн LC + статусын өнгө. Системийн T-д нөлөөлөхгүй.
+// ═══════════════════════════════════════════════════════════════════════════
+const MC = { ...LC, green: "#1f9d55", amber: "#e08a00", red: "#d9423a", blue: "#1c7fc4", orange: "#e5603f", hoverShadow: "0 10px 24px -12px rgba(10,80,72,.35)" };
+const MD_CSS = `
+@keyframes md-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes md-breathe{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes md-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@keyframes md-shine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(250%)}}
+@keyframes md-ping{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.8);opacity:0}}
+@keyframes md-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes md-pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.md-nav{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 8px;border-radius:8px;text-decoration:none;font-size:13px;cursor:pointer;border:none;width:100%;text-align:left;transition:background .2s;background:transparent;color:${MC.text}}
+.md-nav:hover{background:${MC.a900}}
+.md-nav .md-tile{width:28px;height:28px;flex:none;border-radius:8px;display:grid;place-items:center;transition:transform .25s}
+.md-nav:hover .md-tile{transform:scale(1.08)}
+.md-kpi{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:11px;padding:11px 14px;border-radius:14px;background:${MC.surface};box-shadow:${MC.shadowSm};transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s,border-color .25s}
+.md-kpi:hover{transform:translateY(-3px);box-shadow:${MC.hoverShadow};border-color:${MC.a400}!important}
+.md-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-radius:999px;font-size:13px;cursor:pointer;transition:all .2s}
+.md-pill:hover{border-color:${MC.accent}!important}
+.md-row{display:grid;grid-template-columns:28px 40px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid ${MC.divider};transition:background .2s}
+.md-row:hover{background:${MC.a900}}
+.md-date{height:34px;border-radius:999px;border:1px solid ${MC.divider};background:${MC.surface};color:${MC.text};padding:0 10px;font-size:13px;outline:none}
+.md-date:focus{border-color:${MC.accent}}
+@media (prefers-reduced-motion:reduce){.md-loop{animation:none!important}}
+`;
+
+// Тоо тоолох анимэйшн: k 0→1 (easeOutCubic, 1.1с); dep өөрчлөгдөх бүрд дахин
+function useCountUp(dep, ms = 1100) {
+  const [k, setK] = useState(0);
+  useEffect(() => {
+    let raf, t0 = performance.now();
+    setK(0);
+    const step = (now) => { const p = Math.min(1, (now - t0) / ms); setK(1 - Math.pow(1 - p, 3)); if (p < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [dep]);
+  return k;
+}
+
+// Sidebar-ын нэг цэс — 28px өнгөт tile icon
+function MerchantNavItem({ active, onClick, icon: Icon, color, delay = 0, children }) {
+  return (
+    <button type="button" className="md-nav" onClick={onClick}
+      style={{ background: active ? MC.a900 : "transparent", color: active ? MC.a200 : MC.text, fontWeight: active ? 500 : 400, fontFamily: FS, animation: `md-in .45s ${delay}s ease both` }}>
+      <span className="md-tile" style={{ background: `${color}${active ? "38" : "24"}` }}>
+        <Icon size={15} strokeWidth={active ? 2.4 : 2} style={{ color }} />
+      </span>
+      <span style={{ flex: 1 }}>{children}</span>
+      <ChevronRight size={12} style={{ opacity: active ? 0 : .5 }} />
+    </button>
+  );
+}
+
 function MerchantDashboard({ profile }) {
   const [view, setView] = useState(() => {
     try { return localStorage.getItem("orgoo-merchant-view") || "dashboard"; } catch { return "dashboard"; }
@@ -35801,20 +35857,17 @@ function MerchantDashboard({ profile }) {
   // 🚫 Page онооцоогүй бол хариу
   if (!loading && allowedPageIds.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6"
-        style={{ background: T.bg }}>
-        <div className="glass rounded-3xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: MC.bg, fontFamily: FS }}>
+        <div style={{ background: MC.surface, border: `1px solid ${MC.divider}`, borderRadius: 14, boxShadow: MC.shadowSm }} className="p-8 max-w-md w-full text-center">
           <div className="text-5xl mb-3">🏪</div>
-          <h2 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg mb-2">
-            FB Page оноогдоогүй байна
-          </h2>
-          <p style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-4">
+          <h2 style={{ fontWeight: 500, color: MC.text }} className="text-lg mb-2">FB Page оноогдоогүй байна</h2>
+          <p style={{ color: MC.n300 }} className="text-sm mb-4">
             Танд харах эрхтэй FB Page оноогдоогүй учир дэлгэц харуулах боломжгүй.
             <br /><br />
             Admin-руу хандаж FB Page оноолгоно уу.
           </p>
           <button onClick={() => supabase.auth.signOut()}
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}
+            style={{ border: `1px solid ${MC.accent}`, color: MC.a200, fontWeight: 500, background: "transparent" }}
             className="press-btn w-full py-2.5 rounded-lg text-sm">
             Гарах
           </button>
@@ -35825,97 +35878,87 @@ function MerchantDashboard({ profile }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: T.bg }}>
-        <Loader2 className="spin" size={24} style={{ color: T.muted }} />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: MC.bg }}>
+        <Loader2 className="spin" size={24} style={{ color: MC.n300 }} />
       </div>
     );
   }
 
+  const go = (v) => { setView(v); setSidebarOpen(false); };
+  const TITLES = { dashboard: "Хяналтын самбар", calls: "Дуудлага", sales: "Борлуулалт", orders: "Захиалга", stock: "Бараа, нөөц", movements: "Барааны хөдөлгөөн" };
+  const pageNames = fbPages.map((p) => p.name).join(" · ");
+  const navLabel = (t) => <span style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n400, padding: "6px 8px 2px" }}>{t}</span>;
+
   return (
-    <div className="min-h-screen flex" style={{ background: T.bg }}>
+    <div className="min-h-screen flex" style={{ background: `radial-gradient(90% 60% at 100% 0%, rgba(201,237,228,.6), transparent 60%), ${MC.bg}`, color: MC.text, fontFamily: FS }}>
+      <style>{MD_CSS}</style>
       {/* ─── Sidebar ─────────────────────────────────────────────────────── */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
-      <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform
+      <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform flex flex-col
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-        style={{ background: T.surface, borderRight: `1px solid ${T.border}` }}>
-        <div className="p-4 border-b" style={{ borderColor: T.border }}>
-          <div className="flex items-center gap-2">
-            <div style={{ background: "linear-gradient(135deg, #0ea5e9, #0369a1)", color: "white", fontFamily: FS, fontWeight: 700 }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm">
-              🚚
-            </div>
-            <div>
-              <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">Coredelivery<span style={{ color: "#0ea5e9" }}>.</span></div>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Merchant</div>
-            </div>
+        style={{ background: "rgba(251,254,253,.85)", borderRight: `1px solid ${MC.divider}`, padding: "17px 11px", gap: 17, animation: "md-up .5s ease both", backdropFilter: "blur(12px)" }}>
+        {/* Лого */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px" }}>
+          <div style={{ position: "relative", width: 28, height: 28, display: "grid", placeItems: "center", flex: "none" }}>
+            <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `1.5px solid ${MC.accent}`, opacity: .5 }} />
+            <span style={{ position: "absolute", inset: 6, borderRadius: "50%", border: `1.5px solid ${MC.accent}` }} />
+            <span className="md-loop" style={{ width: 6, height: 6, borderRadius: "50%", background: MC.accent, animation: "md-breathe 2.4s ease-in-out infinite" }} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-.02em" }}>CoreLink<span style={{ color: MC.accent }}>.</span></span>
+            <span style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: MC.n300 }}>Merchants</span>
           </div>
         </div>
 
-        <div className="p-3 space-y-3">
-          {/* Оноогдсон FB Pages — мэдээллийн зорилгоор */}
-          <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
-            className="rounded-xl p-2.5">
-            <div style={{ color: T.muted, fontFamily: FS, fontWeight: 600 }}
-              className="text-[9px] uppercase tracking-wider mb-1.5">
-              🔗 Таны FB Page ({fbPages.length})
-            </div>
-            <div className="space-y-0.5">
-              {fbPages.map((p) => (
-                <div key={p.id} style={{ color: T.ink, fontFamily: FS }} className="text-xs">
-                  • {p.name}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
-            <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Хяналтын самбар</SidebarTab>
-          </SidebarSection>
-
-          <SidebarSection label="Захиалга бүртгэх" icon={ShoppingBag}>
-            <SidebarTab active={view === "calls"} onClick={() => { setView("calls"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
-            <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={TrendingUp}>Борлуулалт</SidebarTab>
-            <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
-          </SidebarSection>
-
-          <SidebarSection label="Агуулах" icon={Warehouse}>
-            <SidebarTab active={view === "stock"} onClick={() => { setView("stock"); setSidebarOpen(false); }} icon={Package}>Бараа, нөөц</SidebarTab>
-            <SidebarTab active={view === "movements"} onClick={() => { setView("movements"); setSidebarOpen(false); }} icon={RefreshCw}>Барааны хөдөлгөөн</SidebarTab>
-          </SidebarSection>
-
-          <div className="pt-3 border-t" style={{ borderColor: T.border }}>
-            <button onClick={() => supabase.auth.signOut()}
-              style={{ color: T.muted, fontFamily: FS, fontWeight: 500 }}
-              className="press-btn w-full py-2 rounded-lg text-xs flex items-center justify-center gap-2 hover:bg-black/5">
-              <LogOut size={14} />
-              Гарах
-            </button>
-          </div>
+        {/* FB page карт */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n300 }}>
+            <Link2 size={13} />Таны FB page · {fbPages.length}
+          </span>
+          {fbPages.map((p) => (
+            <span key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500 }}>
+              <span style={{ position: "relative", width: 6, height: 6, flex: "none" }}>
+                <span className="md-loop" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: MC.accent, animation: "md-ping 2s ease-out infinite" }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: MC.accent }} />
+              </span>
+              {p.name}
+            </span>
+          ))}
         </div>
+
+        {/* Цэс */}
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {navLabel("Хяналт")}
+          <MerchantNavItem active={view === "dashboard"} onClick={() => go("dashboard")} icon={BarChart3} color={MC.accent} delay={.15}>Хяналтын самбар</MerchantNavItem>
+          {navLabel("Захиалга бүртгэх")}
+          <MerchantNavItem active={view === "calls"} onClick={() => go("calls")} icon={Phone} color={MC.blue} delay={.21}>Дуудлага</MerchantNavItem>
+          <MerchantNavItem active={view === "sales"} onClick={() => go("sales")} icon={TrendingUp} color={MC.green} delay={.27}>Борлуулалт</MerchantNavItem>
+          <MerchantNavItem active={view === "orders"} onClick={() => go("orders")} icon={ShoppingBag} color={MC.amber} delay={.33}>Захиалга</MerchantNavItem>
+          {navLabel("Агуулах")}
+          <MerchantNavItem active={view === "stock"} onClick={() => go("stock")} icon={Package} color={MC.orange} delay={.39}>Бараа, нөөц</MerchantNavItem>
+          <MerchantNavItem active={view === "movements"} onClick={() => go("movements")} icon={RefreshCw} color={MC.a300} delay={.45}>Барааны хөдөлгөөн</MerchantNavItem>
+        </nav>
+
+        <button type="button" className="md-nav" onClick={() => supabase.auth.signOut()} style={{ marginTop: "auto", color: MC.n300, fontFamily: FS }}>
+          <LogOut size={17} />Гарах
+        </button>
       </aside>
 
       {/* ─── Гол хэсэг ───────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-auto" style={{ background: T.bg }}>
-        <header style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}
-          className="sticky top-0 z-30 p-4">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1">
-              <Inbox size={20} style={{ color: T.ink }} />
+      <main className="flex-1 overflow-auto min-w-0">
+        <div style={{ padding: "17px clamp(16px,3vw,32px) 24px", display: "flex", flexDirection: "column", gap: 17, maxWidth: 1400 }}>
+          <header style={{ display: "flex", alignItems: "flex-end", gap: 11, animation: "md-up .5s .05s ease both" }}>
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1 mb-1" style={{ color: MC.text }}>
+              <Menu size={22} />
             </button>
-            <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-lg">
-              {view === "dashboard" && "📊 Хяналтын самбар"}
-              {view === "calls" && "📞 Дуудлага"}
-              {view === "sales" && "📈 Борлуулалт"}
-              {view === "orders" && "🛍 Захиалга"}
-              {view === "stock" && "📦 Бараа, нөөц"}
-              {view === "movements" && "🔀 Барааны хөдөлгөөн"}
-            </h1>
-          </div>
-        </header>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+              <span style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: MC.n300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Merchants · {pageNames}</span>
+              <h1 style={{ margin: 0, fontSize: "clamp(24px,4vw,30px)", fontWeight: 500, letterSpacing: "-.02em", fontFamily: FD }}>{TITLES[view] || ""}</h1>
+            </div>
+          </header>
 
-        <div className="p-4 max-w-screen-2xl mx-auto space-y-3">
           {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
           {view === "calls" && <CallCenterView profile={profile} />}
           {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
@@ -35928,14 +35971,102 @@ function MerchantDashboard({ profile }) {
   );
 }
 
+// ─── Захиалгын явц — custom SVG line chart (smooth, hover tooltip, legend toggle) ───
+const MCH_SER = [{ id: "o", label: "Захиалга", c: "#1c7fc4" }, { id: "d", label: "Хүргэсэн", c: "#1f9d55" }, { id: "x", label: "Цуцалсан", c: "#d9423a" }];
+function MerchantLineChart({ labels, rows, sub, ready }) {
+  const [off, setOff] = useState({});
+  const [hover, setHover] = useState(null);
+  const CW = 800, CL = 40, CR = 16, CT = 20, CB = 30, CH = 260;
+  const n = rows.length;
+  if (n < 2) return null;
+  const step = (CW - CL - CR) / (n - 1);
+  const vis = MCH_SER.map((s) => !off[s.id]);
+  const mx = Math.max(1, ...rows.flatMap((r) => r.filter((_, j) => vis[j])));
+  const raw = (mx * 1.08) / 4, p10 = Math.pow(10, Math.floor(Math.log10(raw)));
+  const stepV = [1, 2, 2.5, 3, 5, 10].map((k) => k * p10).find((v) => v >= raw), ymax = stepV * 4;
+  const X = (i) => CL + i * step, Y = (v) => CT + (1 - v / ymax) * (CH - CT - CB);
+  const lo = CT, hi = CH - CB;
+  const smooth = (pts) => {
+    let d = "M" + pts[0].join(",");
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, Math.min(hi, Math.max(lo, p1[1] + (p2[1] - p0[1]) / 6))];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, Math.min(hi, Math.max(lo, p2[1] - (p3[1] - p1[1]) / 6))];
+      d += `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+    }
+    return d;
+  };
+  const pts = MCH_SER.map((_, j) => rows.map((r, i) => [X(i), Y(r[j])]));
+  const lab = Math.ceil(n / 8), showDots = n <= 14, h = hover;
+  const tipLeft = h != null ? (X(h) / CW) * 100 : 0;
+  const total = (j) => rows.reduce((a, r) => a + r[j], 0);
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 14px", border: `1px solid ${MC.divider}`, borderRadius: 14, background: MC.surface, boxShadow: MC.shadowSm, animation: "md-up .5s .3s ease both" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><TrendingUp size={18} style={{ color: MC.blue }} />Захиалгын явц</h2>
+          <span style={{ fontSize: 12, color: MC.n300 }}>{sub}</span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {MCH_SER.map((s, j) => (
+            <button key={s.id} type="button" onClick={() => setOff((o) => ({ ...o, [s.id]: !o[s.id] }))}
+              style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 8px", borderRadius: 999, fontFamily: FS, fontSize: 12, cursor: "pointer",
+                background: vis[j] ? `${s.c}1a` : MC.surface, border: `1px solid ${vis[j] ? s.c + "59" : MC.divider}`, color: vis[j] ? s.c : MC.n300, opacity: vis[j] ? 1 : .45, transition: "all .2s" }}>
+              <span style={{ width: 10, height: 3, borderRadius: 2, background: s.c }} />{s.label}<span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{total(j).toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${CW} ${CH}`} style={{ display: "block", width: "100%", height: "auto", overflow: "visible", fontFamily: FS }}>
+          {[0, 1, 2, 3, 4].map((k) => <line key={k} x1={CL} x2={CW - CR} y1={Y((ymax * k) / 4)} y2={Y((ymax * k) / 4)} stroke="#d3e6e1" strokeDasharray={k ? "3 4" : "0"} />)}
+          <defs><linearGradient id="md-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1c7fc4" stopOpacity=".16" /><stop offset="1" stopColor="#1c7fc4" stopOpacity="0" /></linearGradient></defs>
+          {vis[0] && <path d={smooth(pts[0]) + `L${X(n - 1)},${CH - CB}L${CL},${CH - CB}Z`} fill="url(#md-area)" style={{ opacity: ready ? 1 : 0, transition: "opacity .8s .4s" }} />}
+          <line x1={h != null ? X(h) : 0} x2={h != null ? X(h) : 0} y1={20} y2={230} stroke={MC.accent} strokeDasharray="3 4" style={{ opacity: h != null ? .6 : 0, transition: "opacity .15s" }} />
+          {MCH_SER.map((s, j) => (
+            <path key={s.id} d={smooth(pts[j])} pathLength="1" fill="none" stroke={s.c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={{ strokeDasharray: 1, strokeDashoffset: ready ? 0 : 1, opacity: vis[j] ? 1 : 0, transition: ready ? `stroke-dashoffset 1.4s ${(0.15 + j * 0.15).toFixed(2)}s cubic-bezier(.4,0,.2,1), opacity .3s` : "none" }} />
+          ))}
+          {(showDots || h != null) && MCH_SER.map((s, j) => rows.map((r, i) => {
+            if (!showDots && i !== h) return null;
+            return <circle key={s.id + i} cx={X(i).toFixed(1)} cy={Y(r[j]).toFixed(1)} r={i === h ? 5 : 3.5} fill={MC.surface} stroke={s.c} strokeWidth="2"
+              style={{ opacity: vis[j] && ready ? 1 : 0, transition: `opacity .4s ${showDots && h == null ? (0.5 + i * 0.06).toFixed(2) : 0}s, r .15s` }} />;
+          }))}
+          {rows.map((_, i) => <rect key={i} x={(X(i) - step / 2).toFixed(1)} y="10" width={step.toFixed(1)} height="230" fill="transparent" onMouseEnter={() => setHover(i)} />)}
+        </svg>
+        {[0, 1, 2, 3, 4].map((k) => { const v = (ymax * k) / 4; return (
+          <span key={k} style={{ position: "absolute", left: 0, width: "4.25%", textAlign: "right", top: `${((Y(v) / CH) * 100).toFixed(2)}%`, transform: "translateY(-50%)", fontSize: 10, color: MC.n400, fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>
+            {v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : Math.round(v)}
+          </span>); })}
+        {labels.map((l, i) => (i % lab === 0 || i === n - 1) && (
+          <span key={i} style={{ position: "absolute", bottom: 0, left: `${((X(i) / CW) * 100).toFixed(2)}%`, transform: "translateX(-50%)", fontSize: 10, color: MC.n400, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", pointerEvents: "none" }}>{l}</span>
+        ))}
+        {h != null && (
+          <div style={{ position: "absolute", top: 4, left: `${tipLeft}%`, transform: tipLeft > 70 ? "translateX(calc(-100% - 12px))" : "translateX(12px)", pointerEvents: "none", display: "flex", flexDirection: "column", gap: 4, minWidth: 130, padding: "6px 8px", border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface, boxShadow: MC.hoverShadow, fontSize: 12, transition: "left .15s" }}>
+            <span style={{ fontWeight: 500 }}>{labels[h]}</span>
+            {MCH_SER.map((s, j) => vis[j] && (
+              <span key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, color: MC.n300 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.c }} /><span style={{ flex: 1 }}>{s.label}</span>
+                <span style={{ fontWeight: 500, color: MC.text, fontVariantNumeric: "tabular-nums" }}>{rows[h][j]}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ─── Merchant Overview — нийт стат ─────────────────────────────────────
 function MerchantOverview({ allowedPageIds, fbPages }) {
   const [stats, setStats] = useState({ orders: 0, delivered: 0, cancelled: 0, revenue: 0, calls: 0 });
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
-  const [daily, setDaily] = useState([]); // 📈 өдрийн цуврал
+  const [series, setSeries] = useState({ labels: [], rows: [] }); // 📈 chart: [захиалга, хүргэсэн, цуцалсан]
   const [topProducts, setTopProducts] = useState([]); // 🏆 топ-10 бараа
-  // 📅 Хугацааны шүүлт (2026-09-23): today | yesterday | 7d | month | all | custom
+  const [tick, setTick] = useState(0); // ачаалалт дуусах бүрд +1 → анимэйшн дахин
+  const [ready, setReady] = useState(false);
+  // 📅 Хугацааны шүүлт: today | yesterday | 7d | month | all | custom
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [period, setPeriod] = useState("month");
   const [customStart, setCustomStart] = useState(() => isoDay(new Date()));
@@ -35950,10 +36081,12 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
     else if (period === "custom") { s = new Date(`${customStart}T00:00:00`); e = new Date(`${customEnd}T00:00:00`); e.setDate(e.getDate() + 1); label = `${customStart} → ${customEnd}`; }
     return { s, e, label };
   }, [period, customStart, customEnd]);
+  const showChart = period !== "today" && period !== "yesterday";
+  const k = useCountUp(tick);
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
+      setLoading(true); setReady(false);
       try {
         // Сервер талын head-count — 1000-ын тааз үйлчлэхгүй; орлого нь хугацаанд багтсан хүргэгдсэн захиалгаас
         const inRange = (q, col) => (range.s ? q.gte(col, range.s.toISOString()).lt(col, range.e.toISOString()) : q);
@@ -35964,23 +36097,34 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
           inRange(base().eq("status", "cancelled"), "cancelled_at"),
           inRange(supabase.from("biz_calls").select("id", { count: "exact", head: true }).in("fb_page_id", allowedPageIds), "created_at"),
           fetchAllRows(inRange(supabase.from("biz_orders").select("total_amount, delivered_at").in("fb_page_id", allowedPageIds).eq("status", "delivered"), "delivered_at")),
-          // 📈 chart: үүссэн захиалга (created_at) + цуцлагдсан (cancelled_at) — "Бүх цаг"-д сүүлийн 90 хоног
-          fetchAllRows(supabase.from("biz_orders").select("created_at").in("fb_page_id", allowedPageIds).gte("created_at", (range.s || new Date(Date.now() - 90 * 86400000)).toISOString()).lt("created_at", (range.e || new Date(Date.now() + 86400000)).toISOString())),
-          fetchAllRows(supabase.from("biz_orders").select("cancelled_at").in("fb_page_id", allowedPageIds).eq("status", "cancelled").gte("cancelled_at", (range.s || new Date(Date.now() - 90 * 86400000)).toISOString()).lt("cancelled_at", (range.e || new Date(Date.now() + 86400000)).toISOString())),
+          // 📈 chart: үүссэн захиалга (created_at) + цуцлагдсан (cancelled_at) — "Бүгд" үед бүх хугацаа (сараар)
+          showChart ? fetchAllRows(inRange(supabase.from("biz_orders").select("created_at").in("fb_page_id", allowedPageIds), "created_at")) : [],
+          showChart ? fetchAllRows(inRange(supabase.from("biz_orders").select("cancelled_at").in("fb_page_id", allowedPageIds).eq("status", "cancelled"), "cancelled_at")) : [],
         ]);
         const revenue = (revRows || []).reduce((s, o) => s + Number(o.total_amount || 0), 0);
         setStats({ orders: ordC.count || 0, delivered: delC.count || 0, cancelled: canC.count || 0, revenue, calls: callC.count || 0 });
-        // Өдрөөр нэгтгэх
-        const dayKey = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-        const map = {};
-        const s0 = range.s ? new Date(range.s) : new Date(Date.now() - 90 * 86400000); s0.setHours(0, 0, 0, 0);
-        const e0 = range.e ? new Date(range.e) : new Date(Date.now() + 86400000);
-        let g = 0; const cur = new Date(s0);
-        while (cur < e0 && g < 400) { const k = dayKey(cur); map[k] = { date: k.slice(5), "Захиалга": 0, "Хүргэсэн": 0, "Цуцалсан": 0, "Орлого": 0 }; cur.setDate(cur.getDate() + 1); g++; }
-        (ordRows || []).forEach((o) => { const k = dayKey(o.created_at); if (map[k]) map[k]["Захиалга"] += 1; });
-        (revRows || []).forEach((o) => { const k = dayKey(o.delivered_at); if (map[k]) { map[k]["Хүргэсэн"] += 1; map[k]["Орлого"] += Number(o.total_amount || 0); } });
-        (canRows || []).forEach((o) => { const k = dayKey(o.cancelled_at); if (map[k]) map[k]["Цуцалсан"] += 1; });
-        setDaily(Object.values(map));
+        // 📈 Нэгтгэл: хугацаатай → өдрөөр (MM-DD); "Бүгд" → сараар (YY-MM)
+        if (showChart) {
+          const pad = (n) => String(n).padStart(2, "0");
+          const byMonth = !range.s;
+          const key = (t) => { const d = new Date(t); return byMonth ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}` : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+          const map = {};
+          if (byMonth) {
+            const all = [...(ordRows || []).map((o) => o.created_at), ...(revRows || []).map((o) => o.delivered_at), ...(canRows || []).map((o) => o.cancelled_at)].filter(Boolean).map((t) => new Date(t).getTime());
+            const s0 = new Date(all.length ? Math.min(...all) : Date.now()); s0.setDate(1); s0.setHours(0, 0, 0, 0);
+            const e0 = new Date(); let g = 0; const cur = new Date(s0);
+            while (cur <= e0 && g < 120) { map[key(cur)] = [0, 0, 0]; cur.setMonth(cur.getMonth() + 1); g++; }
+          } else {
+            const s0 = new Date(range.s); s0.setHours(0, 0, 0, 0); const e0 = new Date(range.e);
+            let g = 0; const cur = new Date(s0);
+            while (cur < e0 && g < 400) { map[key(cur)] = [0, 0, 0]; cur.setDate(cur.getDate() + 1); g++; }
+          }
+          (ordRows || []).forEach((o) => { const kk = key(o.created_at); if (map[kk]) map[kk][0] += 1; });
+          (revRows || []).forEach((o) => { const kk = key(o.delivered_at); if (map[kk]) map[kk][1] += 1; });
+          (canRows || []).forEach((o) => { const kk = key(o.cancelled_at); if (map[kk]) map[kk][2] += 1; });
+          const keys = Object.keys(map).sort();
+          setSeries({ labels: keys.map((kk) => (byMonth ? kk.slice(2) : kk.slice(5))), rows: keys.map((kk) => map[kk]), sub: byMonth ? "Бүх хугацаа · сараар" : `${range.label} · өдрөөр` });
+        } else setSeries({ labels: [], rows: [] });
         // 🏆 Топ-10 бараа (сервер талд нэгтгэсэн) — хүргэгдсэн захиалгаас
         try {
           const { data: tp } = await supabase.rpc("sales_top_products", { p_start: range.s ? range.s.toISOString() : null, p_end: range.e ? range.e.toISOString() : null, p_page_ids: allowedPageIds, p_limit: 10 });
@@ -35991,143 +36135,112 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
         console.error("[Merchant] Exception:", e);
         setDebugInfo({ exception: e.message });
       }
-      finally { setLoading(false); }
+      finally { setLoading(false); setTick((t) => t + 1); setTimeout(() => setReady(true), 60); }
     })();
   }, [allowedPageIds.join(","), range]);
 
-  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+  const fmtT = (n) => Math.round(n).toLocaleString() + "₮";
+  const num = (n) => Math.round(n * k).toLocaleString();
+  const cancelPct = stats.delivered + stats.cancelled > 0 ? (stats.cancelled / (stats.delivered + stats.cancelled)) * 100 : null;
+  const KPIS = [
+    { label: "Орлого", value: fmtT(stats.revenue * k), Icon: Coins, c: MC.accent },
+    { label: "Хүргэгдсэн", value: num(stats.delivered), Icon: CheckCircle2, c: MC.green },
+    { label: "Нийт захиалга", value: num(stats.orders), Icon: ShoppingBag, c: MC.amber },
+    { label: "Цуцлагдсан", value: num(stats.cancelled), Icon: XCircle, c: MC.red, note: cancelPct != null ? (cancelPct * k).toFixed(1) + "%" : "" },
+    { label: "Дуудлага", value: num(stats.calls), Icon: Phone, c: MC.blue },
+  ];
+  const PERIODS = [["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "Гараар"]];
+  const maxRev = Number(topProducts[0]?.revenue || 1);
 
   return (
-    <div className="space-y-3">
-      {/* 📅 Хугацаа */}
-      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
-        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📅 Хугацаа</span>
-        {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setPeriod(k)} className="press-btn px-3 py-1.5 rounded-full text-xs"
-            style={{ background: period === k ? T.highlight : T.surfaceAlt, color: period === k ? "#fff" : T.inkSoft, border: `1px solid ${period === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 17 }}>
+      {/* 📅 Хугацааны pill-ууд */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, animation: "md-up .5s .05s ease both" }} role="tablist">
+        {PERIODS.map(([id, lbl]) => { const on = period === id; return (
+          <button key={id} type="button" className="md-pill" onClick={() => setPeriod(id)}
+            style={{ fontFamily: FS, color: on ? MC.a200 : MC.n300, background: on ? MC.a900 : MC.surface, border: `1px solid ${on ? MC.accent : MC.divider}` }}>
+            {id === "custom" && <Calendar size={14} />}{lbl}
+          </button>); })}
         {period === "custom" && (
           <>
-            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
-            <span style={{ color: T.muted }}>–</span>
-            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+            <input type="date" className="md-date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} style={{ fontFamily: FS }} />
+            <span style={{ color: MC.n400 }}>–</span>
+            <input type="date" className="md-date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} style={{ fontFamily: FS }} />
           </>
         )}
-        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] ml-auto">{range.label}</span>
+        {loading && <Loader2 className="spin" size={16} style={{ color: MC.n300, marginLeft: 4 }} />}
+        <span style={{ fontSize: 12, color: MC.n300, marginLeft: "auto" }}>{range.label}</span>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.ok}` }}>
-          <div className="text-2xl mb-1">💰</div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Орлого</div>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
-            {Number(stats.revenue).toLocaleString()}₮
+
+      {/* KPI */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,170px),1fr))", gap: 8 }}>
+        {KPIS.map((kp, i) => (
+          <div key={kp.label} className="md-kpi" style={{ border: `1px solid ${kp.c}47`, animation: `md-up .5s ${(0.1 + i * 0.05).toFixed(2)}s ease both` }}>
+            <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: kp.c, transformOrigin: "left", animation: `md-grow .8s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.n300 }}>{kp.label}</span>
+              <span style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: `${kp.c}24`, animation: `md-pop .5s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }}>
+                <kp.Icon size={16} strokeWidth={2.4} style={{ color: kp.c }} />
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "clamp(22px,2.4vw,28px)", fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums" }}>{kp.value}</span>
+              {kp.note && <span style={{ fontSize: 12, color: MC.n300 }}>{kp.note}</span>}
+            </div>
           </div>
-        </div>
-        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.highlight}` }}>
-          <div className="text-2xl mb-1">✅</div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Хүргэгдсэн</div>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
-            {stats.delivered}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.warn}` }}>
-          <div className="text-2xl mb-1">🛍</div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Нийт захиалга</div>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
-            {stats.orders}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${T.err}` }}>
-          <div className="text-2xl mb-1">❌</div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Цуцлагдсан</div>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
-            {stats.cancelled}
-            {stats.delivered + stats.cancelled > 0 && <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]"> · {((stats.cancelled / (stats.delivered + stats.cancelled)) * 100).toFixed(1)}%</span>}
-          </div>
-        </div>
-        <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid #0284c7` }}>
-          <div className="text-2xl mb-1">📞</div>
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] uppercase tracking-wider">Дуудлага</div>
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-lg">
-            {stats.calls}
-          </div>
-        </div>
-      </div>
-      {daily.length > 1 && (
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-1">📈 Захиалга · Хүргэсэн · Цуцалсан — өдрөөр <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {range.label}{!range.s ? " (сүүлийн 90 хоног)" : ""}</span></div>
-          <ResponsiveContainer width="100%" height={230}>
-            <LineChart data={daily} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} interval="preserveStartEnd" minTickGap={18} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 10, fontFamily: FM, fill: T.muted }} />
-              <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border}`, fontFamily: FS, fontSize: 12 }}
-                formatter={(v, name, p) => [name === "Хүргэсэн" ? `${v} (${Number(p.payload["Орлого"] || 0).toLocaleString()}₮)` : v, name]} />
-              <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} />
-              <Line type="monotone" dataKey="Захиалга" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2.5 }}>
-                <LabelList dataKey="Захиалга" position="top" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: "#0ea5e9", fontFamily: FM, fontWeight: 700 }} />
-              </Line>
-              <Line type="monotone" dataKey="Хүргэсэн" stroke={T.ok} strokeWidth={2.5} dot={{ r: 3 }}>
-                <LabelList dataKey="Хүргэсэн" position="top" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: T.ok, fontFamily: FM, fontWeight: 700 }} />
-              </Line>
-              <Line type="monotone" dataKey="Цуцалсан" stroke={T.err} strokeWidth={2} dot={{ r: 2.5 }}>
-                <LabelList dataKey="Цуцалсан" position="bottom" formatter={(v) => (v > 0 ? v : "")} style={{ fontSize: 10, fill: T.err, fontFamily: FM, fontWeight: 700 }} />
-              </Line>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+        ))}
+      </section>
+
+      {/* 📈 Захиалгын явц */}
+      {showChart && series.rows.length > 1 && <MerchantLineChart key={period + tick} labels={series.labels} rows={series.rows} sub={series.sub} ready={ready} />}
+
       {/* 🏆 Топ-10 бараа */}
       {topProducts.length > 0 && (
-        <div className="glass rounded-2xl p-3">
-          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">🏆 Хамгийн их борлуулалттай топ 10 бараа <span style={{ color: T.muted, fontFamily: FM, fontWeight: 400 }} className="text-[11px]">· {range.label} · хүргэгдсэн захиалгаас</span></div>
-          <div className="space-y-1.5">
-            {topProducts.map((p, i) => {
-              const maxRev = Number(topProducts[0]?.revenue || 1);
-              return (
-                <div key={p.product_id || i} className="flex items-center gap-2 rounded-xl p-2" style={{ background: T.surfaceAlt }}>
-                  <div className="w-6 text-center flex-shrink-0" style={{ color: i < 3 ? "#f59e0b" : T.muted, fontFamily: FD, fontWeight: 800 }}>{i + 1}</div>
-                  {p.image_url ? <img src={p.image_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" /> : <div className="w-9 h-9 rounded-lg flex-shrink-0" style={{ background: T.bg }} />}
-                  <div className="flex-1 min-w-0">
-                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{p.name}</div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, background: T.border }}>
-                        <div style={{ width: `${Math.max(3, (Number(p.revenue || 0) / maxRev) * 100)}%`, height: "100%", background: T.ok, borderRadius: 999 }} />
-                      </div>
-                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] flex-shrink-0">{p.sku || ""}</span>
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div style={{ color: T.ok, fontFamily: FD, fontWeight: 800 }} className="text-sm tabular-nums">{Number(p.revenue || 0).toLocaleString()}₮</div>
-                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{Number(p.qty || 0)} ширхэг</div>
+        <section style={{ display: "flex", flexDirection: "column", border: `1px solid ${MC.divider}`, borderRadius: 14, background: MC.surface, boxShadow: MC.shadowSm, animation: "md-up .5s .35s ease both", overflow: "hidden" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: "11px 14px" }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><Trophy size={18} style={{ color: "#e0a100" }} />Шилдэг борлуулалттай 10 бараа</h2>
+            <span style={{ fontSize: 12, color: MC.n300, whiteSpace: "nowrap" }}>{range.label} · хүргэгдсэн захиалгаас</span>
+          </div>
+          {topProducts.map((p, i) => (
+            <div key={p.product_id || i} className="md-row" style={{ animation: `md-up .45s ${(0.4 + i * 0.05).toFixed(2)}s ease both` }}>
+              <span style={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: i < 3 ? MC.amber : MC.n400 }}>{i + 1}</span>
+              {p.image_url
+                ? <img src={p.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
+                : <span style={{ width: 40, height: 40, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center" }}><Package size={18} style={{ color: MC.a300 }} /></span>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                  <span style={{ fontSize: 11, color: MC.n400, flex: "none" }}>{p.sku || ""}</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 999, background: MC.a900, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 999, background: `linear-gradient(90deg,${MC.a400},${MC.accent})`, position: "relative", overflow: "hidden", width: ready ? `${Math.max(3, (Number(p.revenue || 0) / maxRev) * 100).toFixed(1)}%` : "0%", transition: `width .9s cubic-bezier(.2,.8,.2,1) ${(i * 0.06).toFixed(2)}s` }}>
+                    <span className="md-loop" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: "40%", background: "linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)", animation: `md-shine 3.2s ${(1.2 + i * 0.15).toFixed(2)}s ease-in-out infinite` }} />
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      <div className="glass rounded-2xl p-4">
-        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">
-          💡 Дээрх тоонууд нь зөвхөн таны FB Page-уудтай холбоотой, сонгосон хугацааны ({range.label}) өгөгдлөөс тооцоологдсон. Захиалга — үүссэн огноогоор, хүргэгдсэн — хүргэсэн огноогоор, цуцлагдсан — цуцалсан огноогоор.
-        </div>
-        {/* Debug info — асуудалтай үед харагдана */}
-        {(stats.orders === 0 && stats.calls === 0) && (
-          <div style={{ background: T.warnSoft, border: `1px solid ${T.warn}`, borderRadius: 8, padding: 10, marginTop: 8 }}>
-            <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs mb-1">
-              ⚠ Мэдээлэл олдсонгүй
-            </div>
-            <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] space-y-1">
-              <div>• Оноогдсон Page: {allowedPageIds.length}</div>
-              {debugInfo?.ordersErr && <div style={{ color: T.err }}>• Захиалгын алдаа: {debugInfo.ordersErr}</div>}
-              {debugInfo?.callsErr && <div style={{ color: T.err }}>• Дуудлагын алдаа: {debugInfo.callsErr}</div>}
-              <div className="pt-1">
-                <strong>Шалтгаан:</strong> Энэ хугацаанд захиалга/дуудлага байхгүй, эсвэл хуучин бичлэгүүдэд FB Page тогтоогдоогүй байж магадгүй — админд хандана уу.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, minWidth: 78 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: MC.a200 }}>{fmtT(Number(p.revenue || 0) * k)}</span>
+                <span style={{ fontSize: 11, color: MC.n300 }}>{Number(p.qty || 0)} ширхэг</span>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          ))}
+        </section>
+      )}
+
+      <p style={{ margin: 0, display: "flex", gap: 6, fontSize: 12, lineHeight: 1.5, color: MC.n300, maxWidth: 760 }}>
+        <Info size={15} style={{ flex: "none", marginTop: 1 }} />
+        <span>Тоонууд зөвхөн таны FB page-тэй холбоотой, сонгосон хугацааны ({range.label}) өгөгдлөөс тооцоологдсон. Захиалга — үүссэн огноогоор, хүргэгдсэн — хүргэсэн огноогоор, цуцлагдсан — цуцалсан огноогоор.</span>
+      </p>
+      {/* Debug info — асуудалтай үед харагдана */}
+      {!loading && stats.orders === 0 && stats.calls === 0 && (
+        <div style={{ background: "#fff7e6", border: `1px solid ${MC.amber}`, borderRadius: 8, padding: 10, fontSize: 11, color: MC.n300 }}>
+          <div style={{ color: MC.amber, fontWeight: 500, fontSize: 12, marginBottom: 4 }}>⚠ Мэдээлэл олдсонгүй</div>
+          <div>• Оноогдсон Page: {allowedPageIds.length}</div>
+          {debugInfo?.ordersErr && <div style={{ color: MC.red }}>• Захиалгын алдаа: {debugInfo.ordersErr}</div>}
+          {debugInfo?.callsErr && <div style={{ color: MC.red }}>• Дуудлагын алдаа: {debugInfo.callsErr}</div>}
+          <div style={{ marginTop: 4 }}><strong>Шалтгаан:</strong> Энэ хугацаанд захиалга/дуудлага байхгүй, эсвэл хуучин бичлэгүүдэд FB Page тогтоогдоогүй байж магадгүй — админд хандана уу.</div>
+        </div>
+      )}
     </div>
   );
 }
