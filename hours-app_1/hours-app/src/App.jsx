@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.30-suggestions";
+const BUILD_VERSION = "v2026.10.01-login";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -13,7 +13,7 @@ import {
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
   Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
-  Truck, DollarSign, Headphones, Warehouse, Menu, Search,
+  Truck, DollarSign, Headphones, Warehouse, Menu, Search, Megaphone, Store,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -632,6 +632,8 @@ function AppRoot() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [toasts, setToasts] = useState([]); // ⭐ Toast notification stack
   const toastIdRef = useRef(0);
+  const [loginHold, setLoginHold] = useState(false); // 🔐 Нэвтэрсний дараа "Тавтай морил" дэлгэцийг түр барих
+  const holdLogin = (ms) => { setLoginHold(true); setTimeout(() => setLoginHold(false), ms); };
 
   // ─── window.alert-ыг toast notification болгож солих ─────────────────
   useEffect(() => {
@@ -922,7 +924,7 @@ function AppRoot() {
     <InstallBanner onInstall={promptInstall} onDismiss={dismissInstall} />
   );
 
-  if (!session) return <>{installBanner}<LoginScreen /></>;
+  if (!session || loginHold) return <>{installBanner}<LoginScreen onHold={holdLogin} /></>;
   if (!profile) {
     return (
       <>
@@ -1645,51 +1647,231 @@ function RippleAppIcon({ size = 40, radius, className = "", style = {} }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  LOGIN
 // ═══════════════════════════════════════════════════════════════════════════
-function LoginScreen() {
+// ═══════════════════════════════════════════════════════════════════════════
+//  НЭВТРЭХ ДЭЛГЭЦ — 2 багана (форм + орбит диаграм), салбар сонголт, "сануулах"
+//  Салбар сонголт нь зөвхөн харагдац: нэвтэрсний дараа profiles.role шийднэ.
+// ═══════════════════════════════════════════════════════════════════════════
+const LOGIN_BRANCHES = [
+  { id: "callcenter", name: "Callcenter", mn: "Дуудлагын төв", Icon: Headphones, a: -90 },
+  { id: "delivery",   name: "Delivery",   mn: "Хүргэлт",        Icon: Truck,      a: 0 },
+  { id: "marketing",  name: "Marketing",  mn: "Маркетинг",      Icon: Megaphone,  a: 90 },
+  { id: "merchants",  name: "Merchants",  mn: "Худалдаа эрхлэгчид", Icon: Store,  a: 180 },
+];
+// Загварын өнгөний token-ууд (зөвхөн нэвтрэх дэлгэцэд; системийн T-д нөлөөлөхгүй)
+const LC = {
+  bg: "#f0faf7", surface: "#fbfefd", text: "#12302c",
+  n300: "#4d6763", n400: "#6a827e", n700: "#d3e6e1", divider: "#cfe3de",
+  accent: "#0E9C8E", a200: "#0a645c", a300: "#0b8075", a400: "#3dbcae", a800: "#a6e6dd", a900: "#dcf5f0",
+  section: "#c9ede4", shadowSm: "0 1px 2px rgba(10,60,55,.08)",
+};
+const LOGIN_CSS = `
+@keyframes cl-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes cl-pulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
+@keyframes cl-spin{to{transform:rotate(360deg)}}
+@keyframes cl-flow{to{stroke-dashoffset:-40}}
+@keyframes cl-breathe{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes cl-rot{to{transform:rotate(360deg)}}
+.cl-input{height:42px;box-sizing:border-box;width:100%;border-radius:8px;border:1px solid ${LC.n700};background:${LC.surface};color:${LC.text};padding:0 12px;font-size:15px;outline:none;transition:border-color .2s,box-shadow .2s}
+.cl-input:focus{outline:2px solid ${LC.accent};outline-offset:2px;border-color:${LC.accent}}
+.cl-input::placeholder{color:${LC.n400}}
+.cl-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;border-radius:8px;border:1px solid ${LC.accent};background:transparent;color:${LC.a200};font-size:14px;font-weight:500;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+.cl-btn:hover:not(:disabled){background:${LC.a900};box-shadow:0 0 20px rgba(14,156,142,.22)}
+.cl-btn:disabled{opacity:.5;cursor:default}
+.cl-btn:focus-visible{outline:2px solid ${LC.accent};outline-offset:2px}
+.cl-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:11px;min-height:44px;border-radius:8px;cursor:pointer;text-align:left;color:${LC.text};transition:background .25s,border-color .25s,box-shadow .25s,transform .35s cubic-bezier(.2,.8,.2,1)}
+.cl-card:focus-visible{outline:2px solid ${LC.accent};outline-offset:2px}
+.cl-node{position:absolute;transform:translate(-50%,-50%);width:clamp(46px,13vw,64px);height:clamp(46px,13vw,64px);border-radius:50%;cursor:pointer;display:grid;place-items:center;transition:all .35s cubic-bezier(.2,.8,.2,1)}
+.cl-node:focus-visible{outline:2px solid ${LC.accent};outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.cl-anim{animation:none!important}}
+`;
+
+function LoginScreen({ onHold }) {
+  const [branch, setBranch] = useState(() => {
+    try { const b = localStorage.getItem("cl_branch"); return LOGIN_BRANCHES.some((x) => x.id === b) ? b : "callcenter"; } catch { return "callcenter"; }
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [remember, setRemember] = useState(() => { try { return localStorage.getItem("cl_remember") !== "0"; } catch { return true; } });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const motion = useMemo(() => { try { return !window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return true; } }, []);
+  const an = (v) => (motion ? v : "none");
+  const cur = LOGIN_BRANCHES.find((b) => b.id === branch) || LOGIN_BRANCHES[0];
 
-  const submit = async () => {
-    if (!email.trim() || !password) return;
+  const pick = (id) => { setBranch(id); try { localStorage.setItem("cl_branch", id); } catch {} };
+
+  const submit = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (!email.trim() || !password) { setErr("Имэйл болон нууц үгээ оруулна уу."); return; }
     setBusy(true); setErr("");
+    // "Сануулах" тохиргоог signIn-ээс ӨМНӨ бичнэ — supabaseClient-ийн storage adapter үүнийг уншина
+    try { localStorage.setItem("cl_remember", remember ? "1" : "0"); } catch {}
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setErr(error.message === "Invalid login credentials" ? "Имэйл эсвэл нууц үг буруу" : error.message);
-    setBusy(false);
+    if (error) {
+      setErr(error.message === "Invalid login credentials" ? "Имэйл эсвэл нууц үг буруу" : error.message);
+      setBusy(false);
+      return;
+    }
+    // Амжилттай: "Тавтай морил" дэлгэцийг ~1.2с харуулж байх хооронд AppRoot энэ дэлгэцийг хэвээр барина
+    setDone(true); setBusy(false);
+    if (onHold) onHold(1200);
   };
 
+  // ── Орбит диаграм ──
+  const C = 200, R = 138;
+  const pos = (a) => [C + R * Math.cos((a * Math.PI) / 180), C + R * Math.sin((a * Math.PI) / 180)];
+  const label = (t) => ({ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: LC.n300, ...(t || {}) });
+
   return (
-    <div style={{ color: T.ink, fontFamily: FS }} className="min-h-screen flex items-center justify-center p-5">
-      <div className="w-full max-w-md scale-up">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <RippleMark size={72} variant="grad" className="scale-up" />
-          </div>
-          <div style={{ fontFamily: FM, color: T.muted }} className="text-[10px] uppercase tracking-[0.3em] mb-3">
-            Цаг бүртгэл
-          </div>
-          <h1 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.04em", lineHeight: 0.95 }} className="text-6xl">
-            CoreLink<span style={{ color: T.highlight }}>.</span>
-          </h1>
+    <div style={{
+      minHeight: "100vh", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,380px),1fr))",
+      background: `radial-gradient(120% 90% at 100% 50%, rgba(201,237,228,.55), transparent 60%), ${LC.bg}`,
+      color: LC.text, fontFamily: FS,
+    }}>
+      <style>{LOGIN_CSS}</style>
+
+      {/* ── Зүүн: форм ── */}
+      <main style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "clamp(28px,7vw,45px) clamp(20px,6vw,56px)", gap: 22 }}>
+        <div style={{ maxWidth: 400, width: "100%", display: "flex", flexDirection: "column", gap: 22 }}>
+
+          <header className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 8, animation: "cl-up .6s ease both" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative", width: 28, height: 28, display: "grid", placeItems: "center" }}>
+                <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `1px solid ${LC.accent}`, opacity: .5 }} />
+                <span style={{ position: "absolute", inset: 6, borderRadius: "50%", border: `1px solid ${LC.accent}` }} />
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: LC.accent, boxShadow: `0 0 10px ${LC.accent}` }} />
+              </div>
+              <span style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: LC.n300 }}>ERP систем</span>
+            </div>
+            <h1 style={{ fontSize: "clamp(34px,9vw,44px)", letterSpacing: "-.03em", margin: 0, fontWeight: 500, fontFamily: FD, lineHeight: 1.05 }}>
+              CoreLink<span style={{ color: LC.accent }}>.</span>
+            </h1>
+            <p style={{ margin: 0, color: LC.n300, fontSize: 14 }}>Салбараа сонгоод ажлын орчиндоо нэвтэрнэ үү.</p>
+          </header>
+
+          {!done ? (
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 17 }}>
+              {/* Салбар */}
+              <div className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 8, animation: "cl-up .6s .1s ease both" }}>
+                <span style={label()}>Салбар</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+                  {LOGIN_BRANCHES.map((b) => {
+                    const on = b.id === branch;
+                    return (
+                      <button key={b.id} type="button" className="cl-card" onClick={() => pick(b.id)} style={{
+                        background: on ? "rgba(14,156,142,.12)" : LC.surface,
+                        border: `1px solid ${on ? LC.accent : LC.n700}`,
+                        boxShadow: on ? "0 0 20px rgba(14,156,142,.22)" : "none",
+                        fontFamily: FS,
+                      }}>
+                        <b.Icon size={20} strokeWidth={on ? 2.4 : 1.8} style={{ color: on ? LC.a200 : LC.n300, transition: "color .25s" }} />
+                        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</span>
+                          <span style={{ fontSize: 11, color: LC.n300 }}>{b.mn}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Имэйл */}
+              <div className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 6, animation: "cl-up .6s .2s ease both" }}>
+                <label htmlFor="cl-email" style={label()}>Имэйл</label>
+                <input id="cl-email" className="cl-input" type="email" placeholder="name@corelink.mn" value={email} autoFocus
+                  autoComplete="username" onChange={(e) => { setEmail(e.target.value); setErr(""); }} style={{ fontFamily: FS }} />
+              </div>
+
+              {/* Нууц үг */}
+              <div className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 6, animation: "cl-up .6s .3s ease both" }}>
+                <label htmlFor="cl-pass" style={label()}>Нууц үг</label>
+                <div style={{ position: "relative" }}>
+                  <input id="cl-pass" className="cl-input" type={show ? "text" : "password"} placeholder="••••••••" value={password}
+                    autoComplete="current-password" onChange={(e) => { setPassword(e.target.value); setErr(""); }} style={{ paddingRight: 44, fontFamily: FS }} />
+                  <button type="button" onClick={() => setShow((s) => !s)} aria-label="Нууц үг харуулах"
+                    style={{ position: "absolute", right: 3, top: 3, width: 36, height: 36, borderRadius: 6, border: "none", background: "transparent", cursor: "pointer", display: "grid", placeItems: "center", color: LC.n300 }}>
+                    {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+              </div>
+
+              {err && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: LC.a200 }}>
+                  <AlertCircle size={16} /><span>{err}</span>
+                </div>
+              )}
+
+              <div className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 11, animation: "cl-up .6s .4s ease both" }}>
+                <button type="submit" className="cl-btn" disabled={busy} style={{ width: "100%", fontFamily: FS }}>
+                  {busy ? <Loader2 size={16} style={{ animation: "cl-spin .8s linear infinite" }} /> : <Lock size={16} />}
+                  <span>{busy ? "Нэвтэрч байна…" : `Corelink ${cur.name} руу нэвтрэх`}</span>
+                </button>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: LC.n300, cursor: "pointer" }}>
+                  <input type="checkbox" checked={remember} onChange={() => setRemember((r) => !r)} style={{ accentColor: LC.accent, margin: 0 }} />
+                  Энэ төхөөрөмж дээр сануулах
+                </label>
+              </div>
+            </form>
+          ) : (
+            <div className="cl-anim" style={{ display: "flex", flexDirection: "column", gap: 11, animation: "cl-up .5s ease both" }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", border: `1px solid ${LC.accent}`, display: "grid", placeItems: "center", boxShadow: "0 0 24px rgba(14,156,142,.4)" }}>
+                <CheckCircle2 size={20} style={{ color: LC.accent }} />
+              </div>
+              <h2 style={{ fontSize: 26, margin: 0, fontWeight: 500, fontFamily: FD }}>Тавтай морил</h2>
+              <p style={{ margin: 0, color: LC.n300, fontSize: 14 }}>Corelink {cur.name} ({cur.mn}) ажлын орчныг ачаалж байна.</p>
+            </div>
+          )}
         </div>
 
-        <div className="glass-strong rounded-3xl p-6 space-y-4 slide-up-delay-1">
-          <Field label="Имэйл">
-            <Input value={email} onChange={setEmail} placeholder="you@example.com" autoFocus
-              onEnter={() => document.getElementById("lpw")?.focus()} />
-          </Field>
-          <Field label="Нууц үг">
-            <PwInput id="lpw" value={password} onChange={setPassword} onEnter={submit} />
-          </Field>
-          {err && <ErrorBox>{err}</ErrorBox>}
-          <button onClick={submit} disabled={busy || !email.trim() || !password}
-            className="glow-primary press-btn w-full py-3 rounded-2xl text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2">
-            {busy ? <Loader2 size={14} className="spin" /> : <Lock size={14} />}
-            Нэвтрэх
-          </button>
+        <footer className="cl-anim" style={{ fontSize: 11, color: LC.n400, animation: "cl-up .6s .5s ease both" }}>
+          © {new Date().getFullYear()} CoreLink · Бүх эрх хуулиар хамгаалагдсан
+        </footer>
+      </main>
+
+      {/* ── Баруун: орбит диаграм ── */}
+      <aside style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(24px,6vw,48px) clamp(28px,8vw,48px) clamp(40px,8vw,48px)", overflow: "hidden" }}>
+        <div className="cl-anim" style={{ position: "relative", width: "min(100%,460px)", maxWidth: "calc(100vw - 80px)", aspectRatio: "1", animation: "cl-up .9s .2s ease both" }}>
+          <svg viewBox="0 0 400 400" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}>
+            <circle cx={C} cy={C} r={R} fill="none" stroke={LC.a400} strokeWidth="1.5" opacity=".7" />
+            <g style={{ transformOrigin: "200px 200px", animation: an("cl-rot 60s linear infinite") }}>
+              <circle cx={C} cy={C} r="178" fill="none" stroke={LC.a400} strokeDasharray="2 10" strokeWidth="2" />
+            </g>
+            <g style={{ transformOrigin: "200px 200px", animation: an("cl-rot 24s linear infinite reverse") }}>
+              <circle cx={C} cy={C} r="92" fill="none" stroke={LC.accent} strokeDasharray="40 24" strokeWidth="2" />
+            </g>
+            {LOGIN_BRANCHES.map((b) => {
+              const [x, y] = pos(b.a), on = b.id === branch;
+              return <line key={b.id} x1={C} y1={C} x2={x} y2={y} stroke={on ? LC.accent : LC.a800} strokeWidth={on ? 2.5 : 1.5}
+                strokeDasharray={on ? "4 6" : "none"} style={{ animation: on ? an("cl-flow 1.2s linear infinite") : "none", transition: "stroke .3s" }} />;
+            })}
+            {[0, 1, 2].map((i) => (
+              <circle key={i} cx={C} cy={C} r="22" fill="none" stroke={LC.accent} strokeWidth="2"
+                style={{ transformOrigin: "200px 200px", opacity: motion ? 0 : .3, animation: an(`cl-pulse 3.6s ${i * 1.2}s ease-out infinite`) }} />
+            ))}
+            <circle cx={C} cy={C} r="26" fill={LC.a900} stroke={LC.accent} strokeWidth="2.5" />
+            <circle cx={C} cy={C} r="15" fill="none" stroke={LC.accent} strokeWidth="1.5" />
+            <circle cx={C} cy={C} r="7" fill={LC.accent} style={{ filter: `drop-shadow(0 0 6px ${LC.accent})`, animation: an("cl-breathe 2.4s ease-in-out infinite") }} />
+          </svg>
+          {LOGIN_BRANCHES.map((b) => {
+            const [x, y] = pos(b.a), on = b.id === branch;
+            return (
+              <button key={b.id} type="button" className="cl-node" aria-label={b.name} onClick={() => pick(b.id)} style={{
+                left: `${x / 4}%`, top: `${y / 4}%`, transform: `translate(-50%,-50%) scale(${on ? 1.08 : 1})`,
+                background: on ? LC.accent : LC.surface,
+                border: `${on ? 2 : 1.5}px solid ${on ? LC.accent : LC.a800}`,
+                boxShadow: on ? "0 0 32px rgba(14,156,142,.45)" : LC.shadowSm,
+              }}>
+                <b.Icon size={22} strokeWidth={on ? 2.4 : 1.8} style={{ color: on ? LC.surface : LC.a300 }} />
+                <span style={{ position: "absolute", top: "100%", marginTop: 8, whiteSpace: "nowrap", fontSize: "clamp(10px,2.8vw,12px)", fontFamily: FS, fontWeight: on ? 500 : 400, color: on ? LC.a200 : LC.n300, transition: "color .3s" }}>
+                  Corelink {b.name}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
