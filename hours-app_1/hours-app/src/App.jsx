@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.01-merchant2";
+const BUILD_VERSION = "v2026.10.01-admin-dash";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35781,6 +35781,17 @@ const MD_CSS = `
 @keyframes md-ping{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.8);opacity:0}}
 @keyframes md-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes md-pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+@keyframes md-draw{to{stroke-dashoffset:0}}
+.md-kpi .md-kpi-tools{opacity:0;transition:opacity .2s}.md-kpi:hover .md-kpi-tools{opacity:1}
+.md-select{height:34px;border-radius:8px;border:1px solid ${MC.divider};background:${MC.surface};color:${MC.text};padding:0 10px;font-size:13px;outline:none}
+.md-select:focus{border-color:${MC.accent}}
+.md-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;border:1px solid ${MC.accent};background:transparent;color:${MC.a200};font-size:13px;font-weight:500;cursor:pointer;transition:background .2s,box-shadow .2s}
+.md-btn:hover{background:${MC.a900};box-shadow:0 0 16px rgba(14,156,142,.2)}
+.md-btn:disabled{opacity:.4;cursor:not-allowed}
+.md-card{border:1px solid ${MC.divider};border-radius:14px;background:${MC.surface};box-shadow:${MC.shadowSm}}
+.md-seg{display:inline-flex;gap:2px;padding:2px;border-radius:8px;border:1px solid ${MC.divider};background:${MC.surface}}
+.md-seg button{height:28px;padding:0 10px;border-radius:6px;border:none;background:transparent;color:${MC.n300};font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .2s}
+.md-seg button.on{background:${MC.a900};color:${MC.a200};font-weight:500}
 .md-nav{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 8px;border-radius:8px;text-decoration:none;font-size:13px;cursor:pointer;border:none;width:100%;text-align:left;transition:background .2s;background:transparent;color:${MC.text}}
 .md-nav:hover{background:${MC.a900}}
 .md-nav .md-tile{width:28px;height:28px;flex:none;border-radius:8px;display:grid;place-items:center;transition:transform .25s}
@@ -44722,6 +44733,88 @@ function exportKpiToExcel(departments, kpiDefs, filteredEntries, periodRange) {
   XLSX.writeFile(wb, fileName);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ХЯНАЛТ → ДАШБОРД — шинэ загвар (2026-10-01): KPI карт, тоолох анимэйшн, sparkline
+// ═══════════════════════════════════════════════════════════════════════════
+const KPI_COLORS = ["#0E9C8E", "#1c7fc4", "#1f9d55", "#e08a00", "#e5603f", "#7c5cff", "#d9423a", "#0b8075"];
+const kpiFmt = (v, dec = 0) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+
+// Өсөлт/бууралтын chip: ↗ +12.3% (ногоон) / ↘ -4% (улаан) / → 0%
+function TrendChip({ value, label }) {
+  const up = value !== null && value > 0, down = value !== null && value < 0;
+  const c = up ? MC.green : down ? MC.red : MC.n400;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11 }}>
+      <span style={{ color: MC.n300 }}>{label}</span>
+      {value === null ? <span style={{ color: MC.n400 }}>—</span> : (
+        <span style={{ color: c, fontWeight: 500, fontVariantNumeric: "tabular-nums", background: `${c}14`, borderRadius: 4, padding: "1px 6px" }}>
+          {up ? "↗ +" : down ? "↘ " : "→ "}{value.toFixed(1)}%
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Нэг KPI карт (админ дашборд, "Карт" горим)
+function AdminKpiCard({ kpi, total, entriesCount, trend7d, trendMonth, chartPoints, target, color, index, isAdmin, onEdit, onDelete, periodKey }) {
+  const k = useCountUp(`${periodKey}|${total}`);
+  const dec = kpi.decimals || 0;
+  // Sparkline (сүүлийн 7 өдөр)
+  const maxVal = Math.max(...chartPoints, 1), minVal = Math.min(...chartPoints, 0), range = maxVal - minVal || 1;
+  const pts = chartPoints.map((v, i) => [(i / Math.max(1, chartPoints.length - 1)) * 80, 22 - ((v - minVal) / range) * 18]);
+  const line = pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const area = `${line} 80,24 0,24`;
+  const pct = target ? Math.min(100, (total / target.total) * 100) : 0;
+  return (
+    <div className="md-kpi" style={{ border: `1px solid ${color}47`, gap: 8, animation: `md-up .5s ${(0.1 + index * 0.05).toFixed(2)}s ease both` }}>
+      <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: color, transformOrigin: "left", animation: `md-grow .8s ${(0.25 + index * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }} />
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
+        <span style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: MC.n300, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={kpi.name}>{kpi.name}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "none" }}>
+          {kpi.kpi_type === "calculated" && <span title="Тооцооллын KPI" style={{ fontSize: 10, color: MC.n400, border: `1px solid ${MC.divider}`, borderRadius: 4, padding: "0 4px" }}>ƒ</span>}
+          {isAdmin && (
+            <span className="md-kpi-tools" style={{ display: "flex", gap: 2 }}>
+              <button onClick={onEdit} title="Засах" style={{ color: MC.n300, background: "transparent", border: "none", cursor: "pointer", padding: 2 }}><Edit3 size={12} /></button>
+              <button onClick={onDelete} title="Устгах" style={{ color: MC.red, background: "transparent", border: "none", cursor: "pointer", padding: 2 }}><Trash2 size={12} /></button>
+            </span>
+          )}
+          <span style={{ width: 28, height: 28, borderRadius: 8, display: "grid", placeItems: "center", background: `${color}24`, animation: `md-pop .5s ${(0.25 + index * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }}>
+            {trend7d !== null && trend7d < 0 ? <TrendingDown size={15} strokeWidth={2.4} style={{ color }} /> : <TrendingUp size={15} strokeWidth={2.4} style={{ color }} />}
+          </span>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" }}>
+        <span style={{ fontSize: "clamp(20px,2vw,26px)", fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums", color: MC.text }}>{kpiFmt(total * k, dec)}</span>
+        {kpi.unit && <span style={{ fontSize: 11, color: MC.n300 }}>{kpi.unit}</span>}
+      </div>
+      <svg viewBox="0 0 80 24" style={{ width: "100%", height: 26, overflow: "visible" }}>
+        <defs><linearGradient id={`kg-${kpi.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".22" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+        <polygon points={area} fill={`url(#kg-${kpi.id})`} style={{ opacity: 0, animation: `md-up .6s ${(0.6 + index * 0.05).toFixed(2)}s ease forwards` }} />
+        <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" pathLength="1"
+          style={{ strokeDasharray: 1, strokeDashoffset: 1, animation: `md-draw 1.1s ${(0.4 + index * 0.05).toFixed(2)}s cubic-bezier(.4,0,.2,1) forwards` }} />
+        {pts.length > 0 && <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="2.2" fill={MC.surface} stroke={color} strokeWidth="1.6" style={{ opacity: 0, animation: `md-up .3s ${(1.4 + index * 0.05).toFixed(2)}s ease forwards` }} />}
+      </svg>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <TrendChip value={trend7d} label="7 хоног" />
+        <TrendChip value={trendMonth} label="Сар" />
+      </div>
+      {target ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+            <span style={{ color: MC.n300, display: "flex", alignItems: "center", gap: 4 }}><Crosshair size={11} />{target.dynamic ? "Динамик " : ""}{Math.round(target.total).toLocaleString()}</span>
+            <span style={{ color: pct >= 100 ? MC.green : MC.a200, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{Math.round(pct * k)}%</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: MC.a900, overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 999, background: pct >= 100 ? `linear-gradient(90deg,${MC.green},${MC.accent})` : `linear-gradient(90deg,${MC.a400},${color})`, width: `${(pct * k).toFixed(1)}%`, transition: "width .3s" }} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: MC.n400 }}>{entriesCount} өдрийн нийт</div>
+      )}
+    </div>
+  );
+}
+
 function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUserId, onAddKpi, onEditKpi, onDeleteKpi, onOpenInputForm }) {
   const [period, setPeriod] = useState("month"); // day | week | month | year | custom
   const [selectedDept, setSelectedDept] = useState("all");
@@ -44833,149 +44926,66 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
     return dept?.manager_id === currentUserId;
   };
 
+  const dateInput = (value, onChange, type = "date") => <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="md-date" style={{ fontFamily: FS, height: 34 }} />;
   return (
-    <div className="space-y-4 fade-in">
-      {/* Period type tabs */}
-      <div className="glass rounded-2xl p-4 slide-up space-y-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex gap-1.5 flex-wrap">
-            {[
-              { id: "day", label: "Өнөөдөр" },
-              { id: "yesterday", label: "Өчигдөр" },
-              { id: "week", label: "7 хоног" },
-              { id: "month", label: "Сар" },
-              { id: "year", label: "Жил" },
-              { id: "custom", label: "Гар" },
-            ].map((p) => (
-              <button key={p.id} onClick={() => setPeriod(p.id)}
-                className={`${period === p.id ? "tab-active" : "tab-inactive glass-soft"} press-btn px-3 py-1.5 rounded-full text-[10px] uppercase tracking-[0.2em]`}
-                style={{ fontFamily: FM, borderColor: period === p.id ? "transparent" : T.borderSoft, border: "1px solid" }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1" />
-
-          {/* Хэлтэс шүүлт */}
-          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
-            style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-            className="px-3 py-2 rounded-lg border text-xs outline-none">
+    <div style={{ display: "flex", flexDirection: "column", gap: 17, fontFamily: FS, color: MC.text }}>
+      <style>{MD_CSS}</style>
+      {/* 📅 Хугацаа + хэлтэс + KPI нэмэх */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "md-up .5s .05s ease both" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} role="tablist">
+          {[["day", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["week", "7 хоног"], ["month", "Сар"], ["year", "Жил"], ["custom", "Гараар"]].map(([id, lbl]) => { const on = period === id; return (
+            <button key={id} type="button" className="md-pill" onClick={() => setPeriod(id)}
+              style={{ fontFamily: FS, color: on ? MC.a200 : MC.n300, background: on ? MC.a900 : MC.surface, border: `1px solid ${on ? MC.accent : MC.divider}` }}>
+              {id === "custom" && <Calendar size={14} />}{lbl}
+            </button>); })}
+          <div style={{ flex: 1 }} />
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} className="md-select" style={{ fontFamily: FS }}>
             <option value="all">Бүх хэлтэс</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
+            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
-
-          {isAdmin && (
-            <button onClick={onAddKpi}
-              className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
-              style={{ fontFamily: FM }}>
-              <Plus size={11} /> KPI нэмэх
-            </button>
-          )}
+          {isAdmin && <button type="button" onClick={onAddKpi} className="md-btn" style={{ fontFamily: FS }}><Plus size={14} /> KPI нэмэх</button>}
         </div>
-
-        {/* Огноо сонгогчид + view mode */}
-        <div className="flex items-center gap-3 flex-wrap pt-1 border-t" style={{ borderColor: T.borderSoft }}>
-          {period === "day" && (
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-              className="px-3 py-2 rounded-lg border text-xs outline-none" />
-          )}
-          {period === "week" && (
-            <>
-              <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Дуусах өдөр:</span>
-              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
-                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                className="px-3 py-2 rounded-lg border text-xs outline-none" />
-            </>
-          )}
-          {period === "month" && (
-            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
-              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-              className="px-3 py-2 rounded-lg border text-xs outline-none" />
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {period === "day" && dateInput(selectedDate, setSelectedDate)}
+          {period === "week" && <><span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.n300 }}>Дуусах өдөр</span>{dateInput(selectedDate, setSelectedDate)}</>}
+          {period === "month" && dateInput(selectedMonth, setSelectedMonth, "month")}
           {period === "year" && (
-            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}
-              style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-              className="px-3 py-2 rounded-lg border text-xs outline-none">
-              {[2024, 2025, 2026, 2027, 2028].map((y) => (
-                <option key={y} value={y}>{y} он</option>
-              ))}
+            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="md-select" style={{ fontFamily: FS }}>
+              {[2024, 2025, 2026, 2027, 2028].map((y) => <option key={y} value={y}>{y} он</option>)}
             </select>
           )}
-          {period === "custom" && (
-            <>
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                className="px-3 py-2 rounded-lg border text-xs outline-none" />
-              <span style={{ color: T.muted }} className="text-xs">→</span>
-              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                className="px-3 py-2 rounded-lg border text-xs outline-none" />
-            </>
-          )}
-
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-            {periodRange.label}
-          </span>
-
-          <div className="flex-1" />
-
-          {/* View mode toggle */}
-          <div className="flex gap-1 glass-soft rounded-lg p-0.5">
-            <button onClick={() => setViewMode("cards")}
-              className={`${viewMode === "cards" ? "bg-white shadow-sm" : ""} press-btn px-3 py-1.5 rounded text-[10px] uppercase tracking-wider`}
-              style={{ fontFamily: FM, color: viewMode === "cards" ? T.highlight : T.muted }}>
-              Карт
-            </button>
-            <button onClick={() => setViewMode("charts")}
-              className={`${viewMode === "charts" ? "bg-white shadow-sm" : ""} press-btn px-3 py-1.5 rounded text-[10px] uppercase tracking-wider flex items-center gap-1`}
-              style={{ fontFamily: FM, color: viewMode === "charts" ? T.highlight : T.muted }}>
-              <BarChart3 size={10} /> График
-            </button>
+          {period === "custom" && <>{dateInput(customStart, setCustomStart)}<span style={{ color: MC.n400 }}>–</span>{dateInput(customEnd, setCustomEnd)}</>}
+          <span style={{ fontSize: 12, color: MC.n300 }}>{periodRange.label}</span>
+          <div style={{ flex: 1 }} />
+          <div className="md-seg">
+            <button type="button" className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")} style={{ fontFamily: FS }}>Карт</button>
+            <button type="button" className={viewMode === "charts" ? "on" : ""} onClick={() => setViewMode("charts")} style={{ fontFamily: FS }}><BarChart3 size={12} /> График</button>
           </div>
-
           {viewMode === "charts" && (
             <>
-              <select value={chartGroupBy} onChange={(e) => setChartGroupBy(e.target.value)}
-                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                className="px-3 py-2 rounded-lg border text-xs outline-none"
-                title="Бүлэглэх">
-                <option value="day">📅 Өдөр бүр</option>
-                <option value="week">🗓 7/7 хоног (сүүлийн 5)</option>
-                <option value="month">📆 Сар (сүүлийн 5)</option>
+              <select value={chartGroupBy} onChange={(e) => setChartGroupBy(e.target.value)} className="md-select" style={{ fontFamily: FS }} title="Бүлэглэх">
+                <option value="day">Өдөр бүр</option>
+                <option value="week">7/7 хоног (сүүлийн 5)</option>
+                <option value="month">Сар (сүүлийн 5)</option>
               </select>
-              <select value={chartType} onChange={(e) => setChartType(e.target.value)}
-                style={{ borderColor: T.border, background: "rgba(255,255,255,0.7)", color: T.ink, fontFamily: FM }}
-                className="px-3 py-2 rounded-lg border text-xs outline-none">
+              <select value={chartType} onChange={(e) => setChartType(e.target.value)} className="md-select" style={{ fontFamily: FS }}>
                 <option value="bar">Багана</option>
                 <option value="line">Шугам</option>
                 <option value="area">Талбай</option>
               </select>
             </>
           )}
-
-          <button onClick={() => exportKpiToExcel(visibleDepts, kpiDefs, filteredEntries, periodRange)}
-            className="glass-soft press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5 hover:bg-white"
-            style={{ fontFamily: FM, color: T.ok, border: `1px solid ${T.borderSoft}` }}>
-            <FileSpreadsheet size={11} /> Excel
+          <button type="button" onClick={() => exportKpiToExcel(visibleDepts, kpiDefs, filteredEntries, periodRange)} className="md-btn" style={{ fontFamily: FS, borderColor: MC.green, color: MC.green }}>
+            <FileSpreadsheet size={14} /> Excel
           </button>
         </div>
       </div>
 
       {visibleDepts.length === 0 || kpiDefs.length === 0 ? (
-        <div className="glass rounded-3xl py-12 px-6 text-center" style={{ color: T.muted }}>
-          <BarChart3 size={32} className="mx-auto mb-3" strokeWidth={1.5} />
-          <p className="text-sm mb-2">{kpiDefs.length === 0 ? "KPI-ууд тохируулаагүй байна" : "Хэлтэс байхгүй байна"}</p>
-          {isAdmin && kpiDefs.length === 0 && (
-            <button onClick={onAddKpi}
-              className="glow-primary press-btn mt-3 px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.2em] inline-flex items-center gap-1.5"
-              style={{ fontFamily: FM }}>
-              <Plus size={11} /> Эхний KPI нэмэх
-            </button>
-          )}
+        <div className="md-card" style={{ padding: "48px 24px", textAlign: "center", color: MC.n300, animation: "md-up .5s .1s ease both" }}>
+          <BarChart3 size={32} strokeWidth={1.5} style={{ margin: "0 auto 10px", color: MC.a300 }} />
+          <p style={{ fontSize: 14, margin: 0 }}>{kpiDefs.length === 0 ? "KPI-ууд тохируулаагүй байна" : "Хэлтэс байхгүй байна"}</p>
+          {isAdmin && kpiDefs.length === 0 && <button type="button" onClick={onAddKpi} className="md-btn" style={{ marginTop: 14, fontFamily: FS }}><Plus size={14} /> Эхний KPI нэмэх</button>}
         </div>
       ) : (
         visibleDepts.map((dept, deptIdx) => {
@@ -44984,59 +44994,21 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
           const canEnter = isAdmin || isDeptManager(dept.id);
 
           return (
-            <div key={dept.id} className={`glass-strong rounded-3xl p-5 ${deptIdx < 4 ? `slide-up-delay-${deptIdx + 1}` : "slide-up"}`}>
-              {/* Department header */}
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <Users size={12} style={{ color: T.highlight }} />
-                    <span style={{ fontFamily: FM, color: T.muted }} className="text-[9px] uppercase tracking-[0.25em]">
-                      Хэлтэс
-                    </span>
-                  </div>
-                  <h3 style={{ fontFamily: FD, fontWeight: 500 }} className="text-2xl">{dept.name}</h3>
+            <div key={dept.id} className="md-card" style={{ padding: "14px 17px 17px", animation: `md-up .5s ${(0.1 + deptIdx * 0.07).toFixed(2)}s ease both` }}>
+              {/* Хэлтсийн толгой */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: MC.n300, display: "flex", alignItems: "center", gap: 6 }}><Users size={12} style={{ color: MC.accent }} />Хэлтэс</span>
+                  <h3 style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: "-.02em", fontFamily: FD }}>{dept.name}</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* 🔃 Дараалал солих товч — зөвхөн admin/manager + "Бүх хэлтэс" үед */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {isAdmin && selectedDept === "all" && visibleDepts.length > 1 && (
-                    <div className="flex flex-col gap-0.5">
-                      <button onClick={() => moveDept(dept.id, "up")}
-                        disabled={deptIdx === 0}
-                        title="Дээш"
-                        className="press-btn rounded text-xs"
-                        style={{
-                          width: 20, height: 16,
-                          background: deptIdx === 0 ? T.surfaceAlt : T.highlight,
-                          color: deptIdx === 0 ? T.muted : "white",
-                          opacity: deptIdx === 0 ? 0.4 : 1,
-                          cursor: deptIdx === 0 ? "not-allowed" : "pointer",
-                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
-                        }}>
-                        ▲
-                      </button>
-                      <button onClick={() => moveDept(dept.id, "down")}
-                        disabled={deptIdx === visibleDepts.length - 1}
-                        title="Доош"
-                        className="press-btn rounded text-xs"
-                        style={{
-                          width: 20, height: 16,
-                          background: deptIdx === visibleDepts.length - 1 ? T.surfaceAlt : T.highlight,
-                          color: deptIdx === visibleDepts.length - 1 ? T.muted : "white",
-                          opacity: deptIdx === visibleDepts.length - 1 ? 0.4 : 1,
-                          cursor: deptIdx === visibleDepts.length - 1 ? "not-allowed" : "pointer",
-                          fontFamily: FM, fontWeight: 700, lineHeight: 1,
-                        }}>
-                        ▼
-                      </button>
+                    <div className="md-seg">
+                      <button type="button" onClick={() => moveDept(dept.id, "up")} disabled={deptIdx === 0} title="Дээш" style={{ padding: "0 8px", opacity: deptIdx === 0 ? .35 : 1 }}>▲</button>
+                      <button type="button" onClick={() => moveDept(dept.id, "down")} disabled={deptIdx === visibleDepts.length - 1} title="Доош" style={{ padding: "0 8px", opacity: deptIdx === visibleDepts.length - 1 ? .35 : 1 }}>▼</button>
                     </div>
                   )}
-                  {canEnter && (
-                    <button onClick={() => onOpenInputForm(dept.id)}
-                      className="glow-primary press-btn px-3 py-2 rounded-lg text-[10px] uppercase tracking-[0.2em] flex items-center gap-1.5"
-                      style={{ fontFamily: FM }}>
-                      <Plus size={11} /> Тоо оруулах
-                    </button>
-                  )}
+                  {canEnter && <button type="button" onClick={() => onOpenInputForm(dept.id)} className="md-btn" style={{ fontFamily: FS }}><Plus size={14} /> Тоо оруулах</button>}
                 </div>
               </div>
 
@@ -45045,34 +45017,11 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                 <>
                   {/* 🗓 Хэлтсийн anchor огноо — Зөвхөн week/month grouping үед */}
                   {(chartGroupBy === "week" || chartGroupBy === "month") && (
-                    <div className="glass-soft rounded-xl p-3 mb-3 flex items-center gap-2 flex-wrap">
-                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">
-                        {chartGroupBy === "week" ? "🗓 Эхлэх огноо" : "📆 Эхлэх сар"}
-                      </span>
-                      <input
-                        type="date"
-                        value={deptAnchorDates[dept.id] || new Date().toISOString().slice(0, 10)}
-                        onChange={(e) => setDeptAnchor(dept.id, e.target.value)}
-                        style={{
-                          borderColor: T.border,
-                          background: "rgba(255,255,255,0.9)",
-                          color: T.ink,
-                          fontFamily: FM,
-                        }}
-                        className="px-3 py-1.5 rounded-lg border text-xs outline-none focus:border-black"
-                      />
-                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                        {chartGroupBy === "week"
-                          ? "→ Сонгосон огнооноос буцаж сүүлийн 5 долоо хоног"
-                          : "→ Сонгосон сараас буцаж сүүлийн 5 сар"}
-                      </span>
-                      <button
-                        onClick={() => setDeptAnchor(dept.id, new Date().toISOString().slice(0, 10))}
-                        style={{ color: T.highlight, fontFamily: FM }}
-                        className="press-btn ml-auto text-[10px] uppercase tracking-wider hover:opacity-70"
-                        title="Өнөөдөр болгох">
-                        Өнөөдөр
-                      </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, padding: "8px 11px", borderRadius: 8, background: MC.a900 }}>
+                      <span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.a200, display: "flex", alignItems: "center", gap: 4 }}><Calendar size={12} />{chartGroupBy === "week" ? "Эхлэх огноо" : "Эхлэх сар"}</span>
+                      <input type="date" value={deptAnchorDates[dept.id] || new Date().toISOString().slice(0, 10)} onChange={(e) => setDeptAnchor(dept.id, e.target.value)} className="md-date" style={{ fontFamily: FS, height: 30 }} />
+                      <span style={{ fontSize: 11, color: MC.n300 }}>{chartGroupBy === "week" ? "→ сонгосон огнооноос буцаж сүүлийн 5 долоо хоног" : "→ сонгосон сараас буцаж сүүлийн 5 сар"}</span>
+                      <button type="button" onClick={() => setDeptAnchor(dept.id, new Date().toISOString().slice(0, 10))} style={{ marginLeft: "auto", fontSize: 12, color: MC.a200, background: "transparent", border: "none", cursor: "pointer", fontFamily: FS, fontWeight: 500 }}>Өнөөдөр</button>
                     </div>
                   )}
                   <KpiChartView
@@ -45095,8 +45044,8 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                   />
                 </>
               ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {deptKpis.map((kpi) => {
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,205px),1fr))", gap: 8 }}>
+                {deptKpis.map((kpi, kpiIdx) => {
                   let total = 0;
                   let entries = [];
 
@@ -45188,204 +45137,42 @@ function KPIDashboardView({ departments, kpiDefs, kpiEntries, isAdmin, currentUs
                   // ↗/↘ icon-руу backwards compat (7d-г primary)
                   const trend = trend7d !== null ? { change: trend7d, up: trend7d > 0 } : null;
 
-                  // Тус KPI-н өнгийг тогтоогдоход (display_order эсвэл index ашиглан)
-                  const kpiIndex = deptKpis.findIndex(k => k.id === kpi.id);
-                  const gradients = [
-                    { from: "#8b5cf6", to: "#ec4899", shadow: "rgba(139,92,246,0.25)" }, // Purple → Pink
-                    { from: "#06b6d4", to: "#3b82f6", shadow: "rgba(6,182,212,0.25)" },  // Cyan → Blue
-                    { from: "#f59e0b", to: "#ef4444", shadow: "rgba(245,158,11,0.25)" }, // Orange → Red
-                    { from: "#10b981", to: "#14b8a6", shadow: "rgba(16,185,129,0.25)" }, // Green → Teal
-                    { from: "#ec4899", to: "#f97316", shadow: "rgba(236,72,153,0.25)" }, // Pink → Orange
-                    { from: "#6366f1", to: "#8b5cf6", shadow: "rgba(99,102,241,0.25)" }, // Indigo → Purple
-                    { from: "#f43f5e", to: "#fb7185", shadow: "rgba(244,63,94,0.25)" },  // Rose
-                    { from: "#0ea5e9", to: "#06b6d4", shadow: "rgba(14,165,233,0.25)" }, // Sky → Cyan
-                  ];
-                  const grad = gradients[kpiIndex % gradients.length];
-
-                  // Бүтээх mini chart points (өмнөх 7 өдрөөс)
+                  const color = KPI_COLORS[kpiIdx % KPI_COLORS.length];
+                  // Sparkline — сүүлийн 7 өдөр
                   const chartPoints = (() => {
-                    const days = 7;
-                    const today = new Date(periodRange.end || new Date());
                     const points = [];
-                    for (let i = days - 1; i >= 0; i--) {
-                      const d = new Date(today);
-                      d.setDate(d.getDate() - i);
+                    const endD = new Date(periodRange.end || new Date());
+                    for (let i = 6; i >= 0; i--) {
+                      const d = new Date(endD); d.setDate(d.getDate() - i);
                       const dStr = d.toISOString().slice(0, 10);
-
-                      let val = 0;
-                      if (kpi.kpi_type === "calculated" && kpi.formula?.numerator_id && kpi.formula?.denominator_id) {
-                        const numEntries = kpiEntries.filter(e => e.kpi_id === kpi.formula.numerator_id && e.entry_date === dStr);
-                        const denEntries = kpiEntries.filter(e => e.kpi_id === kpi.formula.denominator_id && e.entry_date === dStr);
-                        const n = numEntries.reduce((s, e) => s + Number(e.value), 0);
-                        const dn = denEntries.reduce((s, e) => s + Number(e.value), 0);
-                        const op = kpi.formula.operator;
-                        if (op === "divide") val = dn === 0 ? 0 : n / dn;
-                        else if (op === "multiply") val = n * dn;
-                        else if (op === "add") val = n + dn;
-                        else if (op === "subtract") val = n - dn;
-                      } else {
-                        const dayEntries = kpiEntries.filter(e => e.kpi_id === kpi.id && e.entry_date === dStr);
-                        val = dayEntries.reduce((s, e) => s + Number(e.value), 0);
-                      }
-                      points.push(val);
+                      points.push(computeRangeTotal(dStr, dStr));
                     }
                     return points;
                   })();
-
-                  // Normalize to SVG points
-                  const maxVal = Math.max(...chartPoints, 1);
-                  const minVal = Math.min(...chartPoints, 0);
-                  const range = maxVal - minVal || 1;
-                  const svgPoints = chartPoints.map((v, i) => {
-                    const x = (i / (chartPoints.length - 1)) * 80;
-                    const y = 22 - ((v - minVal) / range) * 18;
-                    return `${x.toFixed(1)},${y.toFixed(1)}`;
-                  }).join(" ");
-                  const polygonPoints = `${svgPoints} 80,24 0,24`;
-
+                  // 🎯 Зорилт (статик эсвэл динамик)
+                  let target = null;
+                  if (((kpi.target) || (kpi.target_source_kpi_id && kpi.target_percent)) && entries.length > 0) {
+                    let targetTotal = 0;
+                    const isDynamic = !!(kpi.target_source_kpi_id && kpi.target_percent);
+                    if (isDynamic) {
+                      const sourceTotal = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id).reduce((s, e) => s + Number(e.value || 0), 0);
+                      targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
+                    } else if (kpi.target) {
+                      targetTotal = Number(kpi.target);
+                      if (kpi.target_period === "daily") {
+                        const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
+                        targetTotal = Number(kpi.target) * days;
+                      } else if (kpi.target_period === "weekly") {
+                        const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
+                        targetTotal = Number(kpi.target) * weeks;
+                      }
+                    }
+                    if (targetTotal > 0) target = { total: targetTotal, dynamic: isDynamic };
+                  }
                   return (
-                    <div key={kpi.id}
-                      className="lift rounded-2xl p-3 group relative"
-                      style={{
-                        background: `linear-gradient(135deg, ${grad.from} 0%, ${grad.to} 100%)`,
-                        boxShadow: `0 4px 20px ${grad.shadow}`,
-                        color: "white",
-                      }}>
-                      <div className="flex items-start justify-between mb-1.5">
-                        <span style={{ fontFamily: FM, opacity: 0.9, fontWeight: 600 }} className="text-[9px] uppercase tracking-[0.15em] line-clamp-2">
-                          {kpi.name}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {kpi.kpi_type === "calculated" && (
-                            <div style={{ background: "rgba(255,255,255,0.2)" }}
-                              className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" title="Тооцооллын KPI">
-                              🧮
-                            </div>
-                          )}
-                          {trend && (
-                            <div style={{ background: "rgba(255,255,255,0.2)" }}
-                              className="w-4 h-4 rounded-full flex items-center justify-center text-[9px]">
-                              {trend.up ? "↗" : "↘"}
-                            </div>
-                          )}
-                          {isAdmin && (
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
-                              <button onClick={() => onEditKpi(kpi)} style={{ color: "white" }} className="hover:opacity-70">
-                                <Edit3 size={10} />
-                              </button>
-                              <button onClick={() => setConfirmDelKpi(kpi)} style={{ color: "white" }} className="hover:opacity-70">
-                                <Trash2 size={10} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-baseline gap-1">
-                        <span style={{ fontFamily: FD, fontWeight: 700, letterSpacing: "-0.02em" }}
-                              className="text-xl tabular-nums">
-                          {total.toLocaleString(undefined, {
-                            minimumFractionDigits: kpi.decimals || 0,
-                            maximumFractionDigits: kpi.decimals || 0,
-                          })}
-                        </span>
-                        {kpi.unit && <span style={{ opacity: 0.85, fontFamily: FM }} className="text-[9px]">{kpi.unit}</span>}
-                      </div>
-
-                      {/* Mini chart */}
-                      <svg viewBox="0 0 80 24" style={{ width: "100%", height: 20, marginTop: 6 }}>
-                        <defs>
-                          <linearGradient id={`grad-${kpi.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#fff" stopOpacity="0.4"/>
-                            <stop offset="100%" stopColor="#fff" stopOpacity="0"/>
-                          </linearGradient>
-                        </defs>
-                        <polygon points={polygonPoints} fill={`url(#grad-${kpi.id})`} />
-                        <polyline points={svgPoints} fill="none" stroke="white" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-                      </svg>
-
-                      {/* 📊 Comparison trends — 7 хоног + Сар */}
-                      <div className="mt-1.5 space-y-0.5">
-                        <div className="flex items-center justify-between text-[9px]">
-                          <span style={{ opacity: 0.7, fontFamily: FM }} className="flex items-center gap-1">
-                            <span>📅</span> 7 хоног
-                          </span>
-                          {trend7d !== null ? (
-                            <span style={{
-                              opacity: 0.95, fontFamily: FM, fontWeight: 700,
-                              color: trend7d >= 0 ? "rgba(255,255,255,0.98)" : "rgba(255,215,215,0.95)"
-                            }} className="tabular-nums">
-                              {trend7d > 0 ? "↗ +" : trend7d < 0 ? "↘ " : "→ "}{trend7d.toFixed(1)}%
-                            </span>
-                          ) : (
-                            <span style={{ opacity: 0.4, fontFamily: FM }}>—</span>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between text-[9px]">
-                          <span style={{ opacity: 0.7, fontFamily: FM }} className="flex items-center gap-1">
-                            <span>🗓</span> Сар
-                          </span>
-                          {trendMonth !== null ? (
-                            <span style={{
-                              opacity: 0.95, fontFamily: FM, fontWeight: 700,
-                              color: trendMonth >= 0 ? "rgba(255,255,255,0.98)" : "rgba(255,215,215,0.95)"
-                            }} className="tabular-nums">
-                              {trendMonth > 0 ? "↗ +" : trendMonth < 0 ? "↘ " : "→ "}{trendMonth.toFixed(1)}%
-                            </span>
-                          ) : (
-                            <span style={{ opacity: 0.4, fontFamily: FM }}>—</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Target progress (статик эсвэл динамик) */}
-                      {((kpi.target) || (kpi.target_source_kpi_id && kpi.target_percent)) && entries.length > 0 ? (() => {
-                        let targetTotal = 0;
-                        // 🎯 Динамик зорилт — эх KPI-ийн entries-аас шууд тооцох
-                        if (kpi.target_source_kpi_id && kpi.target_percent) {
-                          const sourceEntries = filteredEntries.filter(e => e.kpi_id === kpi.target_source_kpi_id);
-                          const sourceTotal = sourceEntries.reduce((s, e) => s + Number(e.value || 0), 0);
-                          targetTotal = (sourceTotal * Number(kpi.target_percent)) / 100;
-                        } else if (kpi.target) {
-                          // Статик зорилт
-                          targetTotal = Number(kpi.target);
-                          if (kpi.target_period === "daily") {
-                            const days = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / 86400000) + 1);
-                            targetTotal = Number(kpi.target) * days;
-                          } else if (kpi.target_period === "weekly") {
-                            const weeks = Math.max(1, Math.ceil((new Date(periodRange.end) - new Date(periodRange.start)) / (7 * 86400000)));
-                            targetTotal = Number(kpi.target) * weeks;
-                          }
-                        }
-                        if (targetTotal <= 0) return null;
-                        const percent = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
-                        const isDynamic = kpi.target_source_kpi_id && kpi.target_percent;
-                        return (
-                          <div className="mt-1.5">
-                            <div className="flex items-center justify-between text-[9px] mb-1">
-                              <span style={{ opacity: 0.85, fontFamily: FM }}>
-                                {isDynamic ? "🎯⚡" : "🎯"} {Math.round(targetTotal).toLocaleString()}
-                              </span>
-                              <span style={{ opacity: 0.95, fontFamily: FM, fontWeight: 600 }}>
-                                {percent.toFixed(0)}%
-                              </span>
-                            </div>
-                            <div style={{ background: "rgba(255,255,255,0.25)", height: 3, borderRadius: 999, overflow: "hidden" }}>
-                              <div style={{
-                                width: `${Math.min(percent, 100)}%`,
-                                height: "100%",
-                                background: "white",
-                                transition: "width 0.5s ease",
-                              }} />
-                            </div>
-                          </div>
-                        );
-                      })() : (
-                        <div style={{ opacity: 0.7, fontFamily: FM }} className="text-[9px] mt-1.5">
-                          {entries.length} өдрийн нийт
-                        </div>
-                      )}
-                    </div>
+                    <AdminKpiCard key={kpi.id} kpi={kpi} total={total} entriesCount={entries.length} trend7d={trend7d} trendMonth={trendMonth}
+                      chartPoints={chartPoints} target={target} color={color} index={kpiIdx} isAdmin={isAdmin}
+                      onEdit={() => onEditKpi(kpi)} onDelete={() => setConfirmDelKpi(kpi)} periodKey={periodRange.start + periodRange.end} />
                   );
                 })}
               </div>
@@ -45914,17 +45701,16 @@ function KpiEntryFormModal({ department, kpiDefs, existingEntries, onSave, onClo
 // ─── 📝 KPI Chart-ийн гар тайлбар хэсэг ──────────────────────────────
 function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNote, saveNote, canEdit, singleDayTotals, multiDayTotals, periodLabel, chartType }) {
   return (
-    <div className="glass-soft rounded-2xl p-3">
+    <div style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, animation: "md-up .5s .1s ease both", fontFamily: FS }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm flex items-center gap-2">
-          📝 Тайлбар
+        <div style={{ color: MC.text, fontFamily: FS, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }} className="text-sm">
+          <FileText size={15} style={{ color: MC.a300 }} />Тайлбар
         </div>
         {canEdit && !editingNote && (
           <button onClick={() => setEditingNote(true)}
-            className="press-btn text-[11px] px-2 py-1 rounded-lg flex items-center gap-1"
-            style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600 }}>
-            ✏ {note ? "Засах" : "Бичих"}
+            className="md-btn" style={{ height: 28, fontSize: 12, fontFamily: FS }}>
+            <Edit3 size={12} /> {note ? "Засах" : "Бичих"}
           </button>
         )}
       </div>
@@ -45938,25 +45724,19 @@ function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNo
             placeholder="Энэ хэлтсийн KPI үзүүлэлтийн талаар тайлбар бичих... (жнь: '5-р сарын зорилго 1000 захиалга', 'Шинээр нэмэгдсэн KPI: Засварын тоо')"
             rows={3}
             className="w-full px-3 py-2 rounded-lg text-xs resize-y"
-            style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS, minHeight: 60 }}
+            style={{ background: MC.surface, color: MC.text, border: `1px solid ${MC.n700}`, fontFamily: FS, minHeight: 60, outline: "none" }}
             autoFocus
           />
           <div className="flex items-center gap-2">
             <button onClick={saveNote} disabled={savingNote}
-              className="press-btn glow-primary px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
-              style={{ fontFamily: FS, fontWeight: 600 }}>
-              {savingNote ? (
-                <><Loader2 size={12} className="spin" /> Хадгалж байна...</>
-              ) : (
-                <>💾 Хадгалах</>
-              )}
+              className="md-btn" style={{ height: 30, fontSize: 12, fontFamily: FS, background: MC.accent, color: "#fff" }}>
+              {savingNote ? <><Loader2 size={12} className="spin" /> Хадгалж байна...</> : <>Хадгалах</>}
             </button>
             <button onClick={() => setEditingNote(false)} disabled={savingNote}
-              className="press-btn px-3 py-1.5 rounded-lg text-xs"
-              style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS, fontWeight: 600 }}>
-              ✕ Болих
+              className="md-btn" style={{ height: 30, fontSize: 12, fontFamily: FS, borderColor: MC.divider, color: MC.n300 }}>
+              Болих
             </button>
-            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">
+            <span style={{ color: MC.n300, fontFamily: FM }} className="text-[10px] ml-auto">
               {note.length} тэмдэгт
             </span>
           </div>
@@ -45965,46 +45745,46 @@ function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNo
         <>
           {/* Гарын тайлбар */}
           {note ? (
-            <div style={{ color: T.ink, fontFamily: FS, lineHeight: 1.5, whiteSpace: "pre-wrap" }} className="text-xs">
+            <div style={{ color: MC.text, fontFamily: FS, lineHeight: 1.5, whiteSpace: "pre-wrap" }} className="text-xs">
               {note}
             </div>
           ) : (
-            <div style={{ color: T.muted, fontFamily: FM, fontStyle: "italic" }} className="text-[11px]">
-              {canEdit ? "Тайлбар бичээгүй байна — ✏ товчийг дарж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
+            <div style={{ color: MC.n300, fontFamily: FM, fontStyle: "italic" }} className="text-[11px]">
+              {canEdit ? "Тайлбар бичээгүй байна — Бичих товчийг дарж нэмнэ үү" : "Тайлбар оруулаагүй байна"}
             </div>
           )}
 
           {/* Доор автомат статистик */}
-          <div style={{ borderTop: `1px dashed ${T.borderSoft}`, color: T.muted, fontFamily: FM }}
+          <div style={{ borderTop: `1px dashed ${MC.divider}`, color: MC.n300, fontFamily: FM }}
             className="mt-2 pt-2 text-[10px] flex items-center gap-2 flex-wrap">
             {singleDayTotals && (
               <>
-                <span>📅 Нэг өдөр</span>
+                <span>Нэг өдөр</span>
                 <span>·</span>
                 <span>{singleDayTotals.count} үзүүлэлт</span>
                 <span>·</span>
-                <span>Нийт: <b style={{ color: T.ink }}>{singleDayTotals.total.toLocaleString()}</b></span>
+                <span>Нийт: <b style={{ color: MC.text }}>{singleDayTotals.total.toLocaleString()}</b></span>
                 {singleDayTotals.max?.value > 0 && (
                   <>
                     <span>·</span>
-                    <span>🏆 {singleDayTotals.max.name} ({singleDayTotals.max.value.toLocaleString()})</span>
+                    <span>★ {singleDayTotals.max.name} ({singleDayTotals.max.value.toLocaleString()})</span>
                   </>
                 )}
               </>
             )}
             {multiDayTotals && (
               <>
-                <span>📅 {multiDayTotals.periods} {periodLabel}</span>
+                <span>{multiDayTotals.periods} {periodLabel}</span>
                 <span>·</span>
-                <span>Нийт: <b style={{ color: T.ink }}>{multiDayTotals.totalSum.toLocaleString()}</b></span>
+                <span>Нийт: <b style={{ color: MC.text }}>{multiDayTotals.totalSum.toLocaleString()}</b></span>
                 {multiDayTotals.topKpiTotal > 0 && (
                   <>
                     <span>·</span>
-                    <span>🏆 {multiDayTotals.topKpiName} ({multiDayTotals.topKpiTotal.toLocaleString()})</span>
+                    <span>★ {multiDayTotals.topKpiName} ({multiDayTotals.topKpiTotal.toLocaleString()})</span>
                   </>
                 )}
                 <span>·</span>
-                <span>📈 {chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
+                <span>{chartType === "line" ? "Шугаман" : chartType === "area" ? "Талбайн" : "Багана"}</span>
               </>
             )}
           </div>
@@ -46015,7 +45795,7 @@ function ChartNoteSection({ note, setNote, editingNote, setEditingNote, savingNo
 }
 
 function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], periodRange, chartType, groupBy = "day", anchorDate, departmentId, initialNote = "", canEdit = false, onNoteSaved }) {
-  const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+  const COLORS = KPI_COLORS;
 
   // 📝 Гар тайлбар state
   const [note, setNote] = useState(initialNote || "");
@@ -46215,14 +45995,14 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
         />
 
         {/* 📈 Chart — Утгуудтай label-тай + Зорилт */}
-        <div className="glass-soft rounded-2xl p-4">
+        <div style={{ padding: "11px 8px 4px", borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, animation: "md-up .5s .15s ease both" }}>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={singleDayData} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
+              <CartesianGrid strokeDasharray="3 4" stroke="#d3e6e1" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6a827e", fontFamily: FS }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "#6a827e", fontFamily: FS }} axisLine={false} tickLine={false} />
               <RechartsTooltip 
-                contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }}
+                contentStyle={{ background: "#fbfefd", border: "1px solid #cfe3de", borderRadius: 8, boxShadow: "0 10px 24px -12px rgba(10,80,72,.35)", fontFamily: FS, fontSize: 12 }}
                 formatter={(value, name, props) => {
                   const target = props.payload?.target || 0;
                   const pct = target > 0 ? Math.round((value / target) * 100) : 0;
@@ -46237,7 +46017,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
                   <Cell key={i} fill={entry.color} />
                 ))}
                 <LabelList dataKey="value" position="top"
-                  style={{ fontSize: 12, fontWeight: 700, fill: T.ink }}
+                  style={{ fontSize: 12, fontWeight: 500, fill: "#12302c", fontFamily: FS }}
                   formatter={(v) => v > 0 ? v.toLocaleString() : ""} />
               </Bar>
               {/* 🎯 Зорилт reference dot/line — KPI бүрд */}
@@ -46420,25 +46200,19 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
   //    байхгүй үед hook-ийн тоо цөөрч апп бүхэлдээ унадаг байсан.
   if (deptKpis.length === 0) {
     return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">KPI байхгүй</p>
-      </div>
+      <div style={{ padding: 32, textAlign: "center", color: MC.n300, borderRadius: 8, background: MC.a900, fontSize: 13, animation: "md-up .4s ease both" }}>KPI байхгүй</div>
     );
   }
 
   if (filteredEntries.length === 0 && groupBy === "day") {
     return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">Сонгосон хугацаанд тоо оруулаагүй байна</p>
-      </div>
+      <div style={{ padding: 32, textAlign: "center", color: MC.n300, borderRadius: 8, background: MC.a900, fontSize: 13, animation: "md-up .4s ease both" }}>Сонгосон хугацаанд тоо оруулаагүй байна</div>
     );
   }
 
   if ((groupBy === "week" || groupBy === "month") && (!allEntries || allEntries.length === 0)) {
     return (
-      <div className="glass-soft rounded-xl p-8 text-center" style={{ color: T.muted }}>
-        <p className="text-sm">Тоон утга оруулаагүй байна</p>
-      </div>
+      <div style={{ padding: 32, textAlign: "center", color: MC.n300, borderRadius: 8, background: MC.a900, fontSize: 13, animation: "md-up .4s ease both" }}>Тоон утга оруулаагүй байна</div>
     );
   }
 
@@ -46459,14 +46233,14 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
       />
 
       {/* Chart */}
-      <div className="glass-soft rounded-2xl p-4">
+      <div style={{ padding: "11px 8px 4px", borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, animation: "md-up .5s .15s ease both" }}>
         <ResponsiveContainer width="100%" height={350}>
           <ChartComponent data={chartDataWithTargets} margin={{ top: 25, right: 15, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={[0, yAxisMax || "auto"]} />
-            <RechartsTooltip contentStyle={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 4" stroke="#d3e6e1" vertical={false} />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#6a827e", fontFamily: FS }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: "#6a827e", fontFamily: FS }} axisLine={false} tickLine={false} domain={[0, yAxisMax || "auto"]} />
+            <RechartsTooltip contentStyle={{ background: "#fbfefd", border: "1px solid #cfe3de", borderRadius: 8, boxShadow: "0 10px 24px -12px rgba(10,80,72,.35)", fontFamily: FS, fontSize: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 11, fontFamily: FS }} iconType="circle" iconSize={8} />
             {/* 🎯 Зорилтын шугам нь багануудын ДАРАА (дээр) зурагдана — доороос харна уу */}
             {deptKpis.map((kpi, i) => (
               <DataComponent
@@ -46495,7 +46269,7 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
                       const cx = Number(x || 0) + Number(width || 0) / 2;
                       return (
                         <text x={cx} y={Number(y || 0) - 4} textAnchor="middle"
-                          fontSize={10} fontWeight={700} fill={COLORS[i % COLORS.length]}>
+                          fontSize={10} fontWeight={600} fontFamily={FS} fill={COLORS[i % COLORS.length]}>
                           {txt}
                         </text>
                       );
@@ -46531,26 +46305,26 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
 
       {/* 📊 Summary section — Сүүлийн период vs өмнөх период */}
       {summary && kpiChanges && kpiChanges.length > 0 && (
-        <div className="glass-soft rounded-2xl p-4 space-y-3">
+        <div style={{ padding: "11px 14px", borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, display: "flex", flexDirection: "column", gap: 10, animation: "md-up .5s .3s ease both" }}>
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-sm">
-              📊 Сүүлийн {periodLabel} vs өмнөх {periodLabel}
+            <div style={{ color: MC.text, fontFamily: FS, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }} className="text-sm">
+              <TrendingUp size={16} style={{ color: MC.info }} />Сүүлийн {periodLabel} vs өмнөх {periodLabel}
             </div>
             <div className="flex items-center gap-3 text-xs">
-              <span style={{ color: T.ok, fontFamily: FM, fontWeight: 600 }}>
+              <span style={{ color: MC.green, fontFamily: FM, fontWeight: 600 }}>
                 ↗ {summary.up.length}
               </span>
-              <span style={{ color: T.err, fontFamily: FM, fontWeight: 600 }}>
+              <span style={{ color: MC.red, fontFamily: FM, fontWeight: 600 }}>
                 ↘ {summary.down.length}
               </span>
               {summary.flat.length > 0 && (
-                <span style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }}>
+                <span style={{ color: MC.n300, fontFamily: FM, fontWeight: 600 }}>
                   → {summary.flat.length}
                 </span>
               )}
               <span style={{
-                color: summary.avgPct > 0 ? T.ok : summary.avgPct < 0 ? T.err : T.muted,
-                fontFamily: FD, fontWeight: 700,
+                color: summary.avgPct > 0 ? MC.green : summary.avgPct < 0 ? MC.red : MC.n300,
+                fontFamily: FS, fontWeight: 500,
               }} className="text-sm">
                 Дундаж: {summary.avgPct > 0 ? "+" : ""}{summary.avgPct.toFixed(1)}%
               </span>
@@ -46563,27 +46337,22 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
               <div key={k.id}
                 className="rounded-xl p-3"
                 style={{
-                  background: k.status === "up" ? "rgba(16,185,129,0.05)"
-                           : k.status === "down" ? "rgba(239,68,68,0.05)"
-                           : "rgba(107,114,128,0.04)",
-                  border: `1px solid ${
-                    k.status === "up" ? "rgba(16,185,129,0.18)"
-                    : k.status === "down" ? "rgba(239,68,68,0.18)"
-                    : "rgba(107,114,128,0.12)"
-                  }`,
+                  background: k.status === "up" ? "rgba(31,157,85,0.06)" : k.status === "down" ? "rgba(217,66,58,0.06)" : MC.bg,
+                  border: `1px solid ${k.status === "up" ? "rgba(31,157,85,0.25)" : k.status === "down" ? "rgba(217,66,58,0.25)" : MC.divider}`,
+                  animation: `md-up .4s ${(0.35 + kpiChanges.indexOf(k) * 0.05).toFixed(2)}s ease both`,
                 }}>
                 {/* Header — KPI нэр + сүүлийн өөрчлөлт */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <div style={{ background: k.color, width: 8, height: 8, borderRadius: "50%", flexShrink: 0 }} />
-                    <div style={{ color: T.ink, fontFamily: FM, fontWeight: 600 }} className="text-xs truncate" title={k.name}>
+                    <div style={{ color: MC.text, fontFamily: FM, fontWeight: 600 }} className="text-xs truncate" title={k.name}>
                       {k.name}
-                      {k.unit && <span style={{ color: T.muted, fontWeight: 400 }} className="ml-1 text-[10px]">({k.unit})</span>}
+                      {k.unit && <span style={{ color: MC.n300, fontWeight: 400 }} className="ml-1 text-[10px]">({k.unit})</span>}
                     </div>
                   </div>
                   <div style={{
-                    color: k.status === "up" ? T.ok : k.status === "down" ? T.err : T.muted,
-                    fontFamily: FD, fontWeight: 700,
+                    color: k.status === "up" ? MC.green : k.status === "down" ? MC.red : MC.n300,
+                    fontFamily: FS, fontWeight: 500,
                   }} className="text-sm tabular-nums whitespace-nowrap">
                     {k.status === "up" ? "↗ +" : k.status === "down" ? "↘ " : "→ "}
                     {k.pct.toFixed(1)}%
@@ -46600,22 +46369,22 @@ function KpiChartView({ deptKpis, filteredEntries, allEntries, allKpis = [], per
                       <div key={idx}
                         className="rounded-lg p-1.5 text-center"
                         style={{
-                          background: isLast ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.5)",
-                          border: isLast ? `1px solid ${k.color}` : "1px solid rgba(0,0,0,0.05)",
+                          background: isLast ? MC.surface : "rgba(255,255,255,0.55)",
+                          border: isLast ? `1px solid ${k.color}` : `1px solid ${MC.divider}`,
                         }}>
-                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase tracking-tight mb-0.5">
+                        <div style={{ color: MC.n300, fontFamily: FM }} className="text-[8px] uppercase tracking-tight mb-0.5">
                           {p.label}
                         </div>
                         <div style={{
-                          color: T.ink,
+                          color: MC.text,
                           fontFamily: FD,
-                          fontWeight: isLast ? 700 : 600,
+                          fontWeight: isLast ? 500 : 400,
                         }} className="text-[11px] tabular-nums">
                           {p.value.toLocaleString(undefined, { maximumFractionDigits: k.decimals })}
                         </div>
                         {p.pctVsPrev !== null && (
                           <div style={{
-                            color: isUp ? T.ok : isDown ? T.err : T.muted,
+                            color: isUp ? MC.green : isDown ? MC.red : MC.n300,
                             fontFamily: FM,
                             fontWeight: 600,
                           }} className="text-[9px] tabular-nums mt-0.5">
