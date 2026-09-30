@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.01-login-merchant";
+const BUILD_VERSION = "v2026.10.01-merchant2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35978,13 +35978,13 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
   const [hover, setHover] = useState(null);
   const CW = 800, CL = 40, CR = 16, CT = 20, CB = 30, CH = 260;
   const n = rows.length;
-  if (n < 2) return null;
-  const step = (CW - CL - CR) / (n - 1);
+  if (n < 1) return null;
+  const step = n > 1 ? (CW - CL - CR) / (n - 1) : CW - CL - CR; // 1 цэгтэй (сарын 1-нд) → голд нь
   const vis = MCH_SER.map((s) => !off[s.id]);
   const mx = Math.max(1, ...rows.flatMap((r) => r.filter((_, j) => vis[j])));
   const raw = (mx * 1.08) / 4, p10 = Math.pow(10, Math.floor(Math.log10(raw)));
   const stepV = [1, 2, 2.5, 3, 5, 10].map((k) => k * p10).find((v) => v >= raw), ymax = stepV * 4;
-  const X = (i) => CL + i * step, Y = (v) => CT + (1 - v / ymax) * (CH - CT - CB);
+  const X = (i) => (n > 1 ? CL + i * step : CL + step / 2), Y = (v) => CT + (1 - v / ymax) * (CH - CT - CB);
   const lo = CT, hi = CH - CB;
   const smooth = (pts) => {
     let d = "M" + pts[0].join(",");
@@ -35997,7 +35997,7 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
     return d;
   };
   const pts = MCH_SER.map((_, j) => rows.map((r, i) => [X(i), Y(r[j])]));
-  const lab = Math.ceil(n / 8), showDots = n <= 14, h = hover;
+  const lab = Math.ceil(n / 8), showDots = true, h = hover; // бүх цэг + тоо үргэлж харагдана
   const tipLeft = h != null ? (X(h) / CW) * 100 : 0;
   const total = (j) => rows.reduce((a, r) => a + r[j], 0);
   return (
@@ -36032,6 +36032,11 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
             return <circle key={s.id + i} cx={X(i).toFixed(1)} cy={Y(r[j]).toFixed(1)} r={i === h ? 5 : 3.5} fill={MC.surface} stroke={s.c} strokeWidth="2"
               style={{ opacity: vis[j] && ready ? 1 : 0, transition: `opacity .4s ${showDots && h == null ? (0.5 + i * 0.06).toFixed(2) : 0}s, r .15s` }} />;
           }))}
+          {/* 🔢 Цэг дээрх тоо: Захиалга/Хүргэсэн дээр, Цуцалсан доор (0 бол нуух) */}
+          {ready && MCH_SER.map((s, j) => vis[j] && rows.map((r, i) => r[j] > 0 && (
+            <text key={"t" + s.id + i} x={X(i).toFixed(1)} y={(Y(r[j]) + (j === 2 ? 15 : -8)).toFixed(1)} textAnchor="middle" fill={s.c}
+              style={{ fontSize: n > 20 ? 8.5 : 10, fontWeight: 600, fontFamily: FS, opacity: 0, animation: `md-up .4s ${(0.6 + i * 0.03).toFixed(2)}s ease forwards`, pointerEvents: "none" }}>{r[j]}</text>
+          )))}
           {rows.map((_, i) => <rect key={i} x={(X(i) - step / 2).toFixed(1)} y="10" width={step.toFixed(1)} height="230" fill="transparent" onMouseEnter={() => setHover(i)} />)}
         </svg>
         {[0, 1, 2, 3, 4].map((k) => { const v = (ymax * k) / 4; return (
@@ -36081,7 +36086,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
     else if (period === "custom") { s = new Date(`${customStart}T00:00:00`); e = new Date(`${customEnd}T00:00:00`); e.setDate(e.getDate() + 1); label = `${customStart} → ${customEnd}`; }
     return { s, e, label };
   }, [period, customStart, customEnd]);
-  const showChart = period !== "today" && period !== "yesterday";
+  const showChart = true; // chart бүх хугацаанд харагдана (Өнөөдөр/Өчигдөр сонголт хасагдсан)
   const k = useCountUp(tick);
 
   useEffect(() => {
@@ -36149,7 +36154,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
     { label: "Цуцлагдсан", value: num(stats.cancelled), Icon: XCircle, c: MC.red, note: cancelPct != null ? (cancelPct * k).toFixed(1) + "%" : "" },
     { label: "Дуудлага", value: num(stats.calls), Icon: Phone, c: MC.blue },
   ];
-  const PERIODS = [["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "Гараар"]];
+  const PERIODS = [["7d", "7 хоног"], ["month", "Энэ сар"], ["all", "Бүгд"], ["custom", "Гараар"]];
   const maxRev = Number(topProducts[0]?.revenue || 1);
 
   return (
@@ -36192,7 +36197,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
       </section>
 
       {/* 📈 Захиалгын явц */}
-      {showChart && series.rows.length > 1 && <MerchantLineChart key={period + tick} labels={series.labels} rows={series.rows} sub={series.sub} ready={ready} />}
+      {showChart && series.rows.length > 0 && <MerchantLineChart key={period + tick} labels={series.labels} rows={series.rows} sub={series.sub} ready={ready} />}
 
       {/* 🏆 Топ-10 бараа */}
       {topProducts.length > 0 && (
