@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.30-admin-menu";
+const BUILD_VERSION = "v2026.09.30-suggestions";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -1776,7 +1776,7 @@ function ServerWarningView({ profile }) {
 function AdminDashboard({ profile }) {
   // 🎯 Marketing role — зөвхөн зарим view-руу хандана
   const isMarketing = profile.role === "marketing";
-  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory", "stock-prep"]; // 📊 Нөөц бэлдэлт — маркетингд ч
+  const marketingAllowedViews = ["callcenter", "sales", "fbpages", "orders", "inventory", "stock-prep", "marketing", "mkt-board", "suggest"]; // 📊 Нөөц бэлдэлт — маркетингд ч
 
   const [view, setView] = useState(() => {
     try {
@@ -2568,6 +2568,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox}>Зарлал</SidebarTab>
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
+              <SidebarTab active={view === "suggestions"} onClick={() => { setView("suggestions"); setSidebarOpen(false); }} icon={Inbox}>💡 Санал асуулга</SidebarTab>
             </SidebarSection>
             )}
 
@@ -2586,6 +2587,7 @@ function AdminDashboard({ profile }) {
               <SidebarSection label="Маркетинг" icon={TrendingUp}>
                 <SidebarTab active={view === "marketing"} onClick={() => { setView("marketing"); setSidebarOpen(false); }} icon={BarChart3}>📣 Маркетинг</SidebarTab>
                 <SidebarTab active={view === "mkt-board"} onClick={() => { setView("mkt-board"); setSidebarOpen(false); }} icon={Calendar}>📋 Маркетингийн самбар</SidebarTab>
+                {isMarketing && <SidebarTab active={view === "suggest"} onClick={() => { setView("suggest"); setSidebarOpen(false); }} icon={Send}>💡 Санал өгөх</SidebarTab>}
               </SidebarSection>
             )}
 
@@ -2723,8 +2725,11 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
+                {view === "suggestions" && "Санал асуулга"}
                 {view === "marketing" && "Маркетинг"}
                 {view === "mkt-board" && "Маркетингийн самбар"}
+                {view === "suggestions" && "Санал асуулга"}
+                {view === "suggest" && "Санал өгөх"}
                 {view === "sales" && "Борлуулалтын самбар"}
                 {view === "delivery-dashboard" && "Хүргэлтийн самбар"}
                 {view === "settlement" && "Тооцоо тулгах"}
@@ -3032,6 +3037,14 @@ function AdminDashboard({ profile }) {
 
         {view === "mkt-board" && (
           <MktBoardView profile={profile} />
+        )}
+
+        {view === "suggestions" && (
+          <SuggestionsAdminView profile={profile} />
+        )}
+
+        {view === "suggest" && (
+          <SuggestionBoxView profile={profile} />
         )}
 
         {view === "sales" && (
@@ -34407,6 +34420,185 @@ function ManagerAssignModal({ manager, employees, assigned, onSave, onClose }) {
 //  засаж болно, оператор ЯМАГТ зөвхөн харна. Бүх утга op_shift_selections-д (realtime).
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
+//  💡 SUGGESTIONS — Санал асуулга (staff_suggestions)
+//  SuggestionBoxView: ажилтан санал өгнө + өөрийн саналуудын төлөв
+//  SuggestionsAdminView: админ/ахлах — бүх санал, шүүлт, хариу/төлөв
+// ═══════════════════════════════════════════════════════════════════════════
+const SUGG_CATS = [["idea", "💡 Санаа"], ["problem", "⚠ Асуудал"], ["process", "🔧 Ажлын процесс"], ["product", "📦 Бараа"], ["other", "📝 Бусад"]];
+const SUGG_STATUS = { new: ["🆕 Шинэ", "#0ea5e9"], reviewed: ["👀 Хянасан", "#f59e0b"], done: ["✅ Шийдсэн", "#22c55e"], rejected: ["❌ Татгалзсан", "#ef4444"] };
+const SUGG_ROLE_MN = { marketing: "Маркетинг", driver: "Хүргэлт", operator: "Оператор", admin: "Админ", manager: "Ахлах", merchant: "Мерчант" };
+
+function SuggestionBoxView({ profile }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [cat, setCat] = useState("idea");
+  const [anon, setAnon] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [mine, setMine] = useState(null);
+  const load = async () => {
+    const { data } = await supabase.from("staff_suggestions").select("*").eq("author_id", profile.id).order("created_at", { ascending: false }).limit(100);
+    setMine(data || []);
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("sugg-mine-" + profile.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_suggestions", filter: `author_id=eq.${profile.id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const send = async () => {
+    if (!title.trim() && !body.trim()) return alert("Санал бичнэ үү");
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("staff_suggestions").insert({
+        author_id: profile.id, author_role: profile.role, author_name: anon ? null : (profile.name || null),
+        is_anonymous: anon, category: cat, title: title.trim() || body.trim().slice(0, 60), body: body.trim(),
+      });
+      if (error) throw error;
+      setTitle(""); setBody(""); setCat("idea"); setAnon(false);
+      alert("✅ Санал илгээгдлээ. Баярлалаа!");
+      load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const fmt = (t) => new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "");
+  const inp = { background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS };
+  return (
+    <div className="space-y-3 max-w-2xl">
+      <div className="glass rounded-2xl p-4 space-y-2">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">💡 Санал өгөх</div>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Ажлын байр, процесс, бараа, систем — ямар ч санал, асуудлаа бичээрэй. Удирдлага уншиж хариу өгнө.</div>
+        <div className="flex gap-1.5 flex-wrap">
+          {SUGG_CATS.map(([k, lbl]) => (
+            <button key={k} onClick={() => setCat(k)} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+              style={{ background: cat === k ? T.highlight : T.surfaceAlt, color: cat === k ? "#fff" : T.inkSoft, border: `1px solid ${cat === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
+          ))}
+        </div>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Гарчиг (товч)" className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Саналаа дэлгэрэнгүй бичнэ үү..." rows={5} className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={inp} />
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <label className="flex items-center gap-2 text-[11px] cursor-pointer" style={{ color: T.inkSoft, fontFamily: FS }}>
+            <input type="checkbox" checked={anon} onChange={(e) => setAnon(e.target.checked)} /> 🕶 Нэрээ нууж илгээх
+          </label>
+          <button onClick={send} disabled={busy} className="press-btn px-4 py-2 rounded-lg text-sm" style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>{busy ? "Илгээж байна..." : "📨 Илгээх"}</button>
+        </div>
+      </div>
+      <div className="glass rounded-2xl p-3">
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">📋 Миний саналууд {mine ? `(${mine.length})` : ""}</div>
+        {mine === null ? <Loader2 className="spin mx-auto" size={18} style={{ color: T.highlight }} />
+          : mine.length === 0 ? <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Санал өгөөгүй байна</div>
+          : <div className="space-y-2">
+            {mine.map((s) => {
+              const st = SUGG_STATUS[s.status] || SUGG_STATUS.new;
+              return (
+                <div key={s.id} className="rounded-xl p-3" style={{ background: T.surfaceAlt, borderLeft: `3px solid ${st[1]}` }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{(SUGG_CATS.find((c) => c[0] === s.category) || [])[1]} · {s.title}</div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: st[1], color: "#fff", fontFamily: FM, fontWeight: 700 }}>{st[0]}</span>
+                  </div>
+                  {s.body && <div style={{ color: T.inkSoft, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-1">{s.body}</div>}
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-1">{fmt(s.created_at)}{s.is_anonymous ? " · 🕶 нэргүй" : ""}</div>
+                  {s.admin_note && <div className="mt-1.5 rounded-lg px-2 py-1.5 text-[11px]" style={{ background: T.okSoft || "#DCFCE7", color: T.ink, fontFamily: FS }}>💬 Хариу: {s.admin_note}</div>}
+                </div>
+              );
+            })}
+          </div>}
+      </div>
+    </div>
+  );
+}
+
+function SuggestionsAdminView({ profile }) {
+  const [rows, setRows] = useState(null);
+  const [profs, setProfs] = useState({});
+  const [stF, setStF] = useState("all");
+  const [roleF, setRoleF] = useState("all");
+  const [q, setQ] = useState("");
+  const [noteFor, setNoteFor] = useState(null); // { id, note }
+  const load = async () => {
+    const [{ data }, { data: pr }] = await Promise.all([
+      supabase.from("staff_suggestions").select("*").order("created_at", { ascending: false }).limit(1000),
+      supabase.from("profiles").select("id, name, role, department"),
+    ]);
+    const pm = {}; (pr || []).forEach((p) => { pm[p.id] = p; }); setProfs(pm);
+    setRows(data || []);
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("sugg-admin").on("postgres_changes", { event: "*", schema: "public", table: "staff_suggestions" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const setStatus = async (s, status, note) => {
+    const payload = { status, reviewed_by: profile.id, reviewed_at: new Date().toISOString() };
+    if (note !== undefined) payload.admin_note = note;
+    const { error } = await supabase.from("staff_suggestions").update(payload).eq("id", s.id);
+    if (error) alert("Алдаа: " + error.message);
+    setNoteFor(null);
+  };
+  const fmt = (t) => new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "");
+  const counts = useMemo(() => (rows || []).reduce((m, r) => { m[r.status] = (m[r.status] || 0) + 1; return m; }, {}), [rows]);
+  const roleCounts = useMemo(() => (rows || []).reduce((m, r) => { m[r.author_role || "?"] = (m[r.author_role || "?"] || 0) + 1; return m; }, {}), [rows]);
+  const visible = (rows || []).filter((r) => (stF === "all" || r.status === stF) && (roleF === "all" || r.author_role === roleF)
+    && (!q.trim() || (r.title || "").toLowerCase().includes(q.toLowerCase()) || (r.body || "").toLowerCase().includes(q.toLowerCase()) || (r.author_name || "").toLowerCase().includes(q.toLowerCase())));
+  const chip = (on, color, lbl, onClick) => (
+    <button onClick={onClick} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
+      style={{ background: on ? color : T.surfaceAlt, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
+  );
+  if (rows === null) return <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>;
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex gap-1.5 flex-wrap">
+          {chip(stF === "all", T.highlight, `Бүгд ${rows.length}`, () => setStF("all"))}
+          {Object.entries(SUGG_STATUS).map(([k, [lbl, color]]) => chip(stF === k, color, `${lbl} ${counts[k] || 0}`, () => setStF(k)))}
+        </div>
+        <div className="flex gap-1.5 flex-wrap items-center">
+          {chip(roleF === "all", "#9333ea", "Бүх хэлтэс", () => setRoleF("all"))}
+          {Object.keys(roleCounts).map((k) => chip(roleF === k, "#9333ea", `${SUGG_ROLE_MN[k] || k} ${roleCounts[k]}`, () => setRoleF(k)))}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Хайх" className="flex-1 min-w-[160px] px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+        </div>
+      </div>
+      {visible.length === 0 ? <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Санал алга</div>
+        : <div className="space-y-2">
+          {visible.map((s) => {
+            const st = SUGG_STATUS[s.status] || SUGG_STATUS.new;
+            const p = profs[s.author_id];
+            const who = s.is_anonymous ? "🕶 Нэргүй" : (s.author_name || p?.name || "?");
+            const dept = s.is_anonymous ? (SUGG_ROLE_MN[s.author_role] || s.author_role || "") : [SUGG_ROLE_MN[s.author_role] || s.author_role, p?.department].filter(Boolean).join(" · ");
+            return (
+              <div key={s.id} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${st[1]}` }}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{(SUGG_CATS.find((c) => c[0] === s.category) || [])[1]} {s.title}</div>
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">👤 {who}{dept ? ` · ${dept}` : ""} · {fmt(s.created_at)}</div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: st[1], color: "#fff", fontFamily: FM, fontWeight: 700 }}>{st[0]}</span>
+                </div>
+                {s.body && <div style={{ color: T.inkSoft, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-xs mt-2">{s.body}</div>}
+                {s.admin_note && <div className="mt-2 rounded-lg px-2 py-1.5 text-[11px]" style={{ background: T.okSoft || "#DCFCE7", color: T.ink, fontFamily: FS }}>💬 Хариу ({profs[s.reviewed_by]?.name || ""}): {s.admin_note}</div>}
+                {noteFor?.id === s.id ? (
+                  <div className="mt-2 flex gap-2">
+                    <input autoFocus value={noteFor.note} onChange={(e) => setNoteFor({ ...noteFor, note: e.target.value })} placeholder="Хариу бичих..." className="flex-1 px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+                    <button onClick={() => setStatus(s, s.status === "new" ? "reviewed" : s.status, noteFor.note)} className="press-btn px-3 py-1.5 rounded-lg text-xs" style={{ background: T.highlight, color: "#fff", fontFamily: FS, fontWeight: 700 }}>Хадгалах</button>
+                    <button onClick={() => setNoteFor(null)} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.inkSoft }}>✕</button>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex gap-1.5 flex-wrap">
+                    <button onClick={() => setNoteFor({ id: s.id, note: s.admin_note || "" })} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>💬 Хариу</button>
+                    {s.status !== "reviewed" && <button onClick={() => setStatus(s, "reviewed")} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.warnSoft || "#FEF3C7", color: T.warn, fontFamily: FM, fontWeight: 700 }}>👀 Хянасан</button>}
+                    {s.status !== "done" && <button onClick={() => setStatus(s, "done")} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.okSoft || "#DCFCE7", color: T.ok, fontFamily: FM, fontWeight: 700 }}>✅ Шийдсэн</button>}
+                    {s.status !== "rejected" && <button onClick={() => setStatus(s, "rejected")} className="press-btn px-2.5 py-1 rounded-lg text-[11px]" style={{ background: T.errSoft || "#FEE2E2", color: T.err, fontFamily: FM, fontWeight: 700 }}>❌ Татгалзах</button>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  CANCELLED NUMBERS — ❌ Цуцалсан дугаарууд: сонгосон өдөр цуцлагдсан бүх дугаар,
 //  цуцлалтын шалтгаан + тэр дугаарын бүх дуудлагын сэтгэгдэл (түүх)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -37772,6 +37964,7 @@ function OperatorDashboard({ profile }) {
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
             <SidebarTab active={view === "report"} onClick={() => { setView("report"); setSidebarOpen(false); }} icon={BarChart3}>Тайлан</SidebarTab>
             <SidebarTab active={view === "cancelled"} onClick={() => { setView("cancelled"); setSidebarOpen(false); }} icon={Phone}>❌ Цуцалсан дугаарууд</SidebarTab>
+            <SidebarTab active={view === "suggest"} onClick={() => { setView("suggest"); setSidebarOpen(false); }} icon={Send}>💡 Санал өгөх</SidebarTab>
           </SidebarSection>
         </nav>
 
@@ -37816,6 +38009,7 @@ function OperatorDashboard({ profile }) {
               {view === "orders" && "🛍 Захиалга"}
               {view === "report" && "📊 Ээлжийн тайлан"}
               {view === "cancelled" && "❌ Цуцалсан дугаарууд"}
+              {view === "suggest" && "💡 Санал өгөх"}
             </h1>
           </div>
         </header>
@@ -37830,6 +38024,7 @@ function OperatorDashboard({ profile }) {
           {view === "orders" && <OrdersView profile={profile} />}
           {view === "report" && <OperatorShiftReportView profile={profile} />}
           {view === "cancelled" && <CancelledNumbersView profile={profile} />}
+          {view === "suggest" && <SuggestionBoxView profile={profile} />}
         </div>
       </main>
     </div>
@@ -40842,6 +41037,16 @@ function DriverDashboard({ profile }) {
             <BarChart3 size={13} />
             Самбар
           </button>
+          <button onClick={() => setView("suggest")}
+            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+            style={{
+              background: view === "suggest" ? "#0ea5e9" : "transparent",
+              color: view === "suggest" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            <Send size={13} />
+            Санал
+          </button>
         </div>
       </div>
 
@@ -41395,6 +41600,10 @@ function DriverDashboard({ profile }) {
 
         {view === "board" && (
           <DeliveryDashboardView profile={profile} onlyDriverId={profile.id} />
+        )}
+
+        {view === "suggest" && (
+          <SuggestionBoxView profile={profile} />
         )}
       </div>
 
@@ -42430,6 +42639,7 @@ function ManagerDashboard({ profile }) {
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
               <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
               <SidebarTab active={view === "op-cancelled"} onClick={() => { setView("op-cancelled"); setSidebarOpen(false); }} icon={Phone}>Цуцалсан дугаарууд</SidebarTab>
+              <SidebarTab active={view === "suggestions"} onClick={() => { setView("suggestions"); setSidebarOpen(false); }} icon={Inbox}>💡 Санал асуулга</SidebarTab>
             </SidebarSection>
           </nav>
 
@@ -42481,6 +42691,7 @@ function ManagerDashboard({ profile }) {
                 {view === "ledger" && "Тэмдэглэл"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
+                {view === "suggestions" && "Санал асуулга"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
                 {view === "team" && `${team.length} ажилтан · ${activeCount} ажиллаж байна`}
@@ -42558,6 +42769,9 @@ function ManagerDashboard({ profile }) {
 
         {view === "op-cancelled" && (
           <CancelledNumbersView profile={profile} />
+        )}
+        {view === "suggestions" && (
+          <SuggestionsAdminView profile={profile} />
         )}
         {view === "approvals" && (
           <ApprovalsView
