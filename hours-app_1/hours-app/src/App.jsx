@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.09.24-merchant-top";
+const BUILD_VERSION = "v2026.09.30-admin-menu";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2565,14 +2565,9 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "team"} onClick={() => { setView("team"); setSidebarOpen(false); }} icon={Users}>Баг</SidebarTab>
               <SidebarTab active={view === "livemap"} onClick={() => { setView("livemap"); setSidebarOpen(false); }} icon={MapPin}>Газрын зураг</SidebarTab>
               <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Дашборд</SidebarTab>
-              <SidebarTab active={view === "tasks"} onClick={() => { setView("tasks"); setSidebarOpen(false); }} icon={ClipboardCheck}>Даалгавар</SidebarTab>
               <SidebarTab active={view === "announcements"} onClick={() => { setView("announcements"); setSidebarOpen(false); }} icon={Inbox}>Зарлал</SidebarTab>
-              <SidebarTab active={view === "best"} onClick={() => { setView("best"); setSidebarOpen(false); }} icon={ShieldCheck}>Шилдэг</SidebarTab>
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
-              <SidebarTab active={view === "skills"} onClick={() => { setView("skills"); setSidebarOpen(false); }} icon={ShieldCheck}>Ур чадвар</SidebarTab>
-              <SidebarTab active={view === "polls"} onClick={() => { setView("polls"); setSidebarOpen(false); }} icon={Vote}>Санал асуулга</SidebarTab>
-              <SidebarTab active={view === "hrfile"} onClick={() => { setView("hrfile"); setSidebarOpen(false); }} icon={Briefcase}>HR файл</SidebarTab>
             </SidebarSection>
             )}
 
