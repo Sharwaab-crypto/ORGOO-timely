@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-calling-sub";
+const BUILD_VERSION = "v2026.10.02-merchant-mobile";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -35800,6 +35800,7 @@ const MD_CSS = `
 .md-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-radius:999px;font-size:13px;cursor:pointer;transition:all .2s}
 .md-pill:hover{border-color:${MC.accent}!important}
 .md-row{display:grid;grid-template-columns:28px 40px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid ${MC.divider};transition:background .2s}
+@media (max-width:560px){.md-row{grid-template-columns:22px 36px minmax(0,1fr) auto;gap:6px;padding:8px 10px}.md-sku{display:none}.md-kpi{padding:10px 11px}}
 .md-row:hover{background:${MC.a900}}
 .md-date{height:34px;border-radius:999px;border:1px solid ${MC.divider};background:${MC.surface};color:${MC.text};padding:0 10px;font-size:13px;outline:none}
 .md-date:focus{border-color:${MC.accent}}
@@ -35908,9 +35909,10 @@ function MerchantDashboard({ profile }) {
       )}
       <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform flex flex-col
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-        style={{ background: "rgba(251,254,253,.85)", borderRight: `1px solid ${MC.divider}`, padding: "17px 11px", gap: 17, animation: "md-up .5s ease both", backdropFilter: "blur(12px)" }}>
+        style={{ background: "rgba(251,254,253,.92)", borderRight: `1px solid ${MC.divider}`, padding: "17px 11px", gap: 17, backdropFilter: "blur(12px)" }}>
         {/* Лого */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px" }}>
+          <button type="button" onClick={() => setSidebarOpen(false)} className="lg:hidden" aria-label="Хаах" style={{ position: "absolute", right: 8, top: 10, width: 36, height: 36, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, color: MC.n300, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={16} /></button>
           <div style={{ position: "relative", width: 28, height: 28, display: "grid", placeItems: "center", flex: "none" }}>
             <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `1.5px solid ${MC.accent}`, opacity: .5 }} />
             <span style={{ position: "absolute", inset: 6, borderRadius: "50%", border: `1.5px solid ${MC.accent}` }} />
@@ -35958,10 +35960,10 @@ function MerchantDashboard({ profile }) {
 
       {/* ─── Гол хэсэг ───────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-auto min-w-0">
-        <div style={{ padding: "17px clamp(16px,3vw,32px) 24px", display: "flex", flexDirection: "column", gap: 17, maxWidth: 1400 }}>
-          <header style={{ display: "flex", alignItems: "flex-end", gap: 11, animation: "md-up .5s .05s ease both" }}>
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn p-1 mb-1" style={{ color: MC.text }}>
-              <Menu size={22} />
+        <div style={{ padding: "14px clamp(12px,3vw,32px) 24px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 1400 }}>
+          <header style={{ display: "flex", alignItems: "center", gap: 11, animation: "md-up .5s .05s ease both" }}>
+            <button type="button" onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn" aria-label="Цэс" style={{ color: MC.a200, width: 40, height: 40, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, display: "grid", placeItems: "center", flex: "none" }}>
+              <Menu size={20} />
             </button>
             <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
               <span style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: MC.n300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Merchants · {pageNames}</span>
@@ -35986,7 +35988,19 @@ const MCH_SER = [{ id: "o", label: "Захиалга", c: "#1c7fc4" }, { id: "d"
 function MerchantLineChart({ labels, rows, sub, ready }) {
   const [off, setOff] = useState({});
   const [hover, setHover] = useState(null);
-  const CW = 800, CL = 40, CR = 16, CT = 20, CB = 30, CH = 260;
+  // 📱 Контейнерын бодит өргөнийг хэмжиж viewBox-ийг px-тэй тэнцүүлнэ → утсан дээр текст жижгэрэхгүй
+  const wrapRef = useRef(null);
+  const [cw, setCw] = useState(800);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const upd = () => { const w = Math.round(el.getBoundingClientRect().width); if (w > 0) setCw(w); };
+    upd();
+    let ro = null;
+    try { ro = new ResizeObserver(upd); ro.observe(el); } catch { window.addEventListener("resize", upd); }
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener("resize", upd); };
+  }, []);
+  const narrow = cw < 560;
+  const CW = cw, CL = narrow ? 32 : 40, CR = narrow ? 10 : 16, CT = 20, CB = 30, CH = narrow ? 220 : 260;
   const n = rows.length;
   if (n < 1) return null;
   const step = n > 1 ? (CW - CL - CR) / (n - 1) : CW - CL - CR; // 1 цэгтэй (сарын 1-нд) → голд нь
@@ -36007,7 +36021,8 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
     return d;
   };
   const pts = MCH_SER.map((_, j) => rows.map((r, i) => [X(i), Y(r[j])]));
-  const lab = Math.ceil(n / 8), showDots = true, h = hover; // бүх цэг + тоо үргэлж харагдана
+  const lab = Math.ceil(n / (narrow ? 4 : 8)), showDots = true, h = hover; // бүх цэг + тоо үргэлж харагдана
+  const showLabels = n <= (narrow ? 10 : 45); // утсан дээр олон цэгтэй бол тоог нуух (hover tooltip хэвээр)
   const tipLeft = h != null ? (X(h) / CW) * 100 : 0;
   const total = (j) => rows.reduce((a, r) => a + r[j], 0);
   return (
@@ -36027,12 +36042,12 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
           ))}
         </div>
       </div>
-      <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
-        <svg viewBox={`0 0 ${CW} ${CH}`} style={{ display: "block", width: "100%", height: "auto", overflow: "visible", fontFamily: FS }}>
+      <div ref={wrapRef} style={{ position: "relative" }} onMouseLeave={() => setHover(null)} onTouchEnd={() => setTimeout(() => setHover(null), 2500)}>
+        <svg viewBox={`0 0 ${CW} ${CH}`} width={CW} height={CH} style={{ display: "block", width: "100%", height: "auto", overflow: "visible", fontFamily: FS }}>
           {[0, 1, 2, 3, 4].map((k) => <line key={k} x1={CL} x2={CW - CR} y1={Y((ymax * k) / 4)} y2={Y((ymax * k) / 4)} stroke="#d3e6e1" strokeDasharray={k ? "3 4" : "0"} />)}
           <defs><linearGradient id="md-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1c7fc4" stopOpacity=".16" /><stop offset="1" stopColor="#1c7fc4" stopOpacity="0" /></linearGradient></defs>
           {vis[0] && <path d={smooth(pts[0]) + `L${X(n - 1)},${CH - CB}L${CL},${CH - CB}Z`} fill="url(#md-area)" style={{ opacity: ready ? 1 : 0, transition: "opacity .8s .4s" }} />}
-          <line x1={h != null ? X(h) : 0} x2={h != null ? X(h) : 0} y1={20} y2={230} stroke={MC.accent} strokeDasharray="3 4" style={{ opacity: h != null ? .6 : 0, transition: "opacity .15s" }} />
+          <line x1={h != null ? X(h) : 0} x2={h != null ? X(h) : 0} y1={20} y2={CH - 30} stroke={MC.accent} strokeDasharray="3 4" style={{ opacity: h != null ? .6 : 0, transition: "opacity .15s" }} />
           {MCH_SER.map((s, j) => (
             <path key={s.id} d={smooth(pts[j])} pathLength="1" fill="none" stroke={s.c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
               style={{ strokeDasharray: 1, strokeDashoffset: ready ? 0 : 1, opacity: vis[j] ? 1 : 0, transition: ready ? `stroke-dashoffset 1.4s ${(0.15 + j * 0.15).toFixed(2)}s cubic-bezier(.4,0,.2,1), opacity .3s` : "none" }} />
@@ -36043,21 +36058,21 @@ function MerchantLineChart({ labels, rows, sub, ready }) {
               style={{ opacity: vis[j] && ready ? 1 : 0, transition: `opacity .4s ${showDots && h == null ? (0.5 + i * 0.06).toFixed(2) : 0}s, r .15s` }} />;
           }))}
           {/* 🔢 Цэг дээрх тоо: Захиалга/Хүргэсэн дээр, Цуцалсан доор (0 бол нуух) */}
-          {ready && MCH_SER.map((s, j) => vis[j] && rows.map((r, i) => r[j] > 0 && (
+          {ready && showLabels && MCH_SER.map((s, j) => vis[j] && rows.map((r, i) => r[j] > 0 && (
             <text key={"t" + s.id + i} x={X(i).toFixed(1)} y={(Y(r[j]) + (j === 2 ? 15 : -8)).toFixed(1)} textAnchor="middle" fill={s.c}
               style={{ fontSize: n > 20 ? 8.5 : 10, fontWeight: 600, fontFamily: FS, opacity: 0, animation: `md-up .4s ${(0.6 + i * 0.03).toFixed(2)}s ease forwards`, pointerEvents: "none" }}>{r[j]}</text>
           )))}
-          {rows.map((_, i) => <rect key={i} x={(X(i) - step / 2).toFixed(1)} y="10" width={step.toFixed(1)} height="230" fill="transparent" onMouseEnter={() => setHover(i)} />)}
+          {rows.map((_, i) => <rect key={i} x={(X(i) - step / 2).toFixed(1)} y="10" width={step.toFixed(1)} height={CH - 30} fill="transparent" onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} />)}
         </svg>
         {[0, 1, 2, 3, 4].map((k) => { const v = (ymax * k) / 4; return (
-          <span key={k} style={{ position: "absolute", left: 0, width: "4.25%", textAlign: "right", top: `${((Y(v) / CH) * 100).toFixed(2)}%`, transform: "translateY(-50%)", fontSize: 10, color: MC.n400, fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>
+          <span key={k} style={{ position: "absolute", left: 0, width: CL - 6, textAlign: "right", top: `${((Y(v) / CH) * 100).toFixed(2)}%`, transform: "translateY(-50%)", fontSize: 10, color: MC.n400, fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>
             {v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : Math.round(v)}
           </span>); })}
         {labels.map((l, i) => (i % lab === 0 || i === n - 1) && (
           <span key={i} style={{ position: "absolute", bottom: 0, left: `${((X(i) / CW) * 100).toFixed(2)}%`, transform: "translateX(-50%)", fontSize: 10, color: MC.n400, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", pointerEvents: "none" }}>{l}</span>
         ))}
         {h != null && (
-          <div style={{ position: "absolute", top: 4, left: `${tipLeft}%`, transform: tipLeft > 70 ? "translateX(calc(-100% - 12px))" : "translateX(12px)", pointerEvents: "none", display: "flex", flexDirection: "column", gap: 4, minWidth: 130, padding: "6px 8px", border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface, boxShadow: MC.hoverShadow, fontSize: 12, transition: "left .15s" }}>
+          <div style={{ position: "absolute", top: 4, left: `${tipLeft}%`, transform: tipLeft > (narrow ? 55 : 70) ? "translateX(calc(-100% - 12px))" : "translateX(12px)", pointerEvents: "none", display: "flex", flexDirection: "column", gap: 4, minWidth: narrow ? 110 : 130, padding: "6px 8px", border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface, boxShadow: MC.hoverShadow, fontSize: 12, transition: "left .15s" }}>
             <span style={{ fontWeight: 500 }}>{labels[h]}</span>
             {MCH_SER.map((s, j) => vis[j] && (
               <span key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, color: MC.n300 }}>
@@ -36188,7 +36203,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
       </div>
 
       {/* KPI */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,170px),1fr))", gap: 8 }}>
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,150px),1fr))", gap: 8 }}>
         {KPIS.map((kp, i) => (
           <div key={kp.label} className="md-kpi" style={{ border: `1px solid ${kp.c}47`, animation: `md-up .5s ${(0.1 + i * 0.05).toFixed(2)}s ease both` }}>
             <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: kp.c, transformOrigin: "left", animation: `md-grow .8s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }} />
@@ -36225,7 +36240,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                  <span style={{ fontSize: 11, color: MC.n400, flex: "none" }}>{p.sku || ""}</span>
+                  <span className="md-sku" style={{ fontSize: 11, color: MC.n400, flex: "none" }}>{p.sku || ""}</span>
                 </div>
                 <div style={{ height: 6, borderRadius: 999, background: MC.a900, overflow: "hidden" }}>
                   <div style={{ height: "100%", borderRadius: 999, background: `linear-gradient(90deg,${MC.a400},${MC.accent})`, position: "relative", overflow: "hidden", width: ready ? `${Math.max(3, (Number(p.revenue || 0) / maxRev) * 100).toFixed(1)}%` : "0%", transition: `width .9s cubic-bezier(.2,.8,.2,1) ${(i * 0.06).toFixed(2)}s` }}>
