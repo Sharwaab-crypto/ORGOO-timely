@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-kpi-cards";
+const BUILD_VERSION = "v2026.10.02-auto-address";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -26031,6 +26031,23 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     if (!selectedCity || !selectedDistrict) return [];
     return dbLocations.filter((l) => l.city === selectedCity && l.district === selectedDistrict && l.khoroo);
   }, [dbLocations, selectedCity, selectedDistrict]);
+  // 🏠 Дүүрэг/хороо сонгоход хаягийн эхэнд автоматаар бичнэ ("Баянзүрх, 5-р хороо, ...").
+  //    Өмнөх автомат хэсгийг санаж, дахин сонгоход сольж бичнэ — операторын гараар бичсэн хэсэг хэвээр.
+  const autoAddrRef = useRef("");
+  const applyAutoAddress = (city, dist, khoroo) => {
+    const parts = [];
+    if (city && city !== "Улаанбаатар") parts.push(city);
+    if (dist) parts.push(dist);
+    if (khoroo) parts.push(khoroo);
+    const prefix = parts.length ? parts.join(", ") + ", " : "";
+    setAddress((prev) => {
+      let rest = prev || "";
+      const old = autoAddrRef.current;
+      if (old && rest.startsWith(old)) rest = rest.slice(old.length);
+      autoAddrRef.current = prefix;
+      return prefix + rest.replace(/^\s+/, "");
+    });
+  };
   const [notes, setNotes] = useState(initialNotes || "");
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
@@ -26305,6 +26322,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                     const dist = e.target.value;
                     setSelectedDistrict(dist);
                     setSelectedKhoroo("");
+                    applyAutoAddress(selectedCity, dist, "");
                     if (selectedCity && dist) {
                       const distLoc = dbLocations.find((l) => l.city === selectedCity && l.district === dist && !l.khoroo);
                       if (distLoc) {
@@ -26326,6 +26344,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                   onChange={(e) => {
                     const khoroo = e.target.value;
                     setSelectedKhoroo(khoroo);
+                    applyAutoAddress(selectedCity, selectedDistrict, khoroo);
                     if (selectedCity && selectedDistrict && khoroo) {
                       // ⚡ dbLocations-аас ШУУД хайх (dbKhoroo memo stale байж болзошгүй async timing)
                       const found = dbLocations.find(
