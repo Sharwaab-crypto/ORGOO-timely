@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-repeat-calls2";
+const BUILD_VERSION = "v2026.10.02-channel-chart";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15008,6 +15008,8 @@ function CallCenterView({ profile }) {
   const [statusPopupCall, setStatusPopupCall] = useState(null);
   const [statusComment, setStatusComment] = useState("");
   const [showRepeatChart, setShowRepeatChart] = useState(false); // 🔁 давтан дуудлагын chart нээлттэй эсэх
+  const [showChannelChart, setShowChannelChart] = useState(false); // 💬/📞 захиалгын суваг ажилтнаар (admin/manager)
+  const canSeeChannel = profile?.role === "admin" || profile?.role === "manager";
   const [callLocks, setCallLocks] = useState([]);
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
@@ -15645,6 +15647,18 @@ function CallCenterView({ profile }) {
           const k = cc2.created_by || "__none";
           repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
         });
+        // 💬/📞 Захиалгын суваг ажилтнаар — ordered мөрийн тэмдэглэлээс (зөвхөн admin/manager харна)
+        const chCounts = {}; let chChat = 0, chCall = 0;
+        pieSrc.forEach((cc2) => {
+          if (cc2.call_status !== "ordered") return;
+          const n = cc2.notes || "";
+          const isChat = n.includes("[💬 Чатаар захиалга]"), isCall = n.includes("[📞 Залгаж захиалга]");
+          if (!isChat && !isCall) return;
+          const k = cc2.created_by || "__none";
+          chCounts[k] = chCounts[k] || { chat: 0, call: 0 };
+          if (isChat) { chCounts[k].chat += 1; chChat += 1; } else { chCounts[k].call += 1; chCall += 1; }
+        });
+        const chEntries = Object.entries(chCounts).map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", "💬 Чатаар": v.chat, "📞 Залгаж": v.call, total: v.chat + v.call })).sort((a, b) => b.total - a.total);
         const repEntries = Object.entries(repCounts).map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v })).sort((a, b) => b.value - a.value);
         if (total === 0 && repTotal === 0) return null;
         return (
@@ -15714,6 +15728,42 @@ function CallCenterView({ profile }) {
                 )
               )}
             </div>
+
+            {/* 💬/📞 Чатаар / Залгаж захиалга авсан ажилчид — зөвхөн ахлах (manager) болон admin */}
+            {canSeeChannel && (
+              <div className="mt-3 pt-3" style={{ borderTop: `1px dashed ${T.borderSoft}` }}>
+                <button type="button" onClick={() => setShowChannelChart((v) => !v)}
+                  className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 flex-wrap"
+                  style={{ background: showChannelChart ? "#1c7fc4" : "rgba(28,127,196,0.12)", color: showChannelChart ? "#fff" : "#1c7fc4", fontFamily: FS }}>
+                  💬📞 Чатаар / Залгаж захиалга авсан ажилчид
+                  <span style={{ background: showChannelChart ? "rgba(255,255,255,0.25)" : T.surface, borderRadius: 999, padding: "0 8px", fontFamily: FD }} className="text-[11px]">💬 {chChat} · 📞 {chCall}</span>
+                  <span className="text-[10px]">{showChannelChart ? "▲" : "▼"}</span>
+                </button>
+                {showChannelChart && (
+                  chEntries.length === 0 ? (
+                    <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Энэ хугацаанд сувгаар тэмдэглэгдсэн захиалга байхгүй</div>
+                  ) : (
+                    <div className="mt-2">
+                      <ResponsiveContainer width="100%" height={Math.max(220, chEntries.length * 46 + 50)}>
+                        <BarChart data={chEntries} layout="vertical" margin={{ left: 8, right: 60, top: 8, bottom: 8 }}>
+                          <XAxis type="number" hide allowDecimals={false} />
+                          <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 13, fontFamily: FS, fill: T.ink }} axisLine={false} tickLine={false} />
+                          <RechartsTooltip contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                          <Legend wrapperStyle={{ fontSize: 12, fontFamily: FS }} />
+                          <Bar dataKey="💬 Чатаар" stackId="ch" fill="#1c7fc4" barSize={28}>
+                            <LabelList dataKey="💬 Чатаар" position="inside" style={{ fontSize: 12, fontFamily: FD, fontWeight: 700, fill: "#fff" }} formatter={(v) => (v > 0 ? v : "")} />
+                          </Bar>
+                          <Bar dataKey="📞 Залгаж" stackId="ch" fill="#0E9C8E" radius={[0, 10, 10, 0]} barSize={28}>
+                            <LabelList dataKey="📞 Залгаж" position="inside" style={{ fontSize: 12, fontFamily: FD, fontWeight: 700, fill: "#fff" }} formatter={(v) => (v > 0 ? v : "")} />
+                            <LabelList dataKey="total" position="right" style={{ fontSize: 13, fontFamily: FD, fontWeight: 700, fill: T.ink }} formatter={(v) => `${v}`} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
