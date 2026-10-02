@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-merchant-mobile";
+const BUILD_VERSION = "v2026.10.02-call-timer";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14957,6 +14957,7 @@ function CallCenterView({ profile }) {
         // Алдаа гарвал ч хуучин call-аар үргэлжилнэ
       }
 
+      callStartRef.current = Date.now(); // ⏱ тоолол эхэлнэ
       setOrderForCall({
         phone,
         name: customerName,
@@ -14969,6 +14970,7 @@ function CallCenterView({ profile }) {
       await loadAll();
     } catch (e) {
       console.error("Error:", e);
+      callStartRef.current = Date.now();
       setOrderForCall({ phone, name: customerName, notes: callNotes, products: callProducts || [], callId });
     }
     } finally {
@@ -14976,6 +14978,11 @@ function CallCenterView({ profile }) {
       processingPhonesRef.current.delete(phone);
     }
   };
+
+  // ⏱ Захиалгын цонх картаас нээгдсэн мөч (ms) — статус/захиалгын тэмдэглэлд "⏱ Nс" бичнэ
+  const callStartRef = useRef(null);
+  const fmtCallSec = (s) => `⏱ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const elapsedFrom = (ms) => (ms ? Math.max(0, Math.floor((Date.now() - ms) / 1000)) : null);
 
   // Lock release
   const releaseLock = async (phone) => {
@@ -15059,7 +15066,7 @@ function CallCenterView({ profile }) {
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
-        notes: `[${statusLabel}]${statusComment.trim() ? " " + statusComment.trim() : ""}`,
+        notes: `[${statusLabel}]${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()}${statusComment.trim() ? " " + statusComment.trim() : ""}`,
         call_status: status,
         fb_page_id: stPage, // 🔗 Resolved page
         created_by: profile.id,
@@ -15091,7 +15098,7 @@ function CallCenterView({ profile }) {
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
-        notes: `[ЦУЦАЛСАН] ${statusComment.trim()}`,
+        notes: `[ЦУЦАЛСАН]${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()} ${statusComment.trim()}`,
         call_status: "cancelled",
         fb_page_id: cnPage,
         created_by: profile.id,
@@ -16863,6 +16870,7 @@ function CallCenterView({ profile }) {
           initialName={orderForCall.name}
           initialNotes={orderForCall.notes || ""}
           initialProducts={orderForCall.products}
+          startedAt={callStartRef.current}
           onCallback={async (phone) => {
             // Захиалга modal-аас status popup-руу шилжих
             // 🔗 Тухайн утасны page-ийг олж дамжуулах
@@ -16875,7 +16883,7 @@ function CallCenterView({ profile }) {
               if (pc) cbPage = pc.fb_page_id;
             }
             setOrderForCall(null);
-            setStatusPopupCall({ phone, callId: orderForCall.callId, fbPageId: cbPage });
+            setStatusPopupCall({ phone, callId: orderForCall.callId, fbPageId: cbPage, startedAt: callStartRef.current });
           }}
           onExistingOrderFound={({ phone, orderId, orderInfo }) => {
             setOrderForCall(null);
@@ -17018,7 +17026,7 @@ function CallCenterView({ profile }) {
                     delivery_address: data.address,
                     delivery_lat: data.delivery_lat || null,
                     delivery_lng: data.delivery_lng || null,
-                    source: "phone",
+                    source: data.channel === "chat" ? "chat" : "phone", // 💬 чатаар / 📞 залгаж
                     status: "new",
                     subtotal: data.subtotal,
                     delivery_fee: data.deliveryFee,
@@ -17094,7 +17102,7 @@ function CallCenterView({ profile }) {
                     phone: data.phone,
                     customer_id: srcCall?.customer_id || customerId || null,
                     customer_name: data.name || srcCall?.customer_name || null,
-                    notes: srcCall?.notes || null,
+                    notes: (() => { const tag = data.channel === "chat" ? "[💬 Чатаар захиалга]" : data.callSeconds != null ? `[📞 Залгаж захиалга] ${fmtCallSec(data.callSeconds)}` : null; const base = srcCall?.notes || ""; return tag ? (base ? `${tag} ${base}` : tag) : (base || null); })(),
                     interested_products: srcCall?.interested_products || [],
                     call_status: "ordered",
                     fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
@@ -25831,7 +25839,15 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 }
 
 // ─── Захиалга авах modal — 2 баганатай зураг бүхий хувилбар ──────────
-function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound, directMode = false }) {
+function CallReceiveModal({ products, profile, initialPhone, initialName, initialNotes, initialProducts, isEditMode, editOrder, onSave, onCallback, onClose, onExistingOrderFound, directMode = false, startedAt = null }) {
+  // ⏱ Залгалтын хугацаа — картаас нээгдсэн мөчөөс (startedAt) секундээр тоолно
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!startedAt) return;
+    const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [startedAt]);
+  const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   // directMode (мерчант шууд захиалга): ганц "Захиалга баталгаажуулах" товч; "шинэ дээр захиалга байна" шалгалтыг алгасна
   const [phone, setPhone] = useState(initialPhone || "");
   const [phone2, setPhone2] = useState(editOrder?.customer_phone2 || "");
@@ -25921,7 +25937,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   });
   const [deliveryFee, setDeliveryFee] = useState(editOrder?.delivery_fee?.toString() || "");
   const [paidAmount, setPaidAmount] = useState(editOrder?.paid_amount?.toString() || "");
-  const [callType, setCallType] = useState("called"); // called | walk_in
+  // 📞/💬 Захиалгын суваг — ЗААВАЛ сонгоно (create горим): call = залгаж, chat = чатаар орж
+  const [channel, setChannel] = useState(null);
+  const needChannel = !isEditMode && !directMode;
   const [busy, setBusy] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -26061,8 +26079,13 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
       <div className="modal-content rounded-2xl w-full max-w-6xl p-4 sm:p-5 max-h-[95vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
-          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg">
+          <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg flex items-center gap-2 flex-wrap">
             🛍 Захиалга авах
+            {startedAt && (
+              <span style={{ fontFamily: FD, fontWeight: 700, color: elapsedSec >= 120 ? T.err : T.highlight, background: elapsedSec >= 120 ? T.errSoft : T.highlightSoft, borderRadius: 999, padding: "2px 10px", fontVariantNumeric: "tabular-nums" }} className="text-sm">
+                ⏱ {fmtSec(elapsedSec)}
+              </span>
+            )}
           </h3>
           <button onClick={onClose} style={{ color: T.muted }}><X size={16} /></button>
         </div>
@@ -26283,32 +26306,28 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
               </div>
             </div>
 
-            {/* Type buttons */}
+            {/* 📞/💬 Захиалгын суваг — заавал сонгоно */}
             <div>
-              <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
-                <FileText size={11} style={{ color: T.muted }} />
-                Захиалгын төрөл
-              </label>
-              <div className="flex gap-2 mb-2">
-                <button onClick={() => setCallType("called")}
-                  className="press-btn px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
-                  style={{
-                    background: callType === "called" ? T.highlight : T.surfaceAlt,
-                    color: callType === "called" ? "white" : T.ink,
-                    fontFamily: FS, fontWeight: 600,
-                  }}>
-                  <Phone size={11} /> Залгасан
-                </button>
-                <button onClick={() => setCallType("walk_in")}
-                  className="press-btn px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
-                  style={{
-                    background: callType === "walk_in" ? T.highlight : T.surfaceAlt,
-                    color: callType === "walk_in" ? "white" : T.ink,
-                    fontFamily: FS, fontWeight: 600,
-                  }}>
-                  <UserIcon size={11} /> Орж ирсэн
-                </button>
-              </div>
+              {needChannel && (
+                <>
+                  <label style={{ color: T.ink, fontFamily: FS, fontWeight: 500 }} className="text-xs mb-1 flex items-center gap-1">
+                    <FileText size={11} style={{ color: channel ? T.muted : T.err }} />
+                    Захиалга хэрхэн болсон бэ? <span style={{ color: T.err }}>*</span>
+                  </label>
+                  <div className="flex gap-2 mb-2 flex-wrap">
+                    <button type="button" onClick={() => setChannel("call")}
+                      className="press-btn px-3 py-2 rounded-lg text-xs flex items-center gap-1.5"
+                      style={{ background: channel === "call" ? T.highlight : T.surfaceAlt, color: channel === "call" ? "white" : T.ink, border: `1px solid ${channel === "call" ? "transparent" : (channel ? T.border : T.err)}`, fontFamily: FS, fontWeight: 600 }}>
+                      <Phone size={12} /> Залгаж захиалга болсон
+                    </button>
+                    <button type="button" onClick={() => setChannel("chat")}
+                      className="press-btn px-3 py-2 rounded-lg text-xs flex items-center gap-1.5"
+                      style={{ background: channel === "chat" ? "#1c7fc4" : T.surfaceAlt, color: channel === "chat" ? "white" : T.ink, border: `1px solid ${channel === "chat" ? "transparent" : (channel ? T.border : T.err)}`, fontFamily: FS, fontWeight: 600 }}>
+                      💬 Чатаар орж захиалга болсон
+                    </button>
+                  </div>
+                </>
+              )}
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
                 rows={2}
                 placeholder="Нэмэлт мэдээлэл..."
@@ -26904,8 +26923,10 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             <>
               {/* CREATE MODE — Дуудаад авлаа / Дараа холбогдох / Цуцалсан */}
               <button
-            disabled={busy || !phone.trim() || items.length === 0 || !address.trim()}
+            disabled={busy || !phone.trim() || items.length === 0 || !address.trim() || (needChannel && !channel)}
+            title={needChannel && !channel ? "Эхлээд «Залгаж» эсвэл «Чатаар» гэдгийг сонгоно уу" : ""}
             onClick={async () => {
+              if (needChannel && !channel) { alert("⚠ Захиалга хэрхэн болсныг сонгоно уу: Залгаж / Чатаар"); return; }
               // 8 оронтой шалгах
               if (phone.trim().length !== 8) {
                 alert("⚠ Утсан дугаар заавал 8 оронтой байх ёстой!");
@@ -27005,7 +27026,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 delivery_lat: pinLat,
                 delivery_lng: pinLng,
                 notes: notes.trim() || null,
-                callType,
+                channel: needChannel ? channel : null,
+                callSeconds: startedAt && channel === "call" ? Math.floor((Date.now() - startedAt) / 1000) : null,
                 subtotal,
                 deliveryFee: fee,
                 totalAmount: total,
@@ -27024,7 +27046,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             }}
             className="glow-primary press-btn w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
             <CheckCircle2 size={14} />
-            {busy ? "Хадгалаж..." : directMode ? `✅ Захиалга баталгаажуулах (${items.length})` : `✓ Дуудаад авлаа (${items.length})`}
+            {busy ? "Хадгалаж..." : directMode ? `✅ Захиалга баталгаажуулах (${items.length})` : channel === "chat" ? `✓ Чатаар захиалга бүртгэх (${items.length})` : `✓ Дуудаад авлаа (${items.length})`}
           </button>
 
           {/* 2-р мөр: Дараа холбогдох + Цуцалсан (directMode-д нуугдана) */}
@@ -29887,7 +29909,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
                   </>
                 ) : (
                   <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
-                    {order.source === "phone" ? "📞 Утсаар" : "Систем"}
+                    {order.source === "phone" ? "📞 Утсаар" : order.source === "chat" ? "💬 Чатаар" : "Систем"}
                   </span>
                 )}
                 <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">
