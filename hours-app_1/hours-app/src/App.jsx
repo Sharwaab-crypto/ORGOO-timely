@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-repeat-calls";
+const BUILD_VERSION = "v2026.10.02-repeat-calls2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14983,6 +14983,19 @@ function CallCenterView({ profile }) {
   const callStartRef = useRef(null);
   const fmtCallSec = (s) => `⏱ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const elapsedFrom = (ms) => (ms ? Math.max(0, Math.floor((Date.now() - ms) / 1000)) : null);
+  // 🔁 ДАВТАН ЗАЛГАЛТ: тухайн дугаарын сүүлийн оролдлого (no_answer/unreachable/callback) 29 минутаас өмнө байсан бол
+  //    ("⏰ Давтан · 29 мин хэтэрсэн" chip-ийн дүрэмтэй ижил) → тэмдэглэлд "🔁" тэмдэг бичигдэж, ажилтнаар тоологдоно
+  const REPEAT_TAG = "🔁";
+  const isRepeatCall = async (phone) => {
+    try {
+      const { data: last } = await supabase.from("biz_calls").select("call_status, created_at")
+        .eq("phone", phone).neq("call_status", "pending").not("call_status", "is", null)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!last) return false;
+      if (!["no_answer", "unreachable", "callback"].includes(last.call_status)) return false;
+      return Date.now() - new Date(last.created_at).getTime() > 29 * 60 * 1000;
+    } catch { return false; }
+  };
 
   // Lock release
   const releaseLock = async (phone) => {
@@ -14994,6 +15007,7 @@ function CallCenterView({ profile }) {
   // Status popup
   const [statusPopupCall, setStatusPopupCall] = useState(null);
   const [statusComment, setStatusComment] = useState("");
+  const [showRepeatChart, setShowRepeatChart] = useState(false); // 🔁 давтан дуудлагын chart нээлттэй эсэх
   const [callLocks, setCallLocks] = useState([]);
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
@@ -15066,7 +15080,7 @@ function CallCenterView({ profile }) {
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
-        notes: `[${statusLabel}]${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()}${statusComment.trim() ? " " + statusComment.trim() : ""}`,
+        notes: `[${statusLabel}]${(await isRepeatCall(statusPopupCall.phone)) ? " " + REPEAT_TAG : ""}${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()}${statusComment.trim() ? " " + statusComment.trim() : ""}`,
         call_status: status,
         fb_page_id: stPage, // 🔗 Resolved page
         created_by: profile.id,
@@ -15098,7 +15112,7 @@ function CallCenterView({ profile }) {
       await supabase.from("biz_calls").insert({
         phone: statusPopupCall.phone,
         customer_id: statusPopupCall.customerId || null,
-        notes: `[ЦУЦАЛСАН]${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()} ${statusComment.trim()}`,
+        notes: `[ЦУЦАЛСАН]${(await isRepeatCall(statusPopupCall.phone)) ? " " + REPEAT_TAG : ""}${(() => { const s = elapsedFrom(statusPopupCall.startedAt); return s != null ? " " + fmtCallSec(s) : ""; })()} ${statusComment.trim()}`,
         call_status: "cancelled",
         fb_page_id: cnPage,
         created_by: profile.id,
@@ -15624,27 +15638,12 @@ function CallCenterView({ profile }) {
           .map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v }))
           .sort((a, b) => b.value - a.value);
         const total = entries.reduce((s, e) => s + e.value, 0);
-        // 🔁 ДАВТАН ДУУДЛАГА: нэг дугаар дээр өмнөх оролдлого (no_answer/unreachable/callback) байгаад
-        //    29 минутаас хойш дахин статус тавьсан (цуцлах / захиалга / 3 төлөв) бол тэр ажилтанд +1
-        const REPEAT_GAP = 29 * 60 * 1000;
-        const openSt = new Set(["no_answer", "unreachable", "callback"]);
-        const attemptSt = new Set(["no_answer", "unreachable", "callback", "ordered", "cancelled"]);
-        const byPhone = {};
-        recentCalls.forEach((cc2) => {
-          if (!cc2.phone || !attemptSt.has(cc2.call_status)) return;
-          (byPhone[cc2.phone] = byPhone[cc2.phone] || []).push(cc2);
-        });
+        // 🔁 ДАВТАН ДУУДЛАГА: "⏰ 29 мин хэтэрсэн" дугаар дээр статус/захиалга/цуцлал тавихад тэмдэглэлд "🔁" бичигддэг → түүгээр тоолно
         const repCounts = {}; let repTotal = 0;
-        Object.values(byPhone).forEach((list) => {
-          list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-          for (let i = 1; i < list.length; i++) {
-            const prev = list[i - 1], cur = list[i];
-            if (!openSt.has(prev.call_status)) continue; // өмнөх нь хаагдсан (захиалга/цуцлал) бол шинэ мөчлөг
-            if (new Date(cur.created_at) - new Date(prev.created_at) <= REPEAT_GAP) continue;
-            if (period !== "all") { const d = new Date(cur.created_at); if (!(d >= periodRange.start && d < periodRange.end)) continue; }
-            const k = cur.created_by || "__none";
-            repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
-          }
+        pieSrc.forEach((cc2) => {
+          if (!(cc2.notes || "").includes("🔁")) return;
+          const k = cc2.created_by || "__none";
+          repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
         });
         const repEntries = Object.entries(repCounts).map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v })).sort((a, b) => b.value - a.value);
         if (total === 0 && repTotal === 0) return null;
@@ -15686,30 +15685,33 @@ function CallCenterView({ profile }) {
               </div>
             </div>
 
-            {/* 🔁 Давтан дуудлага хийсэн ажилчид — "⏰ 29 мин хэтэрсэн" дугаар дээр дахин залгаж статус тавьсан тоо */}
+            {/* 🔁 Давтан дуудлага хийсэн ажилчид — товч дарахад том chart нээгдэнэ */}
             <div className="mt-3 pt-3" style={{ borderTop: `1px dashed ${T.borderSoft}` }}>
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-lg">🔁</span>
-                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Давтан дуудлага хийсэн ажилчид</span>
-                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">Нийт {repTotal.toLocaleString()} давтан залгалт</span>
-              </div>
-              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">
-                Өмнөх оролдлогоос 29 минутаас дээш хугацааны дараа дахин залгаж захиалга / цуцлал / дуудаад авахгүй / холбогдох боломжгүй / эргэн холбогдох төлөв тавьсан бол 1 давтан залгалт.
-              </div>
-              {repEntries.length === 0 ? (
-                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-3">Энэ хугацаанд давтан залгалт байхгүй</div>
-              ) : (
-                <ResponsiveContainer width="100%" height={Math.max(90, repEntries.length * 30 + 20)}>
-                  <BarChart data={repEntries} layout="vertical" margin={{ left: 8, right: 44, top: 4, bottom: 4 }}>
-                    <XAxis type="number" hide allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fontFamily: FS, fill: T.ink }} axisLine={false} tickLine={false} />
-                    <RechartsTooltip formatter={(v) => [`${Number(v).toLocaleString()} давтан залгалт`, ""]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
-                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={18}>
-                      {repEntries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      <LabelList dataKey="value" position="right" style={{ fontSize: 11, fontFamily: FD, fontWeight: 700, fill: T.ink }} formatter={(v) => `${v} (${repTotal ? Math.round((v / repTotal) * 100) : 0}%)`} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+              <button type="button" onClick={() => setShowRepeatChart((v) => !v)}
+                className="press-btn w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ background: showRepeatChart ? T.highlight : T.highlightSoft, color: showRepeatChart ? "#fff" : T.highlight, fontFamily: FS }}>
+                🔁 Давтан дуудлага хийсэн ажилчид
+                <span style={{ background: showRepeatChart ? "rgba(255,255,255,0.25)" : T.surface, borderRadius: 999, padding: "0 8px", fontFamily: FD }} className="text-[11px]">{repTotal.toLocaleString()}</span>
+                <span className="text-[10px]">{showRepeatChart ? "▲" : "▼"}</span>
+              </button>
+              {showRepeatChart && (
+                repEntries.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Энэ хугацаанд давтан залгалт байхгүй</div>
+                ) : (
+                  <div className="mt-2">
+                    <ResponsiveContainer width="100%" height={Math.max(220, repEntries.length * 46 + 30)}>
+                      <BarChart data={repEntries} layout="vertical" margin={{ left: 8, right: 70, top: 8, bottom: 8 }}>
+                        <XAxis type="number" hide allowDecimals={false} />
+                        <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 13, fontFamily: FS, fill: T.ink }} axisLine={false} tickLine={false} />
+                        <RechartsTooltip formatter={(v) => [`${Number(v).toLocaleString()} давтан залгалт`, ""]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                        <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={28}>
+                          {repEntries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                          <LabelList dataKey="value" position="right" style={{ fontSize: 13, fontFamily: FD, fontWeight: 700, fill: T.ink }} formatter={(v) => `${v} (${repTotal ? Math.round((v / repTotal) * 100) : 0}%)`} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -17147,12 +17149,13 @@ function CallCenterView({ profile }) {
                   .select("call_status").eq("phone", data.phone)
                   .order("created_at", { ascending: false }).limit(1).maybeSingle();
                 if (lastCall?.call_status !== "ordered") {
+                  const repTag = (await isRepeatCall(data.phone)) ? " " + REPEAT_TAG : "";
                   // Шинэ "ordered" дуудлага нэмэх (анхны pending мөрийг дарж бичихгүй)
                   await supabase.from("biz_calls").insert({
                     phone: data.phone,
                     customer_id: srcCall?.customer_id || customerId || null,
                     customer_name: data.name || srcCall?.customer_name || null,
-                    notes: (() => { const tag = data.channel === "chat" ? "[💬 Чатаар захиалга]" : data.callSeconds != null ? `[📞 Залгаж захиалга] ${fmtCallSec(data.callSeconds)}` : null; const base = srcCall?.notes || ""; return tag ? (base ? `${tag} ${base}` : tag) : (base || null); })(),
+                    notes: (() => { const tag = data.channel === "chat" ? "[💬 Чатаар захиалга]" + repTag : data.callSeconds != null ? `[📞 Залгаж захиалга]${repTag} ${fmtCallSec(data.callSeconds)}` : (repTag ? `[Захиалга]${repTag}` : null); const base = srcCall?.notes || ""; return tag ? (base ? `${tag} ${base}` : tag) : (base || null); })(),
                     interested_products: srcCall?.interested_products || [],
                     call_status: "ordered",
                     fb_page_id: srcCall?.fb_page_id || orderFbPageId || null,
