@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-channel-chart";
+const BUILD_VERSION = "v2026.10.02-kpi-cards";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19361,10 +19361,10 @@ function OperatorKPIReportView({ profile }) {
         const endIso = rangeEnd.toISOString();
         const [callData, ordData, { data: pgData }, { data: opData }] = await Promise.all([
           fetchAllRowsParallel(() => supabase.from("biz_calls")
-            .select("phone, call_status, created_by, created_at, fb_page_id")
+            .select("phone, call_status, created_by, created_at, fb_page_id, notes")
             .gte("created_at", startIso).lt("created_at", endIso)),
           fetchAllRowsParallel(() => supabase.from("biz_orders")
-            .select("customer_phone, status, taken_by, total_amount, created_at, fb_page_id")
+            .select("customer_phone, status, taken_by, total_amount, created_at, fb_page_id, source")
             .gte("created_at", startIso).lt("created_at", endIso)),
           supabase.from("biz_fb_pages").select("id, name").order("name"),
           supabase.from("profiles")
@@ -19412,6 +19412,8 @@ function OperatorKPIReportView({ profile }) {
         pendingPhones: [], // 🆕 Хүлээгдэж
         cancelledPhones: [], // 🆕 Цуцалсан
         totalCalls: 0,
+        repeatCalls: 0, repeatPhones: [], // 🔁 давтан залгалт (тэмдэглэлд 🔁)
+        chatOrders: 0, chatPhones: [], callOrders: 0, callPhones: [], // 💬/📞 захиалгын суваг (biz_orders.source)
         totalOrders: 0,
         delivered: 0,
         cancelled: 0,
@@ -19446,6 +19448,7 @@ function OperatorKPIReportView({ profile }) {
           c.call_status === "cancelled") {
         opMap[c.created_by].totalCalls++;
         if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
+        if ((c.notes || "").includes("🔁")) { opMap[c.created_by].repeatCalls++; if (c.phone) opMap[c.created_by].repeatPhones.push(c.phone); }
       }
     });
 
@@ -19456,6 +19459,8 @@ function OperatorKPIReportView({ profile }) {
       if (o.status !== "cancelled") {
         opMap[o.taken_by].totalOrders++;
         if (o.customer_phone) opMap[o.taken_by].orderedPhones.push(o.customer_phone);
+        if (o.source === "chat") { opMap[o.taken_by].chatOrders++; if (o.customer_phone) opMap[o.taken_by].chatPhones.push(o.customer_phone); }
+        else if (o.source === "phone") { opMap[o.taken_by].callOrders++; if (o.customer_phone) opMap[o.taken_by].callPhones.push(o.customer_phone); }
       }
       if (o.status === "delivered") {
         opMap[o.taken_by].delivered++;
@@ -19795,6 +19800,27 @@ function OperatorKPIReportView({ profile }) {
                     </div>
                   </button>
                 </div>
+
+                {/* 🔒 Зөвхөн admin / ахлагч: давтан залгалт + захиалгын суваг */}
+                {(profile?.role === "admin" || profile?.role === "manager") && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Давтан залгалт`, phones: op.repeatPhones || [], color: T.highlight }); }}
+                      style={{ background: T.highlightSoft, border: `1px dashed ${T.highlight}` }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">🔁 Давтан залгалт</div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">{op.repeatCalls}</div>
+                    </button>
+                    <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Чатаар захиалга`, phones: op.chatPhones || [], color: "#1c7fc4" }); }}
+                      style={{ background: "rgba(28,127,196,0.1)", border: "1px dashed #1c7fc4" }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">💬 Чатаар захиалга</div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: "#1c7fc4" }} className="text-lg tabular-nums">{op.chatOrders}</div>
+                    </button>
+                    <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Залгаж захиалга`, phones: op.callPhones || [], color: "#0b8075" }); }}
+                      style={{ background: "rgba(11,128,117,0.1)", border: "1px dashed #0b8075" }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">📞 Залгаж захиалга</div>
+                      <div style={{ fontFamily: FD, fontWeight: 700, color: "#0b8075" }} className="text-lg tabular-nums">{op.callOrders}</div>
+                    </button>
+                  </div>
+                )}
 
                 {/* Conversion progress */}
                 <div className="mt-2 flex items-center gap-2">
