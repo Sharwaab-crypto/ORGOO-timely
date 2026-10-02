@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-call-timer";
+const BUILD_VERSION = "v2026.10.02-repeat-calls";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15624,7 +15624,30 @@ function CallCenterView({ profile }) {
           .map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v }))
           .sort((a, b) => b.value - a.value);
         const total = entries.reduce((s, e) => s + e.value, 0);
-        if (total === 0) return null;
+        // 🔁 ДАВТАН ДУУДЛАГА: нэг дугаар дээр өмнөх оролдлого (no_answer/unreachable/callback) байгаад
+        //    29 минутаас хойш дахин статус тавьсан (цуцлах / захиалга / 3 төлөв) бол тэр ажилтанд +1
+        const REPEAT_GAP = 29 * 60 * 1000;
+        const openSt = new Set(["no_answer", "unreachable", "callback"]);
+        const attemptSt = new Set(["no_answer", "unreachable", "callback", "ordered", "cancelled"]);
+        const byPhone = {};
+        recentCalls.forEach((cc2) => {
+          if (!cc2.phone || !attemptSt.has(cc2.call_status)) return;
+          (byPhone[cc2.phone] = byPhone[cc2.phone] || []).push(cc2);
+        });
+        const repCounts = {}; let repTotal = 0;
+        Object.values(byPhone).forEach((list) => {
+          list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          for (let i = 1; i < list.length; i++) {
+            const prev = list[i - 1], cur = list[i];
+            if (!openSt.has(prev.call_status)) continue; // өмнөх нь хаагдсан (захиалга/цуцлал) бол шинэ мөчлөг
+            if (new Date(cur.created_at) - new Date(prev.created_at) <= REPEAT_GAP) continue;
+            if (period !== "all") { const d = new Date(cur.created_at); if (!(d >= periodRange.start && d < periodRange.end)) continue; }
+            const k = cur.created_by || "__none";
+            repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
+          }
+        });
+        const repEntries = Object.entries(repCounts).map(([id, v]) => ({ id, name: ccStaff[id] || "Бусад", value: v })).sort((a, b) => b.value - a.value);
+        if (total === 0 && repTotal === 0) return null;
         return (
           <div className="glass rounded-2xl p-3">
             <div className="flex items-center gap-2 mb-1">
@@ -15661,6 +15684,33 @@ function CallCenterView({ profile }) {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* 🔁 Давтан дуудлага хийсэн ажилчид — "⏰ 29 мин хэтэрсэн" дугаар дээр дахин залгаж статус тавьсан тоо */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px dashed ${T.borderSoft}` }}>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-lg">🔁</span>
+                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Давтан дуудлага хийсэн ажилчид</span>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">Нийт {repTotal.toLocaleString()} давтан залгалт</span>
+              </div>
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mb-2">
+                Өмнөх оролдлогоос 29 минутаас дээш хугацааны дараа дахин залгаж захиалга / цуцлал / дуудаад авахгүй / холбогдох боломжгүй / эргэн холбогдох төлөв тавьсан бол 1 давтан залгалт.
+              </div>
+              {repEntries.length === 0 ? (
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-3">Энэ хугацаанд давтан залгалт байхгүй</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(90, repEntries.length * 30 + 20)}>
+                  <BarChart data={repEntries} layout="vertical" margin={{ left: 8, right: 44, top: 4, bottom: 4 }}>
+                    <XAxis type="number" hide allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fontFamily: FS, fill: T.ink }} axisLine={false} tickLine={false} />
+                    <RechartsTooltip formatter={(v) => [`${Number(v).toLocaleString()} давтан залгалт`, ""]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
+                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={18}>
+                      {repEntries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      <LabelList dataKey="value" position="right" style={{ fontSize: 11, fontFamily: FD, fontWeight: 700, fill: T.ink }} formatter={(v) => `${v} (${repTotal ? Math.round((v / repTotal) * 100) : 0}%)`} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         );
