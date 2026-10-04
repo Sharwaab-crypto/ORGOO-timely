@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.02-auto-address";
+const BUILD_VERSION = "v2026.10.04-repeat-popup";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14252,6 +14252,58 @@ function CcIssuesPanel({ profile, onCountChange }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔁 Давтан залгалтын задаргаа popup — ажилтан давтан залгахдаа аль төлөвт оруулсныг харуулна
+// ═══════════════════════════════════════════════════════════════════════════
+const REPEAT_STATUS_META = [
+  ["ordered", "✓ Дуудаад авлаа (захиалга)", "#0E9C8E"],
+  ["cancelled", "✕ Цуцалсан", "#d9423a"],
+  ["no_answer", "📵 Дуудаад авахгүй", "#e08a00"],
+  ["unreachable", "🚫 Холбогдох боломжгүй", "#ef4444"],
+  ["callback", "🔔 Эргэн холбогдох", "#1c7fc4"],
+];
+function RepeatBreakdownPopup({ title, calls, onClose }) {
+  const [openSt, setOpenSt] = useState(null);
+  const total = calls.length;
+  const groups = REPEAT_STATUS_META.map(([st, label, color]) => ({ st, label, color, list: calls.filter((c) => c.call_status === st) }));
+  const fmtT = (t) => { try { const d = new Date(t); return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return ""; } };
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col" style={{ background: T.surface }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">🔁 {title}</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">Нийт {total} давтан залгалт — аль төлөвт оруулсан</div>
+          </div>
+          <button onClick={onClose} style={{ color: T.muted }}><X size={18} /></button>
+        </div>
+        <div className="p-3 space-y-2 overflow-y-auto">
+          {groups.map((g) => (
+            <div key={g.st} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${g.color}40`, background: `${g.color}0f` }}>
+              <button type="button" onClick={() => setOpenSt(openSt === g.st ? null : g.st)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left">
+                <span style={{ color: g.color, fontFamily: FS, fontWeight: 600 }} className="text-xs flex-1">{g.label}</span>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{total ? Math.round((g.list.length / total) * 100) : 0}%</span>
+                <span style={{ color: g.color, fontFamily: FD, fontWeight: 800 }} className="text-lg tabular-nums">{g.list.length}</span>
+                <span style={{ color: T.muted }} className="text-[10px]">{g.list.length > 0 ? (openSt === g.st ? "▲" : "▼") : ""}</span>
+              </button>
+              <div style={{ height: 4, background: `${g.color}25` }}><div style={{ width: `${total ? (g.list.length / total) * 100 : 0}%`, height: "100%", background: g.color }} /></div>
+              {openSt === g.st && g.list.length > 0 && (
+                <div className="px-3 py-2 space-y-1 max-h-48 overflow-y-auto" style={{ background: T.surface }}>
+                  {g.list.map((c, i) => (
+                    <div key={c.id || i} className="flex items-center justify-between text-[11px]">
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink }}>{c.phone}</span>
+                      <span style={{ color: T.muted, fontFamily: FM }}>{fmtT(c.created_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>, document.body);
+}
+
 function CallCenterView({ profile }) {
   const [showCallModal, setShowCallModal] = useState(false);
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
@@ -15008,6 +15060,7 @@ function CallCenterView({ profile }) {
   const [statusPopupCall, setStatusPopupCall] = useState(null);
   const [statusComment, setStatusComment] = useState("");
   const [showRepeatChart, setShowRepeatChart] = useState(false); // 🔁 давтан дуудлагын chart нээлттэй эсэх
+  const [repeatPopup, setRepeatPopup] = useState(null); // {title, calls[]} — chart-ын багана дарахад
   const [showChannelChart, setShowChannelChart] = useState(false); // 💬/📞 захиалгын суваг ажилтнаар (admin/manager)
   const canSeeChannel = profile?.role === "admin" || profile?.role === "manager";
   const [callLocks, setCallLocks] = useState([]);
@@ -15641,11 +15694,12 @@ function CallCenterView({ profile }) {
           .sort((a, b) => b.value - a.value);
         const total = entries.reduce((s, e) => s + e.value, 0);
         // 🔁 ДАВТАН ДУУДЛАГА: "⏰ 29 мин хэтэрсэн" дугаар дээр статус/захиалга/цуцлал тавихад тэмдэглэлд "🔁" бичигддэг → түүгээр тоолно
-        const repCounts = {}; let repTotal = 0;
+        const repCounts = {}; const repCalls = {}; let repTotal = 0;
         pieSrc.forEach((cc2) => {
           if (!(cc2.notes || "").includes("🔁")) return;
           const k = cc2.created_by || "__none";
           repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
+          (repCalls[k] = repCalls[k] || []).push(cc2);
         });
         // 💬/📞 Захиалгын суваг ажилтнаар — ordered мөрийн тэмдэглэлээс (зөвхөн admin/manager харна)
         const chCounts = {}; let chChat = 0, chCall = 0;
@@ -15713,12 +15767,22 @@ function CallCenterView({ profile }) {
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Энэ хугацаанд давтан залгалт байхгүй</div>
                 ) : (
                   <div className="mt-2">
+                    <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1">👆 Багана дээр дарахад аль төлөвт оруулсан нь харагдана</div>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {repEntries.map((e, i) => (
+                        <button key={e.id} type="button" onClick={() => setRepeatPopup({ title: `${e.name} — давтан залгалт`, calls: repCalls[e.id] || [] })}
+                          className="press-btn px-2 py-1 rounded-full text-[10px]" style={{ background: `${PIE_COLORS[i % PIE_COLORS.length]}1a`, color: T.ink, fontFamily: FS, border: `1px solid ${PIE_COLORS[i % PIE_COLORS.length]}55` }}>
+                          {e.name} · {e.value}
+                        </button>
+                      ))}
+                    </div>
                     <ResponsiveContainer width="100%" height={Math.max(220, repEntries.length * 46 + 30)}>
                       <BarChart data={repEntries} layout="vertical" margin={{ left: 8, right: 70, top: 8, bottom: 8 }}>
                         <XAxis type="number" hide allowDecimals={false} />
                         <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 13, fontFamily: FS, fill: T.ink }} axisLine={false} tickLine={false} />
                         <RechartsTooltip formatter={(v) => [`${Number(v).toLocaleString()} давтан залгалт`, ""]} contentStyle={{ borderRadius: 12, border: `1px solid ${T.border || "#E5E7EB"}`, fontFamily: FS, fontSize: 12, background: T.surface || "#fff" }} />
-                        <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={28}>
+                        <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={28} style={{ cursor: "pointer" }}
+                          onClick={(d) => { const id = d?.id ?? d?.payload?.id; if (id != null) setRepeatPopup({ title: `${ccStaff[id] || "Бусад"} — давтан залгалт`, calls: repCalls[id] || [] }); }}>
                           {repEntries.map((e, i) => <Cell key={e.id} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                           <LabelList dataKey="value" position="right" style={{ fontSize: 13, fontFamily: FD, fontWeight: 700, fill: T.ink }} formatter={(v) => `${v} (${repTotal ? Math.round((v / repTotal) * 100) : 0}%)`} />
                         </Bar>
@@ -17227,6 +17291,8 @@ function CallCenterView({ profile }) {
           }}
         />
       )}
+
+      {repeatPopup && <RepeatBreakdownPopup title={repeatPopup.title} calls={repeatPopup.calls} onClose={() => setRepeatPopup(null)} />}
 
       {/* Status сонгох popup */}
       {statusPopupCall && (
@@ -19304,6 +19370,7 @@ function OperatorKPIReportView({ profile }) {
     try { return localStorage.getItem("orgoo-kpi-report-period") || "today"; } catch { return "today"; }
   });
   const [phonePopup, setPhonePopup] = useState(null); // 🆕 {title, phones[], color}
+  const [repeatPopup, setRepeatPopup] = useState(null); // 🔁 {title, calls[]}
   // 📄 Page шүүлт: хоосон = Бүгд; сонгосон id-ууд — calls/orders хоёуланд үйлчилнэ
   const [fbPages, setFbPages] = useState([]);
   const [selPages, setSelPages] = useState([]);
@@ -19412,7 +19479,7 @@ function OperatorKPIReportView({ profile }) {
         pendingPhones: [], // 🆕 Хүлээгдэж
         cancelledPhones: [], // 🆕 Цуцалсан
         totalCalls: 0,
-        repeatCalls: 0, repeatPhones: [], // 🔁 давтан залгалт (тэмдэглэлд 🔁)
+        repeatCalls: 0, repeatPhones: [], repeatList: [], // 🔁 давтан залгалт (тэмдэглэлд 🔁)
         chatOrders: 0, chatPhones: [], callOrders: 0, callPhones: [], // 💬/📞 захиалгын суваг (biz_orders.source)
         totalOrders: 0,
         delivered: 0,
@@ -19448,7 +19515,7 @@ function OperatorKPIReportView({ profile }) {
           c.call_status === "cancelled") {
         opMap[c.created_by].totalCalls++;
         if (c.phone) opMap[c.created_by].calledPhones.push(c.phone);
-        if ((c.notes || "").includes("🔁")) { opMap[c.created_by].repeatCalls++; if (c.phone) opMap[c.created_by].repeatPhones.push(c.phone); }
+        if ((c.notes || "").includes("🔁")) { opMap[c.created_by].repeatCalls++; if (c.phone) opMap[c.created_by].repeatPhones.push(c.phone); opMap[c.created_by].repeatList.push(c); }
       }
     });
 
@@ -19804,7 +19871,7 @@ function OperatorKPIReportView({ profile }) {
                 {/* 🔒 Зөвхөн admin / ахлагч: давтан залгалт + захиалгын суваг */}
                 {(profile?.role === "admin" || profile?.role === "manager") && (
                   <div className="grid grid-cols-3 gap-2 mt-2">
-                    <button onClick={() => { setPhoneSearch(""); setPhonePopup({ title: `${op.name} — Давтан залгалт`, phones: op.repeatPhones || [], color: T.highlight }); }}
+                    <button onClick={() => setRepeatPopup({ title: `${op.name} — давтан залгалт`, calls: op.repeatList || [] })}
                       style={{ background: T.highlightSoft, border: `1px dashed ${T.highlight}` }} className="rounded-lg p-2 text-center press-btn hover:opacity-80">
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">🔁 Давтан залгалт</div>
                       <div style={{ fontFamily: FD, fontWeight: 700, color: T.highlight }} className="text-lg tabular-nums">{op.repeatCalls}</div>
@@ -19844,6 +19911,8 @@ function OperatorKPIReportView({ profile }) {
           })}
         </div>
       )}
+
+      {repeatPopup && <RepeatBreakdownPopup title={repeatPopup.title} calls={repeatPopup.calls} onClose={() => setRepeatPopup(null)} />}
 
       {/* 🆕 Дугаарын жагсаалт popup */}
       {phonePopup && (
