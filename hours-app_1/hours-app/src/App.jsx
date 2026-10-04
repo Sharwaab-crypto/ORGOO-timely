@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.04-cancel-count";
+const BUILD_VERSION = "v2026.10.05-repeat-fix";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15040,9 +15040,15 @@ function CallCenterView({ profile }) {
   const REPEAT_TAG = "🔁";
   const isRepeatCall = async (phone) => {
     try {
-      const { data: last } = await supabase.from("biz_calls").select("call_status, created_at")
-        .eq("phone", phone).neq("call_status", "pending").not("call_status", "is", null)
+      // 🔧 Зөвхөн ОДООГИЙН мөчлөг: сүүлийн "Дугаар бүртгэсэн" (pending) мөрөөс ХОЙШХИ оролдлогыг л харна.
+      //    (Өмнө нь хуучин мөчлөгийн callback/no_answer мөрийг харж, шинэ бүртгэлийн анхны залгалтыг давтан гэж буруу тоолж байсан.)
+      const { data: lastPending } = await supabase.from("biz_calls").select("created_at")
+        .eq("phone", phone).eq("call_status", "pending")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      let q = supabase.from("biz_calls").select("call_status, created_at")
+        .eq("phone", phone).neq("call_status", "pending").not("call_status", "is", null);
+      if (lastPending?.created_at) q = q.gt("created_at", lastPending.created_at);
+      const { data: last } = await q.order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!last) return false;
       if (!["no_answer", "unreachable", "callback"].includes(last.call_status)) return false;
       return Date.now() - new Date(last.created_at).getTime() > 29 * 60 * 1000;
@@ -17091,7 +17097,7 @@ function CallCenterView({ profile }) {
                 await supabase.from("biz_calls").insert({
                   phone: data.phone,
                   customer_id: null,
-                  notes: `[ЦУЦАЛСАН] ${data.notes}`,
+                  notes: `[ЦУЦАЛСАН]${(await isRepeatCall(data.phone)) ? " " + REPEAT_TAG : ""} ${data.notes}`,
                   call_status: "cancelled",
                   fb_page_id: cnPage, // 🔗 Resolved page
                   created_by: profile.id,
