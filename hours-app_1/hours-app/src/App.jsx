@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.04-repeat-popup";
+const BUILD_VERSION = "v2026.10.04-cancel-count";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15583,13 +15583,18 @@ function CallCenterView({ profile }) {
         
         // ✅ Захиалга / 🗑 Цуцалсан — давхардаагүй утсаар тоолно
         const orderedSet = new Set();
-        const cancelledSet = new Set();
+        const cancelledSet = new Set();   // 🗑 оператор ДУГААРЫГ цуцалсан ("[ЦУЦАЛСАН]" тэмдэглэлтэй мөр) — "Цуцалсан дугаарууд" дэлгэцтэй ижил
+        const orderCancelSet = new Set(); // 📦 захиалга цуцлагдсанаас үүссэн cancelled мөр (тэмдэглэлгүй) — тусад нь
         allCallsForStats.forEach((c) => {
           if (c.call_status === "ordered") orderedSet.add(c.phone);
-          else if (c.call_status === "cancelled") cancelledSet.add(c.phone);
+          else if (c.call_status === "cancelled") {
+            if ((c.notes || "").startsWith("[ЦУЦАЛСАН]")) cancelledSet.add(c.phone); else orderCancelSet.add(c.phone);
+          }
         });
+        orderCancelSet.forEach((p) => { if (cancelledSet.has(p)) orderCancelSet.delete(p); });
         const orderedPhones = orderedSet.size;
         const cancelledPhones = cancelledSet.size;
+        const orderCancelledPhones = orderCancelSet.size;
 
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -15634,7 +15639,7 @@ function CallCenterView({ profile }) {
                 {cancelledPhones}
               </div>
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">
-                дугаар
+                дугаар{orderCancelledPhones > 0 ? ` · захиалгын цуцлал ${orderCancelledPhones} тусдаа` : ""}
               </div>
             </div>
           </div>
