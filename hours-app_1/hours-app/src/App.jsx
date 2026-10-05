@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-deliver-guard";
+const BUILD_VERSION = "v2026.10.05-loc-badge";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -13867,6 +13867,7 @@ function SelectedOrderDetailWrapper({ orderId, profile, onClose }) {
           await supabase.from("biz_orders").update({
             customer_name: data.name,
             delivery_address: data.address,
+            delivery_city: data.delivery_city || null, delivery_district: data.delivery_district || null, delivery_khoroo: data.delivery_khoroo || null,
             customer_phone2: data.phone2,
             notes: data.notes,
             total_amount: data.totalAmount,
@@ -17206,6 +17207,7 @@ function CallCenterView({ profile }) {
                     customer_phone2: data.phone2,
                     customer_name: data.name,
                     delivery_address: data.address,
+                    delivery_city: data.delivery_city || null, delivery_district: data.delivery_district || null, delivery_khoroo: data.delivery_khoroo || null,
                     delivery_lat: data.delivery_lat || null,
                     delivery_lng: data.delivery_lng || null,
                     source: data.channel === "chat" ? "chat" : "phone", // 💬 чатаар / 📞 залгаж
@@ -26068,9 +26070,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   const [name, setName] = useState(initialName || "");
   const [address, setAddress] = useState(editOrder?.delivery_address || "");
   // 🌏 Location selector — анхдагчаар Улаанбаатар
-  const [selectedCity, setSelectedCity] = useState("Улаанбаатар");
-  const [selectedDistrict, setSelectedDistrict] = useState("");
-  const [selectedKhoroo, setSelectedKhoroo] = useState("");
+  const [selectedCity, setSelectedCity] = useState(editOrder?.delivery_city || "Улаанбаатар");
+  const [selectedDistrict, setSelectedDistrict] = useState(editOrder?.delivery_district || "");
+  const [selectedKhoroo, setSelectedKhoroo] = useState(editOrder?.delivery_khoroo || "");
   const [pinLat, setPinLat] = useState(editOrder?.delivery_lat || null);
   const [pinLng, setPinLng] = useState(editOrder?.delivery_lng || null);
   const [showPinMap, setShowPinMap] = useState(false); // 🗺 Map modal-ийг харуулах
@@ -26116,23 +26118,8 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     if (!selectedCity || !selectedDistrict) return [];
     return dbLocations.filter((l) => l.city === selectedCity && l.district === selectedDistrict && l.khoroo);
   }, [dbLocations, selectedCity, selectedDistrict]);
-  // 🏠 Дүүрэг/хороо сонгоход хаягийн эхэнд автоматаар бичнэ ("Баянзүрх, 5-р хороо, ...").
-  //    Өмнөх автомат хэсгийг санаж, дахин сонгоход сольж бичнэ — операторын гараар бичсэн хэсэг хэвээр.
-  const autoAddrRef = useRef("");
-  const applyAutoAddress = (city, dist, khoroo) => {
-    const parts = [];
-    if (city && city !== "Улаанбаатар") parts.push(city);
-    if (dist) parts.push(dist);
-    if (khoroo) parts.push(khoroo);
-    const prefix = parts.length ? parts.join(", ") + ", " : "";
-    setAddress((prev) => {
-      let rest = prev || "";
-      const old = autoAddrRef.current;
-      if (old && rest.startsWith(old)) rest = rest.slice(old.length);
-      autoAddrRef.current = prefix;
-      return prefix + rest.replace(/^\s+/, "");
-    });
-  };
+  // 🏷 Дүүрэг/хороо нь хаягт бичигдэхгүй — захиалгын тусдаа баганад (delivery_district/khoroo) хадгалагдаж картанд badge-аар харагдана
+  const applyAutoAddress = () => {};
   const [notes, setNotes] = useState(initialNotes || "");
   // initialProducts-ийг items-руу хөрвүүлэх
   const [items, setItems] = useState(() => {
@@ -27259,6 +27246,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 delivery_lat: pinLat,
                 delivery_lng: pinLng,
                 notes: notes.trim() || null,
+                delivery_city: selectedCity || null,
+                delivery_district: selectedDistrict || null,
+                delivery_khoroo: selectedKhoroo || null,
                 channel: needChannel ? channel : null,
                 callSeconds: startedAt && channel === "call" ? Math.floor((Date.now() - startedAt) / 1000) : null,
                 subtotal,
@@ -27610,6 +27600,21 @@ function ProductSearchSelect({ products, value, onChange, isOpen, onOpen, onClos
 }
 
 // ─── Захиалгын карт ───────────────────────────────────────────────
+// 📍 Дүүрэг · хороо badge (захиалгын картанд) — хаягт бичигдэхгүй, тусдаа баганаас
+function LocBadge({ order, size = "sm" }) {
+  if (!order?.delivery_district && !order?.delivery_khoroo) return null;
+  const parts = [];
+  if (order.delivery_city && order.delivery_city !== "Улаанбаатар") parts.push(order.delivery_city);
+  if (order.delivery_district) parts.push(order.delivery_district);
+  if (order.delivery_khoroo) parts.push(order.delivery_khoroo);
+  return (
+    <span style={{ background: "rgba(236,72,153,0.12)", color: "#be185d", border: "1px solid rgba(236,72,153,0.3)", fontFamily: FS, fontWeight: 600, whiteSpace: "nowrap" }}
+      className={`${size === "md" ? "text-[11px] px-2 py-0.5" : "text-[9px] px-1.5 py-0.5"} rounded-full inline-flex items-center gap-1`}>
+      📍 {parts.join(" · ")}
+    </span>
+  );
+}
+
 function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
@@ -27720,6 +27725,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                 );
               });
             })()}
+            <LocBadge order={order} />
             {/* Status pill — утасны хажууд */}
             <span style={{
               background: status.bg, color: status.color, fontFamily: FS, fontWeight: 600,
@@ -29148,6 +29154,7 @@ function OrdersView({ profile }) {
                   customer_phone2: data.phone2,
                   customer_name: data.name,
                   delivery_address: data.address,
+                  delivery_city: data.delivery_city || null, delivery_district: data.delivery_district || null, delivery_khoroo: data.delivery_khoroo || null,
                   notes: data.notes,
                   subtotal: data.subtotal,
                   delivery_fee: data.deliveryFee,
@@ -29182,6 +29189,7 @@ function OrdersView({ profile }) {
                   customer_phone2: data.phone2,
                   customer_name: data.name,
                   delivery_address: data.address,
+                  delivery_city: data.delivery_city || null, delivery_district: data.delivery_district || null, delivery_khoroo: data.delivery_khoroo || null,
                   notes: data.notes,
                   subtotal: data.subtotal,
                   delivery_fee: data.deliveryFee,
@@ -30093,6 +30101,9 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
                 {order.customer_name}
               </span>
             </div>
+          )}
+          {(order.delivery_district || order.delivery_khoroo) && (
+            <div className="flex items-center gap-2"><span style={{ color: T.muted }}>🏷</span><LocBadge order={order} size="md" /></div>
           )}
           {order.delivery_address && (
             <div className="flex items-start gap-2">
@@ -37711,6 +37722,7 @@ function MerchantQuickOrderModal({ allowedPageIds, fbPagesMap, profile, onSaved,
         const { data: ins, error } = await supabase.from("biz_orders").insert({
           order_number: orderNumber, customer_phone: data.phone, customer_phone2: data.phone2, customer_name: data.name,
           delivery_address: data.address, delivery_lat: data.delivery_lat || null, delivery_lng: data.delivery_lng || null,
+          delivery_city: data.delivery_city || null, delivery_district: data.delivery_district || null, delivery_khoroo: data.delivery_khoroo || null,
           source: "merchant", status: "new", subtotal: data.subtotal, delivery_fee: data.deliveryFee, total_amount: data.totalAmount,
           paid_amount: data.paidAmount, balance_due: data.balanceDue, notes: data.notes ? `[Мерчант] ${data.notes}` : "[Мерчант шууд захиалга]",
           taken_by: profile.id, fb_page_id: pageId,
@@ -41970,6 +41982,7 @@ function DriverDashboard({ profile }) {
                         </span>
                       )}
                     </div>
+                    {(o.delivery_district || o.delivery_khoroo) && <div className="mb-1"><LocBadge order={o} size="md" /></div>}
                     {o.delivery_address && (
                       <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mb-2 flex items-start gap-1">
                         <MapPin size={11} style={{ color: T.highlight, flexShrink: 0, marginTop: 1 }} />
