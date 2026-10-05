@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-worklog-img";
+const BUILD_VERSION = "v2026.10.05-sales-segment";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -20612,6 +20612,10 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
   const [items, setItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [fbPages, setFbPages] = useState([]);
+  // 🏢/🏪 Admin: Corelink (мерчантад хуваарилагдаагүй page) | Мерчантууд (хуваарилагдсан page) гэж 2 хэсэгт
+  const [segment, setSegment] = useState(() => { try { return localStorage.getItem("orgoo-sales-segment") || "corelink"; } catch { return "corelink"; } });
+  useEffect(() => { try { localStorage.setItem("orgoo-sales-segment", segment); } catch {} }, [segment]);
+  const [merchantPageIds, setMerchantPageIds] = useState(null); // null = ачаалаагүй
   const [loading, setLoading] = useState(true);
   const [ordersPopup, setOrdersPopup] = useState(null); // { page, status, orders }
   // 🔄 Захиалгын FB Page-ийг солих modal
@@ -20671,26 +20675,44 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
         const isAllPeriod = periodRange.label === "Бүгд";
         const pStart = periodRange.start.toISOString();
         const pEnd = periodRange.end.toISOString();
+        // 🏢/🏪 Admin сегмент: мерчантуудад хуваарилагдсан page-уудыг олж, сегментийн page жагсаалт гаргана
+        let segPageIds = null; // null = бүх page (хязгаарлахгүй)
+        let segNoPage = false; // page-гүй (NULL) мөрүүдийг оруулах эсэх
+        if (!isMerchant) {
+          const [{ data: mProfiles }, { data: allPages }] = await Promise.all([
+            supabase.from("profiles").select("fb_page_ids").eq("role", "merchant"),
+            supabase.from("biz_fb_pages").select("id"),
+          ]);
+          const mIds = new Set((mProfiles || []).flatMap((p) => Array.isArray(p.fb_page_ids) ? p.fb_page_ids : []));
+          setMerchantPageIds([...mIds]);
+          if (segment === "merchant") { segPageIds = [...mIds]; segNoPage = false; }
+          else { segPageIds = (allPages || []).map((p) => p.id).filter((id) => !mIds.has(id)); segNoPage = true; }
+        }
+        const pageFilterIds = isMerchant ? allowedPageIds : segPageIds;
+        const applyPage = (q) => {
+          if (!pageFilterIds) return q;
+          if (segNoPage) return pageFilterIds.length ? q.or(`fb_page_id.is.null,fb_page_id.in.(${pageFilterIds.join(",")})`) : q.is("fb_page_id", null);
+          return pageFilterIds.length ? q.in("fb_page_id", pageFilterIds) : q.in("fb_page_id", ["00000000-0000-0000-0000-000000000000"]);
+        };
         const callCols = "id, phone, call_status, created_at, fb_page_id, created_by, customer_name";
         const makeCallQ = () => {
           let q = supabase.from("biz_calls").select(callCols);
           if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
-          if (isMerchant) q = q.in("fb_page_id", allowedPageIds);
-          return q;
+          return applyPage(q);
         };
         const makeOrdQ = () => {
           let q = supabase.from("biz_orders").select("*");
           if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
-          if (isMerchant) q = q.in("fb_page_id", allowedPageIds);
-          return q;
+          return applyPage(q);
         };
         // 🚀 2026-09-17: biz_order_items-ийг бүхэлд нь (100К+ мөр, 10 MB) татахаа больж,
         //    топ-10 барааг сервер талд нэгтгэдэг RPC-ээр (нэг хүсэлт) авна.
         const makeItmQ = () => supabase.rpc("sales_top_products", {
           p_start: isAllPeriod ? null : pStart, p_end: isAllPeriod ? null : pEnd,
-          p_page_ids: isMerchant ? allowedPageIds : null, p_limit: 10,
+          p_page_ids: isMerchant ? allowedPageIds : (segment === "merchant" ? (segPageIds.length ? segPageIds : ["00000000-0000-0000-0000-000000000000"]) : null), p_limit: 10,
         });
         let fbQ = supabase.from("biz_fb_pages").select("*");
+        if (!isMerchant) fbQ = segPageIds.length ? fbQ.in("id", segPageIds) : fbQ.in("id", ["00000000-0000-0000-0000-000000000000"]);
         if (isMerchant) {
           if (allowedPageIds.length === 0) {
             // Page оноогоогүй merchant → хоосон
@@ -20719,7 +20741,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
       }
       finally { setLoading(false); }
     })();
-  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : "all", periodRange.start.getTime(), periodRange.end.getTime()]);
+  }, [refreshKey, isMerchant ? allowedPageIds.join(",") : segment, periodRange.start.getTime(), periodRange.end.getTime()]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
@@ -20942,6 +20964,20 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 
   return (
     <div className="space-y-3">
+      {/* 🏢/🏪 Сегмент — зөвхөн admin/manager */}
+      {!isMerchant && (
+        <div className="glass rounded-2xl p-2 flex gap-2 flex-wrap">
+          {[["corelink", "🏢 Corelink", "мерчантад хуваарилагдаагүй page-ууд"], ["merchant", "🏪 Мерчантууд", "мерчантуудад хуваарилагдсан page-ууд"]].map(([id, lbl, hint]) => (
+            <button key={id} onClick={() => setSegment(id)} title={hint}
+              className="press-btn flex-1 py-2.5 rounded-xl text-sm flex flex-col items-center"
+              style={{ background: segment === id ? (id === "merchant" ? "#0284c7" : T.highlight) : T.surfaceAlt, color: segment === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 700, border: `1px solid ${segment === id ? "transparent" : T.borderStrong}` }}>
+              <span>{lbl}</span>
+              <span style={{ opacity: .8, fontWeight: 500 }} className="text-[10px]">{hint}{id === "merchant" && merchantPageIds ? ` · ${merchantPageIds.length} page` : ""}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Period selector + Excel */}
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap">
