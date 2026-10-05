@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-loc-badge";
+const BUILD_VERSION = "v2026.10.05-min-order";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -27147,6 +27147,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
             title={needChannel && !channel ? "Эхлээд «Залгаж» эсвэл «Чатаар» гэдгийг сонгоно уу" : ""}
             onClick={async () => {
               if (needChannel && !channel) { alert("⚠ Захиалга хэрхэн болсныг сонгоно уу: Залгаж / Чатаар"); return; }
+              // 💰 Оператор эрхтэй хүн захиалга бүртгэхэд нийт дүн хамгийн багадаа 21,000₮ байх ёстой (admin/manager/merchant-д үл хамаарна)
+              if (!isEditMode && !directMode && String(profile?.role || "").toLowerCase().includes("operator") && total < 21000) {
+                alert(`⚠ Захиалгын нийт дүн хамгийн багадаа 21,000₮ байх ёстой.\n\nОдоогийн нийт: ${total.toLocaleString()}₮ (бараа ${subtotal.toLocaleString()}₮ + хүргэлт ${fee.toLocaleString()}₮)`);
+                return;
+              }
               // 8 оронтой шалгах
               if (phone.trim().length !== 8) {
                 alert("⚠ Утсан дугаар заавал 8 оронтой байх ёстой!");
