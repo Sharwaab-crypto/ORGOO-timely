@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-sales-segment";
+const BUILD_VERSION = "v2026.10.05-delivery-manual";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2789,9 +2789,10 @@ function AdminDashboard({ profile }) {
               {(profile.role === "admin" || profile.role === "manager") && (
                 <SidebarTab active={view === "cancel-reasons"} onClick={() => { setView("cancel-reasons"); setSidebarOpen(false); }} icon={X}>🚫 Цуцлах шалтгаан</SidebarTab>
               )}
-              {(profile.role === "admin" || profile.role === "manager") && (
+              {(profile.role === "admin" || profile.role === "manager") && (<>
                 <SidebarTab active={view === "cancel-report"} onClick={() => { setView("cancel-report"); setSidebarOpen(false); }} icon={Inbox}>📋 Цуцлалтын тайлан</SidebarTab>
-              )}
+                <SidebarTab active={view === "delivery-manual"} onClick={() => { setView("delivery-manual"); setSidebarOpen(false); }} icon={FileText}>📝 Гар тайлан</SidebarTab>
+              </>)}
             </SidebarSection>
 
             {!isMarketing && (
@@ -2924,6 +2925,7 @@ function AdminDashboard({ profile }) {
                 {view === "orders" && "Захиалга"}
                 {view === "cancel-reasons" && "Цуцлах шалтгаан"}
                 {view === "cancel-report" && "Цуцлалтын тайлан"}
+                {view === "delivery-manual" && "Хүргэлтийн гар тайлан"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
                 {view === "departments" && "Хэлтсүүд"}
@@ -3268,6 +3270,7 @@ function AdminDashboard({ profile }) {
         {view === "cancel-report" && (
           <CancelReportView profile={profile} />
         )}
+        {view === "delivery-manual" && <DeliveryManualReportView profile={profile} />}
 
         {view === "customers" && (
           <CustomersView profile={profile} />
@@ -5976,6 +5979,225 @@ function CancelReasonsManager({ profile }) {
 }
 
 // 🚫 Цуцлалтын тайлан — шалтгаанаар бүлэглэх + огноо/жолооч шүүлт + жагсаалт
+// ═══════════════════════════════════════════════════════════════════════════
+//  📝 ХҮРГЭЛТИЙН ГАР ТАЙЛАН (Delivery) — Excel-ийн өдрийн тайланг системд
+//  DB: delivery_daily_report (id, report_date, group_name, label, driver_name, driver_id, cba, total, delivered,
+//      tomorrow, cancelled, urgoo_daahar, urgoo_cba, urgoo_ahlah, note_daahar, note_error, position)
+// ═══════════════════════════════════════════════════════════════════════════
+const DDR_GROUPS = ["Төв", "Урд", "Баруун", "Зүүн", "Орон нутаг"];
+const DDR_NUM = [["cba", "ЦБА"], ["total", "Нийт"], ["delivered", "Хүргэсэн"], ["tomorrow", "Маргааш"], ["cancelled", "Цуцлалт"]];
+const DDR_URGOO = [["urgoo_daahar", "Даахар"], ["urgoo_cba", "ЦБА"], ["urgoo_ahlah", "Ахлах"]];
+function DeliveryManualReportView({ profile }) {
+  const ubToday = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const [date, setDate] = useState(ubToday());
+  const [rows, setRows] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const saveTimers = useRef({});
+
+  const load = async (d) => {
+    setLoading(true);
+    try {
+      const [{ data, error }, { data: drv }] = await Promise.all([
+        supabase.from("delivery_daily_report").select("*").eq("report_date", d).order("position"),
+        supabase.from("profiles").select("id, name").eq("role", "driver").order("name"),
+      ]);
+      if (error) throw error;
+      setDrivers(drv || []);
+      setRows(data || []);
+    } catch (e) { console.error("[ddr]", e); alert("Гар тайлан уншигдсангүй: " + e.message + "\n\nSQL (delivery_daily_report) ажиллуулсан эсэхээ шалгана уу."); setRows([]); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(date); }, [date]);
+
+  // Өмнөх өдрийн бүтцийг (бүлэг/жолооч) хуулж шинэ өдөр үүсгэх
+  const initFromPrev = async () => {
+    try {
+      const { data: prev } = await supabase.from("delivery_daily_report").select("report_date").lt("report_date", date).order("report_date", { ascending: false }).limit(1);
+      let template = [];
+      if (prev && prev.length) {
+        const { data: pr } = await supabase.from("delivery_daily_report").select("*").eq("report_date", prev[0].report_date).order("position");
+        template = (pr || []).map((r) => ({ group_name: r.group_name, label: r.label, driver_name: r.driver_name, driver_id: r.driver_id, position: r.position }));
+      } else {
+        let pos = 0;
+        DDR_GROUPS.forEach((g) => { for (let i = 0; i < 3; i++) template.push({ group_name: g, label: null, driver_name: "", driver_id: null, position: pos++ }); });
+      }
+      const ins = template.map((t) => ({ ...t, report_date: date, created_by: profile.id }));
+      const { error } = await supabase.from("delivery_daily_report").insert(ins);
+      if (error) throw error;
+      await load(date);
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  // 📥 Системээс татах: жолооч бүрийн тухайн өдрийн нийт/хүргэсэн/цуцалсан (driver_id-тай мөрүүдэд)
+  const pullFromSystem = async () => {
+    const withDrv = rows.filter((r) => r.driver_id);
+    if (withDrv.length === 0) { alert("Мөрүүдэд жолооч сонгоно уу (🚚 сонголт) — дараа нь системээс татна."); return; }
+    if (!confirm("Жолооч сонгосон мөрүүдийн Нийт / Хүргэсэн / Цуцлалт тоог системийн захиалгаар ДАРЖ бичих үү?")) return;
+    setSaving(true);
+    try {
+      const s = new Date(`${date}T00:00:00+08:00`).toISOString(), e = new Date(new Date(`${date}T00:00:00+08:00`).getTime() + 86400000).toISOString();
+      const ids = [...new Set(withDrv.map((r) => r.driver_id))];
+      const [delv, canc, asg] = await Promise.all([
+        fetchAllRows(supabase.from("biz_orders").select("driver_id").in("driver_id", ids).eq("status", "delivered").gte("delivered_at", s).lt("delivered_at", e)),
+        fetchAllRows(supabase.from("biz_orders").select("driver_id").in("driver_id", ids).eq("status", "cancelled").gte("cancelled_at", s).lt("cancelled_at", e)),
+        fetchAllRows(supabase.from("biz_orders").select("driver_id").in("driver_id", ids).in("status", ["assigned", "pending"])),
+      ]);
+      const cnt = (list) => { const m = {}; (list || []).forEach((o) => { m[o.driver_id] = (m[o.driver_id] || 0) + 1; }); return m; };
+      const D = cnt(delv), C = cnt(canc), A = cnt(asg);
+      for (const r of withDrv) {
+        const d = D[r.driver_id] || 0, c = C[r.driver_id] || 0, t = A[r.driver_id] || 0;
+        const upd = { delivered: d, cancelled: c, tomorrow: t, total: d + c + t };
+        await supabase.from("delivery_daily_report").update(upd).eq("id", r.id);
+      }
+      await load(date);
+    } catch (e2) { alert("Алдаа: " + e2.message); }
+    finally { setSaving(false); }
+  };
+
+  const setField = (id, field, value) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    clearTimeout(saveTimers.current[id + field]);
+    saveTimers.current[id + field] = setTimeout(async () => {
+      const { error } = await supabase.from("delivery_daily_report").update({ [field]: value }).eq("id", id);
+      if (error) alert("Хадгалахад алдаа: " + error.message);
+    }, 500);
+  };
+  const addRow = async (group) => {
+    const pos = (rows.filter((r) => r.group_name === group).reduce((m, r) => Math.max(m, r.position || 0), 0) || 0) + 1;
+    const { error } = await supabase.from("delivery_daily_report").insert({ report_date: date, group_name: group, driver_name: "", position: pos, created_by: profile.id });
+    if (error) { alert("Алдаа: " + error.message); return; }
+    await load(date);
+  };
+  const delRow = async (r) => {
+    if (!confirm(`"${r.driver_name || "хоосон"}" мөрийг устгах уу?`)) return;
+    await supabase.from("delivery_daily_report").delete().eq("id", r.id);
+    await load(date);
+  };
+  const num = (v) => Number(v || 0);
+  const sumOf = (list, f) => list.reduce((s, r) => s + num(r[f]), 0);
+  const pct = (d, t) => (t > 0 ? `${((d / t) * 100).toFixed(2)}%` : "—");
+  const groups = [...DDR_GROUPS, ...rows.map((r) => r.group_name).filter((g) => !DDR_GROUPS.includes(g))].filter((g, i, a) => a.indexOf(g) === i);
+  const cityRows = rows.filter((r) => r.group_name !== "Орон нутаг");
+  const inputSt = { background: "transparent", color: T.ink, fontFamily: FD, fontWeight: 600, textAlign: "center", width: "100%", outline: "none", border: "none", padding: "4px 2px" };
+  const textSt = { ...inputSt, fontFamily: FS, fontWeight: 500, textAlign: "left" };
+
+  const exportExcel = () => {
+    const out = [];
+    groups.forEach((g) => {
+      const gr = rows.filter((r) => r.group_name === g);
+      gr.forEach((r) => out.push({ Огноо: date, Бүлэг: g, Тэмдэглэгээ: r.label || "", Жолооч: r.driver_name, ЦБА: num(r.cba), Нийт: num(r.total), Хүргэсэн: num(r.delivered), Маргааш: num(r.tomorrow), Цуцлалт: num(r.cancelled), Хувь: pct(num(r.delivered), num(r.total)), "Өргөө Даахар": num(r.urgoo_daahar), "Өргөө ЦБА": num(r.urgoo_cba), "Өргөө Ахлах": num(r.urgoo_ahlah), "Даахар дугаар": r.note_daahar || "", "Алдаатай захиалга": r.note_error || "" }));
+      out.push({ Огноо: date, Бүлэг: g + " — ДҮН", Жолооч: "", ЦБА: sumOf(gr, "cba"), Нийт: sumOf(gr, "total"), Хүргэсэн: sumOf(gr, "delivered"), Маргааш: sumOf(gr, "tomorrow"), Цуцлалт: sumOf(gr, "cancelled"), Хувь: pct(sumOf(gr, "delivered"), sumOf(gr, "total")), "Өргөө Даахар": sumOf(gr, "urgoo_daahar"), "Өргөө ЦБА": sumOf(gr, "urgoo_cba"), "Өргөө Ахлах": sumOf(gr, "urgoo_ahlah") });
+    });
+    out.push({ Огноо: date, Бүлэг: "ӨРГӨӨ (хот)", ЦБА: sumOf(cityRows, "cba"), Нийт: sumOf(cityRows, "total"), Хүргэсэн: sumOf(cityRows, "delivered"), Маргааш: sumOf(cityRows, "tomorrow"), Цуцлалт: sumOf(cityRows, "cancelled"), Хувь: pct(sumOf(cityRows, "delivered"), sumOf(cityRows, "total")) });
+    out.push({ Огноо: date, Бүлэг: "НИЙТ", ЦБА: sumOf(rows, "cba"), Нийт: sumOf(rows, "total"), Хүргэсэн: sumOf(rows, "delivered"), Маргааш: sumOf(rows, "tomorrow"), Цуцлалт: sumOf(rows, "cancelled"), Хувь: pct(sumOf(rows, "delivered"), sumOf(rows, "total")), "Өргөө Даахар": sumOf(rows, "urgoo_daahar"), "Өргөө ЦБА": sumOf(rows, "urgoo_cba"), "Өргөө Ахлах": sumOf(rows, "urgoo_ahlah") });
+    const ws = XLSX.utils.json_to_sheet(out); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Гар тайлан");
+    XLSX.writeFile(wb, `Hurgelt_gar_tailan_${date}.xlsx`);
+  };
+
+  const TotalRow = ({ label, list, color = "#3b82f6", strong = false }) => (
+    <tr style={{ background: color, color: "#fff", fontFamily: FD, fontWeight: 700 }}>
+      <td colSpan={3} className="px-2 py-1.5 text-left text-xs">{label}</td>
+      {DDR_NUM.map(([f]) => <td key={f} className="px-1 py-1.5 text-center text-xs tabular-nums">{sumOf(list, f)}</td>)}
+      <td className="px-1 py-1.5 text-center text-xs tabular-nums">{pct(sumOf(list, "delivered"), sumOf(list, "total"))}</td>
+      {DDR_URGOO.map(([f]) => <td key={f} className="px-1 py-1.5 text-center text-xs tabular-nums">{sumOf(list, f)}</td>)}
+      <td colSpan={3} />
+    </tr>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📝 Хүргэлтийн гар тайлан</span>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }} />
+        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); setDate(d.toISOString().slice(0, 10)); }} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FM }}>◀</button>
+        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(d.toISOString().slice(0, 10)); }} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FM }}>▶</button>
+        <div className="flex-1" />
+        {rows.length > 0 && <button onClick={pullFromSystem} disabled={saving} className="press-btn px-3 py-1.5 rounded-lg text-xs" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>{saving ? "..." : "📥 Системээс татах"}</button>}
+        {rows.length > 0 && <button onClick={exportExcel} className="press-btn px-3 py-1.5 rounded-lg text-xs flex items-center gap-1" style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}><FileSpreadsheet size={12} /> Excel</button>}
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : rows.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm mb-3">{date} өдрийн тайлан үүсээгүй байна</div>
+          <button onClick={initFromPrev} className="glow-primary press-btn px-4 py-2 rounded-xl text-sm" style={{ fontFamily: FS, fontWeight: 600 }}>➕ Тайлан үүсгэх (өмнөх өдрийн бүтцээр)</button>
+        </div>
+      ) : (
+        <div className="glass rounded-2xl p-2 overflow-x-auto">
+          <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 1100, fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#3b82f6", color: "#fff", fontFamily: FS, fontWeight: 700 }}>
+                <th className="px-2 py-2 text-left" style={{ width: 90 }}>Бүлэг</th>
+                <th className="px-2 py-2 text-left" style={{ width: 110 }}>Тэмдэглэгээ</th>
+                <th className="px-2 py-2 text-left" style={{ minWidth: 170 }}>Жолооч</th>
+                {DDR_NUM.map(([f, l]) => <th key={f} className="px-1 py-2 text-center" style={{ width: 64, background: f === "cba" ? "#1d4ed8" : undefined }}>{l}</th>)}
+                <th className="px-1 py-2 text-center" style={{ width: 70 }}>%</th>
+                {DDR_URGOO.map(([f, l]) => <th key={f} className="px-1 py-2 text-center" style={{ width: 64, background: "#0E9C8E" }}>Өргөө·{l}</th>)}
+                <th className="px-2 py-2 text-left" style={{ minWidth: 120, background: "#64748b" }}>Даахар дугаар</th>
+                <th className="px-2 py-2 text-left" style={{ minWidth: 120, background: "#64748b" }}>Алдаатай захиалга</th>
+                <th style={{ width: 28 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g, gi) => {
+                const gr = rows.filter((r) => r.group_name === g);
+                return (
+                  <React.Fragment key={g}>
+                    {gr.map((r, i) => (
+                      <tr key={r.id} style={{ background: gi % 2 ? "rgba(0,0,0,0.025)" : "transparent", borderTop: `1px solid ${T.border}` }}>
+                        <td className="px-2 py-1" style={{ fontFamily: FS, fontWeight: 700, color: T.ink }}>{i === 0 ? g : ""}</td>
+                        <td className="px-1 py-1">{g === "Орон нутаг" ? (
+                          <select value={r.label || ""} onChange={(e) => setField(r.id, "label", e.target.value || null)} style={{ ...textSt, fontSize: 11 }}>
+                            <option value="">—</option><option value="Мөнгө орсон">Мөнгө орсон</option><option value="Мөнгө ороогүй">Мөнгө ороогүй</option>
+                          </select>
+                        ) : <input value={r.label || ""} onChange={(e) => setField(r.id, "label", e.target.value || null)} placeholder="" style={{ ...textSt, fontSize: 11 }} />}</td>
+                        <td className="px-1 py-1">
+                          <div className="flex items-center gap-1">
+                            <input value={r.driver_name || ""} onChange={(e) => setField(r.id, "driver_name", e.target.value)} placeholder="Нэр" style={textSt} />
+                            <select value={r.driver_id || ""} title="Системийн жолоочтой холбох" onChange={(e) => { const id = e.target.value || null; setField(r.id, "driver_id", id); const d = drivers.find((x) => x.id === id); if (d && !r.driver_name) setField(r.id, "driver_name", d.name.replace(/\s\d{8}$/, "")); }}
+                              style={{ background: r.driver_id ? T.highlightSoft : T.surfaceAlt, color: r.driver_id ? T.highlight : T.muted, border: "none", borderRadius: 6, fontSize: 10, width: 28, padding: "2px 0" }}>
+                              <option value="">🚚</option>
+                              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            </select>
+                          </div>
+                        </td>
+                        {DDR_NUM.map(([f]) => (
+                          <td key={f} className="px-0 py-0" style={{ background: f === "cba" ? "rgba(29,78,216,0.08)" : undefined }}>
+                            <input type="number" min="0" value={r[f] ?? ""} onChange={(e) => setField(r.id, f, e.target.value === "" ? null : Number(e.target.value))} style={{ ...inputSt, color: f === "cba" ? "#1d4ed8" : T.ink }} />
+                          </td>
+                        ))}
+                        <td className="px-1 py-1 text-center tabular-nums" style={{ fontFamily: FD, fontWeight: 700, color: num(r.total) > 0 ? (num(r.delivered) / num(r.total) >= 0.9 ? T.ok : num(r.delivered) / num(r.total) >= 0.8 ? T.warn : T.err) : T.muted }}>{pct(num(r.delivered), num(r.total))}</td>
+                        {DDR_URGOO.map(([f]) => (
+                          <td key={f} className="px-0 py-0" style={{ background: "rgba(14,156,142,0.06)" }}>
+                            <input type="number" min="0" value={r[f] ?? ""} onChange={(e) => setField(r.id, f, e.target.value === "" ? null : Number(e.target.value))} style={inputSt} />
+                          </td>
+                        ))}
+                        <td className="px-1 py-1"><input value={r.note_daahar || ""} onChange={(e) => setField(r.id, "note_daahar", e.target.value || null)} style={{ ...textSt, fontSize: 11 }} /></td>
+                        <td className="px-1 py-1"><input value={r.note_error || ""} onChange={(e) => setField(r.id, "note_error", e.target.value || null)} style={{ ...textSt, fontSize: 11 }} /></td>
+                        <td className="text-center"><button onClick={() => delRow(r)} title="Мөр устгах" style={{ color: T.err, opacity: .6 }} className="hover:opacity-100"><Trash2 size={11} /></button></td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td colSpan={16} className="px-2 py-0.5"><button onClick={() => addRow(g)} className="text-[10px] hover:underline" style={{ color: T.highlight, fontFamily: FS }}>+ {g}-д мөр нэмэх</button></td>
+                    </tr>
+                    <TotalRow label={`${g} — дүн`} list={gr} color={g === "Орон нутаг" ? "#64748b" : "#3b82f6"} />
+                  </React.Fragment>
+                );
+              })}
+              <TotalRow label="ӨРГӨӨ (хот) — нийт" list={cityRows} color="#1d4ed8" />
+              <TotalRow label="НИЙТ" list={rows} color="#1f9d55" />
+            </tbody>
+          </table>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] px-2 pt-2">Нүд бүр автоматаар хадгалагдана. 🚚 сонголтоор жолоочийг системтэй холбовол "📥 Системээс татах" тухайн өдрийн Хүргэсэн / Цуцлалт / Маргааш (одоо хуваарилагдсан) тоог бөглөнө.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CancelReportView({ profile }) {
   const [period, setPeriod] = useState("30"); // 7 | 30 | 90 | all | custom
   const _crToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
@@ -20971,8 +21193,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
             <button key={id} onClick={() => setSegment(id)} title={hint}
               className="press-btn flex-1 py-2.5 rounded-xl text-sm flex flex-col items-center"
               style={{ background: segment === id ? (id === "merchant" ? "#0284c7" : T.highlight) : T.surfaceAlt, color: segment === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 700, border: `1px solid ${segment === id ? "transparent" : T.borderStrong}` }}>
-              <span>{lbl}</span>
-              <span style={{ opacity: .8, fontWeight: 500 }} className="text-[10px]">{hint}{id === "merchant" && merchantPageIds ? ` · ${merchantPageIds.length} page` : ""}</span>
+              <span>{lbl}{id === "merchant" && merchantPageIds ? ` (${merchantPageIds.length})` : ""}</span>
             </button>
           ))}
         </div>
