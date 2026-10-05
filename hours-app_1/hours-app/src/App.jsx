@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-worklog";
+const BUILD_VERSION = "v2026.10.05-worklog-img";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34978,7 +34978,28 @@ function DevWorklogView({ profile }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // null | "new" | row
   const [q, setQ] = useState("");
-  const [form, setForm] = useState({ title: "", detail: "", status: "todo", build: "", priority: "normal" });
+  const [form, setForm] = useState({ title: "", detail: "", status: "todo", build: "", priority: "normal", images: [] });
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null); // зураг томруулж харах
+  // 🖼 Зураг upload — Storage bucket "dev-worklog" (public)
+  const uploadImages = async (files) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) return;
+    setUploading(true);
+    try {
+      const urls = [];
+      for (const f of list) {
+        const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+        const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error } = await supabase.storage.from("dev-worklog").upload(path, f, { contentType: f.type, cacheControl: "3600" });
+        if (error) throw error;
+        const { data: u } = supabase.storage.from("dev-worklog").getPublicUrl(path);
+        urls.push(u.publicUrl);
+      }
+      setForm((prev) => ({ ...prev, images: [...(prev.images || []), ...urls] }));
+    } catch (e) { alert("Зураг оруулахад алдаа: " + e.message + "\n\nStorage bucket 'dev-worklog' (public) үүсгэсэн эсэхээ шалгана уу."); }
+    finally { setUploading(false); }
+  };
   const load = async () => {
     setLoading(true);
     try {
@@ -34989,11 +35010,11 @@ function DevWorklogView({ profile }) {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
-  const openNew = (status = "todo") => { setForm({ title: "", detail: "", status, build: "", priority: "normal" }); setEditing("new"); };
-  const openEdit = (r) => { setForm({ title: r.title || "", detail: r.detail || "", status: r.status || "todo", build: r.build || "", priority: r.priority || "normal" }); setEditing(r); };
+  const openNew = (status = "todo") => { setForm({ title: "", detail: "", status, build: "", priority: "normal", images: [] }); setEditing("new"); };
+  const openEdit = (r) => { setForm({ title: r.title || "", detail: r.detail || "", status: r.status || "todo", build: r.build || "", priority: r.priority || "normal", images: Array.isArray(r.images) ? r.images : [] }); setEditing(r); };
   const save = async () => {
     if (!form.title.trim()) { alert("Гарчиг бичнэ үү"); return; }
-    const payload = { title: form.title.trim(), detail: form.detail.trim() || null, status: form.status, build: form.build.trim() || null, priority: form.priority,
+    const payload = { title: form.title.trim(), detail: form.detail.trim() || null, status: form.status, build: form.build.trim() || null, priority: form.priority, images: form.images || [],
       done_at: form.status === "done" ? (editing !== "new" && editing.done_at ? editing.done_at : new Date().toISOString()) : null };
     try {
       if (editing === "new") { const { error } = await supabase.from("dev_worklog").insert({ ...payload, created_by: profile.id }); if (error) throw error; }
@@ -35044,6 +35065,13 @@ function DevWorklogView({ profile }) {
                         <div className="flex-1 min-w-0">
                           <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{r.title}</div>
                           {r.detail && <div style={{ color: T.muted, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-0.5">{r.detail}</div>}
+                          {Array.isArray(r.images) && r.images.length > 0 && (
+                            <div className="flex gap-1 mt-1.5 flex-wrap">
+                              {r.images.map((u, i) => (
+                                <img key={i} src={u} alt="" onClick={() => setLightbox(u)} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: `1px solid ${T.border}`, cursor: "zoom-in" }} />
+                              ))}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             {r.build && <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }} className="text-[9px] px-1.5 py-0.5 rounded">🏗 {r.build}</span>}
                             {r.priority === "high" && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-[9px] px-1.5 py-0.5 rounded">Яаралтай</span>}
@@ -35098,13 +35126,40 @@ function DevWorklogView({ profile }) {
                 <input value={form.build} onChange={(e) => setForm({ ...form, build: e.target.value })} placeholder="v2026.10.05-..." className="w-full px-2 py-2 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FM }} />
               </div>
             </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">🖼 Зураг (хэд ч байж болно)</label>
+              <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); uploadImages(e.dataTransfer.files); }}
+                onPaste={(e) => { const fs = Array.from(e.clipboardData?.files || []); if (fs.length) { e.preventDefault(); uploadImages(fs); } }}
+                className="rounded-xl p-3 text-center" style={{ border: `2px dashed ${T.borderStrong}`, background: T.surfaceAlt }}>
+                <input type="file" accept="image/*" multiple id="wl-img" className="hidden" onChange={(e) => { uploadImages(e.target.files); e.target.value = ""; }} />
+                <label htmlFor="wl-img" className="press-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>
+                  {uploading ? <><Loader2 size={12} className="spin" /> Оруулж байна...</> : <><Camera size={12} /> Зураг сонгох</>}
+                </label>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-1">эсвэл чирж оруулах / Ctrl+V</div>
+                {(form.images || []).length > 0 && (
+                  <div className="flex gap-2 mt-2 flex-wrap justify-center">
+                    {form.images.map((u, i) => (
+                      <div key={i} style={{ position: "relative" }}>
+                        <img src={u} alt="" onClick={() => setLightbox(u)} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: `1px solid ${T.border}`, cursor: "zoom-in" }} />
+                        <button type="button" onClick={() => setForm({ ...form, images: form.images.filter((_, j) => j !== i) })} title="Хасах"
+                          style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: T.err, color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: "20px" }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="flex gap-2 pt-1">
               <button onClick={() => setEditing(null)} className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ fontFamily: FS, color: T.ink }}>Болих</button>
-              <button onClick={save} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS }}>Хадгалах</button>
+              <button onClick={save} disabled={uploading} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS, opacity: uploading ? .5 : 1 }}>Хадгалах</button>
             </div>
           </div>
         </Modal>
       )}
+      {lightbox && createPortal(
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, cursor: "zoom-out" }}>
+          <img src={lightbox} alt="" style={{ maxWidth: "95vw", maxHeight: "92vh", borderRadius: 12, boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }} />
+        </div>, document.body)}
     </div>
   );
 }
