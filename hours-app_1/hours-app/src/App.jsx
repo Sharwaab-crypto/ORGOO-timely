@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-delivery-manual3";
+const BUILD_VERSION = "v2026.10.05-no-lowstock";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15641,8 +15641,7 @@ function CallCenterView({ profile }) {
         </button>
       )}
 
-      {/* ⚠ Бараа дуусах анхааруулга */}
-      <LowStockAlertBanner />
+      {/* ⚠ Бараа дуусах анхааруулга — 2026-10-05 хасагдсан (LowStockAlertBanner component хэвээр) */}
 
       {/* Period selector */}
       <div className="glass rounded-2xl p-3">
