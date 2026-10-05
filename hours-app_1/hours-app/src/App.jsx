@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-cc-fast";
+const BUILD_VERSION = "v2026.10.05-cc-rpc";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14754,6 +14754,26 @@ function RepeatBreakdownPopup({ title, calls, onClose }) {
     </div>, document.body);
 }
 
+// ⚡ CC МОДУЛИЙН КЭШ (2026-10-05): дуудлагын самбарыг хаагаад дахин нээхэд (таб солих) бараа/түүхийг дахин татахгүй.
+//    prod: phone → {at, rows} (10 мин) · hist: phone → {at, rows} (10 мин)
+const CC_MEM = { prod: new Map(), hist: new Map(), TTL: 10 * 60 * 1000 };
+const ccInvalidate = (phone) => { if (!phone) return; CC_MEM.prod.delete(phone); CC_MEM.hist.delete(phone); };
+// Нэг RPC хүсэлтээр олон дугаарын түүх татах (RPC байхгүй бол chunk fallback)
+async function ccFetchHistory(phones, sinceIso, select) {
+  if (!phones || phones.length === 0) return [];
+  try {
+    const out = [];
+    for (let i = 0; i < phones.length; i += 400) {
+      const { data, error } = await supabase.rpc("cc_phone_history", { p_phones: phones.slice(i, i + 400), p_since: sinceIso });
+      if (error) throw error;
+      out.push(...(data || []));
+    }
+    return out;
+  } catch (e) {
+    console.warn("[cc_phone_history rpc → fallback]", e?.message);
+    return fetchInChunks("biz_calls", phones, { select, filterColumn: "phone", chunkSize: 150, parallel: 6, extraFilter: (q) => q.gte("created_at", sinceIso) });
+  }
+}
 function CallCenterView({ profile }) {
   const [showCallModal, setShowCallModal] = useState(false);
   const [orderForCall, setOrderForCall] = useState(null); // { phone, name }
@@ -14820,7 +14840,7 @@ function CallCenterView({ profile }) {
   //    (realtime бүрд 30+ хүсэлтийн шуурга давтагдаж самбар гацдаг байсны засвар)
   // 🚀 Дугаар → сонирхсон барааны мөрүүд (санах ой, 10 мин TTL; realtime-ээр хүчингүй болно)
   //    Өмнө нь ачаалалт бүрд цонхны ~900 дугаарыг 6-14 query-ээр дахин асуудаг байсан.
-  const winProdCacheRef = useRef(new Map());
+  const winProdCacheRef = useRef(CC_MEM.prod); // ⚡ модулийн кэш — remount-д хадгалагдана
   const supplCacheRef = useRef(null);
   if (supplCacheRef.current === null) {
     // 🚀 sessionStorage-оос сэргээнэ — хуудас refresh хийсэн ч 5 минутын дотор шуурга давтагдахгүй
@@ -14847,15 +14867,13 @@ function CallCenterView({ profile }) {
     (async () => {
       try {
         const histSince = new Date(Date.now() - 365 * 86400000).toISOString(); // ⚡ сүүлийн 1 жил (бүх түүх биш)
-        const rows = await fetchInChunks("biz_calls", need, {
-          select: "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url",
-          filterColumn: "phone",
-          chunkSize: 50,
-          parallel: 4,
-          extraFilter: (q) => q.gte("created_at", histSince),
-        });
+        const nowH = Date.now();
         const byPhone = {};
+        const needNet = [];
+        need.forEach((ph) => { const c = CC_MEM.hist.get(ph); if (c && nowH - c.at < CC_MEM.TTL) byPhone[ph] = c.rows; else needNet.push(ph); });
+        const rows = needNet.length ? await ccFetchHistory(needNet, histSince, "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url") : [];
         (rows || []).forEach((r) => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
+        needNet.forEach((ph) => CC_MEM.hist.set(ph, { at: nowH, rows: byPhone[ph] || [] }));
         setFullHist((prev) => {
           const nx = { ...prev };
           need.forEach((p) => { nx[p] = byPhone[p] || []; });
@@ -15097,11 +15115,27 @@ function CallCenterView({ profile }) {
           // ⚡ Lossless + зэрэгцээ: chunk бүр дотроо page-лэдэг (тайралтгүй),
           //    8 chunk зэрэг явна. 2-р шат ХЭРЭГГҮЙ болсон (өмнө нь бараагүй
           //    мянган дугаарыг дэмий мөшгиж 15+ сек гацаадаг байсан).
-          const withProducts = await fetchInChunks("biz_calls", displayPhones, {
-            select: "phone, interested_products, call_status, created_at",
-            filterColumn: "phone", chunkSize: 150, parallel: 8,
-            extraFilter: (q) => q.eq("call_status", "pending").not("interested_products", "is", null),
-          });
+          // ⚡ RPC cc_latest_products: дугаар бүрийн СҮҮЛИЙН pending-ийн барааг сервер талд сонгоод НЭГ хүсэлтээр
+          //    (өмнө 8 зэрэгцээ хүсэлт × 24KB). RPC байхгүй/алдаатай бол хуучин аргаар.
+          let withProducts = null;
+          if (displayPhones.length > 0) {
+            try {
+              const acc = [];
+              for (let i = 0; i < displayPhones.length; i += 800) {
+                const { data, error } = await supabase.rpc("cc_latest_products", { p_phones: displayPhones.slice(i, i + 800) });
+                if (error) throw error;
+                acc.push(...(data || []));
+              }
+              withProducts = acc;
+            } catch (re) {
+              console.warn("[cc_latest_products rpc → fallback]", re?.message);
+              withProducts = await fetchInChunks("biz_calls", displayPhones, {
+                select: "phone, interested_products, call_status, created_at",
+                filterColumn: "phone", chunkSize: 150, parallel: 8,
+                extraFilter: (q) => q.eq("call_status", "pending").not("interested_products", "is", null),
+              });
+            }
+          } else withProducts = [];
           // Утас → бараанууд Map — ЗӨВХӨН ХАМГИЙН СҮҮЛИЙН pending дуудлагын бараа.
           //   (нэг утсанд олон pending байвал бүгдийг нэгтгэхгүй — зөвхөн сүүлийнх.
           //    ordered/cancelled/delivered болсон дуудлагын бараа огт орохгүй. Ингэснээр
@@ -15210,18 +15244,23 @@ function CallCenterView({ profile }) {
             //    ачааллыг блоклож татдаг байсан (67–76KB × олон хүсэлт, 4–9 сек). Одоо:
             //    (1) сүүлийн 1 жилээр хязгаарлана, (2) 6 зэрэгцээ, (3) АЧААЛЛЫГ ХҮЛЭЭЛГЭХГҮЙ — ард нь татаад ирэхээрээ шинэчилнэ.
             const histSince = new Date(Date.now() - 365 * 86400000).toISOString();
-            fetchInChunks("biz_calls", callingPhones, {
-              select: "id, phone, call_status, created_at, created_by, notes, fb_page_id",
-              filterColumn: "phone", chunkSize: 150, parallel: 6,
-              extraFilter: (q) => q.gte("created_at", histSince),
-            }).then((allCallsForPhones) => {
-              const cmap = {};
-              (allCallsForPhones || []).forEach((c) => {
-                if (!cmap[c.phone]) cmap[c.phone] = [];
-                cmap[c.phone].push(c);
-              });
-              setCallsByPhoneAll(cmap);
-            }).catch((e) => console.error("[history calls fetch]", e));
+            // ⚡ Модулийн кэшид (10 мин) байгаа дугаарыг дахин татахгүй; үлдсэнийг RPC-ээр нэг хүсэлтээр
+            const nowH = Date.now();
+            const cmap = {};
+            const needH = [];
+            callingPhones.forEach((ph) => { const c = CC_MEM.hist.get(ph); if (c && nowH - c.at < CC_MEM.TTL) cmap[ph] = c.rows; else needH.push(ph); });
+            if (Object.keys(cmap).length > 0) setCallsByPhoneAll({ ...cmap });
+            if (needH.length > 0) {
+              ccFetchHistory(needH, histSince, "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url").then((allCallsForPhones) => {
+                const by = {};
+                (allCallsForPhones || []).forEach((c) => { (by[c.phone] = by[c.phone] || []).push(c); });
+                needH.forEach((ph) => { cmap[ph] = by[ph] || []; CC_MEM.hist.set(ph, { at: nowH, rows: by[ph] || [] }); });
+                if (CC_MEM.hist.size > 8000) CC_MEM.hist.clear();
+                setCallsByPhoneAll({ ...cmap });
+                // Картын бүрэн түүхийг ч эндээс бөглөнө (ensureHistories дахин татахгүй)
+                setFullHist((prev) => { const nx = { ...prev }; needH.forEach((ph) => { nx[ph] = by[ph] || []; fullHistReq.current.add(ph); }); return nx; });
+              }).catch((e) => console.error("[history calls fetch]", e));
+            }
           }
         } catch (e) { console.error("[history calls fetch]", e); }
       }
@@ -15308,7 +15347,7 @@ function CallCenterView({ profile }) {
         (payload) => {
           // 🚀 Өөрчлөгдсөн дугаарын барааны кэшийг хүчингүй болгоно (дараагийн ачаалалт шинээр татна)
           const chPhone = payload?.new?.phone || payload?.old?.phone;
-          if (chPhone) winProdCacheRef.current.delete(chPhone);
+          if (chPhone) { winProdCacheRef.current.delete(chPhone); CC_MEM.hist.delete(chPhone); fullHistReq.current.delete(chPhone); }
           const evtTime = new Date(payload.commit_timestamp || Date.now()).getTime();
           if (evtTime < lastLoadTime.current) return;
           bumpBadge();
@@ -15602,6 +15641,7 @@ function CallCenterView({ profile }) {
         created_by: profile.id,
         created_at: new Date().toISOString(),
       });
+      ccInvalidate(statusPopupCall.phone); fullHistReq.current.delete(statusPopupCall.phone);
       await releaseLock(statusPopupCall.phone);
       setStatusPopupCall(null);
       setStatusComment("");
@@ -15639,6 +15679,7 @@ function CallCenterView({ profile }) {
         .update({ call_status: "cancelled" })
         .eq("phone", statusPopupCall.phone)
         .or("call_status.is.null,call_status.in.(no_answer,unreachable,callback)");
+      ccInvalidate(statusPopupCall.phone); fullHistReq.current.delete(statusPopupCall.phone);
       await releaseLock(statusPopupCall.phone);
       setStatusPopupCall(null);
       setStatusComment("");
@@ -17751,6 +17792,7 @@ function CallCenterView({ profile }) {
               }
 
 
+              ccInvalidate(data.phone); fullHistReq.current.delete(data.phone);
               setOrderForCall(null);
               await loadAll();
               alert(`✅ Захиалга амжилттай үүсгэгдлээ!\n${data.totalAmount.toLocaleString()}₮`);
