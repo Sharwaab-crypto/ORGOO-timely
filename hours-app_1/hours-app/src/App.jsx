@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-opkpi-fast";
+const BUILD_VERSION = "v2026.10.05-cc-fast";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14846,11 +14846,13 @@ function CallCenterView({ profile }) {
     need.forEach((p) => fullHistReq.current.add(p));
     (async () => {
       try {
+        const histSince = new Date(Date.now() - 365 * 86400000).toISOString(); // ⚡ сүүлийн 1 жил (бүх түүх биш)
         const rows = await fetchInChunks("biz_calls", need, {
           select: "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url",
           filterColumn: "phone",
           chunkSize: 50,
           parallel: 4,
+          extraFilter: (q) => q.gte("created_at", histSince),
         });
         const byPhone = {};
         (rows || []).forEach((r) => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
@@ -15204,19 +15206,22 @@ function CallCenterView({ profile }) {
             (ph) => lastStatusByPhone[ph] !== "ordered" && lastStatusByPhone[ph] !== "cancelled"
           );
           if (callingPhones.length > 0) {
-            // ⚡ ГАЦАА ЗАСВАР: interested_products (том jsonb, зурагтай) ХАСав —
-            //    бараа productsByPhoneAll-аас ирдэг тул түүхэнд хэрэггүй. Энэ нь
-            //    дата хэмжээг эрс багасгаж гацаа арилгана.
-            const allCallsForPhones = await fetchInChunks("biz_calls", callingPhones, {
+            // ⚡ ГАЦАА ЗАСВАР (2026-10-05): өмнө calling БҮХ утасны бүх түүхийг (200-аар ДАРААЛСАН, limit-гүй)
+            //    ачааллыг блоклож татдаг байсан (67–76KB × олон хүсэлт, 4–9 сек). Одоо:
+            //    (1) сүүлийн 1 жилээр хязгаарлана, (2) 6 зэрэгцээ, (3) АЧААЛЛЫГ ХҮЛЭЭЛГЭХГҮЙ — ард нь татаад ирэхээрээ шинэчилнэ.
+            const histSince = new Date(Date.now() - 365 * 86400000).toISOString();
+            fetchInChunks("biz_calls", callingPhones, {
               select: "id, phone, call_status, created_at, created_by, notes, fb_page_id",
-              filterColumn: "phone",
-            });
-            const cmap = {};
-            (allCallsForPhones || []).forEach((c) => {
-              if (!cmap[c.phone]) cmap[c.phone] = [];
-              cmap[c.phone].push(c);
-            });
-            setCallsByPhoneAll(cmap);
+              filterColumn: "phone", chunkSize: 150, parallel: 6,
+              extraFilter: (q) => q.gte("created_at", histSince),
+            }).then((allCallsForPhones) => {
+              const cmap = {};
+              (allCallsForPhones || []).forEach((c) => {
+                if (!cmap[c.phone]) cmap[c.phone] = [];
+                cmap[c.phone].push(c);
+              });
+              setCallsByPhoneAll(cmap);
+            }).catch((e) => console.error("[history calls fetch]", e));
           }
         } catch (e) { console.error("[history calls fetch]", e); }
       }
