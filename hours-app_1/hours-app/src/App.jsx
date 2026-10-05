@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-min-order";
+const BUILD_VERSION = "v2026.10.05-worklog";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2752,6 +2752,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
               <SidebarTab active={view === "suggestions"} onClick={() => { setView("suggestions"); setSidebarOpen(false); }} icon={Inbox}>💡 Санал асуулга</SidebarTab>
+              {profile.role === "admin" && <SidebarTab active={view === "worklog"} onClick={() => { setView("worklog"); setSidebarOpen(false); }} icon={ClipboardCheck}>🛠 Хийгдсэн ажил</SidebarTab>}
             </SidebarSection>
             )}
 
@@ -2908,6 +2909,7 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
+                {view === "worklog" && "Хийгдсэн ажил"}
                 {view === "suggestions" && "Санал асуулга"}
                 {view === "marketing" && "Маркетинг"}
                 {view === "mkt-board" && "Маркетингийн самбар"}
@@ -3222,6 +3224,7 @@ function AdminDashboard({ profile }) {
           <MktBoardView profile={profile} />
         )}
 
+        {view === "worklog" && profile.role === "admin" && <DevWorklogView profile={profile} />}
         {view === "suggestions" && (
           <SuggestionsAdminView profile={profile} />
         )}
@@ -34957,6 +34960,151 @@ function SuggestionBoxView({ profile }) {
             })}
           </div>}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  🛠 ХИЙГДСЭН АЖИЛ (admin) — системийн хөгжүүлэлтийн самбар: Хийх / Хийгдэж байгаа / Хийгдсэн
+//  DB: dev_worklog (id, title, detail, status todo|doing|done, build, priority, created_at, done_at, created_by)
+// ═══════════════════════════════════════════════════════════════════════════
+const WORKLOG_COLS = [
+  { id: "todo", label: "📋 Хийх ажил", color: "#e08a00", bg: "rgba(224,138,0,0.08)" },
+  { id: "doing", label: "⚙️ Хийгдэж байгаа", color: "#1c7fc4", bg: "rgba(28,127,196,0.08)" },
+  { id: "done", label: "✅ Хийгдсэн", color: "#1f9d55", bg: "rgba(31,157,85,0.08)" },
+];
+function DevWorklogView({ profile }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | "new" | row
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState({ title: "", detail: "", status: "todo", build: "", priority: "normal" });
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from("dev_worklog").select("*").order("done_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+      if (error) throw error;
+      setRows(data || []);
+    } catch (e) { console.error("[worklog]", e); alert("Хийгдсэн ажлын хүснэгт уншигдсангүй: " + e.message + "\n\nSQL ажиллуулсан эсэхээ шалгана уу (dev_worklog)."); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  const openNew = (status = "todo") => { setForm({ title: "", detail: "", status, build: "", priority: "normal" }); setEditing("new"); };
+  const openEdit = (r) => { setForm({ title: r.title || "", detail: r.detail || "", status: r.status || "todo", build: r.build || "", priority: r.priority || "normal" }); setEditing(r); };
+  const save = async () => {
+    if (!form.title.trim()) { alert("Гарчиг бичнэ үү"); return; }
+    const payload = { title: form.title.trim(), detail: form.detail.trim() || null, status: form.status, build: form.build.trim() || null, priority: form.priority,
+      done_at: form.status === "done" ? (editing !== "new" && editing.done_at ? editing.done_at : new Date().toISOString()) : null };
+    try {
+      if (editing === "new") { const { error } = await supabase.from("dev_worklog").insert({ ...payload, created_by: profile.id }); if (error) throw error; }
+      else { const { error } = await supabase.from("dev_worklog").update(payload).eq("id", editing.id); if (error) throw error; }
+      setEditing(null); await load();
+    } catch (e) { alert("Хадгалахад алдаа: " + e.message); }
+  };
+  const move = async (r, status) => {
+    try {
+      const { error } = await supabase.from("dev_worklog").update({ status, done_at: status === "done" ? new Date().toISOString() : null }).eq("id", r.id);
+      if (error) throw error; await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const remove = async (r) => {
+    if (!confirm(`"${r.title}" устгах уу?`)) return;
+    try { const { error } = await supabase.from("dev_worklog").delete().eq("id", r.id); if (error) throw error; await load(); } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const fmtD = (t) => t ? new Date(t).toLocaleDateString("en-CA", { timeZone: "Asia/Ulaanbaatar" }) : "";
+  const filtered = rows.filter((r) => !q.trim() || `${r.title} ${r.detail || ""} ${r.build || ""}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const PRI = { high: { label: "Яаралтай", color: T.err }, normal: { label: "", color: T.muted }, low: { label: "Бага", color: T.muted } };
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">🛠 Системийн хөгжүүлэлт</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{WORKLOG_COLS.map((c) => `${c.label.slice(2).trim()} ${rows.filter((r) => r.status === c.id).length}`).join(" · ")}</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Хайх..." className="px-3 py-1.5 rounded-lg text-xs outline-none ml-auto" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, minWidth: 180 }} />
+        <button onClick={() => openNew("todo")} className="glow-primary press-btn px-3 py-2 rounded-lg text-xs flex items-center gap-1.5" style={{ fontFamily: FS, fontWeight: 600 }}><Plus size={13} /> Ажил нэмэх</button>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+          {WORKLOG_COLS.map((col) => {
+            const list = filtered.filter((r) => r.status === col.id);
+            return (
+              <div key={col.id} className="glass rounded-2xl p-3" style={{ borderTop: `3px solid ${col.color}` }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span style={{ color: col.color, fontFamily: FS, fontWeight: 700 }} className="text-sm">{col.label} <span style={{ color: T.muted, fontWeight: 500 }}>({list.length})</span></span>
+                  <button onClick={() => openNew(col.id)} className="press-btn text-[11px] px-2 py-1 rounded-lg" style={{ background: col.bg, color: col.color, fontFamily: FS, fontWeight: 600 }}>+ нэмэх</button>
+                </div>
+                <div className="space-y-2" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+                  {list.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Хоосон</div>}
+                  {list.map((r) => (
+                    <div key={r.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{r.title}</div>
+                          {r.detail && <div style={{ color: T.muted, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-0.5">{r.detail}</div>}
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {r.build && <span style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FM }} className="text-[9px] px-1.5 py-0.5 rounded">🏗 {r.build}</span>}
+                            {r.priority === "high" && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-[9px] px-1.5 py-0.5 rounded">Яаралтай</span>}
+                            <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">{r.status === "done" && r.done_at ? `✓ ${fmtD(r.done_at)}` : fmtD(r.created_at)}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-shrink-0">
+                          <button onClick={() => openEdit(r)} title="Засах" style={{ color: T.muted }} className="hover:opacity-70"><Edit3 size={12} /></button>
+                          <button onClick={() => remove(r)} title="Устгах" style={{ color: T.err }} className="hover:opacity-70"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 mt-2">
+                        {WORKLOG_COLS.filter((c) => c.id !== r.status).map((c) => (
+                          <button key={c.id} onClick={() => move(r, c.id)} className="press-btn flex-1 py-1 rounded-lg text-[10px]" style={{ background: c.bg, color: c.color, fontFamily: FS, fontWeight: 600 }}>→ {c.label.slice(2).trim()}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <Modal onClose={() => setEditing(null)} title={editing === "new" ? "Ажил нэмэх" : "Ажил засах"} maxW="max-w-lg">
+          <div className="space-y-3">
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Гарчиг *</label>
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+            </div>
+            <div>
+              <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Тайлбар</label>
+              <textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows={4} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Төлөв</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full px-2 py-2 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                  {WORKLOG_COLS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Ач холбогдол</label>
+                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full px-2 py-2 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>
+                  <option value="high">Яаралтай</option><option value="normal">Энгийн</option><option value="low">Бага</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Build</label>
+                <input value={form.build} onChange={(e) => setForm({ ...form, build: e.target.value })} placeholder="v2026.10.05-..." className="w-full px-2 py-2 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FM }} />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setEditing(null)} className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ fontFamily: FS, color: T.ink }}>Болих</button>
+              <button onClick={save} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS }}>Хадгалах</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
