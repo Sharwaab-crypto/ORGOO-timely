@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-delivery-manual2";
+const BUILD_VERSION = "v2026.10.05-delivery-manual3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5986,8 +5986,10 @@ function CancelReasonsManager({ profile }) {
 //  Нэг өдөр → засварлах горим; хугацаа (7 хоног/сар/гараар) → нэгтгэсэн (унших) горим
 // ═══════════════════════════════════════════════════════════════════════════
 const DDR_GROUPS = ["Төв", "Урд", "Баруун", "Зүүн", "Орон нутаг"];
-const DDR_NUM = [["cba", "ЦБА", "#1c7fc4"], ["total", "Нийт", "#12302c"], ["delivered", "Хүргэсэн", "#1f9d55"], ["tomorrow", "Маргааш", "#e08a00"], ["cancelled", "Цуцлалт", "#d9423a"]];
-const DDR_URGOO = [["urgoo_daahar", "Даахар"], ["urgoo_cba", "ЦБА"], ["urgoo_ahlah", "Ахлах"]];
+const DDR_NUM = [["total", "Нийт", "#12302c"], ["delivered", "Хүргэсэн", "#1f9d55"], ["tomorrow", "Маргааш", "#e08a00"], ["cancelled", "Цуцлалт", "#d9423a"]];
+// Давхар / ЦБА / Ахлах — эдгээрт бичсэн тоо "Нийт"-ээс ХАСАГДАНА (цэвэр нийт = total − давхар − ЦБА − ахлах)
+const DDR_URGOO = [["urgoo_daahar", "Давхар"], ["urgoo_cba", "ЦБА"], ["urgoo_ahlah", "Ахлах"]];
+const ddrNet = (r) => Math.max(0, Number(r.total || 0) - Number(r.urgoo_daahar || 0) - Number(r.urgoo_cba || 0) - Number(r.urgoo_ahlah || 0));
 function DeliveryManualReportView({ profile }) {
   const ubDay = (d = new Date()) => new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
   const shift = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -6071,7 +6073,7 @@ function DeliveryManualReportView({ profile }) {
   const delRow = async (r) => { if (!confirm(`"${r.driver_name || "хоосон"}" мөрийг устгах уу?`)) return; await supabase.from("delivery_daily_report").delete().eq("id", r.id); await load(); };
 
   const num = (v) => Number(v || 0);
-  const sumOf = (list, f) => list.reduce((s, r) => s + num(r[f]), 0);
+  const sumOf = (list, f) => list.reduce((s, r) => s + (f === "total" ? ddrNet(r) : num(r[f])), 0);
   const pctN = (d, t) => (t > 0 ? (d / t) * 100 : null);
   const pctS = (d, t) => { const p = pctN(d, t); return p == null ? "—" : `${p.toFixed(1)}%`; };
   const pctColor = (p) => (p == null ? MC.n400 : p >= 90 ? MC.green : p >= 80 ? MC.amber : MC.red);
@@ -6082,7 +6084,7 @@ function DeliveryManualReportView({ profile }) {
     const m = {};
     rows.forEach((r) => {
       const k = `${r.group_name}|${(r.label || "")}|${(r.driver_name || "").trim().toLowerCase()}`;
-      if (!m[k]) m[k] = { id: k, group_name: r.group_name, label: r.label, driver_name: r.driver_name, driver_id: r.driver_id, days: new Set(), cba: 0, total: 0, delivered: 0, tomorrow: 0, cancelled: 0, urgoo_daahar: 0, urgoo_cba: 0, urgoo_ahlah: 0, position: r.position };
+      if (!m[k]) m[k] = { id: k, group_name: r.group_name, label: r.label, driver_name: r.driver_name, driver_id: r.driver_id, days: new Set(), total: 0, delivered: 0, tomorrow: 0, cancelled: 0, urgoo_daahar: 0, urgoo_cba: 0, urgoo_ahlah: 0, position: r.position };
       const a = m[k]; a.days.add(r.report_date);
       [...DDR_NUM, ...DDR_URGOO].forEach(([f]) => { a[f] += num(r[f]); });
     });
@@ -6094,9 +6096,9 @@ function DeliveryManualReportView({ profile }) {
 
   const exportExcel = () => {
     const out = [];
-    groups.forEach((g) => { const gr = aggRows.filter((r) => r.group_name === g); gr.forEach((r) => out.push({ Хугацаа: range.label, Бүлэг: g, Тэмдэглэгээ: r.label || "", Жолооч: r.driver_name, ЦБА: num(r.cba), Нийт: num(r.total), Хүргэсэн: num(r.delivered), Маргааш: num(r.tomorrow), Цуцлалт: num(r.cancelled), Хувь: pctS(num(r.delivered), num(r.total)), "Өргөө Даахар": num(r.urgoo_daahar), "Өргөө ЦБА": num(r.urgoo_cba), "Өргөө Ахлах": num(r.urgoo_ahlah), "Даахар дугаар": r.note_daahar || "", "Алдаатай захиалга": r.note_error || "" })); out.push({ Хугацаа: range.label, Бүлэг: g + " — ДҮН", ЦБА: sumOf(gr, "cba"), Нийт: sumOf(gr, "total"), Хүргэсэн: sumOf(gr, "delivered"), Маргааш: sumOf(gr, "tomorrow"), Цуцлалт: sumOf(gr, "cancelled"), Хувь: pctS(sumOf(gr, "delivered"), sumOf(gr, "total")), "Өргөө Даахар": sumOf(gr, "urgoo_daahar"), "Өргөө ЦБА": sumOf(gr, "urgoo_cba"), "Өргөө Ахлах": sumOf(gr, "urgoo_ahlah") }); });
-    out.push({ Хугацаа: range.label, Бүлэг: "ӨРГӨӨ (хот)", ЦБА: sumOf(cityRows, "cba"), Нийт: sumOf(cityRows, "total"), Хүргэсэн: sumOf(cityRows, "delivered"), Маргааш: sumOf(cityRows, "tomorrow"), Цуцлалт: sumOf(cityRows, "cancelled"), Хувь: pctS(sumOf(cityRows, "delivered"), sumOf(cityRows, "total")) });
-    out.push({ Хугацаа: range.label, Бүлэг: "НИЙТ", ЦБА: sumOf(aggRows, "cba"), Нийт: sumOf(aggRows, "total"), Хүргэсэн: sumOf(aggRows, "delivered"), Маргааш: sumOf(aggRows, "tomorrow"), Цуцлалт: sumOf(aggRows, "cancelled"), Хувь: pctS(sumOf(aggRows, "delivered"), sumOf(aggRows, "total")), "Өргөө Даахар": sumOf(aggRows, "urgoo_daahar"), "Өргөө ЦБА": sumOf(aggRows, "urgoo_cba"), "Өргөө Ахлах": sumOf(aggRows, "urgoo_ahlah") });
+    groups.forEach((g) => { const gr = aggRows.filter((r) => r.group_name === g); gr.forEach((r) => out.push({ Хугацаа: range.label, Бүлэг: g, Тэмдэглэгээ: r.label || "", Жолооч: r.driver_name, "Нийт (бичсэн)": num(r.total), Давхар: num(r.urgoo_daahar), ЦБА: num(r.urgoo_cba), Ахлах: num(r.urgoo_ahlah), "Нийт (цэвэр)": ddrNet(r), Хүргэсэн: num(r.delivered), Маргааш: num(r.tomorrow), Цуцлалт: num(r.cancelled), Хувь: pctS(num(r.delivered), ddrNet(r)), "Даахар дугаар": r.note_daahar || "", "Алдаатай захиалга": r.note_error || "" })); out.push({ Хугацаа: range.label, Бүлэг: g + " — ДҮН", Давхар: sumOf(gr, "urgoo_daahar"), ЦБА: sumOf(gr, "urgoo_cba"), Ахлах: sumOf(gr, "urgoo_ahlah"), "Нийт (цэвэр)": sumOf(gr, "total"), Хүргэсэн: sumOf(gr, "delivered"), Маргааш: sumOf(gr, "tomorrow"), Цуцлалт: sumOf(gr, "cancelled"), Хувь: pctS(sumOf(gr, "delivered"), sumOf(gr, "total")) }); });
+    out.push({ Хугацаа: range.label, Бүлэг: "ӨРГӨӨ (хот)", "Нийт (цэвэр)": sumOf(cityRows, "total"), Хүргэсэн: sumOf(cityRows, "delivered"), Маргааш: sumOf(cityRows, "tomorrow"), Цуцлалт: sumOf(cityRows, "cancelled"), Хувь: pctS(sumOf(cityRows, "delivered"), sumOf(cityRows, "total")) });
+    out.push({ Хугацаа: range.label, Бүлэг: "НИЙТ", Давхар: sumOf(aggRows, "urgoo_daahar"), ЦБА: sumOf(aggRows, "urgoo_cba"), Ахлах: sumOf(aggRows, "urgoo_ahlah"), "Нийт (цэвэр)": sumOf(aggRows, "total"), Хүргэсэн: sumOf(aggRows, "delivered"), Маргааш: sumOf(aggRows, "tomorrow"), Цуцлалт: sumOf(aggRows, "cancelled"), Хувь: pctS(sumOf(aggRows, "delivered"), sumOf(aggRows, "total")) });
     const ws = XLSX.utils.json_to_sheet(out); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Гар тайлан"); XLSX.writeFile(wb, `Hurgelt_gar_tailan_${range.s}${single ? "" : "_" + range.e}.xlsx`);
   };
 
@@ -6142,11 +6144,11 @@ function DeliveryManualReportView({ profile }) {
         <>
           {/* 🔢 Нийт дүн — сонгосон хугацааны */}
           <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,140px),1fr))", gap: 8 }}>
-            <Tile label="Нийт" value={totT.toLocaleString()} sub={`ЦБА ${sumOf(aggRows, "cba").toLocaleString()}`} color={MC.blue} />
+            <Tile label="Нийт (цэвэр)" value={totT.toLocaleString()} sub={`бичсэн ${aggRows.reduce((s, r) => s + num(r.total), 0).toLocaleString()} − хасалт ${(sumOf(aggRows, "urgoo_daahar") + sumOf(aggRows, "urgoo_cba") + sumOf(aggRows, "urgoo_ahlah")).toLocaleString()}`} color={MC.blue} />
             <Tile label="Хүргэсэн" value={totD.toLocaleString()} sub={pctS(totD, totT)} color={MC.green} />
             <Tile label="Маргааш" value={sumOf(aggRows, "tomorrow").toLocaleString()} color={MC.amber} />
             <Tile label="Цуцлалт" value={sumOf(aggRows, "cancelled").toLocaleString()} sub={totT ? `${((sumOf(aggRows, "cancelled") / totT) * 100).toFixed(1)}%` : ""} color={MC.red} />
-            <Tile label="Өргөө" value={(sumOf(aggRows, "urgoo_daahar") + sumOf(aggRows, "urgoo_cba") + sumOf(aggRows, "urgoo_ahlah")).toLocaleString()} sub={`Даахар ${sumOf(aggRows, "urgoo_daahar")} · ЦБА ${sumOf(aggRows, "urgoo_cba")} · Ахлах ${sumOf(aggRows, "urgoo_ahlah")}`} color={MC.accent} />
+            <Tile label="Хасалт" value={(sumOf(aggRows, "urgoo_daahar") + sumOf(aggRows, "urgoo_cba") + sumOf(aggRows, "urgoo_ahlah")).toLocaleString()} sub={`Давхар ${sumOf(aggRows, "urgoo_daahar")} · ЦБА ${sumOf(aggRows, "urgoo_cba")} · Ахлах ${sumOf(aggRows, "urgoo_ahlah")}`} color={MC.accent} />
             <Tile label="Хот (Өргөө)" value={sumOf(cityRows, "total").toLocaleString()} sub={`хүргэсэн ${sumOf(cityRows, "delivered")} · ${pctS(sumOf(cityRows, "delivered"), sumOf(cityRows, "total"))}`} color={MC.a300} />
           </section>
 
@@ -6170,15 +6172,16 @@ function DeliveryManualReportView({ profile }) {
                       {g === "Орон нутаг" && <Th align="left" w={120}>Тэмдэглэгээ</Th>}
                       <Th align="left">Жолооч</Th>
                       {!single && <Th w={56}>Өдөр</Th>}
-                      {DDR_NUM.map(([f, l, c]) => <Th key={f} w={70} color={f === "cba" ? MC.blue : undefined}>{l}</Th>)}
+                      {DDR_NUM.map(([f, l, c]) => <Th key={f} w={f === "total" ? 96 : 70}>{l}</Th>)}
                       <Th w={72}>%</Th>
-                      {DDR_URGOO.map(([f, l]) => <Th key={f} w={70} color={MC.a300}>Өргөө·{l}</Th>)}
+                      {DDR_URGOO.map(([f, l]) => <Th key={f} w={70} color={MC.a300}>{l}</Th>)}
                       {showNotes && single && <><Th align="left" w={150}>Даахар дугаар</Th><Th align="left" w={150}>Алдаатай захиалга</Th></>}
                       {single && <Th w={28} />}
                     </tr></thead>
                     <tbody>
                       {gr.map((r) => {
-                        const p = pctN(num(r.delivered), num(r.total));
+                        const p = pctN(num(r.delivered), ddrNet(r));
+                        const ded = num(r.urgoo_daahar) + num(r.urgoo_cba) + num(r.urgoo_ahlah);
                         return (
                           <tr key={r.id} className="md-row2" style={{ borderTop: `1px solid ${MC.divider}` }}>
                             {g === "Орон нутаг" && <td style={{ padding: "0 6px" }}>{single ? (
@@ -6197,9 +6200,14 @@ function DeliveryManualReportView({ profile }) {
                             </td>
                             {!single && <td style={{ textAlign: "center", fontSize: 12, color: MC.n300 }}>{r.dayCount}</td>}
                             {DDR_NUM.map(([f, l, c]) => (
-                              <td key={f} style={{ padding: 0, background: f === "cba" ? "rgba(28,127,196,0.05)" : undefined }}>
-                                {single ? <input type="number" min="0" value={r[f] ?? ""} onChange={(e) => setField(r.id, f, e.target.value === "" ? null : Number(e.target.value))} style={{ ...cellIn, color: f === "cba" ? MC.blue : MC.text }} />
-                                  : <div style={{ ...cellIn, color: f === "cba" ? MC.blue : MC.text }}>{num(r[f])}</div>}
+                              <td key={f} style={{ padding: 0 }}>
+                                {f === "total" ? (
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                                    {single ? <input type="number" min="0" value={r.total ?? ""} onChange={(e) => setField(r.id, "total", e.target.value === "" ? null : Number(e.target.value))} style={{ ...cellIn, width: 52, color: ded > 0 ? MC.n400 : MC.text, textDecoration: ded > 0 ? "line-through" : "none" }} /> : (ded > 0 && <span style={{ fontSize: 11, color: MC.n400, textDecoration: "line-through" }}>{num(r.total)}</span>)}
+                                    {(ded > 0 || !single) && <span style={{ fontSize: 13, fontWeight: 600, color: MC.text, fontVariantNumeric: "tabular-nums" }} title={`${num(r.total)} − ${ded}`}>{ddrNet(r)}</span>}
+                                  </div>
+                                ) : single ? <input type="number" min="0" value={r[f] ?? ""} onChange={(e) => setField(r.id, f, e.target.value === "" ? null : Number(e.target.value))} style={cellIn} />
+                                  : <div style={cellIn}>{num(r[f])}</div>}
                               </td>
                             ))}
                             <td style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: pctColor(p), fontVariantNumeric: "tabular-nums" }}>{p == null ? "—" : p.toFixed(1) + "%"}</td>
@@ -6232,7 +6240,7 @@ function DeliveryManualReportView({ profile }) {
               </section>
             );
           })}
-          <p style={{ margin: 0, fontSize: 11, color: MC.n300, display: "flex", gap: 6 }}><Info size={14} style={{ flex: "none", marginTop: 1 }} /><span>{single ? "Нүд бүр бичмэгц автоматаар хадгалагдана. 🚚 сонголтоор жолоочийг системтэй холбовол «Системээс татах» тухайн өдрийн Хүргэсэн / Цуцлалт / Маргааш тоог бөглөнө; ЦБА, Өргөө, тайлбар гараар." : "Олон өдрийн нэгтгэл — тоонууд өдрүүдийн нийлбэр, засварлахгүй. Засахын тулд нэг өдөр сонгоно уу."}</span></p>
+          <p style={{ margin: 0, fontSize: 11, color: MC.n300, display: "flex", gap: 6 }}><Info size={14} style={{ flex: "none", marginTop: 1 }} /><span>{single ? "Нүд бүр бичмэгц автоматаар хадгалагдана. 🚚 сонголтоор жолоочийг системтэй холбовол «Системээс татах» тухайн өдрийн Хүргэсэн / Цуцлалт / Маргааш тоог бөглөнө. Давхар / ЦБА / Ахлах баганад бичсэн тоо Нийт-ээс хасагдаж цэвэр нийт гарна." : "Олон өдрийн нэгтгэл — тоонууд өдрүүдийн нийлбэр, засварлахгүй. Засахын тулд нэг өдөр сонгоно уу."}</span></p>
         </>
       )}
     </div>
