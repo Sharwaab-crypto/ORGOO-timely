@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-no-lowstock";
+const BUILD_VERSION = "v2026.10.05-bundles";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2808,6 +2808,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
               <SidebarTab active={view === "stock-prep"} onClick={() => { setView("stock-prep"); setSidebarOpen(false); }} icon={BarChart3}>Нөөц бэлдэлт</SidebarTab>
+              {!isMarketing && <SidebarTab active={view === "bundles"} onClick={() => { setView("bundles"); setSidebarOpen(false); }} icon={Package}>📦 Багцын бараа</SidebarTab>}
               {!isMarketing && (
                 <>
                   <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
@@ -2900,6 +2901,7 @@ function AdminDashboard({ profile }) {
                 {view === "inventory" && "Бараа нөөц"}
                 {view === "warehouses" && "Агуулах"}
                 {view === "stock-prep" && "Нөөц бэлдэлт"}
+                {view === "bundles" && "Багцын бараа"}
                 {view === "supplier-orders" && "Захиалсан бараа"}
                 {view === "locations" && "Байршил"}
                 {view === "zones" && "Хүргэлтийн бүс"}
@@ -3189,6 +3191,7 @@ function AdminDashboard({ profile }) {
         {view === "stock-prep" && (
           <StockPrepView profile={profile} />
         )}
+        {view === "bundles" && <BundlesView profile={profile} />}
 
         {view === "transfers" && (
           <TransferRequestsView profile={profile} />
@@ -10974,6 +10977,178 @@ function SearchableSelect({ value, onChange, options, placeholder = "Бүгд", 
 //  • Карт бүрийн хажууд өдөр тутмын борлуулалтын chart + дундаж шугам
 //  • "Зарагдсан" = Борлуулалтын тайлантай ижил дүрэм: status='delivered', delivered_at хүрээнд
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  📦 БАГЦЫН БАРАА (Агуулах) — багц үүсгэх/засах; захиалга авахад багцын барааг дарахад багц санал болгоно
+//  DB: inv_bundles (id, name, price, description, is_active, created_by, created_at)
+//      inv_bundle_items (id, bundle_id, product_id, quantity)
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadActiveBundles() {
+  try {
+    const { data: bs } = await supabase.from("inv_bundles").select("*").eq("is_active", true).order("name");
+    if (!bs || bs.length === 0) return [];
+    const { data: its } = await supabase.from("inv_bundle_items").select("*").in("bundle_id", bs.map((b) => b.id));
+    return bs.map((b) => ({ ...b, items: (its || []).filter((i) => i.bundle_id === b.id) }));
+  } catch (e) { console.error("[bundles]", e); return []; }
+}
+// Багцын үнийг бараануудад хувь тэнцүүлэн хуваарилна (нийлбэр = багцын үнэ)
+function bundleUnitPrices(bundle, products) {
+  const rows = bundle.items.map((it) => { const p = products.find((x) => x.id === it.product_id); return p ? { product: p, qty: Number(it.quantity || 1), base: Number(p.sale_price || 0) } : null; }).filter(Boolean);
+  const baseSum = rows.reduce((s, r) => s + r.base * r.qty, 0);
+  const price = Number(bundle.price || 0);
+  const ratio = baseSum > 0 && price > 0 ? price / baseSum : 1;
+  let acc = 0;
+  return rows.map((r, i) => {
+    let unit = Math.round(r.base * ratio);
+    if (i === rows.length - 1 && price > 0) unit = Math.max(0, Math.round((price - acc) / r.qty)); // сүүлийнх нь үлдэгдлийг авна
+    acc += unit * r.qty;
+    return { ...r, unit };
+  });
+}
+
+function BundlesView({ profile }) {
+  const [bundles, setBundles] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | "new" | bundle
+  const [form, setForm] = useState({ name: "", price: "", description: "", items: [] });
+  const [q, setQ] = useState("");
+  const [pq, setPq] = useState("");
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [{ data: bs, error }, { data: its }, { data: ps }] = await Promise.all([
+        supabase.from("inv_bundles").select("*").order("created_at", { ascending: false }),
+        supabase.from("inv_bundle_items").select("*"),
+        supabase.from("inv_products").select("id, name, sku, sale_price, image_url").order("name"),
+      ]);
+      if (error) throw error;
+      setBundles((bs || []).map((b) => ({ ...b, items: (its || []).filter((i) => i.bundle_id === b.id) })));
+      setProducts(ps || []);
+    } catch (e) { alert("Багц уншигдсангүй: " + e.message + "\n\nSQL (inv_bundles) ажиллуулсан эсэхээ шалгана уу."); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  const prodById = (id) => products.find((p) => p.id === id);
+  const openNew = () => { setForm({ name: "", price: "", description: "", items: [] }); setPq(""); setEditing("new"); };
+  const openEdit = (b) => { setForm({ name: b.name, price: b.price ?? "", description: b.description || "", items: b.items.map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity || 1) })) }); setPq(""); setEditing(b); };
+  const baseSum = form.items.reduce((s, it) => s + Number(prodById(it.product_id)?.sale_price || 0) * it.quantity, 0);
+  const save = async () => {
+    if (!form.name.trim()) { alert("Багцын нэр бичнэ үү"); return; }
+    if (form.items.length < 2) { alert("Багцад хамгийн багадаа 2 бараа оруулна уу"); return; }
+    try {
+      let id = editing === "new" ? null : editing.id;
+      const payload = { name: form.name.trim(), price: form.price === "" ? null : Number(form.price), description: form.description.trim() || null };
+      if (!id) { const { data, error } = await supabase.from("inv_bundles").insert({ ...payload, is_active: true, created_by: profile.id }).select("id").single(); if (error) throw error; id = data.id; }
+      else { const { error } = await supabase.from("inv_bundles").update(payload).eq("id", id); if (error) throw error; await supabase.from("inv_bundle_items").delete().eq("bundle_id", id); }
+      const { error: e2 } = await supabase.from("inv_bundle_items").insert(form.items.map((it) => ({ bundle_id: id, product_id: it.product_id, quantity: it.quantity })));
+      if (e2) throw e2;
+      setEditing(null); await load();
+    } catch (e) { alert("Хадгалахад алдаа: " + e.message); }
+  };
+  const toggle = async (b) => { await supabase.from("inv_bundles").update({ is_active: !b.is_active }).eq("id", b.id); await load(); };
+  const remove = async (b) => { if (!confirm(`"${b.name}" багцыг устгах уу?`)) return; await supabase.from("inv_bundle_items").delete().eq("bundle_id", b.id); await supabase.from("inv_bundles").delete().eq("id", b.id); await load(); };
+  const list = bundles.filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const pickable = products.filter((p) => !form.items.some((it) => it.product_id === p.id) && (!pq.trim() || `${p.name} ${p.sku || ""}`.toLowerCase().includes(pq.trim().toLowerCase()))).slice(0, 30);
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📦 Багцын бараа</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{bundles.filter((b) => b.is_active).length} идэвхтэй · {bundles.length} нийт</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Багц хайх..." className="px-3 py-1.5 rounded-lg text-xs outline-none ml-auto" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, minWidth: 180 }} />
+        <button onClick={openNew} className="glow-primary press-btn px-3 py-2 rounded-lg text-xs flex items-center gap-1.5" style={{ fontFamily: FS, fontWeight: 600 }}><Plus size={13} /> Багц үүсгэх</button>
+      </div>
+      {loading ? <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      : list.length === 0 ? <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}>Багц байхгүй — "Багц үүсгэх" дарж эхний багцаа үүсгэнэ үү</div>
+      : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {list.map((b) => {
+            const bsum = b.items.reduce((s, it) => s + Number(prodById(it.product_id)?.sale_price || 0) * Number(it.quantity || 1), 0);
+            return (
+              <div key={b.id} className="glass rounded-2xl p-3" style={{ opacity: b.is_active ? 1 : .55, border: `1px solid ${b.is_active ? T.border : T.borderStrong}` }}>
+                <div className="flex items-start gap-2 mb-2">
+                  <div className="flex-1 min-w-0">
+                    <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm truncate">📦 {b.name}</div>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{Number(b.price || bsum).toLocaleString()}₮</span>
+                      {b.price != null && bsum > 0 && Number(b.price) !== bsum && <span style={{ color: T.muted, fontFamily: FM, textDecoration: "line-through" }} className="text-[11px] tabular-nums">{bsum.toLocaleString()}₮</span>}
+                      {b.price != null && bsum > Number(b.price) && <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-1.5 py-0.5 rounded">−{Math.round((1 - Number(b.price) / bsum) * 100)}%</span>}
+                      {!b.is_active && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-1.5 py-0.5 rounded">Идэвхгүй</span>}
+                    </div>
+                    {b.description && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5">{b.description}</div>}
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => openEdit(b)} title="Засах" style={{ color: T.muted }}><Edit3 size={13} /></button>
+                    <button onClick={() => toggle(b)} title={b.is_active ? "Идэвхгүй болгох" : "Идэвхжүүлэх"} style={{ color: b.is_active ? T.warn : T.ok }}>{b.is_active ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                    <button onClick={() => remove(b)} title="Устгах" style={{ color: T.err }}><Trash2 size={13} /></button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {b.items.map((it) => { const p = prodById(it.product_id); return (
+                    <div key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: T.surfaceAlt }}>
+                      {p?.image_url ? <img src={p.image_url} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0" style={{ background: T.surface }}>📦</span>}
+                      <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p?.name || "—"} <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p?.sku || ""}</span></span>
+                      <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">×{it.quantity}</span>
+                    </div>); })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <Modal onClose={() => setEditing(null)} title={editing === "new" ? "📦 Багц үүсгэх" : "📦 Багц засах"} maxW="max-w-2xl">
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-2">
+              <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Багцын нэр *</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} /></div>
+              <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Багцын үнэ ₮</label>
+                <input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder={baseSum ? String(baseSum) : ""} className="w-full px-3 py-2 rounded-lg text-sm outline-none tabular-nums" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FD }} /></div>
+            </div>
+            <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Тайлбар</label>
+              <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} /></div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Багцын бараа ({form.items.length})</label>
+                <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">Барааны үнийн нийлбэр: <b style={{ color: T.ink }}>{baseSum.toLocaleString()}₮</b>{form.price !== "" && Number(form.price) > 0 && <> → багц <b style={{ color: T.highlight }}>{Number(form.price).toLocaleString()}₮</b></>}</span>
+              </div>
+              <div className="space-y-1 mb-2">
+                {form.items.map((it) => { const p = prodById(it.product_id); return (
+                  <div key={it.product_id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
+                    {p?.image_url ? <img src={p.image_url} alt="" className="w-7 h-7 rounded object-cover" /> : <span className="w-7 h-7 rounded flex items-center justify-center" style={{ background: T.surface }}>📦</span>}
+                    <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p?.name} <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p?.sku} · {Number(p?.sale_price || 0).toLocaleString()}₮</span></span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setForm({ ...form, items: form.items.map((x) => x.product_id === it.product_id ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x) })} className="w-6 h-6 rounded" style={{ background: T.surface, color: T.ink }}>−</button>
+                      <span style={{ fontFamily: FD, fontWeight: 700, color: T.ink, minWidth: 20, textAlign: "center" }} className="text-xs">{it.quantity}</span>
+                      <button onClick={() => setForm({ ...form, items: form.items.map((x) => x.product_id === it.product_id ? { ...x, quantity: x.quantity + 1 } : x) })} className="w-6 h-6 rounded" style={{ background: T.surface, color: T.ink }}>+</button>
+                    </div>
+                    <button onClick={() => setForm({ ...form, items: form.items.filter((x) => x.product_id !== it.product_id) })} style={{ color: T.err }}><X size={13} /></button>
+                  </div>); })}
+              </div>
+              <input value={pq} onChange={(e) => setPq(e.target.value)} placeholder="🔍 Бараа нэмэх — нэр / SKU" className="w-full px-3 py-2 rounded-lg text-xs outline-none mb-1" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
+              <div className="max-h-44 overflow-y-auto space-y-0.5">
+                {pickable.map((p) => (
+                  <button key={p.id} onClick={() => setForm({ ...form, items: [...form.items, { product_id: p.id, quantity: 1 }] })} className="w-full flex items-center gap-2 rounded-lg px-2 py-1 text-left hover:opacity-80" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                    {p.image_url ? <img src={p.image_url} alt="" className="w-6 h-6 rounded object-cover" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: T.surfaceAlt }}>📦</span>}
+                    <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p.name}</span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku} · {Number(p.sale_price || 0).toLocaleString()}₮</span>
+                    <Plus size={12} style={{ color: T.highlight }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setEditing(null)} className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ fontFamily: FS, color: T.ink }}>Болих</button>
+              <button onClick={save} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS }}>Хадгалах</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function StockPrepView({ profile }) {
   const [products, setProducts] = useState([]);
   const [stockTotal, setStockTotal] = useState({});   // { product_id: бүх агуулахын нийлбэр }
@@ -26371,6 +26546,10 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startedAt) / 1000)), 1000);
     return () => clearInterval(t);
   }, [startedAt]);
+  // 📦 Багцууд — багцын барааг дарахад "Багц сонгох уу?" асууна
+  const [bundles, setBundles] = useState([]);
+  const [bundlePrompt, setBundlePrompt] = useState(null); // { product, matches: [bundle] }
+  useEffect(() => { loadActiveBundles().then(setBundles); }, []);
   const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   // directMode (мерчант шууд захиалга): ганц "Захиалга баталгаажуулах" товч; "шинэ дээр захиалга байна" шалгалтыг алгасна
   const [phone, setPhone] = useState(initialPhone || "");
@@ -26561,7 +26740,35 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     );
   }, [products, productSearch]);
 
+  const addItemDirect = (product) => {
+    const exists = items.find((it) => it.productId === product.id);
+    if (exists) {
+      setItems(items.map((it) => it.productId === product.id ? { ...it, quantity: it.quantity + 1 } : it));
+    } else {
+      setItems([...items, { productId: product.id, product, quantity: 1, unitPrice: Number(product.sale_price || 0), itemNotes: product.description || "" }]);
+    }
+  };
+  // 📦 Багц нэмэх: бүх барааг нь багцын үнээр (хувь тэнцүүлэн) нэмнэ
+  const addBundle = (bundle) => {
+    const rows = bundleUnitPrices(bundle, products);
+    if (rows.length === 0) { alert("Багцын бараанууд олдсонгүй"); return; }
+    let next = [...items];
+    rows.forEach(({ product, qty, unit }) => {
+      const idx = next.findIndex((it) => it.productId === product.id);
+      const note = `📦 Багц: ${bundle.name}${product.description ? " · " + product.description : ""}`;
+      if (idx >= 0) next[idx] = { ...next[idx], quantity: next[idx].quantity + qty, unitPrice: unit, itemNotes: note };
+      else next.push({ productId: product.id, product, quantity: qty, unitPrice: unit, itemNotes: note });
+    });
+    setItems(next);
+    setBundlePrompt(null);
+  };
   const addItem = (product) => {
+    // Энэ бараа идэвхтэй багцад байвал → асууна
+    const matches = bundles.filter((b) => (b.items || []).some((it) => it.product_id === product.id));
+    if (matches.length > 0) { setBundlePrompt({ product, matches }); return; }
+    addItemDirect(product);
+  };
+  const _addItemLegacy = (product) => {
     const exists = items.find((it) => it.productId === product.id);
     if (exists) {
       setItems(items.map((it) => it.productId === product.id ? { ...it, quantity: it.quantity + 1 } : it));
@@ -26604,6 +26811,42 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
   return (
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
       <div className="modal-content rounded-2xl w-full max-w-6xl p-4 sm:p-5 max-h-[95vh] overflow-y-auto">
+        {bundlePrompt && createPortal(
+          <div onClick={() => setBundlePrompt(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999 }} className="flex items-center justify-center p-4">
+            <div onClick={(e) => e.stopPropagation()} className="rounded-2xl w-full max-w-md p-5 space-y-3" style={{ background: T.surface, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">📦 Багц сонгох уу?</div>
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-0.5"><b style={{ color: T.ink }}>{bundlePrompt.product.name}</b> бараа {bundlePrompt.matches.length} багцад байна</div>
+                </div>
+                <button onClick={() => setBundlePrompt(null)} style={{ color: T.muted }}><X size={16} /></button>
+              </div>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {bundlePrompt.matches.map((b) => {
+                  const rows = bundleUnitPrices(b, products);
+                  const baseSum = rows.reduce((s, r) => s + r.base * r.qty, 0);
+                  const price = Number(b.price || baseSum);
+                  return (
+                    <button key={b.id} onClick={() => addBundle(b)} className="w-full text-left rounded-xl p-3 press-btn" style={{ background: T.highlightSoft, border: `1.5px solid ${T.highlight}` }}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">📦 {b.name}</span>
+                        <span className="flex items-baseline gap-1.5">
+                          {baseSum > price && <span style={{ color: T.muted, fontFamily: FM, textDecoration: "line-through" }} className="text-[11px]">{baseSum.toLocaleString()}₮</span>}
+                          <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{price.toLocaleString()}₮</span>
+                        </span>
+                      </div>
+                      <div className="mt-1 space-y-0.5">
+                        {rows.map((r) => <div key={r.product.id} style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px] flex justify-between"><span>• {r.product.name} ×{r.qty}</span><span style={{ fontFamily: FM, color: T.muted }}>{(r.unit * r.qty).toLocaleString()}₮</span></div>)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => { addItemDirect(bundlePrompt.product); setBundlePrompt(null); }} className="w-full py-2.5 rounded-xl text-sm press-btn" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.border}` }}>
+                Үгүй — зөвхөн «{bundlePrompt.product.name}» нэмэх
+              </button>
+            </div>
+          </div>, document.body)}
         <div className="flex items-start justify-between mb-3">
           <h3 style={{ fontFamily: FS, fontWeight: 600 }} className="text-lg flex items-center gap-2 flex-wrap">
             🛍 Захиалга авах
