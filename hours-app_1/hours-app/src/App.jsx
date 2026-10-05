@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-bundles2";
+const BUILD_VERSION = "v2026.10.05-opkpi-fast";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -39486,10 +39486,13 @@ function OperatorKPIView({ profile }) {
     (async () => {
       setLoading(true);
       try {
-        // Дуудлагууд — fetchAllRows ашиглаж БҮХ мөрийг авна (Supabase 1000 мөрийн default хязгаараас сэргийлнэ)
-        const callData = await fetchAllRows(supabase.from("biz_calls").select("*").eq("created_by", profile.id));
-        // Захиалгууд — taken_by ЭСВЭЛ operator_id (driver-аас оноосон)
-        const ordData = await fetchAllRows(supabase.from("biz_orders").select("*").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`));
+        // ⚡ ГАЦАА ЗАСВАР (2026-10-05): өмнө операторын БҮХ түүхийн biz_calls-ийг select(*)-ээр (150KB×N хуудас, 9+ сек) татдаг байсан.
+        //    Одоо: сонгосон хугацаагаар СЕРВЕР талд шүүж, зөвхөн хэрэгтэй баганыг, зэрэгцээ татна.
+        const isAll = period === "all";
+        const pStart = periodRange.start.toISOString(), pEnd = periodRange.end.toISOString();
+        const makeCallQ = () => { let q = supabase.from("biz_calls").select("id, phone, call_status, created_at, created_by").eq("created_by", profile.id); if (!isAll) q = q.gte("created_at", pStart).lt("created_at", pEnd); return q; };
+        const makeOrdQ = () => { let q = supabase.from("biz_orders").select("id, status, total_amount, created_at, operator_rating, operator_rating_note").or(`taken_by.eq.${profile.id},operator_id.eq.${profile.id}`); if (!isAll) q = q.gte("created_at", pStart).lt("created_at", pEnd); return q; };
+        const [callData, ordData] = await Promise.all([fetchAllRowsParallel(makeCallQ), fetchAllRowsParallel(makeOrdQ)]);
         setCalls(callData || []);
         setOrders(ordData || []);
 
@@ -39503,14 +39506,14 @@ function OperatorKPIView({ profile }) {
         if (myPendingPhones.length > 0) {
           const allForPhones = await fetchInChunks("biz_calls", myPendingPhones, {
             select: "phone, created_by, call_status, created_at",
-            filterColumn: "phone",
+            filterColumn: "phone", chunkSize: 150, parallel: 4,
           });
           setPhoneCalls(allForPhones || []);
-        }
+        } else setPhoneCalls([]);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, [profile.id]);
+  }, [profile.id, period, periodRange.start.getTime(), periodRange.end.getTime()]);
 
   // Period-ээр шүүх
   const filteredCalls = useMemo(() => calls.filter((c) => {
