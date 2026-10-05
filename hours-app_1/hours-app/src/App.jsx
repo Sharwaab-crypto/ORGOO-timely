@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-bundles";
+const BUILD_VERSION = "v2026.10.05-bundles2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -25733,6 +25733,22 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
   const removePhone = (id) => phones.length > 1 && setPhones(phones.filter((p) => p.id !== id));
   const updatePhone = (id, field, value) => setPhones(phones.map((p) => p.id === id ? { ...p, [field]: value } : p));
 
+  // 📦 Багцууд — багцын барааг дарахад "Багц сонгох уу?" асууна (дугаар бүртгэх цонх)
+  const [bundles, setBundles] = useState([]);
+  const [bundlePrompt, setBundlePrompt] = useState(null); // { product, matches }
+  useEffect(() => { loadActiveBundles().then(setBundles); }, []);
+  const addBundleItems = (bundle) => {
+    let next = [...items];
+    (bundle.items || []).forEach((bi) => {
+      const p = products.find((x) => x.id === bi.product_id); if (!p || p.is_locked) return;
+      const idx = next.findIndex((it) => it.productId === p.id);
+      if (idx >= 0) next[idx] = { ...next[idx], qty: Number(bi.quantity || 1) };
+      else next.push({ productId: p.id, product: p, qty: Number(bi.quantity || 1), bundleName: bundle.name });
+    });
+    if (!fbPageId) { const lp = next.find((it) => it.product.fb_page_id); if (lp) setFbPageId(lp.product.fb_page_id); }
+    setItems(next); setBundlePrompt(null);
+  };
+
   // Products
   const filteredProducts = useMemo(() => {
     if (!productSearch.trim()) return products;
@@ -25740,11 +25756,16 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
     return products.filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
   }, [products, productSearch]);
 
-  const toggleProduct = (product) => {
+  const toggleProduct = (product, skipBundle = false) => {
     const exists = items.find((it) => it.productId === product.id);
     if (exists) {
       setItems(items.filter((it) => it.productId !== product.id));
       return;
+    }
+    // 📦 Идэвхтэй багцад багтдаг бараа → багц санал болгоно
+    if (!skipBundle && !product.is_locked) {
+      const matches = bundles.filter((b) => (b.items || []).some((it) => it.product_id === product.id));
+      if (matches.length > 0) { setBundlePrompt({ product, matches }); return; }
     }
     // 🔒 ТҮГЖЭЭТЭЙ бараа — бүртгэлд сонгохыг хориглоно
     if (product.is_locked) {
@@ -25820,7 +25841,43 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
 
   return (
     <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-2">
-      <div className="modal-content rounded-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto">
+
+      {bundlePrompt && createPortal(
+        <div onClick={() => setBundlePrompt(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999 }} className="flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="rounded-2xl w-full max-w-md p-5 space-y-3" style={{ background: T.surface, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">📦 Багц сонгох уу?</div>
+                <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mt-0.5"><b style={{ color: T.ink }}>{bundlePrompt.product.name}</b> бараа {bundlePrompt.matches.length} багцад байна</div>
+              </div>
+              <button onClick={() => setBundlePrompt(null)} style={{ color: T.muted }}><X size={16} /></button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {bundlePrompt.matches.map((b) => {
+                const rows = (b.items || []).map((it) => ({ p: products.find((x) => x.id === it.product_id), qty: Number(it.quantity || 1) })).filter((r) => r.p);
+                const baseSum = rows.reduce((s, r) => s + Number(r.p.sale_price || 0) * r.qty, 0);
+                const price = Number(b.price || baseSum);
+                return (
+                  <button key={b.id} onClick={() => addBundleItems(b)} className="w-full text-left rounded-xl p-3 press-btn" style={{ background: T.highlightSoft, border: `1.5px solid ${T.highlight}` }}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">📦 {b.name}</span>
+                      <span className="flex items-baseline gap-1.5">
+                        {baseSum > price && <span style={{ color: T.muted, fontFamily: FM, textDecoration: "line-through" }} className="text-[11px]">{baseSum.toLocaleString()}₮</span>}
+                        <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{price.toLocaleString()}₮</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 space-y-0.5">
+                      {rows.map((r) => <div key={r.p.id} style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px]">• {r.p.name} ×{r.qty} <span style={{ color: T.muted, fontFamily: FM }}>{r.p.sku || ""}</span></div>)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => { const p = bundlePrompt.product; setBundlePrompt(null); toggleProduct(p, true); }} className="w-full py-2.5 rounded-xl text-sm press-btn" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, fontWeight: 600, border: `1px solid ${T.border}` }}>
+              Үгүй — зөвхөн «{bundlePrompt.product.name}» сонгох
+            </button>
+          </div>
+        </div>, document.body)}      <div className="modal-content rounded-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3"
           style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -25871,6 +25928,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                       image_url: it.product.image_url || null,
                       sku: it.product.sku || null,
                       price: it.product.sale_price || null,
+                      bundle: it.bundleName || null,
                     })) : null,
                   });
                   setBusy(false);
@@ -26762,12 +26820,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
     setItems(next);
     setBundlePrompt(null);
   };
-  const addItem = (product) => {
-    // Энэ бараа идэвхтэй багцад байвал → асууна
-    const matches = bundles.filter((b) => (b.items || []).some((it) => it.product_id === product.id));
-    if (matches.length > 0) { setBundlePrompt({ product, matches }); return; }
-    addItemDirect(product);
-  };
+  const addItem = (product) => addItemDirect(product); // багцын асуулт "Дугаар бүртгэх" цонхонд шилжсэн (2026-10-05)
   const _addItemLegacy = (product) => {
     const exists = items.find((it) => it.productId === product.id);
     if (exists) {
