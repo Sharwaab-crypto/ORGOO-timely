@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-channel-repeat";
+const BUILD_VERSION = "v2026.10.05-deliver-guard";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -41310,6 +41310,20 @@ function DriverDashboard({ profile }) {
     try {
       // 🚫 Хүргэгдсэн үед заавал агуулахаас бараа хасах — алгасч болохгүй
       if (newStatus === "delivered") {
+        // 🛡 ХАМГААЛАЛТ (2026-10-05): захиалга ОДОО Ч надад хуваарилагдсан эсэхийг серверээс шалгана.
+        //    (Оператор жолоочийг солисон/салгасан ч жолоочийн хуучин жагсаалтад үлдэж, "Хүргэсэн" дарахад
+        //     driver_id хоосон delivered захиалга үүсч тооцоонд ордоггүй байсан — 11 захиалга 317,000₮.)
+        const { data: fresh } = await supabase.from("biz_orders").select("driver_id, status, driver:driver_id(name)").eq("id", orderId).maybeSingle();
+        if (!fresh) { alert("🚫 Захиалга олдсонгүй — жагсаалтаа шинэчилнэ үү."); await loadAll(); return; }
+        if (fresh.status === "delivered") { alert("ℹ Энэ захиалга аль хэдийн хүргэгдсэн байна."); await loadAll(); return; }
+        if (fresh.status === "cancelled") { alert("🚫 Энэ захиалга цуцлагдсан байна — жагсаалтаа шинэчилнэ үү."); await loadAll(); return; }
+        if (fresh.driver_id !== profile.id) {
+          alert(fresh.driver_id
+            ? `🚫 Энэ захиалга танаас ${fresh.driver?.name || "өөр жолооч"}-д шилжсэн байна.\n\nХэрэв та бодитоор хүргэсэн бол операторт хэлж өөрт тань буцааж хуваарилуулаад дахин "Хүргэсэн" дарна уу.`
+            : "🚫 Энэ захиалга танаас салгагдсан (жолоочгүй/тодорхойгүй) байна.\n\nХэрэв та бодитоор хүргэсэн бол операторт хэлж өөрт тань хуваарилуулаад дахин \"Хүргэсэн\" дарна уу.");
+          await loadAll();
+          return;
+        }
         // ⚡ АТОМИК: захиалга delivered болгох + бараа хасах нэг транзакцид (RPC).
         //    Сүлжээ тасарсан ч хагас төлөв (movement орсон ч захиалга assigned) үүсэхгүй.
         //    Аль хэдийн delivered бол давхар хасахгүй (идемпотент).
