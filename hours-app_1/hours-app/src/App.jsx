@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-merchant-skin2";
+const BUILD_VERSION = "v2026.10.06-team-modals";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5309,7 +5309,7 @@ function EmployeeFormModal({ mode, employee, sites = [], assignedSiteIds = [], d
   };
 
   return (
-    <Modal onClose={onClose} title={mode === "add" ? "Шинэ ажилтан" : "Ажилтан засварлах"}>
+    <Modal onClose={onClose} staticBackdrop title={mode === "add" ? "Шинэ ажилтан" : "Ажилтан засварлах"}>
       <div className="space-y-5">
         <Section title="Хувийн мэдээлэл">
           <Field label="Нэр" required>
@@ -5689,7 +5689,7 @@ function RequestModal({ profile, onClose, onSubmit }) {
 
 function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
   return (
-    <Modal onClose={onCancel} title="Ажилтан устгах уу?" maxW="max-w-sm">
+    <Modal onClose={onCancel} staticBackdrop title="Ажилтан устгах уу?" maxW="max-w-sm">
       <p style={{ color: T.muted }} className="text-sm mb-5">
         <span style={{ color: T.ink, fontWeight: 500 }}>{name}</span>-ийн профайл болон бүртгэлүүд устах болно.
       </p>
@@ -6518,7 +6518,7 @@ function ResetPasswordModal({ emp, onCancel, onDone }) {
   };
 
   return (
-    <Modal onClose={onCancel} title="Нууц үг солих" maxW="max-w-sm">
+    <Modal onClose={onCancel} staticBackdrop title="Нууц үг солих" maxW="max-w-sm">
       <p style={{ color: T.muted }} className="text-sm mb-4">
         <span style={{ color: T.ink, fontWeight: 500 }}>{emp.name}</span>-ийн шинэ нууц үг тохируулна. Ажилтан энэ нууц үгээр нэвтэрнэ.
       </p>
@@ -6551,21 +6551,26 @@ function ResetPasswordModal({ emp, onCancel, onDone }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  REUSABLE UI
 // ═══════════════════════════════════════════════════════════════════════════
-function Modal({ children, onClose, title, maxW = "max-w-lg" }) {
+// staticBackdrop=true → гадна талд дарахад хаагдахгүй, зөвхөн X / Болих товчоор (Баг хэсгийн popup-ууд)
+function Modal({ children, onClose, title, maxW = "max-w-lg", staticBackdrop = false }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"
          style={{ background: "rgba(30, 27, 75, 0.4)" }}
-         onClick={onClose}>
+         onClick={staticBackdrop ? undefined : onClose}>
       <div onClick={(e) => e.stopPropagation()}
-           className={`glass-strong modal-content rounded-3xl p-6 w-full ${maxW} max-h-[92vh] overflow-y-auto`}>
-        {title && (
+           className={`glass-strong modal-content rounded-3xl p-6 w-full ${maxW} max-h-[92vh] overflow-y-auto`} style={{ position: "relative" }}>
+        {title ? (
           <div className="flex items-center justify-between mb-5">
             <h3 style={{ fontFamily: FD, fontWeight: 500, letterSpacing: "-0.02em" }} className="text-2xl">{title}</h3>
-            <button onClick={onClose} style={{ color: T.muted }} className="p-1.5 rounded-full hover:bg-black/10 press-btn">
+            <button onClick={onClose} aria-label="Хаах" style={{ color: T.muted }} className="p-1.5 rounded-full hover:bg-black/10 press-btn">
               <X size={17} />
             </button>
           </div>
-        )}
+        ) : staticBackdrop ? (
+          <button onClick={onClose} aria-label="Хаах" style={{ position: "absolute", top: 12, right: 12, color: T.muted, zIndex: 2 }} className="p-1.5 rounded-full hover:bg-black/10 press-btn">
+            <X size={17} />
+          </button>
+        ) : null}
         {children}
       </div>
     </div>
@@ -35331,8 +35336,7 @@ function PhotoCaptureModal({ onCapture, onCancel, title = "Цаг бүртгэл
 // ═══════════════════════════════════════════════════════════════════════════
 function PhotoViewerModal({ photoUrl, employee, time, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4"
-      onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
       <div className="modal-content rounded-2xl max-w-md w-full p-4"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
