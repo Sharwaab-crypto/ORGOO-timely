@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-mkt-pool-take";
+const BUILD_VERSION = "v2026.10.06-merchant-skin";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -36954,6 +36954,76 @@ const MD_CSS = `
 @media (prefers-reduced-motion:reduce){.md-loop{animation:none!important}}
 `;
 
+// ─── 🏪 Мерчантын "skin" — хуучин glass компонентуудыг (CallCenterView, SalesDashboardView, OrderCard, Modal...)
+//     код өөрчлөлгүйгээр Хяналтын самбарын (MC) загварт оруулна. body.md-skin доор л үйлчилнэ.
+const MD_SKIN_CSS = `
+body.md-skin{background:${MC.bg}}
+body.md-skin .glass,body.md-skin .glass-strong,body.md-skin .glass-soft{background:${MC.surface}!important;border:1px solid ${MC.divider}!important;box-shadow:${MC.shadowSm}!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+body.md-skin .glass-soft{background:#f4fbf9!important;box-shadow:none!important}
+body.md-skin .glass.rounded-2xl,body.md-skin .glass.rounded-3xl,body.md-skin .glass-strong.rounded-3xl{border-radius:14px!important}
+body.md-skin .glass.rounded-xl{border-radius:10px!important}
+body.md-skin .glass:hover{box-shadow:${MC.shadowSm}!important}
+body.md-skin .lift:hover{box-shadow:${MC.hoverShadow}!important;border-color:${MC.a400}!important}
+body.md-skin .glow-primary{background:${MC.accent}!important;color:#fff!important;box-shadow:none!important;border:1px solid ${MC.accent}!important}
+body.md-skin .glow-primary:hover{background:${MC.a300}!important;box-shadow:0 0 16px rgba(14,156,142,.25)!important}
+body.md-skin .modal-backdrop{background:rgba(18,48,44,.35)!important}
+body.md-skin .modal-content{border-radius:14px!important;box-shadow:${MC.hoverShadow}!important}
+body.md-skin input:not([type=checkbox]):not([type=radio]):not(.md-date),body.md-skin select:not(.md-select),body.md-skin textarea{background:${MC.surface}!important;border:1px solid ${MC.divider}!important;color:${MC.text}!important;border-radius:8px!important;box-shadow:none!important;transition:border-color .2s}
+body.md-skin input:focus,body.md-skin select:focus,body.md-skin textarea:focus{border-color:${MC.accent}!important;outline:none!important}
+body.md-skin input::placeholder,body.md-skin textarea::placeholder{color:${MC.n400}!important}
+/* Хуучин T өнгө → MC token (inline style serialize хэлбэрээр) */
+body.md-skin [style*="rgba(255, 255, 255, 0.7)"],body.md-skin [style*="rgba(255, 255, 255, 0.85)"],body.md-skin [style*="rgba(255, 255, 255, 0.55)"]{background-color:${MC.surface}!important;border-color:${MC.divider}!important}
+body.md-skin [style*="rgba(255, 255, 255, 0.45)"]{background-color:#f4fbf9!important;border-color:${MC.divider}!important}
+body.md-skin [style*="rgba(255, 255, 255, 0.5)"]{border-color:${MC.divider}!important}
+body.md-skin [style*="rgba(14, 156, 142, 0.25)"]{border-color:${MC.divider}!important}
+body.md-skin [style*="color: rgb(12, 42, 48)"]{color:${MC.text}!important}
+body.md-skin [style*="color: rgb(31, 66, 72)"]{color:${MC.text}!important}
+body.md-skin [style*="color: rgb(91, 124, 126)"]{color:${MC.n300}!important}
+body.md-skin [style*="color: rgb(143, 171, 172)"]{color:${MC.n400}!important}
+body.md-skin [style*="rgba(63, 224, 198, 0.14)"]{background-color:${MC.a900}!important}
+body.md-skin [style*="font-weight: 800"],body.md-skin [style*="font-weight: 900"]{font-weight:600!important}
+body.md-skin [style*="font-weight: 700"]{font-weight:600!important}
+body.md-skin [style*="box-shadow: rgba(14, 156, 142, 0.25) 0px 8px 24px"]{box-shadow:none!important}
+/* Хүснэгт */
+body.md-skin thead th{font-size:11px!important;letter-spacing:.08em;text-transform:uppercase;color:${MC.n300}!important;font-weight:500!important;background:#f4fbf9!important;border-bottom:1px solid ${MC.divider}!important;position:sticky;top:0;z-index:1}
+body.md-skin tbody tr{border-top:1px solid ${MC.divider}!important;transition:background .2s}
+body.md-skin tbody tr:hover{background:${MC.a900}!important}
+body.md-skin tbody td{color:${MC.text}}
+body.md-skin .border-b,body.md-skin .border-t,body.md-skin .border{border-color:${MC.divider}!important}
+body.md-skin .press-btn{transition:transform .15s,background .2s,box-shadow .2s}
+body.md-skin ::-webkit-scrollbar-thumb{background:${MC.n700}}
+body.md-skin .md-fade{animation:md-up .45s ease both}
+`;
+
+// Мерчантын хайлтын мөр — 42px input, Search icon
+function MdSearch({ value, onChange, placeholder, style }) {
+  return (
+    <label style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minWidth: 180, ...style }}>
+      <Search size={15} style={{ position: "absolute", left: 12, color: MC.n400, pointerEvents: "none" }} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", height: 42, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, color: MC.text, padding: "0 12px 0 34px", fontSize: 13, outline: "none", fontFamily: FS }} />
+    </label>
+  );
+}
+// Pill chip (шүүлт): on/off + тоо
+function MdChip({ on, onClick, color = MC.accent, count, children }) {
+  return (
+    <button type="button" className="md-pill" onClick={onClick}
+      style={{ fontFamily: FS, color: on ? color : MC.n300, background: on ? `${color}1f` : MC.surface, border: `1px solid ${on ? color : MC.divider}`, fontWeight: on ? 500 : 400, whiteSpace: "nowrap" }}>
+      {children}
+      {count !== undefined && <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", padding: "0 6px", borderRadius: 999, background: on ? `${color}2e` : MC.a900, color: on ? color : MC.n300 }}>{count}</span>}
+    </button>
+  );
+}
+// Хоосон / ачаалж буй төлөв
+function MdEmpty({ icon = "📭", text, loading }) {
+  return (
+    <div className="md-card md-fade" style={{ padding: "40px 16px", textAlign: "center", color: MC.n300, fontSize: 13, fontFamily: FS }}>
+      {loading ? <Loader2 className="spin" size={22} style={{ color: MC.n300, margin: "0 auto" }} /> : <><div style={{ fontSize: 32, marginBottom: 6 }}>{icon}</div>{text}</>}
+    </div>
+  );
+}
+
 // Тоо тоолох анимэйшн: k 0→1 (easeOutCubic, 1.1с); dep өөрчлөгдөх бүрд дахин
 function useCountUp(dep, ms = 1100) {
   const [k, setK] = useState(0);
@@ -36991,6 +37061,8 @@ function MerchantDashboard({ profile }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
+  // 🎨 Мерчант skin — хуучин glass компонентуудыг MC загварт оруулна (portal modal-д ч үйлчилнэ)
+  useEffect(() => { document.body.classList.add("md-skin"); return () => document.body.classList.remove("md-skin"); }, []);
 
   // Merchant-руу оноогдсон FB Page-ийн ID массив
   const allowedPageIds = profile.fb_page_ids || [];
@@ -37044,12 +37116,14 @@ function MerchantDashboard({ profile }) {
 
   const go = (v) => { setView(v); setSidebarOpen(false); };
   const TITLES = { dashboard: "Хяналтын самбар", calls: "Дуудлага", sales: "Борлуулалт", orders: "Захиалга", stock: "Бараа, нөөц", movements: "Барааны хөдөлгөөн" };
+  const SUBS = { dashboard: "", calls: "Дуудлага бүртгэх, захиалга авах", sales: "FB page тус бүрийн борлуулалт", orders: "Таны page-ийн бүх захиалга", stock: "Бараа бүрийн үлдэгдэл", movements: "Орлого · зарлага · шилжүүлэг" };
   const pageNames = fbPages.map((p) => p.name).join(" · ");
   const navLabel = (t) => <span style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n400, padding: "6px 8px 2px" }}>{t}</span>;
 
   return (
     <div className="min-h-screen flex" style={{ background: `radial-gradient(90% 60% at 100% 0%, rgba(201,237,228,.6), transparent 60%), ${MC.bg}`, color: MC.text, fontFamily: FS }}>
       <style>{MD_CSS}</style>
+      <style>{MD_SKIN_CSS}</style>
       {/* ─── Sidebar ─────────────────────────────────────────────────────── */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -37115,15 +37189,18 @@ function MerchantDashboard({ profile }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
               <span style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: MC.n300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Merchants · {pageNames}</span>
               <h1 style={{ margin: 0, fontSize: "clamp(24px,4vw,30px)", fontWeight: 500, letterSpacing: "-.02em", fontFamily: FD }}>{TITLES[view] || ""}</h1>
+              {SUBS[view] && <span style={{ fontSize: 12, color: MC.n300 }}>{SUBS[view]}</span>}
             </div>
           </header>
 
           {view === "dashboard" && <MerchantOverview allowedPageIds={allowedPageIds} fbPages={fbPages} />}
-          {view === "calls" && <CallCenterView profile={profile} />}
-          {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
-          {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
-          {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
-          {view === "movements" && <MerchantMovementsView allowedPageIds={allowedPageIds} />}
+          <div key={view} style={{ animation: "md-up .5s .1s ease both" }}>
+            {view === "calls" && <CallCenterView profile={profile} />}
+            {view === "sales" && <SalesDashboardView profile={profile} allowedPageIds={allowedPageIds} />}
+            {view === "orders" && <MerchantOrdersView allowedPageIds={allowedPageIds} profile={profile} />}
+            {view === "stock" && <MerchantStockView allowedPageIds={allowedPageIds} />}
+            {view === "movements" && <MerchantMovementsView allowedPageIds={allowedPageIds} />}
+          </div>
         </div>
       </main>
     </div>
@@ -38758,7 +38835,7 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
     return true;
   });
 
-  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
+  if (loading) return <MdEmpty loading />;
 
   // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only + засах/цуцлах)
   if (activeOrder) {
@@ -38803,69 +38880,66 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
     );
   }
 
+  const FILTERS = [
+    { id: "all", label: "Бүгд", color: MC.accent },
+    { id: "new", label: "Шинэ", color: MC.blue },
+    { id: "assigned", label: "Хуваарилагдсан", color: MC.amber },
+    { id: "unknown", label: "Тодорхойгүй", color: "#7c5cff" },
+    { id: "delivered", label: "Хүргэгдсэн", color: MC.green },
+    { id: "cancelled", label: "Цуцалсан", color: MC.red },
+  ];
+  const countOf = (id) => {
+    if (svCounts && svCounts[id] !== undefined) return svCounts[id];
+    return orders.filter((o) => {
+      if (id === "all") return true;
+      if (id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
+      if (id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
+      if (id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
+      return o.status === id;
+    }).length;
+  };
+  const cur = FILTERS.find((f) => f.id === filter) || FILTERS[0];
+
   return (
-    <div className="space-y-3">
-      {/* 🛍 Шууд захиалга үүсгэх */}
-      <button onClick={() => setQuickOpen(true)}
-        className="press-btn w-full rounded-2xl p-3 flex items-center justify-center gap-2 text-sm"
-        style={{ background: "linear-gradient(135deg, #0ea5e9, #0369a1)", color: "#fff", fontFamily: FS, fontWeight: 800, boxShadow: "0 8px 20px rgba(14,165,233,0.3)" }}>
-        ➕ Шинэ захиалга үүсгэх <span style={{ fontWeight: 400, opacity: 0.85 }} className="text-[11px]">· дугаар бүртгэлгүйгээр шууд</span>
-      </button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: FS }}>
+      {/* Хайлт + шинэ захиалга */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", animation: "md-up .5s .05s ease both" }}>
+        <MdSearch value={search} onChange={setSearch} placeholder="Захиалга, утас, нэрээр хайх..." />
+        <button type="button" onClick={() => setQuickOpen(true)} className="press-btn"
+          style={{ height: 42, padding: "0 16px", borderRadius: 8, border: `1px solid ${MC.accent}`, background: MC.accent, color: "#fff", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, fontFamily: FS, cursor: "pointer", flex: "none" }}>
+          <Plus size={15} strokeWidth={2.4} />Шинэ захиалга
+        </button>
+      </div>
       {quickOpen && (
         <MerchantQuickOrderModal allowedPageIds={allowedPageIds} fbPagesMap={fbPagesMap} profile={profile}
           onSaved={() => setRefreshKey((k) => k + 1)} onClose={() => setQuickOpen(false)} />
       )}
-      {/* Хайлт */}
-      <input value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="🔍 Захиалга, утас, нэрээр хайх..."
-        style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-        className="w-full px-3 py-2 rounded-lg text-sm" />
 
-      {/* Filter tabs */}
-      <div className="glass rounded-2xl p-2 flex gap-2 overflow-x-auto">
-        {[
-          { id: "all", label: "Бүгд", color: T.highlight },
-          { id: "new", label: "🆕 Шинэ", color: "#0ea5e9" },
-          { id: "assigned", label: "🚚 Хуваарилагдсан", color: "#f59e0b" },
-          { id: "unknown", label: "❓ Тодорхойгүй", color: "#9333ea" },
-          { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
-          { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
-        ].map((t) => {
-          const clientCount = orders.filter((o) => {
-            if (t.id === "all") return true;
-            if (t.id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
-            if (t.id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
-            if (t.id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
-            return o.status === t.id;
-          }).length;
-          const count = svCounts && svCounts[t.id] !== undefined ? svCounts[t.id] : clientCount;
-          return (
-            <button key={t.id} onClick={() => setFilter(t.id)}
-              style={{
-                background: filter === t.id ? t.color : T.surfaceAlt,
-                color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
-              }}
-              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
-              {t.label} ({count})
-            </button>
-          );
-        })}
+      {/* Төлвийн шүүлт — pill chip */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, animation: "md-up .5s .1s ease both" }} role="tablist">
+        {FILTERS.map((t) => <MdChip key={t.id} on={filter === t.id} onClick={() => setFilter(t.id)} color={t.color} count={countOf(t.id)}>{t.label}</MdChip>)}
       </div>
 
       {/* Захиалгын жагсаалт — үндсэн OrderCard ашиглана */}
-      {filtered.length === 0 ? (
-        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((o, idx) => (
-            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
-              fbPagesMap={fbPagesMap}
-              hideMenu={true}
-              merchantPageIds={allowedPageIds}
-              onClick={() => setActiveOrder(o)} />
-          ))}
+      <section className="md-card" style={{ overflow: "hidden", animation: "md-up .5s .15s ease both" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: "11px 14px", borderBottom: `1px solid ${MC.divider}` }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: cur.color }} />{cur.label} захиалга</h2>
+          <span style={{ fontSize: 12, color: MC.n300 }}>{filtered.length} захиалга{orders.length >= 300 ? " · сүүлийн 300" : ""}</span>
         </div>
-      )}
+        {filtered.length === 0 ? (
+          <div style={{ padding: "40px 16px", textAlign: "center", color: MC.n300, fontSize: 13 }}><div style={{ fontSize: 30, marginBottom: 6 }}>🛍</div>Захиалга алга</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10 }}>
+            {filtered.map((o, idx) => (
+              <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+                fbPagesMap={fbPagesMap}
+                hideMenu={true}
+                merchantPageIds={allowedPageIds}
+                onClick={() => setActiveOrder(o)} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -39258,49 +39332,93 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
   const fmt = (t) => new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "");
   const sums = useMemo(() => visible.reduce((a, m) => { a[m.movement_type] = (a[m.movement_type] || 0) + Number(m.quantity || 0); return a; }, {}), [visible]);
 
-  if (rows === null) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.highlight }} /></div>;
+  if (rows === null) return <MdEmpty loading />;
+  const TYPE_C = { in: MC.green, out: MC.red, transfer: "#7c5cff", adjust: MC.amber, adjustment: MC.amber };
+  const TYPE_LBL = { in: "Орлого", out: "Зарлага", transfer: "Шилжүүлэг", adjust: "Залруулга", adjustment: "Залруулга" };
+  const TILES = [
+    { label: "Орлого", v: sums.in || 0, c: MC.green, Icon: TrendingUp },
+    { label: "Зарлага", v: sums.out || 0, c: MC.red, Icon: TrendingDown },
+    { label: "Шилжүүлэг", v: sums.transfer || 0, c: "#7c5cff", Icon: RefreshCw },
+  ];
+  const list = visible.slice(0, 500);
   return (
-    <div className="space-y-2">
-      <div className={`${compact ? "" : "glass rounded-2xl p-3"} flex items-center gap-2 flex-wrap`}>
-        {!onlyIn && [["all", "Бүгд"], ["in", "📥 Орлого"], ["out", "📤 Зарлага"], ["transfer", "🔀 Шилжүүлэг"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setTypeF(k)} className="press-btn px-3 py-1.5 rounded-full text-[11px]"
-            style={{ background: typeF === k ? T.highlight : T.surfaceAlt, color: typeF === k ? "#fff" : T.inkSoft, border: `1px solid ${typeF === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
-        ))}
-        <select value={range} onChange={(e) => setRange(Number(e.target.value))} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? 8 : 14, fontFamily: FS }}>
+      {/* Шүүлт */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, animation: "md-up .5s .05s ease both" }}>
+        {!onlyIn && (
+          <div className="md-seg" role="tablist">
+            {[["all", "Бүгд"], ["in", "Орлого"], ["out", "Зарлага"], ["transfer", "Шилжүүлэг"]].map(([k, lbl]) => (
+              <button key={k} type="button" className={typeF === k ? "on" : ""} onClick={() => setTypeF(k)} style={{ fontFamily: FS }}>{lbl}</button>
+            ))}
+          </div>
+        )}
+        <select value={range} onChange={(e) => setRange(Number(e.target.value))} className="md-select" style={{ fontFamily: FS }}>
           <option value={7}>7 хоног</option><option value={30}>30 хоног</option><option value={60}>60 хоног</option><option value={90}>90 хоног</option><option value={365}>1 жил</option>
         </select>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Бараа, SKU, тэмдэглэл" className="flex-1 min-w-[160px] px-3 py-1.5 rounded-lg text-xs outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS }} />
-        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{visible.length} мөр{sums.in ? ` · орлого ${sums.in}` : ""}{sums.out ? ` · зарлага ${sums.out}` : ""}</span>
+        <MdSearch value={q} onChange={setQ} placeholder="Бараа, SKU, тэмдэглэл" style={{ minWidth: 160 }} />
       </div>
-      {visible.length === 0 ? (
-        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>Хөдөлгөөн алга</div>
-      ) : (
-        <div className="space-y-1.5" style={compact ? { maxHeight: "50vh", overflowY: "auto", scrollbarWidth: "thin" } : {}}>
-          {visible.slice(0, 500).map((m) => {
-            const p = prodMap[m.product_id] || {};
-            const wh = whMap[m.warehouse_id], to = whMap[m.to_warehouse_id];
-            const isIn = m.movement_type === "in", isOut = m.movement_type === "out";
-            const color = isIn ? T.ok : isOut ? T.err : "#9333ea";
-            return (
-              <div key={m.id} className="glass rounded-xl p-2.5 flex items-center gap-2" style={{ borderLeft: `3px solid ${color}` }}>
-                {p.image_url ? <img src={p.image_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" /> : <div className="w-9 h-9 rounded-lg flex-shrink-0" style={{ background: T.surfaceAlt }} />}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">{p.name || "?"}</span>
-                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku || ""}</span>
-                    <span className="text-[10px] px-1.5 rounded-full" style={{ background: T.surfaceAlt, color, fontFamily: FM, fontWeight: 700 }}>{TYPE_MN[m.movement_type] || m.movement_type}</span>
-                    {m.reason && <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{REASON_MN[m.reason] || m.reason}</span>}
-                  </div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5 truncate">
-                    {fmt(m.created_at)}{profMap[m.created_by] ? ` · ${profMap[m.created_by]}` : ""} · {wh ? wh.name : "—"}{to ? ` → ${to.name}` : ""}{m.notes ? ` · ${m.notes}` : ""}
-                  </div>
-                </div>
-                <div style={{ color, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums flex-shrink-0">{isIn ? "+" : isOut ? "−" : ""}{Number(m.quantity || 0)}</div>
+
+      {/* Нийлбэр KPI (compact үед нуух) */}
+      {!compact && (
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,150px),1fr))", gap: 8 }}>
+          {TILES.filter((t) => !onlyIn || t.label === "Орлого").map((t, i) => (
+            <div key={t.label} className="md-kpi" style={{ border: `1px solid ${t.c}47`, animation: `md-up .5s ${(0.1 + i * 0.05).toFixed(2)}s ease both` }}>
+              <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: t.c, transformOrigin: "left", animation: `md-grow .8s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.n300 }}>{t.label}</span>
+                <span style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: `${t.c}24` }}><t.Icon size={16} strokeWidth={2.4} style={{ color: t.c }} /></span>
               </div>
-            );
-          })}
-        </div>
+              <span style={{ fontSize: "clamp(22px,2.4vw,28px)", fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums" }}>{Math.round(t.v).toLocaleString()}</span>
+            </div>
+          ))}
+          <div className="md-kpi" style={{ border: `1px solid ${MC.divider}`, animation: "md-up .5s .25s ease both" }}>
+            <span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.n300 }}>Мөр</span>
+            <span style={{ fontSize: "clamp(22px,2.4vw,28px)", fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums" }}>{visible.length}</span>
+          </div>
+        </section>
       )}
+
+      {/* Жагсаалт */}
+      <section className="md-card" style={{ overflow: "hidden", animation: "md-up .5s .15s ease both" }}>
+        {!compact && (
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: "11px 14px" }}>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>Хөдөлгөөний түүх</h2>
+            <span style={{ fontSize: 12, color: MC.n300 }}>сүүлийн {range} хоног{visible.length > 500 ? " · эхний 500" : ""}</span>
+          </div>
+        )}
+        {list.length === 0 ? (
+          <div style={{ padding: "36px 16px", textAlign: "center", color: MC.n300, fontSize: 13, borderTop: `1px solid ${MC.divider}` }}>Хөдөлгөөн алга</div>
+        ) : (
+          <div style={compact ? { maxHeight: "50vh", overflowY: "auto", scrollbarWidth: "thin" } : {}}>
+            {list.map((m, i) => {
+              const p = prodMap[m.product_id] || {};
+              const wh = whMap[m.warehouse_id], to = whMap[m.to_warehouse_id];
+              const isIn = m.movement_type === "in", isOut = m.movement_type === "out";
+              const color = TYPE_C[m.movement_type] || MC.n300;
+              return (
+                <div key={m.id} className="md-row md-row2" style={{ gridTemplateColumns: "4px 40px minmax(0,1fr) auto", animation: i < 20 ? `md-up .4s ${(0.2 + i * 0.03).toFixed(2)}s ease both` : "none" }}>
+                  <span style={{ width: 4, height: 32, borderRadius: 999, background: color }} />
+                  {p.image_url
+                    ? <img src={p.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
+                    : <span style={{ width: 40, height: 40, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center" }}><Package size={18} style={{ color: MC.a300 }} /></span>}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{p.name || "?"}</span>
+                      <span className="md-sku" style={{ fontSize: 11, color: MC.n400 }}>{p.sku || ""}</span>
+                      <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 4, background: `${color}1f`, color, fontWeight: 500 }}>{TYPE_LBL[m.movement_type] || m.movement_type}</span>
+                      {m.reason && <span style={{ fontSize: 11, color: MC.n400 }}>{REASON_MN[m.reason] || m.reason}</span>}
+                    </div>
+                    <span style={{ fontSize: 11, color: MC.n300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {fmt(m.created_at)}{profMap[m.created_by] ? ` · ${profMap[m.created_by]}` : ""} · {wh ? wh.name : "—"}{to ? ` → ${to.name}` : ""}{m.notes ? ` · ${m.notes}` : ""}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", color }}>{isIn ? "+" : isOut ? "−" : ""}{Number(m.quantity || 0)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -39331,57 +39449,94 @@ function MerchantStockView({ allowedPageIds }) {
     })();
   }, [allowedPageIds.join(",")]);
 
-  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
-  if (products.length === 0) return (
-    <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted, fontFamily: FS }}>
-      <div className="text-4xl mb-2">📦</div>
-      Танай FB Page-руу холбогдсон бараа алга
-    </div>
-  );
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState("low"); // low | high | name
+  const k = useCountUp(loading ? 0 : 1);
+  if (loading) return <MdEmpty loading />;
+  if (products.length === 0) return <MdEmpty icon="📦" text="Танай FB Page-руу холбогдсон бараа алга" />;
 
   // Бараа бүрийн нийт нөөц
   const productStocks = products.map((p) => {
     const total = stock.filter(s => s.product_id === p.id).reduce((sum, s) => sum + Number(s.quantity || 0), 0);
     return { ...p, totalStock: total };
   });
+  const totalQty = productStocks.reduce((s, p) => s + p.totalStock, 0);
+  const lowCnt = productStocks.filter((p) => p.totalStock <= 5).length;
+  const warnCnt = productStocks.filter((p) => p.totalStock > 5 && p.totalStock <= 20).length;
+  const maxQty = Math.max(1, ...productStocks.map((p) => p.totalStock));
+  const shown = productStocks
+    .filter((p) => !q.trim() || `${p.name} ${p.sku || ""}`.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => sort === "low" ? a.totalStock - b.totalStock : sort === "high" ? b.totalStock - a.totalStock : String(a.name).localeCompare(String(b.name)));
+  const stockColor = (n) => n <= 5 ? MC.red : n <= 20 ? MC.amber : MC.green;
+  const TILES = [
+    { label: "Бараа", v: productStocks.length, c: MC.accent, Icon: Package },
+    { label: "Нийт үлдэгдэл", v: totalQty, c: MC.blue, Icon: BarChart3 },
+    { label: "Дуусаж буй (≤5)", v: lowCnt, c: MC.red, Icon: XCircle },
+    { label: "Бага (6–20)", v: warnCnt, c: MC.amber, Icon: Info },
+  ];
 
   return (
-    <div className="glass rounded-2xl p-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-        {productStocks.map((p) => (
-          <div key={p.id} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}
-            className="rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-2">
-              {p.image_url ? (
-                <img src={p.image_url} alt={p.name}
-                  style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover" }} />
-              ) : (
-                <div style={{ width: 40, height: 40, background: T.surface, borderRadius: 8 }}
-                  className="flex items-center justify-center text-lg">📦</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs truncate">
-                  {p.name}
-                </div>
-                {p.sku && (
-                  <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">{p.sku}</div>
-                )}
-              </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: FS }}>
+      {/* KPI */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,150px),1fr))", gap: 8 }}>
+        {TILES.map((t, i) => (
+          <div key={t.label} className="md-kpi" style={{ border: `1px solid ${t.c}47`, animation: `md-up .5s ${(0.1 + i * 0.05).toFixed(2)}s ease both` }}>
+            <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: 3, background: t.c, transformOrigin: "left", animation: `md-grow .8s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, letterSpacing: ".1em", textTransform: "uppercase", color: MC.n300 }}>{t.label}</span>
+              <span style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: `${t.c}24`, animation: `md-pop .5s ${(0.25 + i * 0.05).toFixed(2)}s cubic-bezier(.2,.8,.2,1) both` }}><t.Icon size={16} strokeWidth={2.4} style={{ color: t.c }} /></span>
             </div>
-            <div style={{
-              color: p.totalStock <= 5 ? T.err : p.totalStock <= 20 ? T.warn : T.ok,
-              fontFamily: FS, fontWeight: 700,
-            }} className="text-base">
-              {p.totalStock} ширхэг
-            </div>
+            <span style={{ fontSize: "clamp(22px,2.4vw,28px)", fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums" }}>{Math.round(t.v * k).toLocaleString()}</span>
           </div>
         ))}
+      </section>
+
+      {/* Хайлт + эрэмбэ */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, animation: "md-up .5s .2s ease both" }}>
+        <MdSearch value={q} onChange={setQ} placeholder="Бараа, SKU хайх" />
+        <div className="md-seg" role="tablist">
+          {[["low", "Бага нь эхэндээ"], ["high", "Их нь эхэндээ"], ["name", "Нэрээр"]].map(([id, lbl]) => (
+            <button key={id} type="button" className={sort === id ? "on" : ""} onClick={() => setSort(id)} style={{ fontFamily: FS }}>{lbl}</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: MC.n300, marginLeft: "auto" }}>{shown.length} бараа</span>
       </div>
+
+      {/* Барааны карт */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,230px),1fr))", gap: 8 }}>
+        {shown.map((p, i) => {
+          const c = stockColor(p.totalStock);
+          return (
+            <div key={p.id} className="md-kpi" style={{ border: `1px solid ${MC.divider}`, gap: 8, animation: i < 30 ? `md-up .45s ${(0.25 + i * 0.03).toFixed(2)}s ease both` : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                {p.image_url
+                  ? <img src={p.image_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}`, flex: "none" }} />
+                  : <span style={{ width: 44, height: 44, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center", flex: "none" }}><Package size={20} style={{ color: MC.a300 }} /></span>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</span>
+                  <span style={{ fontSize: 11, color: MC.n400 }}>{p.sku || "—"}{p.price ? ` · ${Number(p.price).toLocaleString()}₮` : ""}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6 }}>
+                <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: "-.02em", fontVariantNumeric: "tabular-nums", color: c }}>{Math.round(p.totalStock * k).toLocaleString()} <span style={{ fontSize: 12, color: MC.n300, fontWeight: 400 }}>ширхэг</span></span>
+                <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 4, background: `${c}1f`, color: c, fontWeight: 500 }}>{p.totalStock <= 5 ? "Дуусаж байна" : p.totalStock <= 20 ? "Бага" : "Хангалттай"}</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: MC.a900, overflow: "hidden" }}>
+                <div style={{ height: "100%", borderRadius: 999, background: `linear-gradient(90deg,${c}99,${c})`, width: `${Math.max(2, (p.totalStock / maxQty) * 100 * k).toFixed(1)}%`, transition: "width .3s" }} />
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
       {/* 📥 Бараа орлогдсон түүх — зөвхөн мерчантын бараа */}
-      <div className="mt-4 pt-3" style={{ borderTop: `1px dashed ${T.border}` }}>
-        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">📥 Бараа орлогдсон түүх</div>
+      <section className="md-card" style={{ padding: 14, animation: "md-up .5s .35s ease both" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 10 }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><TrendingUp size={16} style={{ color: MC.green }} />Бараа орлогдсон түүх</h2>
+          <span style={{ fontSize: 12, color: MC.n300 }}>сүүлийн 90 хоног</span>
+        </div>
         <MerchantMovementsView allowedPageIds={allowedPageIds} onlyIn={true} days={90} compact={true} />
-      </div>
+      </section>
     </div>
   );
 }
