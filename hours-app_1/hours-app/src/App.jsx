@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-bundle-qty";
+const BUILD_VERSION = "v2026.10.06-bundle-fee";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -11051,8 +11051,8 @@ function BundlesView({ profile }) {
   };
   useEffect(() => { load(); }, []);
   const prodById = (id) => products.find((p) => p.id === id);
-  const openNew = () => { setForm({ name: "", price: "", description: "", items: [] }); setPq(""); setEditing("new"); };
-  const openEdit = (b) => { setForm({ name: b.name, price: b.price ?? "", description: b.description || "", items: b.items.map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity || 1) })) }); setPq(""); setEditing(b); };
+  const openNew = () => { setForm({ name: "", price: "", delivery_fee: "", description: "", items: [] }); setPq(""); setEditing("new"); };
+  const openEdit = (b) => { setForm({ name: b.name, price: b.price ?? "", delivery_fee: b.delivery_fee ? String(b.delivery_fee) : "", description: b.description || "", items: b.items.map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity || 1) })) }); setPq(""); setEditing(b); };
   const baseSum = form.items.reduce((s, it) => s + Number(prodById(it.product_id)?.sale_price || 0) * it.quantity, 0);
   const save = async () => {
     if (!form.name.trim()) { alert("Багцын нэр бичнэ үү"); return; }
@@ -11061,7 +11061,7 @@ function BundlesView({ profile }) {
     if (form.items.length === 0 || totalQty < 2) { alert("Багцад нийт 2-оос дээш ширхэг бараа оруулна уу (нэг бараанаас 2 ч байж болно)"); return; }
     try {
       let id = editing === "new" ? null : editing.id;
-      const payload = { name: form.name.trim(), price: form.price === "" ? null : Number(form.price), description: form.description.trim() || null };
+      const payload = { name: form.name.trim(), price: form.price === "" ? null : Number(form.price), delivery_fee: form.delivery_fee === "" ? 0 : Number(form.delivery_fee), description: form.description.trim() || null };
       if (!id) { const { data, error } = await supabase.from("inv_bundles").insert({ ...payload, is_active: true, created_by: profile.id }).select("id").single(); if (error) throw error; id = data.id; }
       else { const { error } = await supabase.from("inv_bundles").update(payload).eq("id", id); if (error) throw error; await supabase.from("inv_bundle_items").delete().eq("bundle_id", id); }
       const { error: e2 } = await supabase.from("inv_bundle_items").insert(form.items.map((it) => ({ bundle_id: id, product_id: it.product_id, quantity: it.quantity })));
@@ -11097,6 +11097,7 @@ function BundlesView({ profile }) {
                       <span style={{ color: T.highlight, fontFamily: FD, fontWeight: 800 }} className="text-base tabular-nums">{Number(b.price || bsum).toLocaleString()}₮</span>
                       {b.price != null && bsum > 0 && Number(b.price) !== bsum && <span style={{ color: T.muted, fontFamily: FM, textDecoration: "line-through" }} className="text-[11px] tabular-nums">{bsum.toLocaleString()}₮</span>}
                       {b.price != null && bsum > Number(b.price) && <span style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-1.5 py-0.5 rounded">−{Math.round((1 - Number(b.price) / bsum) * 100)}%</span>}
+                      {Number(b.delivery_fee || 0) > 0 && <span style={{ background: "rgba(28,127,196,0.10)", color: "#1c7fc4", fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-1.5 py-0.5 rounded">🚚 +{Number(b.delivery_fee).toLocaleString()}₮</span>}
                       {!b.is_active && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-1.5 py-0.5 rounded">Идэвхгүй</span>}
                     </div>
                     {b.description && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5">{b.description}</div>}
@@ -11124,11 +11125,13 @@ function BundlesView({ profile }) {
       {editing && (
         <Modal onClose={() => setEditing(null)} title={editing === "new" ? "📦 Багц үүсгэх" : "📦 Багц засах"} maxW="max-w-2xl">
           <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px_130px] gap-2">
               <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Багцын нэр *</label>
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} /></div>
               <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Багцын үнэ ₮</label>
                 <input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder={baseSum ? String(baseSum) : ""} className="w-full px-3 py-2 rounded-lg text-sm outline-none tabular-nums" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FD }} /></div>
+              <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">🚚 Хүргэлтийн үнэ ₮</label>
+                <input type="number" min="0" value={form.delivery_fee} onChange={(e) => setForm({ ...form, delivery_fee: e.target.value })} placeholder="0" className="w-full px-3 py-2 rounded-lg text-sm outline-none tabular-nums" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FD }} /></div>
             </div>
             <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Тайлбар</label>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }} /></div>
@@ -25859,7 +25862,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
       const p = products.find((x) => x.id === bi.product_id); if (!p || p.is_locked) return;
       const idx = next.findIndex((it) => it.productId === p.id);
       if (idx >= 0) next[idx] = { ...next[idx], qty: Number(bi.quantity || 1) };
-      else next.push({ productId: p.id, product: p, qty: Number(bi.quantity || 1), bundleName: bundle.name });
+      else next.push({ productId: p.id, product: p, qty: Number(bi.quantity || 1), bundleName: bundle.name, bundleFee: Number(bundle.delivery_fee || 0) });
     });
     if (!fbPageId) { const lp = next.find((it) => it.product.fb_page_id); if (lp) setFbPageId(lp.product.fb_page_id); }
     setItems(next); setBundlePrompt(null);
@@ -26045,6 +26048,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                       sku: it.product.sku || null,
                       price: it.product.sale_price || null,
                       bundle: it.bundleName || null,
+                      bundle_fee: it.bundleFee || 0, // 🚚 багцын хүргэлтийн үнэ → захиалга авахад автоматаар орно
                     })) : null,
                   });
                   setBusy(false);
@@ -26814,7 +26818,12 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
       };
     }).filter(Boolean);
   });
-  const [deliveryFee, setDeliveryFee] = useState(editOrder?.delivery_fee?.toString() || "");
+  const [deliveryFee, setDeliveryFee] = useState(() => {
+    if (editOrder?.delivery_fee != null) return editOrder.delivery_fee.toString();
+    // 📦 Дугаар бүртгэхэд багц сонгосон бол багцын хүргэлтийн үнэ автоматаар
+    const bf = Math.max(0, ...((Array.isArray(initialProducts) ? initialProducts : []).map((ip) => Number(ip.bundle_fee || 0))));
+    return bf > 0 ? String(bf) : "";
+  });
   const [paidAmount, setPaidAmount] = useState(editOrder?.paid_amount?.toString() || "");
   // 📞/💬 Захиалгын суваг — ЗААВАЛ сонгоно (create горим): call = залгаж, chat = чатаар орж
   const [channel, setChannel] = useState(null);
@@ -26934,6 +26943,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
       else next.push({ productId: product.id, product, quantity: qty, unitPrice: unit, itemNotes: note });
     });
     setItems(next);
+    if (Number(bundle.delivery_fee || 0) > 0) setDeliveryFee(String(bundle.delivery_fee));
     setBundlePrompt(null);
   };
   const addItem = (product) => addItemDirect(product); // багцын асуулт "Дугаар бүртгэх" цонхонд шилжсэн (2026-10-05)
