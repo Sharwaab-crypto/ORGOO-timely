@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-repeat-hours2";
+const BUILD_VERSION = "v2026.10.06-mgr-tasks";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2003,6 +2003,17 @@ function AdminDashboard({ profile }) {
 
   const [managers, setManagers] = useState([]);
   const [managerEmployees, setManagerEmployees] = useState([]);
+  // 📌 Ахлахад оноогдсон, хараахан эхлээгүй (status=new) даалгаврын тоо — улаан badge
+  const [mgrTaskBadge, setMgrTaskBadge] = useState(0);
+  useEffect(() => {
+    if (profile.role !== "manager") return;
+    const count = async () => {
+      try { const { count: n } = await supabase.from("mgr_tasks").select("id", { count: "exact", head: true }).eq("assigned_to", profile.id).eq("status", "new"); setMgrTaskBadge(n || 0); } catch {}
+    };
+    count();
+    const ch = supabase.channel(`mgr-task-badge-${profile.id}`).on("postgres_changes", { event: "*", schema: "public", table: "mgr_tasks" }, count).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [profile.id, profile.role]);
   const [departments, setDepartments] = useState([]);
   const [editingDept, setEditingDept] = useState(null); // null | 'add' | dept object
   const [leaves, setLeaves] = useState([]);
@@ -2752,6 +2763,8 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
               <SidebarTab active={view === "schedule"} onClick={() => { setView("schedule"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
               <SidebarTab active={view === "suggestions"} onClick={() => { setView("suggestions"); setSidebarOpen(false); }} icon={Inbox}>💡 Санал асуулга</SidebarTab>
+              {profile.role === "admin" && <SidebarTab active={view === "mgr-tasks"} onClick={() => { setView("mgr-tasks"); setSidebarOpen(false); }} icon={Send}>📌 Даалгавар өгөх</SidebarTab>}
+              {profile.role === "manager" && <SidebarTab active={view === "mgr-tasks"} onClick={() => { setView("mgr-tasks"); setSidebarOpen(false); }} icon={ClipboardCheck} badge={mgrTaskBadge} badgeColor="#d9423a">📌 Даалгавар</SidebarTab>}
               {profile.role === "admin" && <SidebarTab active={view === "worklog"} onClick={() => { setView("worklog"); setSidebarOpen(false); }} icon={ClipboardCheck}>🛠 Хийгдсэн ажил</SidebarTab>}
             </SidebarSection>
             )}
@@ -2913,6 +2926,7 @@ function AdminDashboard({ profile }) {
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
                 {view === "worklog" && "Хийгдсэн ажил"}
+                {view === "mgr-tasks" && (profile.role === "admin" ? "Даалгавар өгөх" : "Даалгавар")}
                 {view === "suggestions" && "Санал асуулга"}
                 {view === "marketing" && "Маркетинг"}
                 {view === "mkt-board" && "Маркетингийн самбар"}
@@ -2943,6 +2957,7 @@ function AdminDashboard({ profile }) {
                 {view === "livemap" && `${activeCount} ажилтан газрын зураг дээр харагдаж байна`}
                 {view === "dashboard" && "Хэлтсийн KPI болон тоон үзүүлэлтүүд"}
                 {view === "tasks" && "Даалгаврын Kanban самбар"}
+                {view === "mgr-tasks" && (profile.role === "admin" ? "Ахлах ажилтнуудад чиглэл өгөх, гүйцэтгэлийг хянах" : `Админаас ирсэн даалгавар${mgrTaskBadge ? ` · ${mgrTaskBadge} шинэ` : ""}`)}
                 {view === "announcements" && "Бүх ажилтанд хүрэх мэдээлэл"}
                 {view === "best" && "Сар бүрийн шилдэг ажилтны жагсаалт"}
                 {view === "calendar" && "Чөлөө + амралтын календар"}
@@ -3230,6 +3245,7 @@ function AdminDashboard({ profile }) {
         )}
 
         {view === "worklog" && profile.role === "admin" && <DevWorklogView profile={profile} />}
+        {view === "mgr-tasks" && (profile.role === "admin" || profile.role === "manager") && <MgrTasksView profile={profile} managers={managers} />}
         {view === "suggestions" && (
           <SuggestionsAdminView profile={profile} />
         )}
@@ -6719,7 +6735,7 @@ function sectionGradient(label) {
   return `linear-gradient(135deg, ${g[0]}, ${g[1]})`;
 }
 
-function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
+function SidebarTab({ active, onClick, icon: Icon, badge, badgeColor, children }) {
   return (
     <button onClick={onClick}
       className={`press-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all ${active ? "" : ""}`}
@@ -6734,8 +6750,9 @@ function SidebarTab({ active, onClick, icon: Icon, badge, children }) {
       <span className="flex-1 truncate">{children}</span>
       {badge > 0 && (
         <span style={{
-          background: T.highlight,
+          background: badgeColor || T.highlight,
           color: "white",
+          boxShadow: badgeColor ? `0 0 0 2px ${badgeColor}33` : "none",
         }} className="px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums">
           {badge}
         </span>
@@ -35657,6 +35674,307 @@ function SuggestionBoxView({ profile }) {
             })}
           </div>}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  📌 ДААЛГАВАР — Админ → Ахлах ажилтанд үүрэг даалгавар өгөх
+//  DB: mgr_tasks (id, title, detail, priority, due_date, assigned_to, created_by, status new|doing|done|failed, seen_at, created_at, updated_at)
+//      mgr_task_comments (id, task_id, author_id, body, status_to, created_at)
+//  Дүрэм: ахлах төлөв солихдоо ЗААВАЛ тайлбар бичнэ; админ хэзээ ч тайлбар бичиж болно.
+// ═══════════════════════════════════════════════════════════════════════════
+const MGR_TASK_STATUS = {
+  new: { label: "Шинэ", color: "#d9423a", bg: "rgba(217,66,58,0.10)", icon: "🆕" },
+  doing: { label: "Хийж байгаа", color: "#1c7fc4", bg: "rgba(28,127,196,0.10)", icon: "⚙️" },
+  done: { label: "Хийгдсэн", color: "#1f9d55", bg: "rgba(31,157,85,0.10)", icon: "✅" },
+  failed: { label: "Хийж чадаагүй", color: "#e08a00", bg: "rgba(224,138,0,0.12)", icon: "⛔" },
+};
+const MGR_TASK_ORDER = ["new", "doing", "done", "failed"];
+
+function MgrTasksView({ profile, managers = [] }) {
+  const isAdmin = profile.role === "admin";
+  const [tasks, setTasks] = useState(null);
+  const [comments, setComments] = useState({}); // task_id → [comments]
+  const [people, setPeople] = useState({}); // id → name
+  const [filter, setFilter] = useState("all"); // all | new | doing | done | failed
+  const [whoF, setWhoF] = useState("all"); // admin: ахлахаар шүүх
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState(null); // null | { id?, title, detail, assigned_to, due_date, priority }
+  const [active, setActive] = useState(null); // дэлгэрэнгүй/тайлбар popup — task
+  const [statusAsk, setStatusAsk] = useState(null); // { task, to } — тайлбар заавал
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fmtD = (t) => (t ? new Date(t).toLocaleDateString("en-CA", { timeZone: "Asia/Ulaanbaatar" }) : "");
+  const fmtDT = (t) => (t ? new Date(t).toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Ulaanbaatar" }).replace(",", "") : "");
+
+  const load = async () => {
+    try {
+      let qq = supabase.from("mgr_tasks").select("*").order("created_at", { ascending: false });
+      if (!isAdmin) qq = qq.eq("assigned_to", profile.id);
+      const { data, error } = await qq;
+      if (error) throw error;
+      const rows = data || [];
+      setTasks(rows);
+      const ids = rows.map((r) => r.id);
+      const [cm, pp] = await Promise.all([
+        ids.length ? supabase.from("mgr_task_comments").select("*").in("task_id", ids).order("created_at", { ascending: true }) : { data: [] },
+        supabase.from("profiles").select("id, name").in("id", [...new Set(rows.flatMap((r) => [r.assigned_to, r.created_by]).filter(Boolean))].concat(profile.id)),
+      ]);
+      const map = {}; (cm.data || []).forEach((c) => { (map[c.task_id] = map[c.task_id] || []).push(c); });
+      setComments(map);
+      const pm = {}; (pp.data || []).forEach((p) => { pm[p.id] = p.name; });
+      // тайлбар бичсэн хүмүүсийн нэр
+      const missing = [...new Set((cm.data || []).map((c) => c.author_id).filter((id) => id && !pm[id]))];
+      if (missing.length) { const { data: more } = await supabase.from("profiles").select("id, name").in("id", missing); (more || []).forEach((p) => { pm[p.id] = p.name; }); }
+      setPeople(pm);
+      // 👀 Ахлах нээхэд шинэ даалгаврыг "харсан" гэж тэмдэглэнэ
+      if (!isAdmin) {
+        const unseen = rows.filter((r) => !r.seen_at).map((r) => r.id);
+        if (unseen.length) await supabase.from("mgr_tasks").update({ seen_at: new Date().toISOString() }).in("id", unseen);
+      }
+    } catch (e) {
+      console.error("[mgr_tasks]", e);
+      setTasks([]);
+      alert("Даалгаврын хүснэгт уншигдсангүй: " + e.message + "\n\nSQL ажиллуулсан эсэхээ шалгана уу (mgr_tasks).");
+    }
+  };
+  useEffect(() => { load(); }, [profile.id]);
+  useEffect(() => {
+    const ch = supabase.channel(`mgr-tasks-${profile.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "mgr_tasks" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "mgr_task_comments" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [profile.id]);
+
+  // ── Админ: үүсгэх / засах ──────────────────────────────────────────────
+  const openNew = () => setForm({ title: "", detail: "", assigned_to: managers[0]?.id || "", due_date: "", priority: "normal" });
+  const openEdit = (t) => setForm({ id: t.id, title: t.title || "", detail: t.detail || "", assigned_to: t.assigned_to || "", due_date: t.due_date || "", priority: t.priority || "normal" });
+  const saveForm = async () => {
+    if (!form.title.trim()) { alert("Даалгаврын гарчиг бичнэ үү"); return; }
+    if (!form.assigned_to) { alert("Ахлах ажилтан сонгоно уу"); return; }
+    setBusy(true);
+    try {
+      const payload = { title: form.title.trim(), detail: form.detail.trim() || null, assigned_to: form.assigned_to, due_date: form.due_date || null, priority: form.priority, updated_at: new Date().toISOString() };
+      if (form.id) {
+        const prev = tasks.find((t) => t.id === form.id);
+        if (prev && prev.assigned_to !== form.assigned_to) { payload.seen_at = null; payload.status = "new"; } // өөр ахлахад шилжүүлбэл шинээр
+        const { error } = await supabase.from("mgr_tasks").update(payload).eq("id", form.id); if (error) throw error;
+      } else {
+        const { error } = await supabase.from("mgr_tasks").insert({ ...payload, created_by: profile.id, status: "new" }); if (error) throw error;
+      }
+      setForm(null); await load();
+    } catch (e) { alert("Хадгалахад алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const remove = async (t) => {
+    if (!confirm(`"${t.title}" даалгаврыг устгах уу?`)) return;
+    try { const { error } = await supabase.from("mgr_tasks").delete().eq("id", t.id); if (error) throw error; setActive(null); await load(); } catch (e) { alert("Алдаа: " + e.message); }
+  };
+
+  // ── Тайлбар + төлөв ───────────────────────────────────────────────────
+  const addComment = async (task, body, statusTo = null) => {
+    const { error } = await supabase.from("mgr_task_comments").insert({ task_id: task.id, author_id: profile.id, body, status_to: statusTo });
+    if (error) throw error;
+  };
+  const submitStatus = async () => {
+    if (!statusAsk) return;
+    if (!note.trim()) { alert("Тайлбар заавал бичнэ үү"); return; }
+    setBusy(true);
+    try {
+      await addComment(statusAsk.task, note.trim(), statusAsk.to);
+      const { error } = await supabase.from("mgr_tasks").update({ status: statusAsk.to, updated_at: new Date().toISOString(), seen_at: statusAsk.task.seen_at || new Date().toISOString() }).eq("id", statusAsk.task.id);
+      if (error) throw error;
+      setStatusAsk(null); setNote(""); await load();
+      if (active?.id === statusAsk.task.id) setActive((a) => a && { ...a, status: statusAsk.to });
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const submitNote = async () => {
+    if (!active) return;
+    if (!note.trim()) { alert("Тайлбар бичнэ үү"); return; }
+    setBusy(true);
+    try { await addComment(active, note.trim()); setNote(""); await load(); } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (tasks === null) return <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>;
+
+  const counts = MGR_TASK_ORDER.reduce((a, s) => { a[s] = tasks.filter((t) => t.status === s).length; return a; }, {});
+  const visible = tasks.filter((t) => (filter === "all" || t.status === filter) && (whoF === "all" || t.assigned_to === whoF)
+    && (!q.trim() || `${t.title} ${t.detail || ""} ${people[t.assigned_to] || ""}`.toLowerCase().includes(q.trim().toLowerCase())));
+  const overdue = (t) => t.due_date && t.status !== "done" && t.status !== "failed" && new Date(t.due_date + "T23:59:59") < new Date();
+  const cur = active ? tasks.find((t) => t.id === active.id) || active : null;
+  const StatusBadge = ({ s, size = 11 }) => { const m = MGR_TASK_STATUS[s] || MGR_TASK_STATUS.new; return <span style={{ background: m.bg, color: m.color, fontFamily: FS, fontWeight: 700, fontSize: size }} className="px-2 py-0.5 rounded-full whitespace-nowrap">{m.icon} {m.label}</span>; };
+  const inputSt = { background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS };
+  const StatusBtns = ({ t }) => (
+    <div className="flex gap-1.5 flex-wrap">
+      {MGR_TASK_ORDER.filter((s) => s !== "new" && s !== t.status).map((s) => { const m = MGR_TASK_STATUS[s]; return (
+        <button key={s} type="button" onClick={(e) => { e.stopPropagation(); setNote(""); setStatusAsk({ task: t, to: s }); }}
+          className="press-btn px-2.5 py-1.5 rounded-lg text-[11px]" style={{ background: m.bg, color: m.color, border: `1px solid ${m.color}55`, fontFamily: FS, fontWeight: 700 }}>{m.icon} {m.label}</button>
+      ); })}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Толгой */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📌 {isAdmin ? "Ахлах ажилтнуудад өгсөн даалгавар" : "Надад өгсөн даалгавар"}</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{tasks.length} даалгавар</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Хайх..." className="px-3 py-1.5 rounded-lg text-xs outline-none ml-auto" style={{ ...inputSt, border: `1px solid ${T.borderStrong}`, minWidth: 160 }} />
+        {isAdmin && managers.length > 0 && (
+          <select value={whoF} onChange={(e) => setWhoF(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ ...inputSt, border: `1px solid ${T.borderStrong}` }}>
+            <option value="all">Бүх ахлах</option>
+            {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        )}
+        {isAdmin && <button onClick={openNew} className="glow-primary press-btn px-3 py-2 rounded-lg text-xs flex items-center gap-1.5" style={{ fontFamily: FS, fontWeight: 600 }}><Plus size={13} /> Даалгавар өгөх</button>}
+      </div>
+
+      {/* Төлвийн шүүлт */}
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        {[["all", "Бүгд", T.highlight, tasks.length], ...MGR_TASK_ORDER.map((s) => [s, MGR_TASK_STATUS[s].label, MGR_TASK_STATUS[s].color, counts[s]])].map(([id, lbl, c, n]) => (
+          <button key={id} type="button" onClick={() => setFilter(id)} className="press-btn px-3 py-1.5 rounded-full text-[11px] whitespace-nowrap flex-shrink-0"
+            style={{ background: filter === id ? c : T.surfaceAlt, color: filter === id ? "#fff" : T.ink, border: `1px solid ${filter === id ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 700 }}>
+            {lbl} <span style={{ opacity: .8 }}>({n})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Жагсаалт */}
+      {visible.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center" style={{ color: T.muted, fontFamily: FS }}><div className="text-3xl mb-1">📭</div>Даалгавар алга</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {visible.map((t) => {
+            const m = MGR_TASK_STATUS[t.status] || MGR_TASK_STATUS.new;
+            const cm = comments[t.id] || [];
+            const last = cm[cm.length - 1];
+            return (
+              <div key={t.id} onClick={() => { setNote(""); setActive(t); }} className="glass rounded-2xl p-3 cursor-pointer lift" style={{ borderLeft: `4px solid ${m.color}` }}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{t.title}</span>
+                      {t.priority === "high" && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 700 }} className="text-[9px] px-1.5 py-0.5 rounded">Яаралтай</span>}
+                      {!t.seen_at && isAdmin && <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px]">· хараагүй</span>}
+                    </div>
+                    {t.detail && <div style={{ color: T.muted, fontFamily: FS, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} className="text-[11px] mt-0.5">{t.detail}</div>}
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <StatusBadge s={t.status} size={10} />
+                      {isAdmin && <span style={{ color: T.inkSoft, fontFamily: FS }} className="text-[10px]">👤 {people[t.assigned_to] || "—"}</span>}
+                      {t.due_date && <span style={{ color: overdue(t) ? T.err : T.muted, fontFamily: FM, fontWeight: overdue(t) ? 700 : 500 }} className="text-[10px]">📅 {t.due_date}{overdue(t) ? " · хугацаа хэтэрсэн" : ""}</span>}
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">💬 {cm.length}</span>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">{fmtD(t.created_at)}</span>
+                    </div>
+                    {last && <div style={{ color: T.inkSoft, fontFamily: FS, background: T.surfaceAlt }} className="text-[10px] mt-1.5 px-2 py-1 rounded-lg truncate">💬 {people[last.author_id] || "?"}: {last.body}</div>}
+                  </div>
+                  {isAdmin && (
+                    <div className="flex flex-col gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => openEdit(t)} title="Засах" style={{ color: T.muted }} className="hover:opacity-70"><Edit3 size={12} /></button>
+                      <button onClick={() => remove(t)} title="Устгах" style={{ color: T.err }} className="hover:opacity-70"><Trash2 size={12} /></button>
+                    </div>
+                  )}
+                </div>
+                {!isAdmin && <div className="mt-2" onClick={(e) => e.stopPropagation()}><StatusBtns t={t} /></div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Админ: үүсгэх/засах popup ── */}
+      {form && (
+        <Modal onClose={() => setForm(null)} staticBackdrop title={form.id ? "Даалгавар засах" : "Даалгавар өгөх"} maxW="max-w-lg">
+          <div className="space-y-3">
+            <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Ахлах ажилтан *</label>
+              <select value={form.assigned_to} onChange={(e) => setForm({ ...form, assigned_to: e.target.value })} className="w-full px-3 py-2 rounded-lg text-sm" style={inputSt}>
+                <option value="">— сонгох —</option>
+                {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select></div>
+            <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Гарчиг *</label>
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={inputSt} /></div>
+            <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Чиглэл, тайлбар</label>
+              <textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows={4} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y" style={inputSt} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Дуусах хугацаа</label>
+                <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="w-full px-2 py-2 rounded-lg text-xs" style={inputSt} /></div>
+              <div><label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">Ач холбогдол</label>
+                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full px-2 py-2 rounded-lg text-xs" style={inputSt}>
+                  <option value="high">Яаралтай</option><option value="normal">Энгийн</option><option value="low">Бага</option>
+                </select></div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setForm(null)} className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ fontFamily: FS, color: T.ink }}>Болих</button>
+              <button onClick={saveForm} disabled={busy} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS }}>{busy ? "..." : form.id ? "Хадгалах" : "Даалгавар өгөх"}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Дэлгэрэнгүй + тайлбарын урсгал ── */}
+      {cur && !statusAsk && (
+        <Modal onClose={() => setActive(null)} staticBackdrop title="Даалгавар" maxW="max-w-xl">
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-base">{cur.title}</span>
+                <StatusBadge s={cur.status} />
+                {cur.priority === "high" && <span style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 700 }} className="text-[10px] px-1.5 py-0.5 rounded">Яаралтай</span>}
+              </div>
+              {cur.detail && <div style={{ color: T.inkSoft, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-sm mt-1.5">{cur.detail}</div>}
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-2 flex gap-3 flex-wrap">
+                <span>👤 {people[cur.assigned_to] || "—"}</span>
+                <span>✍️ {people[cur.created_by] || "Админ"} · {fmtDT(cur.created_at)}</span>
+                {cur.due_date && <span style={{ color: overdue(cur) ? T.err : T.muted }}>📅 {cur.due_date}</span>}
+              </div>
+            </div>
+            {!isAdmin && <div className="pt-2" style={{ borderTop: `1px dashed ${T.borderSoft}` }}><div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1.5">Төлөв солих (тайлбар заавал)</div><StatusBtns t={cur} /></div>}
+            <div className="pt-2" style={{ borderTop: `1px dashed ${T.borderSoft}` }}>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1.5">💬 Тайлбар · {(comments[cur.id] || []).length}</div>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                {(comments[cur.id] || []).length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Тайлбар алга</div>}
+                {(comments[cur.id] || []).map((c) => { const mine = c.author_id === profile.id; const st = c.status_to ? MGR_TASK_STATUS[c.status_to] : null; return (
+                  <div key={c.id} className="rounded-xl px-3 py-2" style={{ background: mine ? T.highlightSoft : T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-[11px]">{people[c.author_id] || "?"}</span>
+                      {st && <span style={{ background: st.bg, color: st.color, fontFamily: FS, fontWeight: 700 }} className="text-[9px] px-1.5 py-0.5 rounded-full">→ {st.icon} {st.label}</span>}
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[9px] ml-auto">{fmtDT(c.created_at)}</span>
+                    </div>
+                    <div style={{ color: T.inkSoft, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-xs mt-0.5">{c.body}</div>
+                  </div>
+                ); })}
+              </div>
+              <div className="flex gap-2 mt-2">
+                <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitNote(); }} placeholder="Тайлбар бичих..." className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" style={inputSt} />
+                <button onClick={submitNote} disabled={busy} className="glow-primary press-btn px-3 py-2 rounded-lg text-sm" style={{ fontFamily: FS }}><Send size={14} /></button>
+              </div>
+            </div>
+            {isAdmin && (
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => { openEdit(cur); setActive(null); }} className="glass-soft press-btn flex-1 py-2 rounded-xl text-xs" style={{ fontFamily: FS, color: T.ink }}>✏️ Засах</button>
+                <button onClick={() => remove(cur)} className="press-btn flex-1 py-2 rounded-xl text-xs" style={{ fontFamily: FS, background: T.errSoft, color: T.err }}>🗑 Устгах</button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Төлөв солих: тайлбар заавал ── */}
+      {statusAsk && (
+        <Modal onClose={() => { setStatusAsk(null); setNote(""); }} staticBackdrop title={`${MGR_TASK_STATUS[statusAsk.to].icon} ${MGR_TASK_STATUS[statusAsk.to].label}`} maxW="max-w-md">
+          <div className="space-y-3">
+            <div style={{ color: T.inkSoft, fontFamily: FS }} className="text-sm"><b>{statusAsk.task.title}</b> даалгаврыг <StatusBadge s={statusAsk.to} /> төлөвт оруулна. Тайлбар заавал бичнэ үү.</div>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} autoFocus rows={4} placeholder={statusAsk.to === "done" ? "Юу хийж гүйцэтгэсэн..." : statusAsk.to === "failed" ? "Яагаад хийж чадаагүй..." : "Хэрхэн эхлүүлж байгаа..."} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y" style={inputSt} />
+            <div className="flex gap-2">
+              <button onClick={() => { setStatusAsk(null); setNote(""); }} className="glass-soft press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ fontFamily: FS, color: T.ink }}>Болих</button>
+              <button onClick={submitStatus} disabled={busy || !note.trim()} className="glow-primary press-btn flex-1 py-2.5 rounded-xl text-sm font-medium" style={{ fontFamily: FS, opacity: note.trim() ? 1 : .5 }}>{busy ? "..." : "Хадгалах"}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
