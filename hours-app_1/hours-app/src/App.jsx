@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-mgr-tasks";
+const BUILD_VERSION = "v2026.10.06-bundle-qty";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -11056,7 +11056,9 @@ function BundlesView({ profile }) {
   const baseSum = form.items.reduce((s, it) => s + Number(prodById(it.product_id)?.sale_price || 0) * it.quantity, 0);
   const save = async () => {
     if (!form.name.trim()) { alert("Багцын нэр бичнэ үү"); return; }
-    if (form.items.length < 2) { alert("Багцад хамгийн багадаа 2 бараа оруулна уу"); return; }
+    // Нэг бараанаас 2+ ширхэг ч багц болно (нийт ширхэг ≥ 2)
+    const totalQty = form.items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+    if (form.items.length === 0 || totalQty < 2) { alert("Багцад нийт 2-оос дээш ширхэг бараа оруулна уу (нэг бараанаас 2 ч байж болно)"); return; }
     try {
       let id = editing === "new" ? null : editing.id;
       const payload = { name: form.name.trim(), price: form.price === "" ? null : Number(form.price), description: form.description.trim() || null };
