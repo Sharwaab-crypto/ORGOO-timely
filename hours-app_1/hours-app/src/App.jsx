@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.05-cc-rpc";
+const BUILD_VERSION = "v2026.10.06-settle-fast";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -24506,16 +24506,15 @@ function SettlementReportsView({ profile }) {
       //    (biz_settlements-д prepaid багана байхгүй тул biz_orders-аас нийлбэрлэнэ)
       const settlementIds = (rData || []).map((r) => r.id);
       if (settlementIds.length > 0) {
-        const ordRows = await fetchInChunks("biz_orders", settlementIds, {
-          select: "settlement_id, prepaid_amount, status",
-          filterColumn: "settlement_id",
-        });
+        // ⚡ ГАЦАА ЗАСВАР (2026-10-06): өмнө 2500 тооцооны 71,000 захиалгыг 100+ хүсэлтээр (26 сек) татаж
+        //    урьдчилгааг клиент дээр нэмдэг байсан. Одоо RPC settlement_prepaid_totals сервер талд нийлбэрлэж
+        //    нэг хүсэлтээр (тооцоо бүрд 1 мөр) өгнө. RPC байхгүй бол paid_already fallback-аар л харуулна.
         const ppMap = {};
-        (ordRows || []).forEach((o) => {
-          if (o.status !== "delivered") return;
-          if (!o.settlement_id) return;
-          ppMap[o.settlement_id] = (ppMap[o.settlement_id] || 0) + Number(o.prepaid_amount || 0);
-        });
+        try {
+          const { data: agg, error: aggErr } = await supabase.rpc("settlement_prepaid_totals");
+          if (aggErr) throw aggErr;
+          (agg || []).forEach((r) => { if (r.settlement_id) ppMap[r.settlement_id] = Number(r.prepaid_total || 0); });
+        } catch (re) { console.warn("[settlement_prepaid_totals rpc]", re?.message); }
         // Fallback: захиалгуудад тамга байхгүй ч тооцооны paid_already хадгалагдсан бол түүнийг харуулна
         (rData || []).forEach((r) => {
           if (!ppMap[r.id] && Number(r.paid_already || 0) > 0) ppMap[r.id] = Number(r.paid_already);
