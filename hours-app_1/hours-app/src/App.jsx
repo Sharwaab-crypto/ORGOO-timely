@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-repeat-hours";
+const BUILD_VERSION = "v2026.10.06-repeat-hours2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -16286,7 +16286,7 @@ function CallCenterView({ profile }) {
                     {/* 🕐 Цагаар шүүх */}
                     <div className="flex items-center gap-1.5 flex-wrap mb-2">
                       <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">🕐 Цаг:</span>
-                      {[[0, 24, "Бүх цаг"], [9, 13, "09–13"], [13, 18, "13–18"], [18, 24, "18–24"]].map(([a, b, lbl]) => {
+                      {[[0, 24, "Бүх цаг"], [0, 15, "00–15"], [15, 21, "15–21"]].map(([a, b, lbl]) => {
                         const on = repHours[0] === a && repHours[1] === b;
                         return <button key={lbl} type="button" onClick={() => setRepHours([a, b])} className="press-btn px-2.5 py-1 rounded-full text-[11px]"
                           style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.ink, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>;
