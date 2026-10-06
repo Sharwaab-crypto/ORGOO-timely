@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-team-modals";
+const BUILD_VERSION = "v2026.10.06-repeat-hours";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15565,6 +15565,7 @@ function CallCenterView({ profile }) {
   const [statusPopupCall, setStatusPopupCall] = useState(null);
   const [statusComment, setStatusComment] = useState("");
   const [showRepeatChart, setShowRepeatChart] = useState(false); // 🔁 давтан дуудлагын chart нээлттэй эсэх
+  const [repHours, setRepHours] = useState([0, 24]); // 🕐 давтан залгалтыг тухайн өдрийн цагаар шүүх [эхлэх цаг, дуусах цаг)
   const [repeatPopup, setRepeatPopup] = useState(null); // {title, calls[]} — chart-ын багана дарахад
   const [showChannelChart, setShowChannelChart] = useState(false); // 💬/📞 захиалгын суваг ажилтнаар (admin/manager)
   const canSeeChannel = profile?.role === "admin" || profile?.role === "manager";
@@ -16206,8 +16207,11 @@ function CallCenterView({ profile }) {
         const total = entries.reduce((s, e) => s + e.value, 0);
         // 🔁 ДАВТАН ДУУДЛАГА: "⏰ 29 мин хэтэрсэн" дугаар дээр статус/захиалга/цуцлал тавихад тэмдэглэлд "🔁" бичигддэг → түүгээр тоолно
         const repCounts = {}; const repCalls = {}; let repTotal = 0;
+        const [rhFrom, rhTo] = repHours;
+        const repHourOk = (t) => { if (rhFrom === 0 && rhTo === 24) return true; const h = new Date(t).getHours() + new Date(t).getMinutes() / 60; return h >= rhFrom && h < rhTo; };
         pieSrc.forEach((cc2) => {
           if (!(cc2.notes || "").includes("🔁")) return;
+          if (!repHourOk(cc2.created_at)) return; // 🔁 мөр статус тавих мөчид үүсдэг → created_at = залгасан цаг
           const k = cc2.created_by || "__none";
           repCounts[k] = (repCounts[k] || 0) + 1; repTotal += 1;
           (repCalls[k] = repCalls[k] || []).push(cc2);
@@ -16275,10 +16279,27 @@ function CallCenterView({ profile }) {
                 <span className="text-[10px]">{showRepeatChart ? "▲" : "▼"}</span>
               </button>
               {showRepeatChart && (
-                repEntries.length === 0 ? (
+                repEntries.length === 0 && repHours[0] === 0 && repHours[1] === 24 ? (
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Энэ хугацаанд давтан залгалт байхгүй</div>
                 ) : (
                   <div className="mt-2">
+                    {/* 🕐 Цагаар шүүх */}
+                    <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                      <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">🕐 Цаг:</span>
+                      {[[0, 24, "Бүх цаг"], [9, 13, "09–13"], [13, 18, "13–18"], [18, 24, "18–24"]].map(([a, b, lbl]) => {
+                        const on = repHours[0] === a && repHours[1] === b;
+                        return <button key={lbl} type="button" onClick={() => setRepHours([a, b])} className="press-btn px-2.5 py-1 rounded-full text-[11px]"
+                          style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.ink, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>;
+                      })}
+                      <select value={repHours[0]} onChange={(e) => { const a = Number(e.target.value); setRepHours([a, Math.max(a + 1, repHours[1])]); }} className="px-1.5 py-1 rounded-lg text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+                      </select>
+                      <span style={{ color: T.muted }} className="text-[11px]">–</span>
+                      <select value={repHours[1]} onChange={(e) => { const b = Number(e.target.value); setRepHours([Math.min(b - 1, repHours[0]), b]); }} className="px-1.5 py-1 rounded-lg text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FM }}>
+                        {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+                      </select>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px] ml-auto">{repHours[0] === 0 && repHours[1] === 24 ? "бүх цаг" : `${String(repHours[0]).padStart(2, "0")}:00–${String(repHours[1]).padStart(2, "0")}:00`} · {repTotal} давтан</span>
+                    </div>
                     <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1">👆 Багана дээр дарахад аль төлөвт оруулсан нь харагдана</div>
                     <div className="flex flex-wrap gap-1 mb-1">
                       {repEntries.map((e, i) => (
