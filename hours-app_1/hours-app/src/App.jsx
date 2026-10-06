@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-settle-fast";
+const BUILD_VERSION = "v2026.10.06-salesrep-fast";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -24054,8 +24054,21 @@ function SalesReportView({ profile }) {
         (orders || []).forEach((o) => { orderPageMap[o.id] = o.fb_page_id || null; });
 
         // Тэдгээрийн бараанууд + барааны үнэ + категори + FB pages
+        // ⚡ ГАЦАА ЗАСВАР (2026-10-06): өмнө biz_order_items-ийг БҮХЭЛД нь (100K+ мөр, олон хүсэлт) татаж клиент дээр шүүдэг байсан.
+        //    Одоо: RPC sales_report_items сервер талд хугацааны захиалгын бараануудыг бараа+page-аар нэгтгэж нэг хүсэлтээр өгнө;
+        //    RPC байхгүй бол зөвхөн хүрээний захиалгын ID-гаар chunk-оор (зэрэгцээ) татна.
+        const loadItems = async () => {
+          try {
+            const { data, error } = await supabase.rpc("sales_report_items", { p_start: range.start.toISOString(), p_end: range.end.toISOString() });
+            if (error) throw error;
+            return (data || []).map((r) => ({ product_id: r.product_id, product_name: r.product_name, quantity: Number(r.qty || 0), total_amount: Number(r.revenue || 0), order_id: null, _page: r.fb_page_id || null, _agg: true }));
+          } catch (re) {
+            console.warn("[sales_report_items rpc → fallback]", re?.message);
+            return fetchInChunks("biz_order_items", orderIds, { select: "product_id, product_name, quantity, unit_price, total_amount, order_id", filterColumn: "order_id", chunkSize: 200, parallel: 6 });
+          }
+        };
         const [items, { data: products }, { data: categories }, { data: pages }] = await Promise.all([
-          fetchAllRows(supabase.from("biz_order_items").select("product_id, product_name, quantity, unit_price, total_amount, order_id")),
+          loadItems(),
           supabase.from("inv_products").select("id, name, sku, cost_price, sale_price, category_id"),
           supabase.from("inv_categories").select("id, name"),
           supabase.from("biz_fb_pages").select("id, name"),
@@ -24071,9 +24084,9 @@ function SalesReportView({ profile }) {
         // Бараагаар нэгтгэх (page бүрээр тусад нь — нэг бараа өөр page-аар зарагдсан бол салгана)
         const agg = {};
         (items || []).forEach((it) => {
-          if (!orderIdSet.has(it.order_id)) return; // зөвхөн хүрээний захиалга
+          if (!it._agg && !orderIdSet.has(it.order_id)) return; // зөвхөн хүрээний захиалга (RPC-ийн мөр аль хэдийн шүүгдсэн)
           const prod = prodMap[it.product_id] || {};
-          const pageId = orderPageMap[it.order_id] || null;
+          const pageId = it._agg ? it._page : (orderPageMap[it.order_id] || null);
           const pageName = pageId ? (pageMap[pageId] || "—") : "Page-гүй";
           const catName = prod.category_id ? (catMap[prod.category_id] || "—") : "Ангилалгүй";
           // Бараа + page хослолоор key (group хийхэд тус тусдаа гарна)
