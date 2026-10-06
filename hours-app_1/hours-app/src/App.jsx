@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-merchant-skin";
+const BUILD_VERSION = "v2026.10.06-merchant-skin2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -11,7 +11,7 @@ import {
   ClipboardCheck, Clock, Inbox, FileText, Send,
   ShieldCheck, User as UserIcon, Eye, EyeOff,
   Download, FileSpreadsheet, Filter, BarChart3, TrendingUp, TrendingDown,
-  Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight,
+  Camera, Moon, Sun, Briefcase, Vote, ChevronDown, ChevronRight, ChevronLeft,
   Bell, Phone, ShoppingBag, Package, RefreshCw,
   Truck, DollarSign, Headphones, Warehouse, Menu, Search, Megaphone, Store,
   Coins, XCircle, Trophy, Info, Link2,
@@ -37038,15 +37038,15 @@ function useCountUp(dep, ms = 1100) {
 }
 
 // Sidebar-ын нэг цэс — 28px өнгөт tile icon
-function MerchantNavItem({ active, onClick, icon: Icon, color, delay = 0, children }) {
+function MerchantNavItem({ active, onClick, icon: Icon, color, delay = 0, collapsed = false, children }) {
   return (
-    <button type="button" className="md-nav" onClick={onClick}
-      style={{ background: active ? MC.a900 : "transparent", color: active ? MC.a200 : MC.text, fontWeight: active ? 500 : 400, fontFamily: FS, animation: `md-in .45s ${delay}s ease both` }}>
-      <span className="md-tile" style={{ background: `${color}${active ? "38" : "24"}` }}>
-        <Icon size={15} strokeWidth={active ? 2.4 : 2} style={{ color }} />
+    <button type="button" className="md-nav" onClick={onClick} title={collapsed ? String(children) : undefined}
+      style={{ background: active ? MC.a900 : "transparent", color: active ? MC.a200 : MC.text, fontWeight: active ? 500 : 400, fontFamily: FS, animation: `md-in .45s ${delay}s ease both`, justifyContent: collapsed ? "center" : "flex-start", padding: collapsed ? 0 : "0 8px" }}>
+      <span className="md-tile" style={{ background: `${color}${active ? "38" : "24"}`, width: collapsed ? 34 : 28, height: collapsed ? 34 : 28, boxShadow: collapsed && active ? `0 0 0 2px ${color}55` : "none" }}>
+        <Icon size={collapsed ? 17 : 15} strokeWidth={active ? 2.4 : 2} style={{ color }} />
       </span>
-      <span style={{ flex: 1 }}>{children}</span>
-      <ChevronRight size={12} style={{ opacity: active ? 0 : .5 }} />
+      {!collapsed && <span style={{ flex: 1 }}>{children}</span>}
+      {!collapsed && <ChevronRight size={12} style={{ opacity: active ? 0 : .5 }} />}
     </button>
   );
 }
@@ -37062,7 +37062,11 @@ function MerchantDashboard({ profile }) {
   const [fbPages, setFbPages] = useState([]);
   const [loading, setLoading] = useState(true);
   // 🎨 Мерчант skin — хуучин glass компонентуудыг MC загварт оруулна (portal modal-д ч үйлчилнэ)
-  useEffect(() => { document.body.classList.add("md-skin"); return () => document.body.classList.remove("md-skin"); }, []);
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("orgoo-merchant-collapsed") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("orgoo-merchant-collapsed", collapsed ? "1" : "0"); } catch {} }, [collapsed]);
+  // 🎨 Skin: зөвхөн Борлуулалт / Бараа нөөц / Хөдөлгөөн (Дуудлага, Захиалга хуучин загвараараа)
+  const skinned = view === "sales" || view === "stock" || view === "movements";
+  useEffect(() => { document.body.classList.toggle("md-skin", skinned); return () => document.body.classList.remove("md-skin"); }, [skinned]);
 
   // Merchant-руу оноогдсон FB Page-ийн ID массив
   const allowedPageIds = profile.fb_page_ids || [];
@@ -37115,10 +37119,11 @@ function MerchantDashboard({ profile }) {
   }
 
   const go = (v) => { setView(v); setSidebarOpen(false); };
+  const col = collapsed && !sidebarOpen; // утсан дээр нээлттэй үед бүтнээр харуулна
   const TITLES = { dashboard: "Хяналтын самбар", calls: "Дуудлага", sales: "Борлуулалт", orders: "Захиалга", stock: "Бараа, нөөц", movements: "Барааны хөдөлгөөн" };
   const SUBS = { dashboard: "", calls: "Дуудлага бүртгэх, захиалга авах", sales: "FB page тус бүрийн борлуулалт", orders: "Таны page-ийн бүх захиалга", stock: "Бараа бүрийн үлдэгдэл", movements: "Орлого · зарлага · шилжүүлэг" };
   const pageNames = fbPages.map((p) => p.name).join(" · ");
-  const navLabel = (t) => <span style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n400, padding: "6px 8px 2px" }}>{t}</span>;
+  const navLabel = (t) => col ? <span style={{ height: 1, background: MC.divider, margin: "6px 4px" }} /> : <span style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n400, padding: "6px 8px 2px" }}>{t}</span>;
 
   return (
     <div className="min-h-screen flex" style={{ background: `radial-gradient(90% 60% at 100% 0%, rgba(201,237,228,.6), transparent 60%), ${MC.bg}`, color: MC.text, fontFamily: FS }}>
@@ -37128,25 +37133,39 @@ function MerchantDashboard({ profile }) {
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
-      <aside className={`fixed lg:sticky top-0 z-50 lg:z-auto w-64 h-screen overflow-y-auto transition-transform flex flex-col
+      <aside className={`md-aside fixed lg:sticky top-0 z-50 lg:z-auto h-screen overflow-y-auto overflow-x-hidden transition-transform flex flex-col ${col ? "md-collapsed" : ""}
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-        style={{ background: "rgba(251,254,253,.92)", borderRight: `1px solid ${MC.divider}`, padding: "17px 11px", gap: 17, backdropFilter: "blur(12px)" }}>
-        {/* Лого */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px" }}>
-          <button type="button" onClick={() => setSidebarOpen(false)} className="lg:hidden" aria-label="Хаах" style={{ position: "absolute", right: 8, top: 10, width: 36, height: 36, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, color: MC.n300, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={16} /></button>
+        style={{ width: col ? 64 : 256, background: "rgba(251,254,253,.92)", borderRight: `1px solid ${MC.divider}`, padding: col ? "17px 8px" : "17px 11px", gap: 17, backdropFilter: "blur(12px)", transition: "width .25s cubic-bezier(.2,.8,.2,1), transform .3s, padding .25s" }}>
+        {/* Лого + хураах товч */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: col ? 0 : "0 6px", justifyContent: col ? "center" : "flex-start" }}>
           <div style={{ position: "relative", width: 28, height: 28, display: "grid", placeItems: "center", flex: "none" }}>
             <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `1.5px solid ${MC.accent}`, opacity: .5 }} />
             <span style={{ position: "absolute", inset: 6, borderRadius: "50%", border: `1.5px solid ${MC.accent}` }} />
             <span className="md-loop" style={{ width: 6, height: 6, borderRadius: "50%", background: MC.accent, animation: "md-breathe 2.4s ease-in-out infinite" }} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-.02em" }}>CoreLink<span style={{ color: MC.accent }}>.</span></span>
-            <span style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: MC.n300 }}>Merchants</span>
-          </div>
+          {!col && (
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <span style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-.02em" }}>CoreLink<span style={{ color: MC.accent }}>.</span></span>
+              <span style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: MC.n300 }}>Merchants</span>
+            </div>
+          )}
+          {!col && (
+            <button type="button" title="Цэс хураах" aria-label="Цэс хураах"
+              onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); else setCollapsed(true); }}
+              style={{ marginLeft: "auto", width: 30, height: 30, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, color: MC.n300, display: "grid", placeItems: "center", cursor: "pointer", flex: "none" }}>
+              <ChevronLeft size={15} />
+            </button>
+          )}
         </div>
+        {col && (
+          <button type="button" title="Цэс дэлгэх" aria-label="Цэс дэлгэх" onClick={() => setCollapsed(false)}
+            style={{ width: 36, height: 36, margin: "0 auto", borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, color: MC.a200, display: "grid", placeItems: "center", cursor: "pointer", flex: "none" }}>
+            <ChevronRight size={16} />
+          </button>
+        )}
 
         {/* FB page карт */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface }}>
+        <div style={{ display: col ? "none" : "flex", flexDirection: "column", gap: 6, padding: 8, border: `1px solid ${MC.divider}`, borderRadius: 8, background: MC.surface }}>
           <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: MC.n300 }}>
             <Link2 size={13} />Таны FB page · {fbPages.length}
           </span>
@@ -37164,18 +37183,18 @@ function MerchantDashboard({ profile }) {
         {/* Цэс */}
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {navLabel("Хяналт")}
-          <MerchantNavItem active={view === "dashboard"} onClick={() => go("dashboard")} icon={BarChart3} color={MC.accent} delay={.15}>Хяналтын самбар</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "dashboard"} onClick={() => go("dashboard")} icon={BarChart3} color={MC.accent} delay={.15}>Хяналтын самбар</MerchantNavItem>
           {navLabel("Захиалга бүртгэх")}
-          <MerchantNavItem active={view === "calls"} onClick={() => go("calls")} icon={Phone} color={MC.blue} delay={.21}>Дуудлага</MerchantNavItem>
-          <MerchantNavItem active={view === "sales"} onClick={() => go("sales")} icon={TrendingUp} color={MC.green} delay={.27}>Борлуулалт</MerchantNavItem>
-          <MerchantNavItem active={view === "orders"} onClick={() => go("orders")} icon={ShoppingBag} color={MC.amber} delay={.33}>Захиалга</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "calls"} onClick={() => go("calls")} icon={Phone} color={MC.blue} delay={.21}>Дуудлага</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "sales"} onClick={() => go("sales")} icon={TrendingUp} color={MC.green} delay={.27}>Борлуулалт</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "orders"} onClick={() => go("orders")} icon={ShoppingBag} color={MC.amber} delay={.33}>Захиалга</MerchantNavItem>
           {navLabel("Агуулах")}
-          <MerchantNavItem active={view === "stock"} onClick={() => go("stock")} icon={Package} color={MC.orange} delay={.39}>Бараа, нөөц</MerchantNavItem>
-          <MerchantNavItem active={view === "movements"} onClick={() => go("movements")} icon={RefreshCw} color={MC.a300} delay={.45}>Барааны хөдөлгөөн</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "stock"} onClick={() => go("stock")} icon={Package} color={MC.orange} delay={.39}>Бараа, нөөц</MerchantNavItem>
+          <MerchantNavItem collapsed={col} active={view === "movements"} onClick={() => go("movements")} icon={RefreshCw} color={MC.a300} delay={.45}>Барааны хөдөлгөөн</MerchantNavItem>
         </nav>
 
-        <button type="button" className="md-nav" onClick={() => supabase.auth.signOut()} style={{ marginTop: "auto", color: MC.n300, fontFamily: FS }}>
-          <LogOut size={17} />Гарах
+        <button type="button" className="md-nav" onClick={() => supabase.auth.signOut()} title="Гарах" style={{ marginTop: "auto", color: MC.n300, fontFamily: FS, justifyContent: col ? "center" : "flex-start", padding: col ? 0 : "0 8px" }}>
+          <LogOut size={17} />{!col && "Гарах"}
         </button>
       </aside>
 
@@ -37183,9 +37202,11 @@ function MerchantDashboard({ profile }) {
       <main className="flex-1 overflow-auto min-w-0">
         <div style={{ padding: "14px clamp(12px,3vw,32px) 24px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 1400 }}>
           <header style={{ display: "flex", alignItems: "center", gap: 11, animation: "md-up .5s .05s ease both" }}>
-            <button type="button" onClick={() => setSidebarOpen(true)} className="lg:hidden press-btn" aria-label="Цэс" style={{ color: MC.a200, width: 40, height: 40, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, display: "grid", placeItems: "center", flex: "none" }}>
-              <Menu size={20} />
-            </button>
+            <span className="lg:hidden" style={{ flex: "none" }}>
+              <button type="button" onClick={() => setSidebarOpen(true)} className="press-btn" aria-label="Цэс" style={{ color: MC.a200, width: 40, height: 40, borderRadius: 8, border: `1px solid ${MC.divider}`, background: MC.surface, display: "grid", placeItems: "center" }}>
+                <Menu size={20} />
+              </button>
+            </span>
             <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
               <span style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: MC.n300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Merchants · {pageNames}</span>
               <h1 style={{ margin: 0, fontSize: "clamp(24px,4vw,30px)", fontWeight: 500, letterSpacing: "-.02em", fontFamily: FD }}>{TITLES[view] || ""}</h1>
@@ -38835,7 +38856,7 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
     return true;
   });
 
-  if (loading) return <MdEmpty loading />;
+  if (loading) return <div className="glass rounded-2xl p-6 text-center"><Loader2 className="spin mx-auto" size={20} /></div>;
 
   // Захиалга сонгогдсон бол → үндсэнтэй адил дэлгэрэнгүй (read-only + засах/цуцлах)
   if (activeOrder) {
@@ -38880,66 +38901,69 @@ function MerchantOrdersView({ allowedPageIds, profile }) {
     );
   }
 
-  const FILTERS = [
-    { id: "all", label: "Бүгд", color: MC.accent },
-    { id: "new", label: "Шинэ", color: MC.blue },
-    { id: "assigned", label: "Хуваарилагдсан", color: MC.amber },
-    { id: "unknown", label: "Тодорхойгүй", color: "#7c5cff" },
-    { id: "delivered", label: "Хүргэгдсэн", color: MC.green },
-    { id: "cancelled", label: "Цуцалсан", color: MC.red },
-  ];
-  const countOf = (id) => {
-    if (svCounts && svCounts[id] !== undefined) return svCounts[id];
-    return orders.filter((o) => {
-      if (id === "all") return true;
-      if (id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
-      if (id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
-      if (id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
-      return o.status === id;
-    }).length;
-  };
-  const cur = FILTERS.find((f) => f.id === filter) || FILTERS[0];
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: FS }}>
-      {/* Хайлт + шинэ захиалга */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", animation: "md-up .5s .05s ease both" }}>
-        <MdSearch value={search} onChange={setSearch} placeholder="Захиалга, утас, нэрээр хайх..." />
-        <button type="button" onClick={() => setQuickOpen(true)} className="press-btn"
-          style={{ height: 42, padding: "0 16px", borderRadius: 8, border: `1px solid ${MC.accent}`, background: MC.accent, color: "#fff", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, fontFamily: FS, cursor: "pointer", flex: "none" }}>
-          <Plus size={15} strokeWidth={2.4} />Шинэ захиалга
-        </button>
-      </div>
+    <div className="space-y-3">
+      {/* 🛍 Шууд захиалга үүсгэх */}
+      <button onClick={() => setQuickOpen(true)}
+        className="press-btn w-full rounded-2xl p-3 flex items-center justify-center gap-2 text-sm"
+        style={{ background: "linear-gradient(135deg, #0ea5e9, #0369a1)", color: "#fff", fontFamily: FS, fontWeight: 800, boxShadow: "0 8px 20px rgba(14,165,233,0.3)" }}>
+        ➕ Шинэ захиалга үүсгэх <span style={{ fontWeight: 400, opacity: 0.85 }} className="text-[11px]">· дугаар бүртгэлгүйгээр шууд</span>
+      </button>
       {quickOpen && (
         <MerchantQuickOrderModal allowedPageIds={allowedPageIds} fbPagesMap={fbPagesMap} profile={profile}
           onSaved={() => setRefreshKey((k) => k + 1)} onClose={() => setQuickOpen(false)} />
       )}
+      {/* Хайлт */}
+      <input value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="🔍 Захиалга, утас, нэрээр хайх..."
+        style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+        className="w-full px-3 py-2 rounded-lg text-sm" />
 
-      {/* Төлвийн шүүлт — pill chip */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, animation: "md-up .5s .1s ease both" }} role="tablist">
-        {FILTERS.map((t) => <MdChip key={t.id} on={filter === t.id} onClick={() => setFilter(t.id)} color={t.color} count={countOf(t.id)}>{t.label}</MdChip>)}
+      {/* Filter tabs */}
+      <div className="glass rounded-2xl p-2 flex gap-2 overflow-x-auto">
+        {[
+          { id: "all", label: "Бүгд", color: T.highlight },
+          { id: "new", label: "🆕 Шинэ", color: "#0ea5e9" },
+          { id: "assigned", label: "🚚 Хуваарилагдсан", color: "#f59e0b" },
+          { id: "unknown", label: "❓ Тодорхойгүй", color: "#9333ea" },
+          { id: "delivered", label: "✓ Хүргэгдсэн", color: T.ok },
+          { id: "cancelled", label: "✕ Цуцалсан", color: T.err },
+        ].map((t) => {
+          const clientCount = orders.filter((o) => {
+            if (t.id === "all") return true;
+            if (t.id === "assigned") return !!o.driver_id && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "unknown") return o.is_unknown && o.status !== "delivered" && o.status !== "cancelled";
+            if (t.id === "new") return o.status === "new" && !o.driver_id && !o.is_unknown;
+            return o.status === t.id;
+          }).length;
+          const count = svCounts && svCounts[t.id] !== undefined ? svCounts[t.id] : clientCount;
+          return (
+            <button key={t.id} onClick={() => setFilter(t.id)}
+              style={{
+                background: filter === t.id ? t.color : T.surfaceAlt,
+                color: filter === t.id ? "white" : T.ink, fontFamily: FS, fontWeight: 600,
+              }}
+              className="press-btn px-3 py-1.5 rounded-lg text-xs whitespace-nowrap flex-shrink-0">
+              {t.label} ({count})
+            </button>
+          );
+        })}
       </div>
 
       {/* Захиалгын жагсаалт — үндсэн OrderCard ашиглана */}
-      <section className="md-card" style={{ overflow: "hidden", animation: "md-up .5s .15s ease both" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: "11px 14px", borderBottom: `1px solid ${MC.divider}` }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: cur.color }} />{cur.label} захиалга</h2>
-          <span style={{ fontSize: 12, color: MC.n300 }}>{filtered.length} захиалга{orders.length >= 300 ? " · сүүлийн 300" : ""}</span>
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center" style={{ color: T.muted }}>Захиалга алга</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((o, idx) => (
+            <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
+              fbPagesMap={fbPagesMap}
+              hideMenu={true}
+              merchantPageIds={allowedPageIds}
+              onClick={() => setActiveOrder(o)} />
+          ))}
         </div>
-        {filtered.length === 0 ? (
-          <div style={{ padding: "40px 16px", textAlign: "center", color: MC.n300, fontSize: 13 }}><div style={{ fontSize: 30, marginBottom: 6 }}>🛍</div>Захиалга алга</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10 }}>
-            {filtered.map((o, idx) => (
-              <OrderCard key={o.id} order={o} items={items[o.id] || []} index={idx}
-                fbPagesMap={fbPagesMap}
-                hideMenu={true}
-                merchantPageIds={allowedPageIds}
-                onClick={() => setActiveOrder(o)} />
-            ))}
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }
