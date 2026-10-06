@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-bundle-fee";
+const BUILD_VERSION = "v2026.10.06-bundles-mkt";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2821,7 +2821,7 @@ function AdminDashboard({ profile }) {
               <SidebarTab active={view === "inventory"} onClick={() => { setView("inventory"); setSidebarOpen(false); }} icon={Package}>Бараа нөөц</SidebarTab>
               <SidebarTab active={view === "supplier-orders"} onClick={() => { setView("supplier-orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалсан бараа</SidebarTab>
               <SidebarTab active={view === "stock-prep"} onClick={() => { setView("stock-prep"); setSidebarOpen(false); }} icon={BarChart3}>Нөөц бэлдэлт</SidebarTab>
-              {!isMarketing && <SidebarTab active={view === "bundles"} onClick={() => { setView("bundles"); setSidebarOpen(false); }} icon={Package}>📦 Багцын бараа</SidebarTab>}
+              <SidebarTab active={view === "bundles"} onClick={() => { setView("bundles"); setSidebarOpen(false); }} icon={Package}>📦 Багцын бараа</SidebarTab>
               {!isMarketing && (
                 <>
                   <SidebarTab active={view === "warehouses"} onClick={() => { setView("warehouses"); setSidebarOpen(false); }} icon={Package}>Агуулах</SidebarTab>
