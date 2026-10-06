@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.06-salesrep-fast";
+const BUILD_VERSION = "v2026.10.06-mkt-pool-take";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18688,11 +18688,13 @@ function MarketingView({ profile }) {
   };
 
   const addMktProduct = async (empId, productId) => {
-    if (mktProducts.some((mp) => mp.employee_id === empId && mp.product_id === productId && mp.status === "active")) return;
+    if (mktProducts.some((mp) => mp.employee_id === empId && mp.product_id === productId && mp.status === "active")) return false;
     try {
-      const { data } = await supabase.from("mkt_products").insert({ employee_id: empId, product_id: productId, status: "active", created_by: profile.id }).select().single();
+      const { data, error } = await supabase.from("mkt_products").insert({ employee_id: empId, product_id: productId, status: "active", created_by: profile.id }).select().single();
+      if (error) throw error;
       if (data) setMktProducts((prev) => [data, ...prev]);
-    } catch (e) { alert("Алдаа: " + e.message); }
+      return true;
+    } catch (e) { alert("Алдаа: " + e.message); return false; }
   };
   const markDone = async (mp) => {
     const note = prompt("Хийсэн тэмдэглэл (заавал биш):", "") ?? "";
@@ -19048,10 +19050,20 @@ function MarketingView({ profile }) {
       setWorkPool((prev) => prev.filter((w) => w.id !== id));
     } catch (e) { alert("Алдаа: " + e.message); }
   };
+  // 📥 Авах: ажилтны ажиллаж буй бараанд нэмээд, "Ажиллах бараа" санаас ХАСНА (2026-10-06)
   const takeFromPool = async (productId) => {
     if (poolBusy) return;
     setPoolBusy(productId);
-    try { await addMktProduct(profile.id, productId); } finally { setPoolBusy(null); }
+    try {
+      const ok = await addMktProduct(profile.id, productId);
+      if (ok) {
+        const row = workPool.find((w) => w.product_id === productId);
+        if (row) {
+          await supabase.from("mkt_work_pool").delete().eq("id", row.id);
+          setWorkPool((prev) => prev.filter((w) => w.id !== row.id));
+        }
+      }
+    } finally { setPoolBusy(null); }
   };
   const isPoolMember = employees.some((e) => e.id === profile.id);
   const poolSearchLc = poolSearch.trim().toLowerCase();
