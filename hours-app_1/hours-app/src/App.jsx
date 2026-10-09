@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.07-min19000";
+const BUILD_VERSION = "v2026.10.09-settle-stamp-rpc";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -1954,6 +1954,28 @@ function ServerWarningView({ profile }) {
       </div>
     </div>
   );
+}
+
+// 🧾 Тооцоо хаахад захиалгуудыг тамгалах — СЕРВЕР дээр нэг UPDATE (атомик).
+//    prepaid_amount = max(prepaid, хаахаас өмнөх paid), paid_amount = total. RPC байхгүй бол хуучин цуврал (fallback).
+async function stampSettlementOrders(settlementId, fallbackRows) {
+  try {
+    const { data, error } = await supabase.rpc("settlement_stamp_orders", { p_settlement_id: settlementId });
+    if (error) throw error;
+    return Number(data || 0);
+  } catch (e) {
+    console.warn("[settlement_stamp_orders rpc → fallback]", e?.message);
+    let n = 0;
+    for (const o of fallbackRows || []) {
+      const { error } = await supabase.from("biz_orders").update({
+        prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
+        paid_amount: Number(o.total_amount || 0),
+      }).eq("id", o.id);
+      if (error) throw new Error("Тамгалалт тасарлаа (" + (n) + "/" + (fallbackRows || []).length + "): " + error.message);
+      n += 1;
+    }
+    return n;
+  }
 }
 
 function AdminDashboard({ profile }) {
@@ -22800,14 +22822,8 @@ function DriverSettlementView({ profile }) {
                 if ((freshDel || []).length !== driver.deliveredOrders.length) {
                   console.warn("[тооцоо-хаах] Дэлгэц vs сервер зөрөв:", driver.deliveredOrders.length, "→", (freshDel || []).length, "— серверийн жагсаалтаар тамгалав");
                 }
-                for (const o of freshDel || []) {
-                  await supabase.from("biz_orders").update({
-                    // 💰 Хаахаас ӨМНӨ төлөгдсөн (шилжүүлэг г.м) дүнг тайланд харуулахын тулд
-                    //    prepaid-д хадгална. max() — үүсгэлтийн урьдчилгааг дарахгүй.
-                    prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
-                    paid_amount: Number(o.total_amount || 0),
-                  }).eq("id", o.id);
-                }
+                // 💰 Хаахаас ӨМНӨ төлөгдсөн (урьдчилгаа) дүнг prepaid-д, paid=total — нэг атомик RPC (2026-10-09)
+                await stampSettlementOrders(driver.openSettle.id, freshDel || []);
               } else {
                 // Шууд хаах (open алхамгүйгээр) — хуучин flow
                 const { data: stData, error: stErr } = await supabase.from("biz_settlements").insert({
@@ -22857,12 +22873,7 @@ function DriverSettlementView({ profile }) {
                 if (clDel.length !== Number(driver.delivered || 0)) {
                   console.warn("[шууд-хаах] Дэлгэц vs бодит зөрөв:", driver.delivered, "→", clDel.length, "— тамгыг бодитоор бичив");
                 }
-                for (const o of clDel) {
-                  await supabase.from("biz_orders").update({
-                    prepaid_amount: Math.max(Number(o.prepaid_amount || 0), Math.max(0, Number(o.paid_amount || 0))),
-                    paid_amount: Number(o.total_amount || 0),
-                  }).eq("id", o.id);
-                }
+                await stampSettlementOrders(stData.id, clDel);
               }
 
               // 💬 Тооцоо хаагдахад тухайн жолоочийн мэдэгдсэн БҮХ асуудлыг цэвэрлэнэ
