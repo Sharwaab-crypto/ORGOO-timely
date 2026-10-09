@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.09-req-items-sort";
+const BUILD_VERSION = "v2026.10.09-ddr-driver-combo";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -6031,6 +6031,50 @@ const DDR_NUM = [["total", "Нийт", "#12302c"], ["delivered", "Хүргэсэ
 // Давхар / ЦБА / Ахлах — эдгээрт бичсэн тоо "Нийт"-ээс ХАСАГДАНА (цэвэр нийт = total − давхар − ЦБА − ахлах)
 const DDR_URGOO = [["urgoo_daahar", "Давхар"], ["urgoo_cba", "ЦБА"], ["urgoo_ahlah", "Ахлах"]];
 const ddrNet = (r) => Math.max(0, Number(r.total || 0) - Number(r.urgoo_daahar || 0) - Number(r.urgoo_cba || 0) - Number(r.urgoo_ahlah || 0));
+// 🔍 Жолооч сонгох combobox — дарахад бүх нэр доош жагсаана, бичихэд шүүгдэнэ (portal — хүснэгтийн overflow-д тасрахгүй)
+function DriverCombo({ value, linked, drivers, onPick, onText, style }) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  const clean = (n) => String(n || "").replace(/\s\d{8}$/, "");
+  const q = String(value || "").trim().toLowerCase();
+  const list = drivers.filter((d) => !q || clean(d.name).toLowerCase().includes(q) || d.name.toLowerCase().includes(q));
+  const show = () => { if (ref.current) { const r = ref.current.getBoundingClientRect(); setRect({ left: r.left, top: r.bottom + 2, width: Math.max(220, r.width) }); } setOpen(true); setHi(0); };
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (ref.current && ref.current.contains(e.target)) return; if (e.target.closest && e.target.closest("[data-driver-combo]")) return; setOpen(false); };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("mousedown", close); window.addEventListener("scroll", onScroll, true); window.addEventListener("resize", onScroll);
+    return () => { document.removeEventListener("mousedown", close); window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onScroll); };
+  }, [open]);
+  const pick = (d) => { onPick(d); setOpen(false); };
+  return (
+    <>
+      <input ref={ref} value={value || ""} placeholder="Жолооч хайх..." title={linked ? "Системийн жолоочтой холбогдсон" : "Системийн жолоочтой холбогдоогүй"}
+        onFocus={show} onClick={show}
+        onChange={(e) => { onText(e.target.value); if (!open) show(); else setHi(0); }}
+        onKeyDown={(e) => {
+          if (!open) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(list.length - 1, h + 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(0, h - 1)); }
+          else if (e.key === "Enter") { e.preventDefault(); if (list[hi]) pick(list[hi]); }
+          else if (e.key === "Escape") setOpen(false);
+        }}
+        style={style} />
+      {open && rect && createPortal(
+        <div data-driver-combo="1" style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width, maxHeight: 240, overflowY: "auto", zIndex: 9999, background: MC.surface, border: `1px solid ${MC.divider}`, borderRadius: 8, boxShadow: MC.hoverShadow, fontFamily: FS }}>
+          {list.length === 0 ? <div style={{ padding: "8px 10px", fontSize: 12, color: MC.n400 }}>Олдсонгүй — бичсэн нэр чөлөөтэй хадгалагдана</div>
+          : list.map((d, i) => (
+            <div key={d.id} onMouseDown={(e) => { e.preventDefault(); pick(d); }} onMouseEnter={() => setHi(i)}
+              style={{ padding: "7px 10px", fontSize: 13, cursor: "pointer", background: i === hi ? MC.a900 : "transparent", color: i === hi ? MC.a200 : MC.text, display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span>{clean(d.name)}</span><span style={{ fontSize: 11, color: MC.n400 }}>{(d.name.match(/\d{8}$/) || [""])[0]}</span>
+            </div>
+          ))}
+        </div>, document.body)}
+    </>
+  );
+}
 function DeliveryManualReportView({ profile }) {
   const ubDay = (d = new Date()) => new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
   const shift = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -6161,7 +6205,6 @@ function DeliveryManualReportView({ profile }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: FS, color: MC.text }}>
-      <datalist id="ddr-driver-list">{drivers.map((d) => <option key={d.id} value={d.name.replace(/\s\d{8}$/, "")}>{d.name}</option>)}</datalist>
       <style>{MD_CSS}</style>
       {/* Хугацаа + үйлдэл */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} role="tablist">
@@ -6232,14 +6275,9 @@ function DeliveryManualReportView({ profile }) {
                             <td style={{ padding: "0 6px" }}>
                               {single ? (
                                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                  {/* 🔍 Жолоочийн нэр — бичихэд системийн жолоочдоос хайж санал болгоно; таарвал driver_id автоматаар холбогдоно */}
-                                  <input list="ddr-driver-list" value={r.driver_name || ""} placeholder="Жолооч хайх..." title={r.driver_id ? "Системийн жолоочтой холбогдсон" : "Системийн жолоочтой холбогдоогүй"}
-                                    onChange={(e) => {
-                                      const v = e.target.value; const vv = v.trim().toLowerCase();
-                                      const d = drivers.find((x) => x.name.toLowerCase() === vv || x.name.replace(/\s\d{8}$/, "").toLowerCase() === vv);
-                                      setField(r.id, "driver_name", d ? d.name.replace(/\s\d{8}$/, "") : v);
-                                      setField(r.id, "driver_id", d ? d.id : null);
-                                    }}
+                                  <DriverCombo value={r.driver_name || ""} linked={!!r.driver_id} drivers={drivers}
+                                    onPick={(d) => { setField(r.id, "driver_name", d.name.replace(/\s\d{8}$/, "")); setField(r.id, "driver_id", d.id); }}
+                                    onText={(v) => { const vv = v.trim().toLowerCase(); const d = drivers.find((x) => x.name.toLowerCase() === vv || x.name.replace(/\s\d{8}$/, "").toLowerCase() === vv); setField(r.id, "driver_name", v); setField(r.id, "driver_id", d ? d.id : null); }}
                                     style={{ ...cellTx, borderBottom: `1px solid ${r.driver_id ? MC.accent : MC.divider}`, color: r.driver_id ? MC.a200 : MC.text }} />
                                   {r.driver_id && <CheckCircle2 size={13} style={{ color: MC.accent, flex: "none" }} />}
                                 </div>
