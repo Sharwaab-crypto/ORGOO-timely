@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.09-ddr-driver-combo";
+const BUILD_VERSION = "v2026.10.09-orders-scroll-back";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -29103,6 +29103,16 @@ function OrdersView({ profile }) {
   const [driverFilter, setDriverFilter] = useState("all"); // all | unassigned | <driverId>
   const [search, setSearch] = useState("");
   const [activeOrder, setActiveOrder] = useState(null);
+  // 📍 Дэлгэрэнгүй нээхэд жагсаалтын scroll байрлалыг санаж, буцахад яг тэр газарт нь аваачна
+  const listScrollRef = useRef(0);
+  const openDetail = (o) => { listScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0; setActiveOrder(o); requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" })); };
+  const closeDetail = () => {
+    setActiveOrder(null);
+    const y = listScrollRef.current;
+    requestAnimationFrame(() => requestAnimationFrame(() => { window.scrollTo({ top: y, behavior: "auto" }); }));
+    setTimeout(() => window.scrollTo({ top: y, behavior: "auto" }), 120); // зураг/карт ачаалж өндөр өөрчлөгдвөл дахин
+  };
+
   const [editOrder, setEditOrder] = useState(null);
   const [mapOrder, setMapOrder] = useState(null);
   const [assignDriverOrder, setAssignDriverOrder] = useState(null);
@@ -29434,7 +29444,7 @@ function OrdersView({ profile }) {
         <OrderDetail
           order={activeOrder}
           items={items[activeOrder.id] || []}
-          onClose={() => setActiveOrder(null)}
+          onClose={closeDetail}
           onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
           onAssignDriver={() => setAssignDriverOrder(activeOrder)}
         />
@@ -29812,7 +29822,7 @@ function OrdersView({ profile }) {
           orders={mapOrders} 
           drivers={drivers}
           items={items}
-          onOrderClick={(o) => setActiveOrder(o)}
+          onOrderClick={(o) => openDetail(o)}
         />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-2xl p-8 text-center">
@@ -29836,7 +29846,7 @@ function OrdersView({ profile }) {
               drivers={drivers}
               fbPagesMap={fbPagesMap}
               merchantPageIds={merchantPageIds}
-              onClick={() => setActiveOrder(o)}
+              onClick={() => openDetail(o)}
               onMap={() => setMapOrder(o)}
               onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
