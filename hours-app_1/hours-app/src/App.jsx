@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.09-ddr-driver-search";
+const BUILD_VERSION = "v2026.10.09-req-items-sort";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -12130,6 +12130,12 @@ function MovementsView({ profile }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TRANSFER REQUESTS VIEW — Хүргэгчдийн бараа авах/буцаах хүсэлт
 // ═══════════════════════════════════════════════════════════════════════════
+// 🔤 Бараа хүсэлтийн мөрүүдийг нэрийн цагаан толгойн дарааллаар — жолооч, ахлах/админ хоёулаа ижил дараалал харна
+const sortReqItemsByName = (list, products = []) => [...(list || [])].sort((a, b) => {
+  const na = String(a.product_name || products.find((p) => p.id === a.product_id)?.name || "");
+  const nb = String(b.product_name || products.find((p) => p.id === b.product_id)?.name || "");
+  return na.localeCompare(nb, "mn", { sensitivity: "base" });
+});
 function TransferRequestsView({ profile }) {
   const [requests, setRequests] = useState([]);
   const [items, setItems] = useState({});
@@ -12410,7 +12416,7 @@ function TransferRequestsView({ profile }) {
             Бараа ({reqItems.length})
           </div>
           <div className="space-y-1.5">
-            {reqItems.map((it) => {
+            {sortReqItemsByName(reqItems, products).map((it) => {
               const prod = products.find((p) => p.id === it.product_id);
               const fromStock = stock.find((s) =>
                 s.warehouse_id === activeReq.from_warehouse_id &&
@@ -40912,7 +40918,7 @@ function DriverRequestsView({ profile }) {
                 {/* Бараанууд — тусдаа scroll-той (button-аас гадуур) */}
                 <div className="flex gap-1.5 overflow-x-auto px-3 pb-1"
                   style={{ scrollbarWidth: "thin", WebkitOverflowScrolling: "touch" }}>
-                  {reqItems.map((it) => {
+                  {sortReqItemsByName(reqItems, products).map((it) => {
                     const product = products.find((p) => p.id === it.product_id);
                     const imgUrl = product?.image_url;
                     return (
@@ -41097,7 +41103,7 @@ function DriverRequestsView({ profile }) {
                   📦 Бараанууд ({(items[activeRequest.id] || []).length})
                 </div>
                 <div className="space-y-1.5">
-                  {(items[activeRequest.id] || []).map((it) => {
+                  {sortReqItemsByName(items[activeRequest.id] || [], products).map((it) => {
                     const product = products.find((p) => p.id === it.product_id);
                     const imgUrl = product?.image_url;
                     const price = product?.sale_price || 0;
