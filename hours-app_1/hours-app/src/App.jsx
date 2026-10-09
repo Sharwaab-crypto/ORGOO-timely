@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.09-settle-stamp-rpc";
+const BUILD_VERSION = "v2026.10.09-ddr-driver-search";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -6084,7 +6084,7 @@ function DeliveryManualReportView({ profile }) {
   };
   const pullFromSystem = async () => {
     const withDrv = rows.filter((r) => r.driver_id);
-    if (withDrv.length === 0) { alert("Мөрүүдэд жолооч сонгоно уу (🚚) — дараа нь системээс татна."); return; }
+    if (withDrv.length === 0) { alert("Мөрүүдэд жолоочийн нэрийг хайж сонгоно уу (✓ тэмдэгтэй болсон байх) — дараа нь системээс татна."); return; }
     if (!confirm("Жолооч сонгосон мөрүүдийн Нийт / Хүргэсэн / Цуцлалт / Маргааш тоог системийн захиалгаар ДАРЖ бичих үү?")) return;
     setSaving(true);
     try {
@@ -6161,6 +6161,7 @@ function DeliveryManualReportView({ profile }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: FS, color: MC.text }}>
+      <datalist id="ddr-driver-list">{drivers.map((d) => <option key={d.id} value={d.name.replace(/\s\d{8}$/, "")}>{d.name}</option>)}</datalist>
       <style>{MD_CSS}</style>
       {/* Хугацаа + үйлдэл */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} role="tablist">
@@ -6231,11 +6232,16 @@ function DeliveryManualReportView({ profile }) {
                             <td style={{ padding: "0 6px" }}>
                               {single ? (
                                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                  <input value={r.driver_name || ""} onChange={(e) => setField(r.id, "driver_name", e.target.value)} placeholder="Жолоочийн нэр" style={cellTx} />
-                                  <select value={r.driver_id || ""} title="Системийн жолоочтой холбох" onChange={(e) => { const id = e.target.value || null; setField(r.id, "driver_id", id); const d = drivers.find((x) => x.id === id); if (d && !r.driver_name) setField(r.id, "driver_name", d.name.replace(/\s\d{8}$/, "")); }}
-                                    style={{ background: r.driver_id ? MC.a900 : MC.surface, color: r.driver_id ? MC.a200 : MC.n400, border: `1px solid ${r.driver_id ? MC.a800 : MC.divider}`, borderRadius: 6, fontSize: 11, width: 30, padding: "3px 0", flex: "none" }}>
-                                    <option value="">🚚</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                  </select>
+                                  {/* 🔍 Жолоочийн нэр — бичихэд системийн жолоочдоос хайж санал болгоно; таарвал driver_id автоматаар холбогдоно */}
+                                  <input list="ddr-driver-list" value={r.driver_name || ""} placeholder="Жолооч хайх..." title={r.driver_id ? "Системийн жолоочтой холбогдсон" : "Системийн жолоочтой холбогдоогүй"}
+                                    onChange={(e) => {
+                                      const v = e.target.value; const vv = v.trim().toLowerCase();
+                                      const d = drivers.find((x) => x.name.toLowerCase() === vv || x.name.replace(/\s\d{8}$/, "").toLowerCase() === vv);
+                                      setField(r.id, "driver_name", d ? d.name.replace(/\s\d{8}$/, "") : v);
+                                      setField(r.id, "driver_id", d ? d.id : null);
+                                    }}
+                                    style={{ ...cellTx, borderBottom: `1px solid ${r.driver_id ? MC.accent : MC.divider}`, color: r.driver_id ? MC.a200 : MC.text }} />
+                                  {r.driver_id && <CheckCircle2 size={13} style={{ color: MC.accent, flex: "none" }} />}
                                 </div>
                               ) : <span style={{ fontSize: 13, fontWeight: 500 }}>{r.driver_name || "—"}</span>}
                             </td>
@@ -6281,7 +6287,7 @@ function DeliveryManualReportView({ profile }) {
               </section>
             );
           })}
-          <p style={{ margin: 0, fontSize: 11, color: MC.n300, display: "flex", gap: 6 }}><Info size={14} style={{ flex: "none", marginTop: 1 }} /><span>{single ? "Нүд бүр бичмэгц автоматаар хадгалагдана. 🚚 сонголтоор жолоочийг системтэй холбовол «Системээс татах» тухайн өдрийн Хүргэсэн / Цуцлалт / Маргааш тоог бөглөнө. Давхар / ЦБА / Ахлах баганад бичсэн тоо Нийт-ээс хасагдаж цэвэр нийт гарна." : "Олон өдрийн нэгтгэл — тоонууд өдрүүдийн нийлбэр, засварлахгүй. Засахын тулд нэг өдөр сонгоно уу."}</span></p>
+          <p style={{ margin: 0, fontSize: 11, color: MC.n300, display: "flex", gap: 6 }}><Info size={14} style={{ flex: "none", marginTop: 1 }} /><span>{single ? "Нүд бүр бичмэгц автоматаар хадгалагдана. Жолоочийн нэрийг жагсаалтаас хайж сонговол (✓ тэмдэг) системтэй холбогдож «Системээс татах» тухайн өдрийн Хүргэсэн / Цуцлалт / Маргааш тоог бөглөнө. Давхар / ЦБА / Ахлах баганад бичсэн тоо Нийт-ээс хасагдаж цэвэр нийт гарна." : "Олон өдрийн нэгтгэл — тоонууд өдрүүдийн нийлбэр, засварлахгүй. Засахын тулд нэг өдөр сонгоно уу."}</span></p>
         </>
       )}
     </div>
