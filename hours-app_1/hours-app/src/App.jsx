@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.09-orders-scroll-back";
+const BUILD_VERSION = "v2026.10.12-orders-rural-tab";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -29119,7 +29119,7 @@ function OrdersView({ profile }) {
   const [viewMode, setViewMode] = useState("list"); // list | map
   const [page, setPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false); // 📦 Архивлагдсан үзэх горим
-  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, assigned: 0, unknown: 0, delivered: 0, cancelled: 0 }); // ⚡ tab badge тоонууд (тусдаа count query)
+  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, assigned: 0, unknown: 0, delivered: 0, cancelled: 0, rural: 0 }); // ⚡ tab badge тоонууд (тусдаа count query)
   const [totalCount, setTotalCount] = useState(0); // 📄 server-side pagination — нийт таарах мөр
   const [mapOrders, setMapOrders] = useState([]); // 🗺 газрын зураг — хуудаслалтгүй бүх таарах захиалга
   const [cancelTarget, setCancelTarget] = useState(null); // 🚫 цуцлах шалтгаан modal-д харуулах захиалга
@@ -29179,6 +29179,7 @@ function OrdersView({ profile }) {
         if (filter === "assigned") return qb.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
         if (filter === "new") return qb.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
         if (filter === "unknown") return qb.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+        if (filter === "rural") return qb.in("status", ["new", "assigned", "pending"]).is("driver_id", null).not("delivery_city", "is", null).neq("delivery_city", "").not("delivery_city", "ilike", "Улаанбаатар%"); // 🏞 Орон нутаг — УБ-аас өөр хот/аймаг, хуваарилагдаагүй
         return qb; // all — статус шүүлтгүй (бүх захиалга, бүх статус)
       };
       const applyDriver = (qb) => {
@@ -29226,11 +29227,12 @@ function OrdersView({ profile }) {
           else if (f === "assigned") q = q.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
           else if (f === "new") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
           else if (f === "unknown") q = q.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+          else if (f === "rural") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).not("delivery_city", "is", null).neq("delivery_city", "").not("delivery_city", "ilike", "Улаанбаатар%");
           return q.then((r) => r.count || 0);
         };
-        Promise.all([cnt("all"), cnt("new"), cnt("assigned"), cnt("unknown"), cnt("delivered"), cnt("cancelled")])
-          .then(([all, newC, assigned, unknown, delivered, cancelled]) => {
-            if (seq === loadSeq.current) setTabCounts({ all, new: newC, assigned, unknown, delivered, cancelled });
+        Promise.all([cnt("all"), cnt("new"), cnt("assigned"), cnt("unknown"), cnt("delivered"), cnt("cancelled"), cnt("rural")])
+          .then(([all, newC, assigned, unknown, delivered, cancelled, rural]) => {
+            if (seq === loadSeq.current) setTabCounts({ all, new: newC, assigned, unknown, delivered, cancelled, rural });
           })
           .catch((e) => console.error("[tab counts]", e));
       }
@@ -29298,6 +29300,7 @@ function OrdersView({ profile }) {
           else if (filter === "assigned") q = q.not("driver_id", "is", null).not("status", "in", "(delivered,cancelled)");
           else if (filter === "new") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).or("is_unknown.is.null,is_unknown.eq.false");
           else if (filter === "unknown") q = q.not("status", "in", "(delivered,cancelled)").or("is_unknown.eq.true,and(driver_id.is.null,delivery_lat.is.null)");
+          else if (filter === "rural") q = q.in("status", ["new", "assigned", "pending"]).is("driver_id", null).not("delivery_city", "is", null).neq("delivery_city", "").not("delivery_city", "ilike", "Улаанбаатар%");
         }
         if (driverFilter === "unassigned") q = q.is("driver_id", null);
         else if (driverFilter !== "all") q = q.eq("driver_id", driverFilter);
@@ -29547,7 +29550,7 @@ function OrdersView({ profile }) {
                               // ⚡ Бүтэн reload-гүйгээр зөвхөн тухайн захиалгыг шинэчилнэ —
                               //    жагсаалт эхнээс ачаалагдахгүй, үргэлжлүүлэн хуваарилах боломжтой.
                               lastLoadTime.current = Date.now(); // өөрийн өөрчлөлтийг badge-д тоолуулахгүй
-                              const leavesTab = filter === "new" || filter === "unknown";
+                              const leavesTab = filter === "new" || filter === "unknown" || filter === "rural";
                               setOrders((prev) => leavesTab
                                 ? prev.filter((o) => o.id !== oid)
                                 : prev.map((o) => (o.id === oid ? { ...o, driver_id: d.id, status: "pending", is_unknown: false } : o)));
@@ -29721,6 +29724,15 @@ function OrdersView({ profile }) {
               fontFamily: FS, fontWeight: 600,
             }}>
             ❓ Тодорхойгүй ({counts.unknown})
+          </button>
+          <button onClick={() => setFilter("rural")} title="Улаанбаатараас өөр хот/аймаг сонгосон, хуваарилагдаагүй захиалгууд"
+            className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
+            style={{
+              background: filter === "rural" ? "#0b8075" : T.surfaceAlt,
+              color: filter === "rural" ? "white" : T.ink,
+              fontFamily: FS, fontWeight: 600,
+            }}>
+            🏞 Орон нутаг ({counts.rural || 0})
           </button>
           <button onClick={() => setFilter("delivered")}
             className="press-btn px-3 py-1.5 rounded-full text-xs flex items-center gap-1"
@@ -30134,7 +30146,7 @@ function OrdersView({ profile }) {
                             // ⚡ Бүтэн reload-гүйгээр зөвхөн тухайн захиалгыг шинэчилнэ —
                             //    жагсаалт эхнээс ачаалагдахгүй, үргэлжлүүлэн хуваарилна.
                             lastLoadTime.current = Date.now();
-                            const leavesTab = filter === "new" || filter === "unknown";
+                            const leavesTab = filter === "new" || filter === "unknown" || filter === "rural";
                             setOrders((prev) => leavesTab
                               ? prev.filter((o) => o.id !== oid)
                               : prev.map((o) => (o.id === oid ? { ...o, driver_id: d.id, status: "pending", is_unknown: false } : o)));
