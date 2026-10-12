@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.12-orders-rural-tab";
+const BUILD_VERSION = "v2026.10.12-orders-rural-tab2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -42964,6 +42964,8 @@ function DriverDashboard({ profile }) {
     }
   };
 
+  // 🏞 Орон нутаг: delivery_city байгаа бөгөөд Улаанбаатар биш, жолоочгүй, идэвхтэй
+  const isRuralOrder = (o) => !o.driver_id && (o.status === "new" || o.status === "pending" || o.status === "assigned") && !!o.delivery_city && !/^улаанбаатар/i.test(String(o.delivery_city).trim());
   // Filter
   const filtered = orders.filter((o) => {
     if (filter === "available") return o.status === "new" && !o.driver_id && !o.is_unknown;
@@ -42972,6 +42974,8 @@ function DriverDashboard({ profile }) {
     if (filter === "myzone") {
       return o.status === "new" && !o.driver_id && !o.is_unknown && isInMyZone(o);
     }
+    // 🏞 Орон нутаг — УБ-аас өөр хот/аймаг сонгосон, хуваарилагдаагүй (бүх driver хардаг)
+    if (filter === "rural") return isRuralOrder(o);
     // ❓ Тодорхойгүй — БҮХ DRIVER хардаг
     //   1. Шинэ дотор GPS байхгүй захиалга (хуваарилагдаагүй)
     //   2. Аль ч driver "is_unknown=true" болгосон захиалгууд
@@ -43015,6 +43019,7 @@ function DriverDashboard({ profile }) {
       const markedUnknown = o.is_unknown === true && o.status !== "delivered" && o.status !== "cancelled";
       return noGpsNew || markedUnknown;
     }).length,
+    rural: orders.filter(isRuralOrder).length,
     active: orders.filter((o) => o.driver_id === profile.id && !o.is_unknown && (o.status === "new" || o.status === "pending" || o.status === "assigned")).length,
     delivered: orders.filter((o) => o.driver_id === profile.id && o.status === "delivered" && !o.settlement_id).length,
     cancelled: orders.filter((o) => o.driver_id === profile.id && o.status === "cancelled" && !o.settlement_id).length,
@@ -43317,6 +43322,20 @@ function DriverDashboard({ profile }) {
                 minWidth: "100px",
               }}>
               ❓ Тодорхойгүй ({counts.unknown})
+            </button>
+          )}
+
+          {/* 🏞 Орон нутаг */}
+          {counts.rural > 0 && (
+            <button onClick={() => { setShowMyIssues(false); setFilter("rural"); }}
+              className="press-btn px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1 relative"
+              style={{
+                background: filter === "rural" ? "#0b8075" : T.surfaceAlt,
+                color: filter === "rural" ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+                minWidth: "100px",
+              }}>
+              🏞 Орон нутаг ({counts.rural})
             </button>
           )}
 
