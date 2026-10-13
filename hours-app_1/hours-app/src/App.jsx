@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.12-orders-rural-tab2";
+const BUILD_VERSION = "v2026.10.13-mkt-stock-sync";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18729,7 +18729,7 @@ function MarketingView({ profile }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [profs, cats, prods, ec, mem, mp, rc, tg, ds] = await Promise.all([
+      const [profs, cats, prods, ec, mem, mp, rc, tg, ds, stockRows] = await Promise.all([
         supabase.from("profiles").select("id, name, role, job_title, is_active").order("name"),
         supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
         supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
@@ -18739,10 +18739,17 @@ function MarketingView({ profile }) {
         supabase.from("mkt_reach").select("*").order("reach_date", { ascending: false }).limit(1000),
         supabase.from("mkt_reach_targets").select("*"),
         supabase.from("mkt_daily_stats").select("*").order("stat_date", { ascending: false }).limit(400),
+        // 📦 Бодит үлдэгдэл — Бараа нөөцтэй ижил эх сурвалж (inv_stock, бүх агуулахын нийлбэр); inv_products.stock хуучирдаг
+        fetchAllRows(supabase.from("inv_stock").select("product_id, quantity")).catch(() => null),
       ]);
       setAllProfiles(profs.data || []);
       setCategories(cats.data || []);
-      setProducts(prods.data || []);
+      {
+        const sm = {};
+        if (Array.isArray(stockRows)) stockRows.forEach((s) => { sm[s.product_id] = (sm[s.product_id] || 0) + Number(s.quantity || 0); });
+        const hasStock = Array.isArray(stockRows) && stockRows.length > 0;
+        setProducts((prods.data || []).map((p) => ({ ...p, stock: hasStock ? (sm[p.id] || 0) : Number(p.stock || 0) })));
+      }
       setEmpCats(ec.data || []);
       setMembers(mem.data || []);
       setMktProducts(mp.data || []);
