@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.13-mkt-stock-sync";
+const BUILD_VERSION = "v2026.10.14-cancel-report-search";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -6338,6 +6338,7 @@ function CancelReportView({ profile }) {
   const [customStart, setCustomStart] = useState(_crToday.slice(0, 8) + "01");
   const [customEnd, setCustomEnd] = useState(_crToday);
   const [driverFilter, setDriverFilter] = useState("all"); // all | none | <driverId>
+  const [crSearch, setCrSearch] = useState(""); // 🔍 дугаар / нэр / захиалгын дугаараар хайх
   const [reasonFilter, setReasonFilter] = useState("all"); // all | __none__ | <label>
   const [orders, setOrders] = useState([]);
   const [profMap, setProfMap] = useState({});
@@ -6373,15 +6374,17 @@ function CancelReportView({ profile }) {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); setPage(1); }, [period, customStart, customEnd]);
-  useEffect(() => { setPage(1); }, [driverFilter]);
+  useEffect(() => { setPage(1); }, [driverFilter, crSearch]);
   useEffect(() => { setPage(1); }, [reasonFilter]);
 
   // Жолоочийн сонголтууд (датанд байгаа)
   const driverIds = [...new Set(orders.filter((o) => o.driver_id).map((o) => o.driver_id))];
 
-  const filtered = driverFilter === "all"
+  const crQ = crSearch.trim().toLowerCase();
+  const filtered = (driverFilter === "all"
     ? orders
-    : (driverFilter === "none" ? orders.filter((o) => !o.driver_id) : orders.filter((o) => o.driver_id === driverFilter));
+    : (driverFilter === "none" ? orders.filter((o) => !o.driver_id) : orders.filter((o) => o.driver_id === driverFilter)))
+    .filter((o) => !crQ || String(o.customer_phone || "").includes(crQ) || String(o.order_number || "").toLowerCase().includes(crQ) || String(o.customer_name || "").toLowerCase().includes(crQ));
 
   // Шалтгааны задаргаа
   const reasonCounts = {};
@@ -6436,9 +6439,12 @@ function CancelReportView({ profile }) {
               className="px-2 py-1.5 rounded-lg text-xs" />
           </>
         )}
+        <input value={crSearch} onChange={(e) => setCrSearch(e.target.value)} placeholder="🔍 Дугаар, нэр, захиалгын №"
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS, minWidth: 190 }}
+          className="px-3 py-1.5 rounded-full text-xs outline-none ml-auto" />
         <select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)}
           style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
-          className="px-3 py-1.5 rounded-full text-xs ml-auto">
+          className="px-3 py-1.5 rounded-full text-xs">
           <option value="all">Бүх жолооч</option>
           <option value="none">Жолоочгүй</option>
           {driverIds.map((id) => <option key={id} value={id}>{profMap[id] || id.slice(0, 8)}</option>)}
