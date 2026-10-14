@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.14-cancel-report-search";
+const BUILD_VERSION = "v2026.10.14-cc-partial-cycle";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15187,6 +15187,28 @@ function CallCenterView({ profile }) {
         }
         }
       } catch (e) { console.error("[old pendings]", e); }
+
+      // 🕳 ХАГАС МӨЧЛӨГ ЗАСВАР (2026-10-14): 3000-мөрийн цонхны хил нэг дугаарын мөчлөгийн ДУНДУУР таслахад
+      //    (бүртгэл + цуцлалт хилийн гадна, дараах залгалт дотор) мөчлөг pending/цуцлалтгүй харагдаж
+      //    "залгах дугаар" гэж буруу дүгнэгддэг байсан → цуцалсан дугаар жагсаалтад эргэж ордог.
+      //    Ийм (бүртгэлгүй, хаагдаагүй) дугааруудын 60 хоногийн бүрэн түүхийг нэмж татна (цөөн тул хөнгөн).
+      try {
+        const byPh = {};
+        callData.forEach((c) => { (byPh[c.phone] = byPh[c.phone] || []).push(c); });
+        const partial = Object.keys(byPh).filter((ph) => {
+          const rows = byPh[ph];
+          const hasPending = rows.some((c) => c.call_status === "pending" || !c.call_status);
+          const closed = rows.some((c) => c.call_status === "ordered" || c.call_status === "cancelled");
+          return !hasPending && !closed;
+        });
+        if (partial.length > 0) {
+          const extra = await ccFetchHistory(partial, calls60Days, callCols);
+          const have = new Set(callData.map((c) => c.id));
+          let added = 0;
+          (extra || []).forEach((r) => { if (!have.has(r.id)) { callData.push(r); have.add(r.id); added++; } });
+          if (added > 0) console.info("[залгах-дугаар] хагас мөчлөгтэй", partial.length, "дугаарын", added, "мөр нэмж татав");
+        }
+      } catch (e) { console.error("[partial cycle]", e); }
       const ordData = ordRes.data;
 
       // 🛍 ЗАСВАР: зөвхөн PENDING дуудлагуудын барааг ТУСДАА татах (limit-гүй бүх түүх биш!)
