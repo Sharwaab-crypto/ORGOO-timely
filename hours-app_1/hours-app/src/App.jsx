@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-zone-modal-mobile";
+const BUILD_VERSION = "v2026.10.15-unknown-to-new";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -28689,7 +28689,7 @@ function LocBadge({ order, size = "sm" }) {
   );
 }
 
-function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
+function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, onToNew, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
     pending: { label: "Хүлээгдэж", color: T.warn, bg: T.warnSoft },
@@ -28979,6 +28979,13 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                     className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: "#0ea5e9", fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
                     🚚 Delivery хуваарилах
+                  </button>
+                )}
+                {onToNew && order.is_unknown && order.status !== "delivered" && order.status !== "cancelled" && (
+                  <button onClick={() => { setShowMenu(false); onToNew(); }}
+                    className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
+                    style={{ color: "#3b82f6", fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
+                    🆕 Шинэ рүү буцаах
                   </button>
                 )}
                 {onCancel && order.status !== "cancelled" && order.status !== "delivered" && (
@@ -29384,6 +29391,23 @@ function OrdersView({ profile }) {
   // 📍 Дэлгэрэнгүй нээхэд жагсаалтын scroll байрлалыг санаж, буцахад яг тэр газарт нь аваачна
   const listScrollRef = useRef(0);
   const openDetail = (o) => { listScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0; setActiveOrder(o); requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" })); };
+  // 🆕 Тодорхойгүй → Шинэ рүү буцаах (is_unknown=false, жолоочгүй, status=new)
+  const unknownToNew = async (o) => {
+    if (!confirm(`#${o.order_number} захиалгыг "Тодорхойгүй"-ээс "Шинэ" рүү буцаах уу?`)) return;
+    try {
+      const { error } = await supabase.from("biz_orders").update({ is_unknown: false, status: "new", driver_id: null }).eq("id", o.id);
+      if (error) throw error;
+      try {
+        await supabase.from("biz_order_history").insert({
+          order_id: o.id, action: "edited", field_name: "is_unknown", old_value: "Тийм", new_value: "Үгүй",
+          notes: "Тодорхойгүй → Шинэ рүү буцаасан", changed_by: profile.id, changed_at: new Date().toISOString(),
+        });
+      } catch (he) { console.error("[unknown→new history]", he); }
+      setOrders((prev) => (filter === "unknown" ? prev.filter((x) => x.id !== o.id) : prev.map((x) => (x.id === o.id ? { ...x, is_unknown: false, status: "new", driver_id: null } : x))));
+      setTabCounts((c) => ({ ...c, unknown: Math.max(0, (c.unknown || 0) - 1), new: (c.new || 0) + 1 }));
+      alert("✓ Захиалга «Шинэ» хэсэгт орлоо");
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
   const closeDetail = () => {
     setActiveOrder(null);
     const y = listScrollRef.current;
@@ -30141,6 +30165,7 @@ function OrdersView({ profile }) {
               onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
               onCancel={() => setCancelTarget(o)}
+              onToNew={o.is_unknown ? () => unknownToNew(o) : undefined}
             />
           ))}
         </div>
