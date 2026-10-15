@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.14-cc-partial-cycle";
+const BUILD_VERSION = "v2026.10.15-address-report";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2826,6 +2826,7 @@ function AdminDashboard({ profile }) {
               )}
               {(profile.role === "admin" || profile.role === "manager") && (<>
                 <SidebarTab active={view === "cancel-report"} onClick={() => { setView("cancel-report"); setSidebarOpen(false); }} icon={Inbox}>📋 Цуцлалтын тайлан</SidebarTab>
+                <SidebarTab active={view === "address-report"} onClick={() => { setView("address-report"); setSidebarOpen(false); }} icon={MapPin}>📍 Хаягжилт</SidebarTab>
                 <SidebarTab active={view === "delivery-manual"} onClick={() => { setView("delivery-manual"); setSidebarOpen(false); }} icon={FileText}>📝 Гар тайлан</SidebarTab>
               </>)}
             </SidebarSection>
@@ -2963,6 +2964,7 @@ function AdminDashboard({ profile }) {
                 {view === "orders" && "Захиалга"}
                 {view === "cancel-reasons" && "Цуцлах шалтгаан"}
                 {view === "cancel-report" && "Цуцлалтын тайлан"}
+                {view === "address-report" && "Хаягжилт"}
                 {view === "delivery-manual" && "Хүргэлтийн гар тайлан"}
                 {view === "customers" && "Үйлчлүүлэгч"}
                 {view === "fbpages" && "Facebook Pages"}
@@ -3006,6 +3008,7 @@ function AdminDashboard({ profile }) {
                 {view === "orders" && "Бүх захиалгын жагсаалт"}
                 {view === "cancel-reasons" && "Захиалга цуцлах шалтгаануудыг удирдах"}
                 {view === "cancel-report" && "Цуцлагдсан захиалгын шалтгаан, задаргаа"}
+                {view === "address-report" && "Хүргэсэн / цуцалсан захиалгын хаягтай, хаяггүй хувь — операторын үзүүлэлт"}
                 {view === "customers" && "Бүх үйлчлүүлэгчийн дугаар, түүх"}
                 {view === "fbpages" && "Маркетингийн source хяналт"}
                 {view === "departments" && "Хэлтсийн жагсаалт"}
@@ -3311,6 +3314,7 @@ function AdminDashboard({ profile }) {
         {view === "cancel-report" && (
           <CancelReportView profile={profile} />
         )}
+        {view === "address-report" && <AddressReportView profile={profile} />}
         {view === "delivery-manual" && <DeliveryManualReportView profile={profile} />}
 
         {view === "customers" && (
@@ -5745,7 +5749,7 @@ function ConfirmDeleteModal({ name, onCancel, onConfirm }) {
 
 // 🔐 Admin ажилтны нууц үгийг солих modal — admin-reset-password Edge Function-ийг дуудна.
 // 🚫 Захиалга цуцлах — дундын логик (нөөц буцаах + biz_calls cancel + шалтгаан/тайлбар хадгалах)
-async function applyCancellation(orderId, { reasons = [], note = "", byId = null } = {}) {
+async function applyCancellation(orderId, { reasons = [], note = "", byId = null, hasAddress = undefined } = {}) {
   const { data: cur } = await supabase.from("biz_orders")
     .select("status, driver_id, customer_phone, customer_name, fb_page_id")
     .eq("id", orderId).maybeSingle();
@@ -5776,6 +5780,7 @@ async function applyCancellation(orderId, { reasons = [], note = "", byId = null
     cancel_reasons: reasons,
     cancel_note: note || null,
     cancelled_by: byId || null,
+    ...(hasAddress === true || hasAddress === false ? { has_address: hasAddress } : {}),
   }).eq("id", orderId);
 
   // biz_calls-д cancelled нэмэх → дуудлагын cycle хаагдана
@@ -5796,10 +5801,183 @@ async function applyCancellation(orderId, { reasons = [], note = "", byId = null
 }
 
 // 🚫 Цуцлах шалтгаан сонгох + тайлбар бичих modal (дахин ашиглах — бүх цуцлах цэгээс дуудна)
+// ═══════════════════════════════════════════════════════════════════════════
+//  📍 ХАЯГЖИЛТ — хаягтай / хаяггүй захиалгын тайлан (Delivery)
+//  biz_orders.has_address: true = хаягтай, false = хаяггүй, null = асуугаагүй
+//  Цуцлахад (admin/ahlah/operator) ба хүргэхэд (жолооч) заавал асууж бөглөнө.
+// ═══════════════════════════════════════════════════════════════════════════
+function AddressPick({ value, onChange, compact = false }) {
+  const opts = [[true, "📍 Хаягтай", T.ok, T.okSoft], [false, "🚫 Хаяггүй", T.err, T.errSoft]];
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {opts.map(([v, lbl, c, soft]) => { const on = value === v; return (
+        <button key={String(v)} type="button" onClick={() => onChange(v)}
+          className={`press-btn rounded-xl ${compact ? "py-2 text-xs" : "py-2.5 text-sm"} font-semibold`}
+          style={{ background: on ? c : soft, color: on ? "#fff" : c, border: `1px solid ${on ? c : "transparent"}`, fontFamily: FS }}>{lbl}</button>
+      ); })}
+    </div>
+  );
+}
+
+function AddressReportView({ profile }) {
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [period, setPeriod] = useState("month"); // today | 7d | month | custom
+  const [customStart, setCustomStart] = useState(() => isoDay(new Date()).slice(0, 8) + "01");
+  const [customEnd, setCustomEnd] = useState(() => isoDay(new Date()));
+  const [rows, setRows] = useState(null);
+  const [profMap, setProfMap] = useState({});
+  const [tab, setTab] = useState("all"); // all | delivered | cancelled
+  const range = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let s = new Date(today), e = new Date(today); e.setDate(e.getDate() + 1); let label = "Өнөөдөр";
+    if (period === "7d") { s.setDate(s.getDate() - 6); label = "7 хоног"; }
+    else if (period === "month") { s = new Date(today.getFullYear(), today.getMonth(), 1); label = "Энэ сар"; }
+    else if (period === "custom") { s = new Date(`${customStart}T00:00:00`); e = new Date(`${customEnd}T00:00:00`); e.setDate(e.getDate() + 1); label = `${customStart} → ${customEnd}`; }
+    return { s, e, label };
+  }, [period, customStart, customEnd]);
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      setRows(null);
+      try {
+        const [del, can] = await Promise.all([
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
+        ]);
+        if (dead) return;
+        const all = [...(del || []), ...(can || [])];
+        const ids = [...new Set(all.map((o) => o.taken_by).filter(Boolean))];
+        if (ids.length) { const { data: pf } = await supabase.from("profiles").select("id, name").in("id", ids); const m = {}; (pf || []).forEach((p) => { m[p.id] = p.name; }); if (!dead) setProfMap(m); }
+        if (!dead) setRows(all);
+      } catch (e) { console.error("[address report]", e); if (!dead) setRows([]); }
+    })();
+    return () => { dead = true; };
+  }, [range]);
+
+  const data = (rows || []).filter((o) => tab === "all" || o.status === tab);
+  const stat = (list) => { const t = list.length, y = list.filter((o) => o.has_address === true).length, n = list.filter((o) => o.has_address === false).length; return { t, y, n, u: t - y - n, py: t ? (y / t) * 100 : 0, pn: t ? (n / t) * 100 : 0 }; };
+  const S = stat(data), SD = stat((rows || []).filter((o) => o.status === "delivered")), SC = stat((rows || []).filter((o) => o.status === "cancelled"));
+  const byOp = useMemo(() => {
+    const m = {};
+    data.forEach((o) => { const k = o.taken_by || "__none"; (m[k] = m[k] || []).push(o); });
+    return Object.entries(m).map(([id, list]) => ({ id, name: id === "__none" ? "Оператор тодорхойгүй" : (profMap[id] || id.slice(0, 8)), ...stat(list), delivered: list.filter((o) => o.status === "delivered").length, cancelled: list.filter((o) => o.status === "cancelled").length }))
+      .sort((a, b) => b.t - a.t);
+  }, [data, profMap]);
+  const pct = (v) => `${v.toFixed(1)}%`;
+  const PERIODS = [["today", "Өнөөдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["custom", "Гараар"]];
+  const Tile = ({ label, s, color }) => (
+    <div className="glass rounded-2xl p-3" style={{ borderTop: `3px solid ${color}` }}>
+      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{label}</div>
+      <div style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-2xl tabular-nums">{s.t.toLocaleString()}</div>
+      <div className="flex gap-3 mt-1 text-[11px] tabular-nums" style={{ fontFamily: FM }}>
+        <span style={{ color: T.ok, fontWeight: 700 }}>📍 {s.y} · {pct(s.py)}</span>
+        <span style={{ color: T.err, fontWeight: 700 }}>🚫 {s.n} · {pct(s.pn)}</span>
+        {s.u > 0 && <span style={{ color: T.muted }}>❔ {s.u}</span>}
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden mt-2 flex" style={{ background: T.surfaceAlt }}>
+        <div style={{ width: `${s.py}%`, background: T.ok }} /><div style={{ width: `${s.pn}%`, background: T.err }} />
+      </div>
+    </div>
+  );
+  const exportXlsx = () => {
+    const ws = XLSX.utils.json_to_sheet(byOp.map((r) => ({ Оператор: r.name, "Нийт": r.t, "Хүргэсэн": r.delivered, "Цуцалсан": r.cancelled, "Хаягтай": r.y, "Хаягтай %": Number(r.py.toFixed(1)), "Хаяггүй": r.n, "Хаяггүй %": Number(r.pn.toFixed(1)), "Асуугаагүй": r.u })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Хаягжилт"); XLSX.writeFile(wb, `hayagjilt_${range.label.replace(/\s|→/g, "_")}.xlsx`);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        {PERIODS.map(([id, lbl]) => (
+          <button key={id} onClick={() => setPeriod(id)} className="press-btn px-3 py-1.5 rounded-full text-xs"
+            style={{ background: period === id ? T.highlight : T.surfaceAlt, color: period === id ? "#fff" : T.ink, border: `1px solid ${period === id ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+        ))}
+        {period === "custom" && (<>
+          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }} />
+          <span style={{ color: T.muted }}>–</span>
+          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FM }} />
+        </>)}
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] ml-auto">{range.label}</span>
+        <button onClick={exportXlsx} disabled={!rows || rows.length === 0} className="press-btn px-3 py-1.5 rounded-lg text-xs" style={{ background: T.okSoft, color: T.ok, fontFamily: FS, fontWeight: 600 }}>📥 Excel</button>
+      </div>
+
+      {rows === null ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Tile label="Хүргэсэн + Цуцалсан" s={stat(rows)} color={T.highlight} />
+            <Tile label="✓ Хүргэсэн" s={SD} color={T.ok} />
+            <Tile label="✕ Цуцалсан" s={SC} color={T.err} />
+          </div>
+
+          <div className="glass rounded-2xl p-3">
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">👤 Операторын хаягжилт</span>
+              <div className="flex gap-1 ml-auto">
+                {[["all", "Бүгд"], ["delivered", "Хүргэсэн"], ["cancelled", "Цуцалсан"]].map(([id, lbl]) => (
+                  <button key={id} onClick={() => setTab(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]"
+                    style={{ background: tab === id ? T.ink : T.surfaceAlt, color: tab === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+            {byOp.length === 0 ? (
+              <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-6">Энэ хугацаанд захиалга алга</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ fontFamily: FS }}>
+                  <thead>
+                    <tr style={{ color: T.muted }}>
+                      <th className="text-left py-1.5 px-2 font-medium">Оператор</th>
+                      <th className="text-right py-1.5 px-2 font-medium">Нийт</th>
+                      <th className="text-right py-1.5 px-2 font-medium">Хүргэсэн</th>
+                      <th className="text-right py-1.5 px-2 font-medium">Цуцалсан</th>
+                      <th className="text-right py-1.5 px-2 font-medium" style={{ color: T.ok }}>📍 Хаягтай</th>
+                      <th className="text-right py-1.5 px-2 font-medium" style={{ color: T.err }}>🚫 Хаяггүй</th>
+                      <th className="text-right py-1.5 px-2 font-medium">❔</th>
+                      <th className="py-1.5 px-2 font-medium" style={{ minWidth: 120 }}>Хувь</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byOp.map((r) => (
+                      <tr key={r.id} style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                        <td className="py-1.5 px-2" style={{ color: T.ink, fontWeight: 600 }}>{r.name}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ fontWeight: 700 }}>{r.t}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{r.delivered}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{r.cancelled}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok, fontWeight: 700 }}>{r.y} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.py)})</span></td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err, fontWeight: 700 }}>{r.n} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.pn)})</span></td>
+                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{r.u}</td>
+                        <td className="py-1.5 px-2"><div className="h-2 rounded-full overflow-hidden flex" style={{ background: T.surfaceAlt }}><div style={{ width: `${r.py}%`, background: T.ok }} /><div style={{ width: `${r.pn}%`, background: T.err }} /></div></td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: `2px solid ${T.borderStrong}`, color: T.ink, fontWeight: 700 }}>
+                      <td className="py-1.5 px-2">Нийт</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{S.t}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{data.filter((o) => o.status === "delivered").length}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{data.filter((o) => o.status === "cancelled").length}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{S.y} ({pct(S.py)})</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{S.n} ({pct(S.pn)})</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{S.u}</td>
+                      <td />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">❔ = хаягтай/хаяггүй эсэхийг асуугаагүй (энэ боломж нэвтрэхээс өмнөх захиалга). Оператор = захиалга бүртгэсэн ажилтан.</div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CancelReasonModal({ order, byId = null, onClose, onDone }) {
   const [reasons, setReasons] = useState([]);
   const [selected, setSelected] = useState([]);
   const [note, setNote] = useState("");
+  const [hasAddr, setHasAddr] = useState(order?.has_address ?? null); // 📍 хаягтай/хаяггүй — заавал
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -5822,9 +6000,10 @@ function CancelReasonModal({ order, byId = null, onClose, onDone }) {
       alert("Доод тал нь нэг шалтгаан сонгох эсвэл тайлбар бичнэ үү");
       return;
     }
+    if (hasAddr !== true && hasAddr !== false) { alert("📍 Захиалга хаягтай эсвэл хаяггүй эсэхийг сонгоно уу"); return; }
     setSaving(true);
     try {
-      await applyCancellation(order.id, { reasons: selected, note: note.trim(), byId });
+      await applyCancellation(order.id, { reasons: selected, note: note.trim(), byId, hasAddress: hasAddr });
       if (onDone) await onDone();
     } catch (e) {
       alert("Цуцлахад алдаа: " + (e?.message || String(e)));
@@ -5874,6 +6053,11 @@ function CancelReasonModal({ order, byId = null, onClose, onDone }) {
               );
             })}
           </div>
+
+          <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-1">
+            📍 Хаягжилт <span style={{ color: T.err }}>*</span> <span style={{ color: T.muted, fontWeight: 400 }}>— захиалга хаягтай байсан уу?</span>
+          </div>
+          <div className="mb-3"><AddressPick value={hasAddr} onChange={setHasAddr} compact /></div>
 
           <div style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs mb-1">
             Тайлбар (заавал биш)
@@ -42557,6 +42741,7 @@ function DriverDashboard({ profile }) {
   const [ratingOrder, setRatingOrder] = useState(null); // { order, action: 'delivered'|'cancelled' }
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingNote, setRatingNote] = useState("");
+  const [ratingAddr, setRatingAddr] = useState(null); // 📍 хүргэхэд хаягтай/хаяггүй — заавал
   const [pickupShort, setPickupShort] = useState(null); // ⚠ {types, total} — авах шаардлагатай бараа
   const [unknownTarget, setUnknownTarget] = useState(null); // ❓ Тодорхойгүй болгох popup-ийн захиалга
   // 💬 Өөрийн мэдэгдсэн асуудлууд
@@ -43461,7 +43646,7 @@ function DriverDashboard({ profile }) {
             drivers={[]}
             items={items}
             profileId={profile.id}
-            onDeliver={(o) => updateStatus(o.id, "delivered")}
+            onDeliver={(o) => { setRatingAddr(o.has_address ?? null); setRatingValue(0); setRatingNote(""); setRatingOrder({ order: o, action: "delivered" }); }}
             onOrderClick={(o) => setActiveOrder(o)}
           />
         ) : filtered.length === 0 ? (
@@ -43698,7 +43883,7 @@ function DriverDashboard({ profile }) {
                     <div className="grid grid-cols-1 gap-2">
                       {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <button onClick={() => setRatingOrder({ order: o, action: "delivered" })}
+                        <button onClick={() => { setRatingAddr(o.has_address ?? null); setRatingOrder({ order: o, action: "delivered" }); }}
                           className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                           style={{ background: T.ok, color: "white", fontFamily: FS }}>
                           ✓ Хүргэсэн
@@ -43844,6 +44029,7 @@ function DriverDashboard({ profile }) {
               onUpdateStatus={async (s) => {
                 if (s === "delivered") {
                   // Хүргэсэн → үнэлгээ popup нээх
+                  setRatingAddr(activeOrder.has_address ?? null);
                   setRatingOrder({ order: activeOrder, action: "delivered" });
                   setRatingValue(0);
                   setRatingNote("");
@@ -43957,6 +44143,14 @@ function DriverDashboard({ profile }) {
                 </div>
               </div>
 
+              {ratingOrder.action === "delivered" && (
+                <div className="mb-4">
+                  <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+                    📍 Хаягжилт <span style={{ color: T.err }}>*</span> — захиалга хаягтай байсан уу?
+                  </label>
+                  <AddressPick value={ratingAddr} onChange={setRatingAddr} />
+                </div>
+              )}
               {/* Тэмдэглэл */}
               <div className="mb-4">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
@@ -43983,6 +44177,10 @@ function DriverDashboard({ profile }) {
                 <button onClick={async () => {
                   if (ratingValue === 0) {
                     alert("⚠ Үнэлгээ өгнө үү (1-5 од)");
+                    return;
+                  }
+                  if (ratingOrder.action === "delivered" && ratingAddr !== true && ratingAddr !== false) {
+                    alert("📍 Захиалга хаягтай эсвэл хаяггүй эсэхийг сонгоно уу");
                     return;
                   }
                   setRatingBusy(true);
@@ -44014,6 +44212,7 @@ function DriverDashboard({ profile }) {
                     
                     if (ratingOrder.action === "delivered") {
                       // Stock хасахын тулд updateStatus ажиллуулна
+                      orderUpdates.has_address = ratingAddr; // 📍
                       await supabase.from("biz_orders").update(orderUpdates).eq("id", ratingOrder.order.id);
                       await updateStatus(ratingOrder.order.id, "delivered");
                     } else {
