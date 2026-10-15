@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-address-report3";
+const BUILD_VERSION = "v2026.10.15-zone-modal-mobile";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5858,8 +5858,8 @@ function AddressReportView({ profile }) {
       setRows(null);
       try {
         const [del, can] = await Promise.all([
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, notes, cancel_reasons, cancel_note, operator_rating_note, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, notes, cancel_reasons, cancel_note, operator_rating_note, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
         ]);
         if (dead) return;
         const all = [...(del || []), ...(can || [])];
@@ -6015,7 +6015,10 @@ function AddressReportView({ profile }) {
                       : detailItems[o.id].length === 0 ? <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">бараа алга</span>
                       : detailItems[o.id].map((it, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ background: T.highlightSoft, color: T.ink, fontFamily: FS }}>📦 {it.product_name} ×{Number(it.quantity || 1)}</span>)}
                   </div>
-                  {o.cancel_note && <div style={{ color: T.err, fontFamily: FS }} className="text-[11px] mt-0.5">📝 {o.cancel_note}</div>}
+                  {o.notes && <div style={{ color: T.inkSoft, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-1 px-2 py-1 rounded-lg" title="Захиалгын тэмдэглэл">📝 {o.notes}</div>}
+                  {Array.isArray(o.cancel_reasons) && o.cancel_reasons.length > 0 && <div style={{ color: T.err, fontFamily: FS }} className="text-[11px] mt-0.5">✕ Шалтгаан: {o.cancel_reasons.join(", ")}</div>}
+                  {o.cancel_note && <div style={{ color: T.err, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-0.5">✕ Тайлбар: {o.cancel_note}</div>}
+                  {o.operator_rating_note && <div style={{ color: T.muted, fontFamily: FS, whiteSpace: "pre-wrap" }} className="text-[11px] mt-0.5">🚚 Жолоочийн тэмдэглэл: {o.operator_rating_note}</div>}
                 </div>
               );
             })}
@@ -8645,6 +8648,8 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
             className="press-btn p-2" style={{ color: T.muted }}>✕</button>
         </div>
 
+        {/* 📱 Гүйлгэгддэг их бие — утсан дээр форм+зураг багтахгүй үед товчнууд доор нь үргэлж харагдана */}
+        <div className="flex-1 flex flex-col" style={{ minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
         {/* Form */}
         <div className="p-3 grid grid-cols-1 md:grid-cols-3 gap-2 flex-shrink-0"
           style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -8715,9 +8720,9 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
           </div>
         </div>
 
-        {/* Map */}
-        <div className="flex-1 relative" style={{ minHeight: 300 }}>
-          <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
+        {/* Map — утсанд тогтмол өндөр (гүйлгэхэд товчнууд доороо үлдэнэ), том дэлгэцэд үлдсэн зайг эзэлнэ */}
+        <div className="flex-1 relative flex-shrink-0" style={{ minHeight: "min(52vh, 460px)" }}>
+          <div ref={mapContainerRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
           {polygon.length < 3 && (
             <div style={{
               position: "absolute", top: 12, left: 12, right: 12, zIndex: 1000,
@@ -8730,6 +8735,7 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
               {polygon.length === 2 && "2 цэг бий — дор хаяж 3 цэг хэрэгтэй"}
             </div>
           )}
+        </div>
         </div>
 
         {/* Actions */}
