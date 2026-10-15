@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-unknown-to-new2";
+const BUILD_VERSION = "v2026.10.15-detail-map-zones";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -30917,11 +30917,48 @@ function OrderDetailMap({ order }) {
   );
   const [busy, setBusy] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const [zones, setZones] = useState([]); // 🗺 хүргэлтийн бүсүүд (бүх жолоочийн, идэвхтэй) + жолоочийн нэр
+  const zoneLayersRef = useRef([]);
+
+  // 🗺 Бүсчлэлийн мэдээлэл — захиалга аль жолоочийн бүсэд байгааг харуулна
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const { data: zs } = await supabase.from("biz_zones").select("id, name, color, polygon, driver_id").eq("is_active", true);
+        const ids = [...new Set((zs || []).map((z) => z.driver_id).filter(Boolean))];
+        let nm = {};
+        if (ids.length) { const { data: pf } = await supabase.from("profiles").select("id, name").in("id", ids); (pf || []).forEach((p) => { nm[p.id] = p.name; }); }
+        if (!dead) setZones((zs || []).map((z) => ({ ...z, driverName: nm[z.driver_id] || "" })));
+      } catch (e) { console.error("[detail map zones]", e); }
+    })();
+    return () => { dead = true; };
+  }, []);
+  // Бүсүүдийг газрын зураг дээр зурах (map бэлэн болсны дараа)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.L || zones.length === 0) return;
+    const L = window.L;
+    zoneLayersRef.current.forEach((l) => { try { map.removeLayer(l); } catch {} });
+    zoneLayersRef.current = [];
+    zones.forEach((z) => {
+      if (!Array.isArray(z.polygon) || z.polygon.length < 3) return;
+      const inside = position ? isPointInPolygon([position.lat, position.lng], z.polygon) : false;
+      const poly = L.polygon(z.polygon, { color: z.color || "#0E9C8E", weight: inside ? 3 : 1.5, fillOpacity: inside ? 0.22 : 0.07, dashArray: inside ? null : "5 5", interactive: true });
+      const label = `${z.name}${z.driverName ? " · 🚚 " + z.driverName.replace(/\s\d{8}$/, "") : ""}`;
+      poly.bindTooltip(label, { permanent: inside, direction: "center", className: "zone-tip", opacity: 0.9 });
+      poly.on("click", () => poly.openTooltip());
+      poly.addTo(map);
+      zoneLayersRef.current.push(poly);
+    });
+  }, [zones, position]);
+  const zoneOf = position ? zones.filter((z) => Array.isArray(z.polygon) && z.polygon.length >= 3 && isPointInPolygon([position.lat, position.lng], z.polygon)) : [];
 
   useEffect(() => {
     let map = null;
     (async () => {
       const L = (await import("leaflet")).default;
+      window.L = window.L || L;
 
       // CSS-ийн head-д зөвхөн нэг удаа нэмэх
       if (!document.querySelector('link[href*="leaflet.css"]')) {
@@ -30988,12 +31025,14 @@ function OrderDetailMap({ order }) {
           if (mapRef.current) mapRef.current.invalidateSize();
         }, delay);
       });
+      setZones((z) => [...z]); // 🗺 map бэлэн → бүсүүдийг зурах effect-ийг дахин ажиллуулна
     })();
 
     return () => {
       if (mapRef.current) mapRef.current.remove();
       mapRef.current = null;
       markerRef.current = null;
+      zoneLayersRef.current = [];
     };
   }, []);
 
@@ -31026,6 +31065,19 @@ function OrderDetailMap({ order }) {
           </div>
         )}
       </div>
+      {/* 🗺 Бүсчлэл: pin аль бүсэд байгаа вэ */}
+      {position && zones.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">🗺 Бүс:</span>
+          {zoneOf.length === 0
+            ? <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 700 }}>Ямар ч бүсэд ороогүй</span>
+            : zoneOf.map((z) => (
+              <span key={z.id} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: `${z.color || "#0E9C8E"}22`, color: z.color || "#0E9C8E", border: `1px solid ${z.color || "#0E9C8E"}66`, fontFamily: FS, fontWeight: 700 }}>
+                {z.name}{z.driverName ? ` · 🚚 ${z.driverName.replace(/\s\d{8}$/, "")}` : ""}
+              </span>
+            ))}
+        </div>
+      )}
 
       <div ref={containerRef}
         style={{
