@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-address-report2";
+const BUILD_VERSION = "v2026.10.15-address-report3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5828,6 +5828,21 @@ function AddressReportView({ profile }) {
   const [profMap, setProfMap] = useState({});
   const [tab, setTab] = useState("all"); // all | delivered | cancelled
   const [detail, setDetail] = useState(null); // { name, list } — операторын хаяггүй захиалгууд popup
+  const [detailItems, setDetailItems] = useState({}); // order_id → [{product_name, quantity}]
+  useEffect(() => {
+    if (!detail) return;
+    const ids = detail.list.map((o) => o.id).filter((id) => !detailItems[id]);
+    if (ids.length === 0) return;
+    let dead = false;
+    (async () => {
+      try {
+        const its = await fetchInChunks("biz_order_items", ids, { select: "order_id, product_name, quantity", filterColumn: "order_id", chunkSize: 200 });
+        if (dead) return;
+        setDetailItems((prev) => { const nx = { ...prev }; ids.forEach((id) => { nx[id] = nx[id] || []; }); (its || []).forEach((it) => { (nx[it.order_id] = nx[it.order_id] || []).push(it); }); return nx; });
+      } catch (e) { console.error("[address detail items]", e); }
+    })();
+    return () => { dead = true; };
+  }, [detail]);
   const range = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     let s = new Date(today), e = new Date(today); e.setDate(e.getDate() + 1); let label = "Өнөөдөр";
@@ -5843,12 +5858,12 @@ function AddressReportView({ profile }) {
       setRows(null);
       try {
         const [del, can] = await Promise.all([
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, cancelled_by, delivered_by, driver_id, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
         ]);
         if (dead) return;
         const all = [...(del || []), ...(can || [])];
-        const ids = [...new Set(all.map((o) => o.taken_by).filter(Boolean))];
+        const ids = [...new Set(all.flatMap((o) => [o.taken_by, o.cancelled_by, o.delivered_by, o.driver_id]).filter(Boolean))];
         if (ids.length) { const { data: pf } = await supabase.from("profiles").select("id, name").in("id", ids); const m = {}; (pf || []).forEach((p) => { m[p.id] = p.name; }); if (!dead) setProfMap(m); }
         if (!dead) setRows(all);
       } catch (e) { console.error("[address report]", e); if (!dead) setRows([]); }
@@ -5991,6 +6006,15 @@ function AddressReportView({ profile }) {
                   </div>
                   <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1">📍 {o.delivery_address || <span style={{ color: T.muted }}>хаяг бичигдээгүй</span>}</div>
                   {loc && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5">🗺 {loc}</div>}
+                  <div style={{ color: T.inkSoft, fontFamily: FS }} className="text-[11px] mt-0.5">
+                    👤 {o.status === "delivered" ? "Хүргэсэн" : "Цуцалсан"}: <b>{profMap[o.status === "delivered" ? (o.delivered_by || o.driver_id) : o.cancelled_by] || "—"}</b>
+                    {o.taken_by && <span style={{ color: T.muted }}> · бүртгэсэн: {profMap[o.taken_by] || "—"}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {detailItems[o.id] === undefined ? <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">бараа ачаалж байна...</span>
+                      : detailItems[o.id].length === 0 ? <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">бараа алга</span>
+                      : detailItems[o.id].map((it, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ background: T.highlightSoft, color: T.ink, fontFamily: FS }}>📦 {it.product_name} ×{Number(it.quantity || 1)}</span>)}
+                  </div>
                   {o.cancel_note && <div style={{ color: T.err, fontFamily: FS }} className="text-[11px] mt-0.5">📝 {o.cancel_note}</div>}
                 </div>
               );
