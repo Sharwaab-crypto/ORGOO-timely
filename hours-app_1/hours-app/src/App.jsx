@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-unknown-to-new";
+const BUILD_VERSION = "v2026.10.15-unknown-to-new2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -28981,7 +28981,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                     🚚 Delivery хуваарилах
                   </button>
                 )}
-                {onToNew && order.is_unknown && order.status !== "delivered" && order.status !== "cancelled" && (
+                {onToNew && order.status !== "delivered" && order.status !== "cancelled" && (
                   <button onClick={() => { setShowMenu(false); onToNew(); }}
                     className="press-btn w-full px-3 py-2.5 text-xs flex items-center gap-2"
                     style={{ color: "#3b82f6", fontFamily: FS, textAlign: "left", borderTop: `1px solid ${T.border}` }}>
@@ -29393,7 +29393,14 @@ function OrdersView({ profile }) {
   const openDetail = (o) => { listScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0; setActiveOrder(o); requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" })); };
   // 🆕 Тодорхойгүй → Шинэ рүү буцаах (is_unknown=false, жолоочгүй, status=new)
   const unknownToNew = async (o) => {
-    if (!confirm(`#${o.order_number} захиалгыг "Тодорхойгүй"-ээс "Шинэ" рүү буцаах уу?`)) return;
+    const noGps = !o.delivery_lat || !o.delivery_lng;
+    if (!o.is_unknown && noGps) {
+      // GPS байхгүйгээс Тодорхойгүйд орсон — тэмдэг биш, байршил л шаардлагатай → засах цонх нээнэ
+      alert("ℹ Энэ захиалга байршил (GPS) байхгүй учраас «Тодорхойгүй»-д орсон. Засах цонхонд газрын зураг дээр байршлыг нь тавихад «Шинэ» рүү шилжинэ.");
+      setEditOrder(o);
+      return;
+    }
+    if (!confirm(`#${o.order_number} захиалгыг "Тодорхойгүй"-ээс "Шинэ" рүү буцаах уу?${noGps ? "\n\n⚠ Байршил (GPS) байхгүй тул Тодорхойгүй жагсаалтад мөн харагдсаар байна — байршлыг нь засаарай." : ""}`)) return;
     try {
       const { error } = await supabase.from("biz_orders").update({ is_unknown: false, status: "new", driver_id: null }).eq("id", o.id);
       if (error) throw error;
@@ -30165,7 +30172,7 @@ function OrdersView({ profile }) {
               onEdit={o.status === "delivered" ? undefined : () => setEditOrder(o)}
               onAssignDriver={() => setAssignDriverOrder(o)}
               onCancel={() => setCancelTarget(o)}
-              onToNew={o.is_unknown ? () => unknownToNew(o) : undefined}
+              onToNew={filter === "unknown" || o.is_unknown ? () => unknownToNew(o) : undefined}
             />
           ))}
         </div>
