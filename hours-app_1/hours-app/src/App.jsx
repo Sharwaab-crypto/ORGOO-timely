@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-address-report";
+const BUILD_VERSION = "v2026.10.15-address-report2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5827,6 +5827,7 @@ function AddressReportView({ profile }) {
   const [rows, setRows] = useState(null);
   const [profMap, setProfMap] = useState({});
   const [tab, setTab] = useState("all"); // all | delivered | cancelled
+  const [detail, setDetail] = useState(null); // { name, list } — операторын хаяггүй захиалгууд popup
   const range = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     let s = new Date(today), e = new Date(today); e.setDate(e.getDate() + 1); let label = "Өнөөдөр";
@@ -5842,8 +5843,8 @@ function AddressReportView({ profile }) {
       setRows(null);
       try {
         const [del, can] = await Promise.all([
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
-          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "delivered").gte("delivered_at", range.s.toISOString()).lt("delivered_at", range.e.toISOString())),
+          fetchAllRows(supabase.from("biz_orders").select("id, order_number, status, has_address, taken_by, customer_phone, customer_name, delivery_address, delivery_city, delivery_district, delivery_khoroo, cancel_note, created_at, delivered_at, cancelled_at").eq("status", "cancelled").gte("cancelled_at", range.s.toISOString()).lt("cancelled_at", range.e.toISOString())),
         ]);
         if (dead) return;
         const all = [...(del || []), ...(can || [])];
@@ -5861,7 +5862,7 @@ function AddressReportView({ profile }) {
   const byOp = useMemo(() => {
     const m = {};
     data.forEach((o) => { const k = o.taken_by || "__none"; (m[k] = m[k] || []).push(o); });
-    return Object.entries(m).map(([id, list]) => ({ id, name: id === "__none" ? "Оператор тодорхойгүй" : (profMap[id] || id.slice(0, 8)), ...stat(list), delivered: list.filter((o) => o.status === "delivered").length, cancelled: list.filter((o) => o.status === "cancelled").length }))
+    return Object.entries(m).map(([id, list]) => ({ id, list, name: id === "__none" ? "Оператор тодорхойгүй" : (profMap[id] || id.slice(0, 8)), ...stat(list), delivered: list.filter((o) => o.status === "delivered").length, cancelled: list.filter((o) => o.status === "cancelled").length }))
       .sort((a, b) => b.t - a.t);
   }, [data, profMap]);
   const pct = (v) => `${v.toFixed(1)}%`;
@@ -5946,7 +5947,10 @@ function AddressReportView({ profile }) {
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{r.delivered}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{r.cancelled}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok, fontWeight: 700 }}>{r.y} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.py)})</span></td>
-                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err, fontWeight: 700 }}>{r.n} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.pn)})</span></td>
+                        <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.err, fontWeight: 700 }}>
+                          {r.n} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.pn)})</span>
+                          {r.n > 0 && <button onClick={() => setDetail({ name: r.name, list: r.list.filter((o) => o.has_address === false) })} className="press-btn ml-1.5 px-2 py-0.5 rounded-md text-[10px]" style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>Дэлгэрэнгүй</button>}
+                        </td>
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{r.u}</td>
                         <td className="py-1.5 px-2"><div className="h-2 rounded-full overflow-hidden flex" style={{ background: T.surfaceAlt }}><div style={{ width: `${r.py}%`, background: T.ok }} /><div style={{ width: `${r.pn}%`, background: T.err }} /></div></td>
                       </tr>
@@ -5968,6 +5972,31 @@ function AddressReportView({ profile }) {
             <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">❔ = хаягтай/хаяггүй эсэхийг асуугаагүй (энэ боломж нэвтрэхээс өмнөх захиалга). Оператор = захиалга бүртгэсэн ажилтан.</div>
           </div>
         </>
+      )}
+      {detail && (
+        <Modal onClose={() => setDetail(null)} staticBackdrop title={`🚫 Хаяггүй захиалга — ${detail.name}`} maxW="max-w-2xl">
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{detail.list.length} захиалга · {range.label}</div>
+          <div className="space-y-1.5 max-h-[65vh] overflow-y-auto pr-1">
+            {[...detail.list].sort((a, b) => new Date(b.cancelled_at || b.delivered_at || b.created_at) - new Date(a.cancelled_at || a.delivered_at || a.created_at)).map((o) => {
+              const loc = [o.delivery_city, o.delivery_district, o.delivery_khoroo].filter(Boolean).join(", ");
+              const when = o.status === "delivered" ? o.delivered_at : o.cancelled_at;
+              return (
+                <div key={o.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderLeft: `3px solid ${o.status === "delivered" ? T.ok : T.err}` }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs">#{o.order_number}</span>
+                    <a href={`tel:${o.customer_phone}`} style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-xs">📞 {o.customer_phone}</a>
+                    {o.customer_name && <span style={{ color: T.inkSoft, fontFamily: FS }} className="text-xs">{o.customer_name}</span>}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full ml-auto" style={{ background: o.status === "delivered" ? T.okSoft : T.errSoft, color: o.status === "delivered" ? T.ok : T.err, fontFamily: FS, fontWeight: 700 }}>{o.status === "delivered" ? "✓ Хүргэсэн" : "✕ Цуцалсан"}</span>
+                    <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{when ? new Date(when).toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Ulaanbaatar" }).replace(",", "") : ""}</span>
+                  </div>
+                  <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1">📍 {o.delivery_address || <span style={{ color: T.muted }}>хаяг бичигдээгүй</span>}</div>
+                  {loc && <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] mt-0.5">🗺 {loc}</div>}
+                  {o.cancel_note && <div style={{ color: T.err, fontFamily: FS }} className="text-[11px] mt-0.5">📝 {o.cancel_note}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
       )}
     </div>
   );
