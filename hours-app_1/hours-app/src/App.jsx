@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-shift-schedule5";
+const BUILD_VERSION = "v2026.10.16-op-my-schedule";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34362,6 +34362,84 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   );
 }
 
+// 🕐 Операторын ӨӨРИЙН ээлжийн хуваарь (зөвхөн харах) — долоо хоног, өглөө/орой ээлж, page-үүд
+function MyShiftScheduleView({ profile }) {
+  const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = x.getDay() === 0 ? 6 : x.getDay() - 1; x.setDate(x.getDate() - day); return x; };
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [weekStart, setWeekStart] = useState(() => iso(mondayOf(new Date())));
+  const [rows, setRows] = useState(null);
+  const [pageById, setPageById] = useState({});
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      setRows(null);
+      try {
+        const [{ data: ws }, { data: pg }] = await Promise.all([
+          supabase.from("work_schedules").select("*").eq("employee_id", profile.id).eq("week_start", weekStart),
+          supabase.from("biz_fb_pages").select("id, name"),
+        ]);
+        if (dead) return;
+        const m = {}; (pg || []).forEach((p) => { m[p.id] = p; }); setPageById(m);
+        setRows(ws || []);
+      } catch (e) { console.error("[my schedule]", e); if (!dead) setRows([]); }
+    })();
+    return () => { dead = true; };
+  }, [profile.id, weekStart]);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + i); return d; });
+  const dayNames = ["Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
+  const todayIso = iso(new Date());
+  const shiftWeek = (delta) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + delta * 7); setWeekStart(iso(d)); };
+  const total = (rows || []).length;
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <button onClick={() => shiftWeek(-1)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>‹</button>
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{weekStart} → {iso(days[6])}</span>
+        <button onClick={() => shiftWeek(1)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>›</button>
+        <button onClick={() => setWeekStart(iso(mondayOf(new Date())))} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>Энэ 7 хоног</button>
+        <input type="date" value={weekStart} onChange={(e) => { if (e.target.value) setWeekStart(iso(mondayOf(new Date(`${e.target.value}T00:00:00`)))); }} className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px] ml-auto">{total} ээлж</span>
+      </div>
+      {rows === null ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {days.map((d, i) => {
+            const day = i + 1; const isToday = iso(d) === todayIso;
+            const mine = rows.filter((r) => r.day_of_week === day).sort((a, b) => String(a.shift_start).localeCompare(String(b.shift_start)));
+            return (
+              <div key={day} className="glass rounded-2xl p-3" style={{ border: isToday ? `1px solid ${T.highlight}` : undefined, opacity: mine.length ? 1 : .75 }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span style={{ color: isToday ? T.highlight : T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{dayNames[i]}</span>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{iso(d).slice(5)}</span>
+                  {isToday && <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-auto" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}>Өнөөдөр</span>}
+                </div>
+                {mine.length === 0 ? (
+                  <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Амралт / ээлжгүй</div>
+                ) : mine.map((r) => {
+                  const sh = OP_SHIFTS.find((s) => s.id === opShiftOf(r)) || { label: "Ээлж", color: T.highlight, bg: T.highlightSoft };
+                  const pids = Array.isArray(r.fb_page_ids) ? r.fb_page_ids : [];
+                  return (
+                    <div key={r.id} className="rounded-xl p-2 mb-1.5" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
+                      <div style={{ color: sh.color, fontFamily: FS, fontWeight: 700 }} className="text-xs">{sh.label}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1">{String(r.shift_start || "").slice(0, 5)}–{String(r.shift_end || "").slice(0, 5)}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {pids.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">page оноогоогүй</span>}
+                        {pids.map((pid) => <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.surface, color: T.highlight, border: `1px solid ${T.border}`, fontFamily: FS, fontWeight: 600 }}>🔗 {pageById[pid]?.name || "?"}</span>)}
+                      </div>
+                      {r.notes && <div style={{ color: T.inkSoft, fontFamily: FS }} className="text-[10px] mt-1">📝 {r.notes}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduleView({ employees, departments = [], sites, isAdmin = false, currentUserId = null }) {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40697,7 +40775,7 @@ function OperatorDashboard({ profile }) {
         <nav className="flex-1 overflow-y-auto py-2">
           <SidebarSection label="Хяналт" icon={Eye} defaultOpen>
             <SidebarTab active={view === "dashboard"} onClick={() => { setView("dashboard"); setSidebarOpen(false); }} icon={BarChart3}>Миний KPI</SidebarTab>
-            <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Calendar}>Календар</SidebarTab>
+            <SidebarTab active={view === "calendar"} onClick={() => { setView("calendar"); setSidebarOpen(false); }} icon={Clock}>Хуваарь</SidebarTab>
           </SidebarSection>
           <SidebarSection label="Бизнес" icon={ShoppingBag}>
             <SidebarTab active={view === "callcenter"} onClick={() => { setView("callcenter"); setSidebarOpen(false); }} icon={Phone}>Дуудлага</SidebarTab>
@@ -40744,7 +40822,7 @@ function OperatorDashboard({ profile }) {
           <div className="flex-1">
             <h1 style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
               {view === "dashboard" && "📊 Миний KPI"}
-              {view === "calendar" && "📅 Календар"}
+              {view === "calendar" && "🕐 Миний хуваарь"}
               {view === "callcenter" && "📞 Дуудлага"}
               {view === "orders" && "🛍 Захиалга"}
               {view === "report" && "📊 Ээлжийн тайлан"}
@@ -40759,7 +40837,7 @@ function OperatorDashboard({ profile }) {
           <TimeTracker profile={profile} />
           
           {view === "dashboard" && <OperatorKPIView profile={profile} />}
-          {view === "calendar" && <OperatorCalendarView profile={profile} />}
+          {view === "calendar" && <MyShiftScheduleView profile={profile} />}
           {view === "callcenter" && <CallCenterView profile={profile} />}
           {view === "orders" && <OrdersView profile={profile} />}
           {view === "report" && <OperatorShiftReportView profile={profile} />}
