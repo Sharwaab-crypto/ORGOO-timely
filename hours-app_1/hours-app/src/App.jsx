@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-shift-schedule";
+const BUILD_VERSION = "v2026.10.16-op-shift-schedule2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34093,7 +34093,9 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   const [loading, setLoading] = useState(true);
   const [picker, setPicker] = useState(null); // { day, shift } — ажилтан нэмэх
   const [pagePick, setPagePick] = useState(null); // { row } — page хуваарилах
-  const [statRange, setStatRange] = useState("90"); // 30 | 90 | 365
+  const [statRange, setStatRange] = useState("90"); // 30 | 90 | 365 | custom
+  const [statFrom, setStatFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; });
+  const [statTo, setStatTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   const [busy, setBusy] = useState(false);
 
   // 👥 Зөвхөн операторын хэлтсийн ажилчид (role=operator эсвэл хэлтсийн нэр "оператор")
@@ -34105,10 +34107,13 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   const load = async () => {
     setLoading(true);
     try {
-      const since = new Date(); since.setDate(since.getDate() - Number(statRange));
+      const since = new Date(); since.setDate(since.getDate() - Number(statRange === "custom" ? 0 : statRange));
+      const statQ = statRange === "custom"
+        ? supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, fb_page_ids").gte("week_start", iso(mondayOf(new Date(`${statFrom}T00:00:00`)))).lte("week_start", statTo)
+        : supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, fb_page_ids").gte("week_start", iso(mondayOf(since)));
       const [wk, all, pg] = await Promise.all([
         supabase.from("work_schedules").select("*").eq("week_start", weekStart),
-        fetchAllRows(supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, fb_page_ids").gte("week_start", iso(mondayOf(since)))),
+        fetchAllRows(statQ),
         supabase.from("biz_fb_pages").select("id, name, is_active").order("name"),
       ]);
       setRows(wk.data || []);
@@ -34117,7 +34122,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
     } catch (e) { console.error("[op schedule]", e); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [weekStart, statRange]);
+  useEffect(() => { load(); }, [weekStart, statRange, statFrom, statTo]);
 
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + i); return d; });
   const dayNames = ["Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
@@ -34171,6 +34176,10 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
     const m = {}; const pageTot = {};
     allRows.forEach((r) => {
       if (!empById[r.employee_id]) return;
+      if (statRange === "custom") { // өдрийн бодит огноогоор нарийн шүүх
+        const d = new Date(`${r.week_start}T00:00:00`); d.setDate(d.getDate() + (Number(r.day_of_week || 1) - 1)); const ds = iso(d);
+        if (ds < statFrom || ds > statTo) return;
+      }
       (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => {
         m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
         m[r.employee_id].pages[pid] = (m[r.employee_id].pages[pid] || 0) + 1;
@@ -34182,7 +34191,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
     const pageIds = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
     const emps = Object.keys(m).map((id) => ({ id, name: empById[id]?.name || id.slice(0, 8), shifts: m[id].shifts, pages: m[id].pages, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
     return { pageIds, emps, pageTot };
-  }, [allRows, empById]);
+  }, [allRows, empById, statRange, statFrom, statTo]);
 
   const chip = (p, on, onClick) => (
     <button key={p.id} type="button" onClick={onClick} className="press-btn px-2 py-1 rounded-full text-[11px]"
@@ -34197,6 +34206,9 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{weekStart} → {iso(days[6])}</span>
         <button onClick={() => shiftWeek(1)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>›</button>
         <button onClick={() => setWeekStart(iso(mondayOf(new Date())))} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>Энэ 7 хоног</button>
+        {/* 📅 Он сар өдөр гараар сонгох → тэр өдрийн долоо хоног руу */}
+        <input type="date" value={weekStart} onChange={(e) => { if (e.target.value) setWeekStart(iso(mondayOf(new Date(`${e.target.value}T00:00:00`)))); }} title="Огноо сонгоход тэр долоо хоног нээгдэнэ"
+          className="px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
         <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">🎧 {operators.length} оператор · {rows.filter((r) => empById[r.employee_id]).length} ээлж</span>
         <button onClick={copyPrevWeek} disabled={busy} className="press-btn px-3 py-1.5 rounded-lg text-xs ml-auto" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>📋 Өмнөх 7 хоногоос хуулах</button>
       </div>
@@ -34269,10 +34281,17 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
           <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
           <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
           <div className="flex gap-1 ml-auto">
-            {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"]].map(([id, lbl]) => (
+            {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
               <button key={id} onClick={() => setStatRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: statRange === id ? T.ink : T.surfaceAlt, color: statRange === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
             ))}
           </div>
+          {statRange === "custom" && (
+            <div className="flex items-center gap-1 w-full sm:w-auto">
+              <input type="date" value={statFrom} onChange={(e) => setStatFrom(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+              <span style={{ color: T.muted }} className="text-xs">–</span>
+              <input type="date" value={statTo} onChange={(e) => setStatTo(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+            </div>
+          )}
         </div>
         {stats.emps.length === 0 ? (
           <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Хуваарилалт алга</div>
