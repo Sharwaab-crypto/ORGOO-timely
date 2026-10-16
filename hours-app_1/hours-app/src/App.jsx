@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-shift-schedule2";
+const BUILD_VERSION = "v2026.10.16-op-shift-schedule3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34130,16 +34130,17 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   const shiftRows = (day, shiftId) => rows.filter((r) => r.day_of_week === day && opShiftOf(r) === shiftId && empById[r.employee_id]);
   const shiftWeek = (delta) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + delta * 7); setWeekStart(iso(d)); };
 
-  // ➕ Ажилтан ээлжид оноох (нэг ажилтан нэг өдөр нэг ээлж — байвал ээлжийг нь солино)
+  // ➕ Ажилтан ээлжид оноох — нэг ажилтан нэг өдөр ӨГЛӨӨ, ОРОЙ 2 ээлжид хоёуланд нь ажиллаж болно (ээлж бүр тусдаа мөр)
   const assign = async (day, shiftId, empId) => {
     const sh = OP_SHIFTS.find((s) => s.id === shiftId);
     setBusy(true);
     try {
-      const existing = rows.find((r) => r.employee_id === empId && r.day_of_week === day);
-      if (existing) {
-        const { error } = await supabase.from("work_schedules").update({ shift_start: sh.start, shift_end: sh.end }).eq("id", existing.id); if (error) throw error;
-      } else {
-        const { error } = await supabase.from("work_schedules").insert({ employee_id: empId, week_start: weekStart, day_of_week: day, shift_start: sh.start, shift_end: sh.end, fb_page_ids: [] }); if (error) throw error;
+      const dup = rows.find((r) => r.employee_id === empId && r.day_of_week === day && opShiftOf(r) === shiftId);
+      if (dup) { setPicker(null); return; }
+      const { error } = await supabase.from("work_schedules").insert({ employee_id: empId, week_start: weekStart, day_of_week: day, shift_start: sh.start, shift_end: sh.end, fb_page_ids: [] });
+      if (error) {
+        if (/duplicate|unique/i.test(error.message)) throw new Error("Нэг өдөрт 2 ээлж оноохыг DB-ийн unique хязгаар зөвшөөрөхгүй байна. SQL: ALTER TABLE work_schedules DROP CONSTRAINT <нэр>; (Supabase → work_schedules → Constraints-оос нэрийг нь харна)");
+        throw error;
       }
       setPicker(null); await load();
     } catch (e) { alert("Алдаа: " + e.message); }
@@ -34229,7 +34230,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {OP_SHIFTS.map((sh) => {
                     const list = shiftRows(day, sh.id);
-                    const assignedIds = new Set(rows.filter((r) => r.day_of_week === day).map((r) => r.employee_id));
+                    const assignedIds = new Set(list.map((r) => r.employee_id)); // зөвхөн ЭНЭ ээлжид оноогдсон — нөгөө ээлжид давхар оноож болно
                     return (
                       <div key={sh.id} className="rounded-xl p-2.5" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
                         <div className="flex items-center gap-2 mb-2">
@@ -34239,7 +34240,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
                         </div>
                         {picker && picker.day === day && picker.shift === sh.id && (
                           <div className="flex flex-wrap gap-1 mb-2 p-2 rounded-lg" style={{ background: T.surface, border: `1px dashed ${sh.color}66` }}>
-                            {operators.filter((e) => !assignedIds.has(e.id)).length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Бүх оператор энэ өдөр оноогдсон</span>}
+                            {operators.filter((e) => !assignedIds.has(e.id)).length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Бүх оператор энэ ээлжид оноогдсон</span>}
                             {operators.filter((e) => !assignedIds.has(e.id)).map((e) => (
                               <button key={e.id} disabled={busy} onClick={() => assign(day, sh.id, e.id)} className="press-btn px-2 py-1 rounded-full text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>+ {e.name}</button>
                             ))}
@@ -34254,6 +34255,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
                               return (
                                 <div key={r.id} className="rounded-lg px-2 py-1.5 flex items-center gap-2 flex-wrap" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                                   <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{empById[r.employee_id]?.name}</span>
+                                  {rows.some((x) => x.employee_id === r.employee_id && x.day_of_week === day && x.id !== r.id) && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(124,92,255,0.12)", color: "#7c5cff", fontFamily: FS, fontWeight: 700 }} title="Энэ өдөр 2 ээлжид ажиллана">2 ээлж</span>}
                                   <div className="flex flex-wrap gap-1">
                                     {pids.length === 0 && <span style={{ color: T.warn, fontFamily: FS }} className="text-[10px]">page оноогоогүй</span>}
                                     {pids.map((pid) => <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>🔗 {pageById[pid]?.name || "?"}</span>)}
