@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-shift-schedule3";
+const BUILD_VERSION = "v2026.10.16-op-shift-schedule5";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34094,6 +34094,9 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   const [picker, setPicker] = useState(null); // { day, shift } — ажилтан нэмэх
   const [pagePick, setPagePick] = useState(null); // { row } — page хуваарилах
   const [statRange, setStatRange] = useState("90"); // 30 | 90 | 365 | custom
+  // 🔀 Статистикийн хүснэгтийн page баганын дараалал (гараар солино, localStorage-д хадгална)
+  const [pageOrder, setPageOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("orgoo-opsched-page-order") || "[]"); } catch { return []; } });
+  const savePageOrder = (arr) => { setPageOrder(arr); try { localStorage.setItem("orgoo-opsched-page-order", JSON.stringify(arr)); } catch {} };
   const [statFrom, setStatFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; });
   const [statTo, setStatTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   const [busy, setBusy] = useState(false);
@@ -34189,10 +34192,13 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
       m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
       m[r.employee_id].shifts += 1;
     });
-    const pageIds = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
+    // Дараалал: гараар тогтоосон → үлдсэнийг нийт тоогоор
+    const auto = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
+    const pageIds = [...pageOrder.filter((id) => pageTot[id] !== undefined), ...auto.filter((id) => !pageOrder.includes(id))];
     const emps = Object.keys(m).map((id) => ({ id, name: empById[id]?.name || id.slice(0, 8), shifts: m[id].shifts, pages: m[id].pages, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
     return { pageIds, emps, pageTot };
-  }, [allRows, empById, statRange, statFrom, statTo]);
+  }, [allRows, empById, statRange, statFrom, statTo, pageOrder]);
+  const moveCol = (idx, dir) => { const arr = [...stats.pageIds]; const j = idx + dir; if (j < 0 || j >= arr.length) return; [arr[idx], arr[j]] = [arr[j], arr[idx]]; savePageOrder(arr); };
 
   const chip = (p, on, onClick) => (
     <button key={p.id} type="button" onClick={onClick} className="press-btn px-2 py-1 rounded-full text-[11px]"
@@ -34281,7 +34287,8 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа · ◀▶ баганын байрыг солино</span>
+          {pageOrder.length > 0 && <button onClick={() => savePageOrder([])} className="press-btn px-2 py-0.5 rounded-md text-[10px]" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>↺ Анхны дараалал</button>}
           <div className="flex gap-1 ml-auto">
             {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
               <button key={id} onClick={() => setStatRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: statRange === id ? T.ink : T.surfaceAlt, color: statRange === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
@@ -34304,7 +34311,15 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
                 <tr style={{ color: T.muted }}>
                   <th className="text-left py-1.5 px-2 font-medium sticky left-0" style={{ background: T.surface }}>Оператор</th>
                   <th className="text-right py-1.5 px-2 font-medium">Ээлж</th>
-                  {stats.pageIds.map((pid) => <th key={pid} className="text-right py-1.5 px-2 font-medium whitespace-nowrap">{pageById[pid]?.name || "?"}</th>)}
+                  {stats.pageIds.map((pid, idx) => (
+                    <th key={pid} className="text-right py-1.5 px-2 font-medium whitespace-nowrap">
+                      <span className="inline-flex items-center gap-0.5">
+                        <button onClick={() => moveCol(idx, -1)} disabled={idx === 0} title="Зүүн тийш" className="press-btn px-0.5 text-[10px]" style={{ color: idx === 0 ? T.mutedSoft : T.ink }}>◀</button>
+                        {pageById[pid]?.name || "?"}
+                        <button onClick={() => moveCol(idx, 1)} disabled={idx === stats.pageIds.length - 1} title="Баруун тийш" className="press-btn px-0.5 text-[10px]" style={{ color: idx === stats.pageIds.length - 1 ? T.mutedSoft : T.ink }}>▶</button>
+                      </span>
+                    </th>
+                  ))}
                   <th className="text-right py-1.5 px-2 font-medium">Нийт</th>
                 </tr>
               </thead>
