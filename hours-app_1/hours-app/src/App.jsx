@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-zones-pending";
+const BUILD_VERSION = "v2026.10.16-zones-pending2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -7582,18 +7582,25 @@ function ZonesView({ profile }) {
   const [pendingNew, setPendingNew] = useState([]); // 🆕 жолоочгүй шинэ захиалгууд
   const [pendingPopup, setPendingPopup] = useState(null); // { driver, list }
 
-  const loadAll = async () => {
-    setLoading(true);
+  // 🆕 Шинэ дээр хүлээгдэж буй (жолоочгүй) захиалгууд — ЧИМЭЭГҮЙ шинэчилнэ (spinner-гүй, дэлгэц хөдлөхгүй)
+  const loadPending = async () => {
     try {
-      const [{ data: zoneData }, { data: drvData }, newOrd] = await Promise.all([
+      const newOrd = await fetchAllRows(supabase.from("biz_orders").select("id, order_number, customer_name, customer_phone, delivery_address, delivery_city, delivery_district, delivery_khoroo, delivery_lat, delivery_lng, total_amount, created_at, is_unknown").eq("status", "new").is("driver_id", null));
+      setPendingNew(newOrd || []);
+    } catch (e) { console.error("[zones pending]", e); }
+  };
+  const firstLoadRef = useRef(true);
+  const loadAll = async () => {
+    if (firstLoadRef.current) setLoading(true); // зөвхөн эхний ачаалалд spinner — realtime шинэчлэлд дэлгэц хөдлөхгүй
+    try {
+      const [{ data: zoneData }, { data: drvData }] = await Promise.all([
         supabase.from("biz_zones").select("*").order("name"),
         supabase.from("profiles").select("id, name").eq("role", "driver").order("name"),
-        // 🆕 Шинэ дээр хүлээгдэж буй (жолоочгүй) захиалгууд — бүс бүрд хэд унаж байгааг тоолно
-        fetchAllRows(supabase.from("biz_orders").select("id, order_number, customer_name, customer_phone, delivery_address, delivery_city, delivery_district, delivery_khoroo, delivery_lat, delivery_lng, total_amount, created_at, is_unknown").eq("status", "new").is("driver_id", null)).catch(() => []),
       ]);
       setZones(zoneData || []);
       setDrivers(drvData || []);
-      setPendingNew(newOrd || []);
+      await loadPending();
+      firstLoadRef.current = false;
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -7602,10 +7609,11 @@ function ZonesView({ profile }) {
 
   // Debounced realtime
   const debouncedReload = useDebouncedCallback(loadAll, 800);
+  const debouncedPending = useDebouncedCallback(loadPending, 5000); // захиалгын өөрчлөлт — 5 сек нэгтгээд чимээгүй шинэчилнэ
   useEffect(() => {
     const ch = supabase.channel("zones-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "biz_zones" }, debouncedReload)
-      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedPending)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -7833,10 +7841,10 @@ function ZonesView({ profile }) {
       {/* 🆕 Хүлээгдэж буй захиалгын дэлгэрэнгүй popup */}
       {pendingPopup && (
         <Modal onClose={() => setPendingPopup(null)} staticBackdrop title={`🆕 Шинэ дээр хүлээгдэж буй — ${pendingPopup.driver.name}`} maxW="max-w-2xl">
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{pendingPopup.list.length} захиалга · жолоочид хуваарилагдаагүй</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{(pendingPopup.driver.id ? (driversWithZones.find((d) => d.id === pendingPopup.driver.id)?.pending || []) : noZoneOrders).length} захиалга · жолоочид хуваарилагдаагүй · 🔄 автоматаар шинэчлэгдэнэ</div>
           <div className="space-y-1.5 max-h-[65vh] overflow-y-auto pr-1">
-            {pendingPopup.list.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Захиалга алга</div>}
-            {[...pendingPopup.list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((o) => {
+            {(pendingPopup.driver.id ? (driversWithZones.find((d) => d.id === pendingPopup.driver.id)?.pending || []) : noZoneOrders).length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Захиалга алга</div>}
+            {[...(pendingPopup.driver.id ? (driversWithZones.find((d) => d.id === pendingPopup.driver.id)?.pending || []) : noZoneOrders)].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((o) => {
               const loc = [o.delivery_city, o.delivery_district, o.delivery_khoroo].filter(Boolean).join(", ");
               return (
                 <div key={o.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderLeft: `3px solid #3b82f6` }}>
