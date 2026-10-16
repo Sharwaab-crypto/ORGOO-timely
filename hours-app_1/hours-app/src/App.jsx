@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-my-schedule";
+const BUILD_VERSION = "v2026.10.16-op-my-schedule2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34368,19 +34368,27 @@ function MyShiftScheduleView({ profile }) {
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [weekStart, setWeekStart] = useState(() => iso(mondayOf(new Date())));
   const [rows, setRows] = useState(null);
+  const [teamRows, setTeamRows] = useState([]); // 👥 бүх багийн ээлж (зөвхөн харах)
+  const [nameById, setNameById] = useState({});
   const [pageById, setPageById] = useState({});
+  const [showTeam, setShowTeam] = useState(true);
   useEffect(() => {
     let dead = false;
     (async () => {
       setRows(null);
       try {
-        const [{ data: ws }, { data: pg }] = await Promise.all([
-          supabase.from("work_schedules").select("*").eq("employee_id", profile.id).eq("week_start", weekStart),
+        const [{ data: all }, { data: pg }] = await Promise.all([
+          supabase.from("work_schedules").select("*").eq("week_start", weekStart),
           supabase.from("biz_fb_pages").select("id, name"),
         ]);
         if (dead) return;
         const m = {}; (pg || []).forEach((p) => { m[p.id] = p; }); setPageById(m);
-        setRows(ws || []);
+        const team = all || [];
+        const ids = [...new Set(team.map((r) => r.employee_id).filter(Boolean))];
+        if (ids.length) { const { data: pf } = await supabase.from("profiles").select("id, name").in("id", ids); const nm = {}; (pf || []).forEach((p) => { nm[p.id] = p.name; }); if (!dead) setNameById(nm); }
+        if (dead) return;
+        setTeamRows(team);
+        setRows(team.filter((r) => r.employee_id === profile.id));
       } catch (e) { console.error("[my schedule]", e); if (!dead) setRows([]); }
     })();
     return () => { dead = true; };
@@ -34434,6 +34442,52 @@ function MyShiftScheduleView({ profile }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 👥 Багийн хуваарь — хэн аль ээлжид, ямар page-тэй (зөвхөн харах) */}
+      {rows !== null && (
+        <div className="glass rounded-2xl p-3">
+          <button onClick={() => setShowTeam((v) => !v)} className="w-full flex items-center gap-2">
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">👥 Багийн хуваарь</span>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{teamRows.length} ээлж · зөвхөн харах</span>
+            <span style={{ color: T.muted }} className="ml-auto text-xs">{showTeam ? "▲" : "▼"}</span>
+          </button>
+          {showTeam && (
+            <div className="mt-2 space-y-2">
+              {days.map((d, i) => {
+                const day = i + 1; const isToday = iso(d) === todayIso;
+                const dayRows = teamRows.filter((r) => r.day_of_week === day);
+                return (
+                  <div key={day} className="rounded-xl p-2" style={{ background: T.surfaceAlt, border: `1px solid ${isToday ? T.highlight : T.border}` }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span style={{ color: isToday ? T.highlight : T.ink, fontFamily: FS, fontWeight: 700 }} className="text-xs">{dayNames[i]}</span>
+                      <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{iso(d).slice(5)}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                      {OP_SHIFTS.map((sh) => {
+                        const list = dayRows.filter((r) => opShiftOf(r) === sh.id).sort((a, b) => String(nameById[a.employee_id] || "").localeCompare(String(nameById[b.employee_id] || ""), "mn"));
+                        return (
+                          <div key={sh.id} className="rounded-lg p-2" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
+                            <div style={{ color: sh.color, fontFamily: FS, fontWeight: 700 }} className="text-[11px] mb-1">{sh.label} <span style={{ color: T.muted, fontWeight: 500 }}>{sh.time} · {list.length}</span></div>
+                            {list.length === 0 ? <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">—</div> : list.map((r) => {
+                              const pids = Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []; const me = r.employee_id === profile.id;
+                              return (
+                                <div key={r.id} className="flex items-start gap-1.5 flex-wrap mb-1">
+                                  <span style={{ color: me ? T.highlight : T.ink, fontFamily: FS, fontWeight: 700 }} className="text-[11px]">{me ? "⭐ " : ""}{nameById[r.employee_id] || "?"}</span>
+                                  {pids.map((pid) => <span key={pid} className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: T.surface, color: T.highlight, border: `1px solid ${T.border}`, fontFamily: FS, fontWeight: 600 }}>{pageById[pid]?.name || "?"}</span>)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
