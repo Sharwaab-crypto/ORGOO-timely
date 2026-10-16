@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-sched-taken";
+const BUILD_VERSION = "v2026.10.16-cc-issue-operator";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -14864,7 +14864,7 @@ function CcIssuesPanel({ profile, onCountChange }) {
       setIssues(rows || []);
       const oids = [...new Set((rows || []).map((r) => r.order_id).filter(Boolean))];
       if (oids.length) {
-        const ords = await fetchInChunks("biz_orders", oids, { select: "id, order_number, customer_phone, total_amount", chunkSize: 150, parallel: 4 });
+        const ords = await fetchInChunks("biz_orders", oids, { select: "id, order_number, customer_phone, total_amount, taken_by, created_at", chunkSize: 150, parallel: 4 });
         const om = {};
         (ords || []).forEach((o) => { om[o.id] = o; });
         setOrders(om);
@@ -14979,6 +14979,12 @@ function CcIssuesPanel({ profile, onCountChange }) {
                   {o.order_number ? ` · 📦 ${o.order_number}` : ""}
                   {o.customer_phone ? ` · 📞 ${o.customer_phone}` : ""}
                 </div>
+                {o.id && (
+                  <div className="text-[10px] mt-0.5" style={{ fontFamily: FM }}>
+                    <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(147,51,234,0.10)", color: "#9333ea", fontWeight: 700 }}>🎧 Захиалга үүсгэсэн: {o.taken_by ? (people[o.taken_by] || "?") : "тодорхойгүй"}</span>
+                    {o.created_at && <span style={{ color: T.muted }}> · {dfmt(o.created_at)}</span>}
+                  </div>
+                )}
                 {((itemsMap[it.order_id] || []).length > 0 || o.total_amount != null) && (
                   <div className="text-[10px] mt-1 flex flex-wrap items-center gap-1" style={{ fontFamily: FM }}>
                     {(itemsMap[it.order_id] || []).slice(0, 4).map((x, i) => (
