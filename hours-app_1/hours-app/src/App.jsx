@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-my-schedule3";
+const BUILD_VERSION = "v2026.10.16-op-sched-taken";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34350,10 +34350,35 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
       {pagePick && (
         <Modal onClose={() => setPagePick(null)} staticBackdrop title={`🔗 Page хуваарилах — ${empById[pagePick.row.employee_id]?.name || ""}`} maxW="max-w-md">
           <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{dayNames[pagePick.row.day_of_week - 1]} · {OP_SHIFTS.find((s) => s.id === opShiftOf(pagePick.row))?.label} · сонгосон {(pagePick.row.fb_page_ids || []).length}</div>
-          <div className="flex flex-wrap gap-1.5 max-h-72 overflow-y-auto mb-3">
-            {pages.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Идэвхтэй FB page алга</span>}
-            {pages.map((p) => chip(p, (pagePick.row.fb_page_ids || []).includes(p.id), () => togglePage(pagePick.row, p.id)))}
-          </div>
+          {(() => {
+            // 🎨 Энэ өдөр, ЭНЭ ээлжид бусад ажилтанд аль хэдийн хуваарилагдсан page-үүд → улбар шар, нэртэй
+            const shIds = opShiftsOf(pagePick.row);
+            const takenBy = {};
+            rows.filter((r) => r.id !== pagePick.row.id && r.day_of_week === pagePick.row.day_of_week && opShiftsOf(r).some((s) => shIds.includes(s)) && empById[r.employee_id])
+              .forEach((r) => (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => { (takenBy[pid] = takenBy[pid] || []).push(String(empById[r.employee_id].name).replace(/\s\d{8}$/, "")); }));
+            const sel = pagePick.row.fb_page_ids || [];
+            return (
+              <>
+                <div className="flex items-center gap-3 mb-1.5 text-[10px]" style={{ fontFamily: FS, color: T.muted }}>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: T.highlight, verticalAlign: -1 }} /> сонгосон</span>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: T.warn, verticalAlign: -1 }} /> энэ ээлжид өөр ажилтанд хуваарилагдсан</span>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, verticalAlign: -1 }} /> чөлөөтэй</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-72 overflow-y-auto mb-3">
+                  {pages.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Идэвхтэй FB page алга</span>}
+                  {pages.map((p) => {
+                    const on = sel.includes(p.id); const who = takenBy[p.id];
+                    return (
+                      <button key={p.id} type="button" onClick={() => togglePage(pagePick.row, p.id)} title={who ? `Энэ ээлжид: ${who.join(", ")}` : ""} className="press-btn px-2 py-1 rounded-full text-[11px]"
+                        style={{ background: on ? T.highlight : who ? T.warnSoft : T.surfaceAlt, color: on ? "#fff" : who ? T.warn : T.ink, border: `1px solid ${on ? "transparent" : who ? T.warn : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>
+                        {on ? "✓ " : ""}{p.name}{who && !on ? <span style={{ fontWeight: 500, opacity: .85 }}> · {who.join(", ")}</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
           <div className="flex gap-2">
             <button onClick={() => unassign(pagePick.row)} className="press-btn px-3 py-2 rounded-xl text-xs" style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>✕ Ээлжээс хасах</button>
             <button onClick={() => setPagePick(null)} className="glow-primary press-btn flex-1 py-2 rounded-xl text-sm" style={{ fontFamily: FS }}>Болсон</button>
