@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-cc-issue-operator";
+const BUILD_VERSION = "v2026.10.16-zones-pending";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -7579,16 +7579,21 @@ function ZonesView({ profile }) {
   const [editZone, setEditZone] = useState(null);
   const [showAllMap, setShowAllMap] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
+  const [pendingNew, setPendingNew] = useState([]); // 🆕 жолоочгүй шинэ захиалгууд
+  const [pendingPopup, setPendingPopup] = useState(null); // { driver, list }
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [{ data: zoneData }, { data: drvData }] = await Promise.all([
+      const [{ data: zoneData }, { data: drvData }, newOrd] = await Promise.all([
         supabase.from("biz_zones").select("*").order("name"),
         supabase.from("profiles").select("id, name").eq("role", "driver").order("name"),
+        // 🆕 Шинэ дээр хүлээгдэж буй (жолоочгүй) захиалгууд — бүс бүрд хэд унаж байгааг тоолно
+        fetchAllRows(supabase.from("biz_orders").select("id, order_number, customer_name, customer_phone, delivery_address, delivery_city, delivery_district, delivery_khoroo, delivery_lat, delivery_lng, total_amount, created_at, is_unknown").eq("status", "new").is("driver_id", null)).catch(() => []),
       ]);
       setZones(zoneData || []);
       setDrivers(drvData || []);
+      setPendingNew(newOrd || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -7600,6 +7605,7 @@ function ZonesView({ profile }) {
   useEffect(() => {
     const ch = supabase.channel("zones-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "biz_zones" }, debouncedReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "biz_orders" }, debouncedReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -7656,9 +7662,14 @@ function ZonesView({ profile }) {
   const driversWithZones = useMemo(() => {
     return drivers.map((d) => {
       const driverZones = zones.filter((z) => z.driver_id === d.id && z.is_active);
-      return { ...d, zones: driverZones };
+      // 🆕 Энэ жолоочийн бүсэд унаж буй, Шинэ дээр хүлээгдэж байгаа захиалгууд
+      const pending = driverZones.length === 0 ? [] : pendingNew.filter((o) => o.delivery_lat && o.delivery_lng && driverZones.some((z) => isPointInPolygon([Number(o.delivery_lat), Number(o.delivery_lng)], z.polygon || [])));
+      return { ...d, zones: driverZones, pending };
     });
-  }, [drivers, zones]);
+  }, [drivers, zones, pendingNew]);
+  const zonedDrivers = driversWithZones.filter((d) => d.zones.length > 0);
+  const unzonedDrivers = driversWithZones.filter((d) => d.zones.length === 0);
+  const noZoneOrders = useMemo(() => pendingNew.filter((o) => !o.delivery_lat || !o.delivery_lng || !zones.some((z) => z.is_active && z.driver_id && isPointInPolygon([Number(o.delivery_lat), Number(o.delivery_lng)], z.polygon || []))), [pendingNew, zones]);
 
   const unassignedZones = zones.filter((z) => !z.driver_id);
 
@@ -7709,8 +7720,20 @@ function ZonesView({ profile }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {driversWithZones.map((d) => (
-            <div key={d.id} className="glass rounded-2xl p-3">
+          {/* 🆕 Шинэ дээр хүлээгдэж буй нийт + бүсэд ороогүй */}
+          <div className="glass rounded-2xl p-3 flex items-center gap-3 flex-wrap">
+            <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">🆕 Шинэ дээр хүлээгдэж буй: {pendingNew.length}</span>
+            <button onClick={() => setPendingPopup({ driver: { name: "Аль ч бүсэд ороогүй / байршилгүй" }, list: noZoneOrders })} disabled={noZoneOrders.length === 0}
+              className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: noZoneOrders.length ? T.warnSoft : T.surfaceAlt, color: noZoneOrders.length ? T.warn : T.muted, fontFamily: FS, fontWeight: 700 }}>
+              ⚠ Бүсэд ороогүй: {noZoneOrders.length}
+            </button>
+            <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">тоон дээр дарж дэлгэрэнгүй</span>
+          </div>
+
+          <div style={{ color: T.ok, fontFamily: FS, fontWeight: 700 }} className="text-xs px-1">✅ Бүс хуваарилагдсан ({zonedDrivers.length})</div>
+          {zonedDrivers.length === 0 && <div className="glass rounded-2xl p-4 text-center text-xs" style={{ color: T.muted, fontFamily: FS }}>Бүс хуваарилагдсан хүргэгч алга</div>}
+          {zonedDrivers.map((d) => (
+            <div key={d.id} className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.ok}` }}>
               <div className="flex items-center gap-2 mb-2">
                 <div style={{ background: "#0ea5e9", color: "white" }}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
@@ -7724,6 +7747,11 @@ function ZonesView({ profile }) {
                     {d.zones.length} бүс
                   </div>
                 </div>
+                <button onClick={() => d.pending.length && setPendingPopup({ driver: d, list: d.pending })} title="Энэ жолоочийн бүсэд унаж буй, Шинэ дээр хүлээгдэж байгаа захиалга"
+                  className="press-btn px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5"
+                  style={{ background: d.pending.length ? "#3b82f6" : T.surfaceAlt, color: d.pending.length ? "#fff" : T.muted, fontFamily: FS, fontWeight: 700, cursor: d.pending.length ? "pointer" : "default" }}>
+                  🆕 {d.pending.length} <span style={{ fontWeight: 500, opacity: .9 }}>хүлээгдэж буй</span>
+                </button>
               </div>
               {d.zones.length > 0 && (
                 <div className="space-y-1">
@@ -7759,6 +7787,16 @@ function ZonesView({ profile }) {
             </div>
           ))}
 
+          <div style={{ color: T.warn, fontFamily: FS, fontWeight: 700 }} className="text-xs px-1 pt-1">⚠ Бүс хуваарилаагүй ({unzonedDrivers.length})</div>
+          {unzonedDrivers.length === 0 ? <div className="glass rounded-2xl p-3 text-center text-xs" style={{ color: T.muted, fontFamily: FS }}>Бүх хүргэгч бүстэй</div> : (
+            <div className="glass rounded-2xl p-3 flex flex-wrap gap-1.5">
+              {unzonedDrivers.map((d) => (
+                <button key={d.id} onClick={() => { setEditZone({ driver_id: d.id }); setShowEditor(true); }} title="Энэ хүргэгчид бүс үүсгэх"
+                  className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px dashed ${T.warn}`, fontFamily: FS, fontWeight: 600 }}>🚚 {d.name} <span style={{ color: T.warn }}>+ бүс</span></button>
+              ))}
+            </div>
+          )}
+
           {/* Unassigned */}
           {unassignedZones.length > 0 && (
             <div className="glass rounded-2xl p-3" style={{ borderLeft: `3px solid ${T.warn}` }}>
@@ -7792,6 +7830,31 @@ function ZonesView({ profile }) {
       )}
 
       {/* Editor Modal */}
+      {/* 🆕 Хүлээгдэж буй захиалгын дэлгэрэнгүй popup */}
+      {pendingPopup && (
+        <Modal onClose={() => setPendingPopup(null)} staticBackdrop title={`🆕 Шинэ дээр хүлээгдэж буй — ${pendingPopup.driver.name}`} maxW="max-w-2xl">
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{pendingPopup.list.length} захиалга · жолоочид хуваарилагдаагүй</div>
+          <div className="space-y-1.5 max-h-[65vh] overflow-y-auto pr-1">
+            {pendingPopup.list.length === 0 && <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Захиалга алга</div>}
+            {[...pendingPopup.list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((o) => {
+              const loc = [o.delivery_city, o.delivery_district, o.delivery_khoroo].filter(Boolean).join(", ");
+              return (
+                <div key={o.id} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderLeft: `3px solid #3b82f6` }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs">#{o.order_number}</span>
+                    <a href={`tel:${o.customer_phone}`} style={{ color: T.highlight, fontFamily: FM, fontWeight: 700 }} className="text-xs">📞 {o.customer_phone}</a>
+                    {o.customer_name && <span style={{ color: T.inkSoft, fontFamily: FS }} className="text-xs">{o.customer_name}</span>}
+                    {o.is_unknown && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: T.warnSoft, color: T.warn, fontFamily: FS, fontWeight: 700 }}>❓ Тодорхойгүй</span>}
+                    <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs ml-auto tabular-nums">{Number(o.total_amount || 0).toLocaleString()}₮</span>
+                  </div>
+                  <div style={{ color: T.ink, fontFamily: FS }} className="text-xs mt-1">📍 {o.delivery_address || <span style={{ color: T.muted }}>хаяг бичигдээгүй</span>}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mt-0.5">{loc ? `🗺 ${loc} · ` : ""}{!o.delivery_lat ? "GPS байхгүй · " : ""}{new Date(o.created_at).toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Ulaanbaatar" }).replace(",", "")}</div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
       {showEditor && (
         <ZoneEditorModal
           zone={editZone}
@@ -8611,7 +8674,7 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
         polygon,
       };
 
-      if (zone) {
+      if (zone && zone.id) {
         await supabase.from("biz_zones").update(data).eq("id", zone.id);
       } else {
         await supabase.from("biz_zones").insert({
@@ -8640,7 +8703,7 @@ function ZoneEditorModal({ zone, drivers, profile, otherZones = [], onClose }) {
         <div className="p-3 flex items-center justify-between flex-shrink-0"
           style={{ borderBottom: `1px solid ${T.border}` }}>
           <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-base">
-            🗺 {zone ? "Бүс засах" : "+ Шинэ бүс"}
+            🗺 {zone && zone.id ? "Бүс засах" : "+ Шинэ бүс"}
           </div>
           <button onClick={onClose} disabled={busy}
             className="press-btn p-2" style={{ color: T.muted }}>✕</button>
