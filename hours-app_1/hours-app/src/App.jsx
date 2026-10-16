@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.15-detail-map-zones";
+const BUILD_VERSION = "v2026.10.16-op-shift-schedule";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2985,7 +2985,7 @@ function AdminDashboard({ profile }) {
                 {view === "announcements" && "Бүх ажилтанд хүрэх мэдээлэл"}
                 {view === "best" && "Сар бүрийн шилдэг ажилтны жагсаалт"}
                 {view === "calendar" && "Чөлөө + амралтын календар"}
-                {view === "schedule" && "Долоо хоногийн ажлын хуваарь"}
+                {view === "schedule" && "Операторын ээлжийн хуваарь — 🌅 09:00–15:00 / 🌙 15:00–21:00, page хуваарилалт"}
                 {view === "skills" && "Ажилтны ур чадвар + сургалт"}
                 {view === "polls" && "Ажилтнуудаас санал авах"}
                 {view === "hrfile" && "Ажилтны хувийн дэлгэрэнгүй мэдээлэл"}
@@ -3178,11 +3178,9 @@ function AdminDashboard({ profile }) {
         )}
 
         {view === "schedule" && (
-          <ScheduleView
+          <OperatorShiftScheduleView
             employees={employees}
             departments={departments}
-            sites={sites}
-            isAdmin={true}
           />
         )}
 
@@ -34074,6 +34072,260 @@ function SkillFormModal({ skill, employees, onSave, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  SCHEDULE VIEW — Долоо хоногийн ажилтны хуваарь
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  🕐 ОПЕРАТОРЫН ЭЭЛЖИЙН ХУВААРЬ (admin) — Өглөө 09:00–15:00 / Орой 15:00–21:00
+//  DB: work_schedules (employee_id, week_start, day_of_week 1..7, shift_start, shift_end, fb_page_ids[], notes)
+//  Ээлж бүрд ажиллах операторуудыг оноож, оператор бүрд FB page хуваарилна. Доор: хэн аль page-ийг хэдэн удаа авсан.
+// ═══════════════════════════════════════════════════════════════════════════
+const OP_SHIFTS = [
+  { id: "am", label: "🌅 Өглөөний ээлж", time: "09:00–15:00", start: "09:00", end: "15:00", color: "#e08a00", bg: "rgba(224,138,0,0.08)" },
+  { id: "pm", label: "🌙 Оройн ээлж", time: "15:00–21:00", start: "15:00", end: "21:00", color: "#1c7fc4", bg: "rgba(28,127,196,0.08)" },
+];
+const opShiftOf = (row) => { const s = String(row?.shift_start || "").slice(0, 5); return s === "15:00" ? "pm" : s === "09:00" ? "am" : (s && s < "13:00" ? "am" : s ? "pm" : null); };
+
+function OperatorShiftScheduleView({ employees, departments = [] }) {
+  const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = x.getDay() === 0 ? 6 : x.getDay() - 1; x.setDate(x.getDate() - day); return x; };
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [weekStart, setWeekStart] = useState(() => iso(mondayOf(new Date())));
+  const [rows, setRows] = useState([]); // энэ долоо хоногийн work_schedules
+  const [allRows, setAllRows] = useState([]); // статистикт — сүүлийн 90 хоног
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [picker, setPicker] = useState(null); // { day, shift } — ажилтан нэмэх
+  const [pagePick, setPagePick] = useState(null); // { row } — page хуваарилах
+  const [statRange, setStatRange] = useState("90"); // 30 | 90 | 365
+  const [busy, setBusy] = useState(false);
+
+  // 👥 Зөвхөн операторын хэлтсийн ажилчид (role=operator эсвэл хэлтсийн нэр "оператор")
+  const opDeptIds = new Set(departments.filter((d) => /оператор|operator|call/i.test(d.name || "")).map((d) => d.id));
+  const operators = useMemo(() => employees.filter((e) => e.is_active !== false && (e.role === "operator" || opDeptIds.has(e.department_id))).sort((a, b) => String(a.name).localeCompare(String(b.name), "mn")), [employees, departments]);
+  const empById = useMemo(() => { const m = {}; employees.forEach((e) => { m[e.id] = e; }); return m; }, [employees]);
+  const pageById = useMemo(() => { const m = {}; pages.forEach((p) => { m[p.id] = p; }); return m; }, [pages]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const since = new Date(); since.setDate(since.getDate() - Number(statRange));
+      const [wk, all, pg] = await Promise.all([
+        supabase.from("work_schedules").select("*").eq("week_start", weekStart),
+        fetchAllRows(supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, fb_page_ids").gte("week_start", iso(mondayOf(since)))),
+        supabase.from("biz_fb_pages").select("id, name, is_active").order("name"),
+      ]);
+      setRows(wk.data || []);
+      setAllRows(all || []);
+      setPages((pg.data || []).filter((p) => p.is_active !== false));
+    } catch (e) { console.error("[op schedule]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [weekStart, statRange]);
+
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + i); return d; });
+  const dayNames = ["Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
+  const todayIso = iso(new Date());
+  const shiftRows = (day, shiftId) => rows.filter((r) => r.day_of_week === day && opShiftOf(r) === shiftId && empById[r.employee_id]);
+  const shiftWeek = (delta) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + delta * 7); setWeekStart(iso(d)); };
+
+  // ➕ Ажилтан ээлжид оноох (нэг ажилтан нэг өдөр нэг ээлж — байвал ээлжийг нь солино)
+  const assign = async (day, shiftId, empId) => {
+    const sh = OP_SHIFTS.find((s) => s.id === shiftId);
+    setBusy(true);
+    try {
+      const existing = rows.find((r) => r.employee_id === empId && r.day_of_week === day);
+      if (existing) {
+        const { error } = await supabase.from("work_schedules").update({ shift_start: sh.start, shift_end: sh.end }).eq("id", existing.id); if (error) throw error;
+      } else {
+        const { error } = await supabase.from("work_schedules").insert({ employee_id: empId, week_start: weekStart, day_of_week: day, shift_start: sh.start, shift_end: sh.end, fb_page_ids: [] }); if (error) throw error;
+      }
+      setPicker(null); await load();
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const unassign = async (row) => {
+    if (!confirm(`${empById[row.employee_id]?.name} — ээлжээс хасах уу?`)) return;
+    try { const { error } = await supabase.from("work_schedules").delete().eq("id", row.id); if (error) throw error; setPagePick(null); await load(); } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const togglePage = async (row, pageId) => {
+    const cur = Array.isArray(row.fb_page_ids) ? row.fb_page_ids : [];
+    const next = cur.includes(pageId) ? cur.filter((x) => x !== pageId) : [...cur, pageId];
+    try {
+      const { error } = await supabase.from("work_schedules").update({ fb_page_ids: next }).eq("id", row.id); if (error) throw error;
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, fb_page_ids: next } : r)));
+      setPagePick((p) => (p && p.row.id === row.id ? { row: { ...row, fb_page_ids: next } } : p));
+      setAllRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, fb_page_ids: next } : r)));
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  // 📋 Өмнөх долоо хоногийн хуваарийг хуулах
+  const copyPrevWeek = async () => {
+    const prev = new Date(`${weekStart}T00:00:00`); prev.setDate(prev.getDate() - 7);
+    const { data } = await supabase.from("work_schedules").select("employee_id, day_of_week, shift_start, shift_end, fb_page_ids, site_id, notes").eq("week_start", iso(prev));
+    const src = (data || []).filter((r) => empById[r.employee_id] && !rows.some((x) => x.employee_id === r.employee_id && x.day_of_week === r.day_of_week));
+    if (src.length === 0) { alert("Өмнөх долоо хоногт хуулах хуваарь алга (эсвэл аль хэдийн байна)"); return; }
+    if (!confirm(`Өмнөх долоо хоногоос ${src.length} ээлж хуулах уу?`)) return;
+    setBusy(true);
+    try { const { error } = await supabase.from("work_schedules").insert(src.map((r) => ({ ...r, week_start: weekStart }))); if (error) throw error; await load(); }
+    catch (e) { alert("Алдаа: " + e.message); } finally { setBusy(false); }
+  };
+
+  // 📊 Статистик: ажилтан × page хэдэн удаа (ээлж бүр = 1 удаа)
+  const stats = useMemo(() => {
+    const m = {}; const pageTot = {};
+    allRows.forEach((r) => {
+      if (!empById[r.employee_id]) return;
+      (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => {
+        m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
+        m[r.employee_id].pages[pid] = (m[r.employee_id].pages[pid] || 0) + 1;
+        pageTot[pid] = (pageTot[pid] || 0) + 1;
+      });
+      m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
+      m[r.employee_id].shifts += 1;
+    });
+    const pageIds = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
+    const emps = Object.keys(m).map((id) => ({ id, name: empById[id]?.name || id.slice(0, 8), shifts: m[id].shifts, pages: m[id].pages, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
+    return { pageIds, emps, pageTot };
+  }, [allRows, empById]);
+
+  const chip = (p, on, onClick) => (
+    <button key={p.id} type="button" onClick={onClick} className="press-btn px-2 py-1 rounded-full text-[11px]"
+      style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.ink, border: `1px solid ${on ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>{on ? "✓ " : ""}{p.name}</button>
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Толгой: долоо хоног */}
+      <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        <button onClick={() => shiftWeek(-1)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>‹</button>
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{weekStart} → {iso(days[6])}</span>
+        <button onClick={() => shiftWeek(1)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS }}>›</button>
+        <button onClick={() => setWeekStart(iso(mondayOf(new Date())))} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>Энэ 7 хоног</button>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">🎧 {operators.length} оператор · {rows.filter((r) => empById[r.employee_id]).length} ээлж</span>
+        <button onClick={copyPrevWeek} disabled={busy} className="press-btn px-3 py-1.5 rounded-lg text-xs ml-auto" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>📋 Өмнөх 7 хоногоос хуулах</button>
+      </div>
+
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : (
+        <div className="space-y-2">
+          {days.map((d, i) => {
+            const day = i + 1; const isToday = iso(d) === todayIso;
+            return (
+              <div key={day} className="glass rounded-2xl p-3" style={isToday ? { border: `1px solid ${T.highlight}` } : {}}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span style={{ color: isToday ? T.highlight : T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">{dayNames[i]}</span>
+                  <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{iso(d).slice(5)}</span>
+                  {isToday && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 700 }}>Өнөөдөр</span>}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {OP_SHIFTS.map((sh) => {
+                    const list = shiftRows(day, sh.id);
+                    const assignedIds = new Set(rows.filter((r) => r.day_of_week === day).map((r) => r.employee_id));
+                    return (
+                      <div key={sh.id} className="rounded-xl p-2.5" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span style={{ color: sh.color, fontFamily: FS, fontWeight: 700 }} className="text-xs">{sh.label}</span>
+                          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{sh.time} · {list.length} ажилтан</span>
+                          <button onClick={() => setPicker(picker && picker.day === day && picker.shift === sh.id ? null : { day, shift: sh.id })} className="press-btn ml-auto px-2 py-1 rounded-lg text-[11px]" style={{ background: sh.color, color: "#fff", fontFamily: FS, fontWeight: 700 }}>+ Ажилтан</button>
+                        </div>
+                        {picker && picker.day === day && picker.shift === sh.id && (
+                          <div className="flex flex-wrap gap-1 mb-2 p-2 rounded-lg" style={{ background: T.surface, border: `1px dashed ${sh.color}66` }}>
+                            {operators.filter((e) => !assignedIds.has(e.id)).length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[11px]">Бүх оператор энэ өдөр оноогдсон</span>}
+                            {operators.filter((e) => !assignedIds.has(e.id)).map((e) => (
+                              <button key={e.id} disabled={busy} onClick={() => assign(day, sh.id, e.id)} className="press-btn px-2 py-1 rounded-full text-[11px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>+ {e.name}</button>
+                            ))}
+                          </div>
+                        )}
+                        {list.length === 0 ? (
+                          <div style={{ color: T.muted, fontFamily: FS }} className="text-[11px] py-1">Ажилтан оноогоогүй</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {list.map((r) => {
+                              const pids = Array.isArray(r.fb_page_ids) ? r.fb_page_ids : [];
+                              return (
+                                <div key={r.id} className="rounded-lg px-2 py-1.5 flex items-center gap-2 flex-wrap" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+                                  <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{empById[r.employee_id]?.name}</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {pids.length === 0 && <span style={{ color: T.warn, fontFamily: FS }} className="text-[10px]">page оноогоогүй</span>}
+                                    {pids.map((pid) => <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>🔗 {pageById[pid]?.name || "?"}</span>)}
+                                  </div>
+                                  <button onClick={() => setPagePick({ row: r })} className="press-btn ml-auto px-2 py-0.5 rounded-md text-[10px]" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>🔗 Page</button>
+                                  <button onClick={() => unassign(r)} className="press-btn px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 700 }}>✕</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 📊 Хэн аль page-ийг хэдэн удаа авсан */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
+          <div className="flex gap-1 ml-auto">
+            {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"]].map(([id, lbl]) => (
+              <button key={id} onClick={() => setStatRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: statRange === id ? T.ink : T.surfaceAlt, color: statRange === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+        {stats.emps.length === 0 ? (
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Хуваарилалт алга</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="text-xs" style={{ fontFamily: FS, minWidth: 420 }}>
+              <thead>
+                <tr style={{ color: T.muted }}>
+                  <th className="text-left py-1.5 px-2 font-medium sticky left-0" style={{ background: T.surface }}>Оператор</th>
+                  <th className="text-right py-1.5 px-2 font-medium">Ээлж</th>
+                  {stats.pageIds.map((pid) => <th key={pid} className="text-right py-1.5 px-2 font-medium whitespace-nowrap">{pageById[pid]?.name || "?"}</th>)}
+                  <th className="text-right py-1.5 px-2 font-medium">Нийт</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.emps.map((e) => (
+                  <tr key={e.id} style={{ borderTop: `1px solid ${T.borderSoft}` }}>
+                    <td className="py-1.5 px-2 whitespace-nowrap sticky left-0" style={{ color: T.ink, fontWeight: 600, background: T.surface }}>{e.name}</td>
+                    <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{e.shifts}</td>
+                    {stats.pageIds.map((pid) => { const v = e.pages[pid] || 0; return <td key={pid} className="py-1.5 px-2 text-right tabular-nums" style={{ color: v ? T.ink : T.mutedSoft, fontWeight: v ? 700 : 400 }}>{v || "·"}</td>; })}
+                    <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight, fontWeight: 700 }}>{e.total}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: `2px solid ${T.borderStrong}`, color: T.ink, fontWeight: 700 }}>
+                  <td className="py-1.5 px-2 sticky left-0" style={{ background: T.surface }}>Нийт</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">{stats.emps.reduce((s, e) => s + e.shifts, 0)}</td>
+                  {stats.pageIds.map((pid) => <td key={pid} className="py-1.5 px-2 text-right tabular-nums">{stats.pageTot[pid]}</td>)}
+                  <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight }}>{stats.emps.reduce((s, e) => s + e.total, 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 🔗 Page хуваарилах popup */}
+      {pagePick && (
+        <Modal onClose={() => setPagePick(null)} staticBackdrop title={`🔗 Page хуваарилах — ${empById[pagePick.row.employee_id]?.name || ""}`} maxW="max-w-md">
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-2">{dayNames[pagePick.row.day_of_week - 1]} · {OP_SHIFTS.find((s) => s.id === opShiftOf(pagePick.row))?.label} · сонгосон {(pagePick.row.fb_page_ids || []).length}</div>
+          <div className="flex flex-wrap gap-1.5 max-h-72 overflow-y-auto mb-3">
+            {pages.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">Идэвхтэй FB page алга</span>}
+            {pages.map((p) => chip(p, (pagePick.row.fb_page_ids || []).includes(p.id), () => togglePage(pagePick.row, p.id)))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => unassign(pagePick.row)} className="press-btn px-3 py-2 rounded-xl text-xs" style={{ background: T.errSoft, color: T.err, fontFamily: FS, fontWeight: 600 }}>✕ Ээлжээс хасах</button>
+            <button onClick={() => setPagePick(null)} className="glow-primary press-btn flex-1 py-2 rounded-xl text-sm" style={{ fontFamily: FS }}>Болсон</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function ScheduleView({ employees, departments = [], sites, isAdmin = false, currentUserId = null }) {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
