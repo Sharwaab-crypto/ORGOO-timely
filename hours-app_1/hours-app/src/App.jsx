@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-op-my-schedule2";
+const BUILD_VERSION = "v2026.10.16-op-my-schedule3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34082,6 +34082,8 @@ const OP_SHIFTS = [
   { id: "pm", label: "🌙 Оройн ээлж", time: "15:00–21:00", start: "15:00", end: "21:00", color: "#1c7fc4", bg: "rgba(28,127,196,0.08)" },
 ];
 const opShiftOf = (row) => { const s = String(row?.shift_start || "").slice(0, 5); return s === "15:00" ? "pm" : s === "09:00" ? "am" : (s && s < "13:00" ? "am" : s ? "pm" : null); };
+// Бүтэн өдрийн мөр (09:00–21:00 г.м) = өглөө + орой 2 ээлж гэж үзнэ
+const opShiftsOf = (row) => { const s = String(row?.shift_start || "").slice(0, 5), e = String(row?.shift_end || "").slice(0, 5); if (s && e && s < "13:00" && e > "18:00") return ["am", "pm"]; const one = opShiftOf(row); return one ? [one] : []; };
 
 function OperatorShiftScheduleView({ employees, departments = [] }) {
   const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = x.getDay() === 0 ? 6 : x.getDay() - 1; x.setDate(x.getDate() - day); return x; };
@@ -34130,7 +34132,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + i); return d; });
   const dayNames = ["Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"];
   const todayIso = iso(new Date());
-  const shiftRows = (day, shiftId) => rows.filter((r) => r.day_of_week === day && opShiftOf(r) === shiftId && empById[r.employee_id]);
+  const shiftRows = (day, shiftId) => rows.filter((r) => r.day_of_week === day && opShiftsOf(r).includes(shiftId) && empById[r.employee_id]);
   const shiftWeek = (delta) => { const d = new Date(`${weekStart}T00:00:00`); d.setDate(d.getDate() + delta * 7); setWeekStart(iso(d)); };
 
   // ➕ Ажилтан ээлжид оноох — нэг ажилтан нэг өдөр ӨГЛӨӨ, ОРОЙ 2 ээлжид хоёуланд нь ажиллаж болно (ээлж бүр тусдаа мөр)
@@ -34138,7 +34140,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
     const sh = OP_SHIFTS.find((s) => s.id === shiftId);
     setBusy(true);
     try {
-      const dup = rows.find((r) => r.employee_id === empId && r.day_of_week === day && opShiftOf(r) === shiftId);
+      const dup = rows.find((r) => r.employee_id === empId && r.day_of_week === day && opShiftsOf(r).includes(shiftId));
       if (dup) { setPicker(null); return; }
       const { error } = await supabase.from("work_schedules").insert({ employee_id: empId, week_start: weekStart, day_of_week: day, shift_start: sh.start, shift_end: sh.end, fb_page_ids: [] });
       if (error) {
@@ -34190,7 +34192,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
         pageTot[pid] = (pageTot[pid] || 0) + 1;
       });
       m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
-      m[r.employee_id].shifts += 1;
+      m[r.employee_id].shifts += Math.max(1, opShiftsOf(r).length);
     });
     // Дараалал: гараар тогтоосон → үлдсэнийг нийт тоогоор
     const auto = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
@@ -34261,7 +34263,7 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
                               return (
                                 <div key={r.id} className="rounded-lg px-2 py-1.5 flex items-center gap-2 flex-wrap" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                                   <span style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }} className="text-xs">{empById[r.employee_id]?.name}</span>
-                                  {rows.some((x) => x.employee_id === r.employee_id && x.day_of_week === day && x.id !== r.id) && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(124,92,255,0.12)", color: "#7c5cff", fontFamily: FS, fontWeight: 700 }} title="Энэ өдөр 2 ээлжид ажиллана">2 ээлж</span>}
+                                  {(opShiftsOf(r).length > 1 || rows.some((x) => x.employee_id === r.employee_id && x.day_of_week === day && x.id !== r.id)) && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(124,92,255,0.12)", color: "#7c5cff", fontFamily: FS, fontWeight: 700 }} title="Энэ өдөр 2 ээлжид ажиллана">2 ээлж</span>}
                                   <div className="flex flex-wrap gap-1">
                                     {pids.length === 0 && <span style={{ color: T.warn, fontFamily: FS }} className="text-[10px]">page оноогоогүй</span>}
                                     {pids.map((pid) => <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS, fontWeight: 600 }}>🔗 {pageById[pid]?.name || "?"}</span>)}
@@ -34424,13 +34426,13 @@ function MyShiftScheduleView({ profile }) {
                 </div>
                 {mine.length === 0 ? (
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Амралт / ээлжгүй</div>
-                ) : mine.map((r) => {
-                  const sh = OP_SHIFTS.find((s) => s.id === opShiftOf(r)) || { label: "Ээлж", color: T.highlight, bg: T.highlightSoft };
+                ) : mine.flatMap((r) => opShiftsOf(r).map((sid) => ({ r, sid }))).sort((a, b) => a.sid.localeCompare(b.sid)).map(({ r, sid }) => {
+                  const sh = OP_SHIFTS.find((s) => s.id === sid) || { label: "Ээлж", color: T.highlight, bg: T.highlightSoft, time: "" };
                   const pids = Array.isArray(r.fb_page_ids) ? r.fb_page_ids : [];
                   return (
-                    <div key={r.id} className="rounded-xl p-2 mb-1.5" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
+                    <div key={r.id + sid} className="rounded-xl p-2 mb-1.5" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
                       <div style={{ color: sh.color, fontFamily: FS, fontWeight: 700 }} className="text-xs">{sh.label}</div>
-                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1">{String(r.shift_start || "").slice(0, 5)}–{String(r.shift_end || "").slice(0, 5)}</div>
+                      <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] mb-1">{sh.time}</div>
                       <div className="flex flex-wrap gap-1">
                         {pids.length === 0 && <span style={{ color: T.muted, fontFamily: FS }} className="text-[10px]">page оноогоогүй</span>}
                         {pids.map((pid) => <span key={pid} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.surface, color: T.highlight, border: `1px solid ${T.border}`, fontFamily: FS, fontWeight: 600 }}>🔗 {pageById[pid]?.name || "?"}</span>)}
@@ -34466,7 +34468,7 @@ function MyShiftScheduleView({ profile }) {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                       {OP_SHIFTS.map((sh) => {
-                        const list = dayRows.filter((r) => opShiftOf(r) === sh.id).sort((a, b) => String(nameById[a.employee_id] || "").localeCompare(String(nameById[b.employee_id] || ""), "mn"));
+                        const list = dayRows.filter((r) => opShiftsOf(r).includes(sh.id)).sort((a, b) => String(nameById[a.employee_id] || "").localeCompare(String(nameById[b.employee_id] || ""), "mn"));
                         return (
                           <div key={sh.id} className="rounded-lg p-2" style={{ background: sh.bg, border: `1px solid ${sh.color}33` }}>
                             <div style={{ color: sh.color, fontFamily: FS, fontWeight: 700 }} className="text-[11px] mb-1">{sh.label} <span style={{ color: T.muted, fontWeight: 500 }}>{sh.time} · {list.length}</span></div>
