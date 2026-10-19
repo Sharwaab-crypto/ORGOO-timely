@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.16-zones-pending2";
+const BUILD_VERSION = "v2026.10.19-op-page-stats";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34466,6 +34466,107 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
   );
 }
 
+// 📊 Page хуваарилалтын тоо — бие даасан панел (оператор: зөвхөн харах). Ээлж бүр = 1 удаа; 09:00–21:00 = 2.
+function PageAssignStatsPanel({ highlightId = null }) {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = x.getDay() === 0 ? 6 : x.getDay() - 1; x.setDate(x.getDate() - day); return x; };
+  const [range, setRange] = useState("90");
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; });
+  const [to, setTo] = useState(() => iso(new Date()));
+  const [rows, setRows] = useState(null);
+  const [nameById, setNameById] = useState({});
+  const [pageById, setPageById] = useState({});
+  const [order, setOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("orgoo-opsched-page-order") || "[]"); } catch { return []; } });
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      setRows(null);
+      try {
+        const since = new Date(); since.setDate(since.getDate() - Number(range === "custom" ? 0 : range));
+        const q = range === "custom"
+          ? supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, shift_end, fb_page_ids").gte("week_start", iso(mondayOf(new Date(`${from}T00:00:00`)))).lte("week_start", to)
+          : supabase.from("work_schedules").select("id, employee_id, week_start, day_of_week, shift_start, shift_end, fb_page_ids").gte("week_start", iso(mondayOf(since)));
+        const [all, { data: pg }] = await Promise.all([fetchAllRows(q), supabase.from("biz_fb_pages").select("id, name")]);
+        if (dead) return;
+        const pm = {}; (pg || []).forEach((p) => { pm[p.id] = p; }); setPageById(pm);
+        const ids = [...new Set((all || []).map((r) => r.employee_id).filter(Boolean))];
+        if (ids.length) { const { data: pf } = await supabase.from("profiles").select("id, name").in("id", ids); const nm = {}; (pf || []).forEach((p) => { nm[p.id] = p.name; }); if (!dead) setNameById(nm); }
+        if (!dead) setRows(all || []);
+      } catch (e) { console.error("[page stats]", e); if (!dead) setRows([]); }
+    })();
+    return () => { dead = true; };
+  }, [range, from, to]);
+  const stats = useMemo(() => {
+    const m = {}; const pageTot = {};
+    (rows || []).forEach((r) => {
+      if (range === "custom") { const d = new Date(`${r.week_start}T00:00:00`); d.setDate(d.getDate() + (Number(r.day_of_week || 1) - 1)); const ds = iso(d); if (ds < from || ds > to) return; }
+      const n = Math.max(1, opShiftsOf(r).length);
+      m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
+      m[r.employee_id].shifts += n;
+      (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => { m[r.employee_id].pages[pid] = (m[r.employee_id].pages[pid] || 0) + n; pageTot[pid] = (pageTot[pid] || 0) + n; });
+    });
+    const auto = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
+    const pageIds = [...order.filter((id) => pageTot[id] !== undefined), ...auto.filter((id) => !order.includes(id))];
+    const emps = Object.keys(m).map((id) => ({ id, name: nameById[id] || id.slice(0, 8), shifts: m[id].shifts, pages: m[id].pages, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
+    return { pageIds, emps, pageTot };
+  }, [rows, nameById, range, from, to, order]);
+  const inp = { background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM };
+  return (
+    <div className="glass rounded-2xl p-3">
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
+        <div className="flex gap-1 ml-auto">
+          {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
+            <button key={id} onClick={() => setRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: range === id ? T.ink : T.surfaceAlt, color: range === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+          ))}
+        </div>
+        {range === "custom" && (
+          <div className="flex items-center gap-1 w-full sm:w-auto">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={inp} />
+            <span style={{ color: T.muted }} className="text-xs">–</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="px-2 py-1 rounded-lg text-xs" style={inp} />
+          </div>
+        )}
+      </div>
+      {rows === null ? (
+        <div className="py-6 text-center"><Loader2 className="spin mx-auto" size={18} style={{ color: T.muted }} /></div>
+      ) : stats.emps.length === 0 ? (
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-4">Хуваарилалт алга</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="text-xs" style={{ fontFamily: FS, minWidth: 420 }}>
+            <thead>
+              <tr style={{ color: T.muted }}>
+                <th className="text-left py-1.5 px-2 font-medium sticky left-0" style={{ background: T.surface }}>Оператор</th>
+                <th className="text-right py-1.5 px-2 font-medium">Ээлж</th>
+                {stats.pageIds.map((pid) => <th key={pid} className="text-right py-1.5 px-2 font-medium whitespace-nowrap">{pageById[pid]?.name || "?"}</th>)}
+                <th className="text-right py-1.5 px-2 font-medium">Нийт</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.emps.map((e) => { const me = e.id === highlightId; return (
+                <tr key={e.id} style={{ borderTop: `1px solid ${T.borderSoft}`, background: me ? T.highlightSoft : "transparent" }}>
+                  <td className="py-1.5 px-2 whitespace-nowrap sticky left-0" style={{ color: me ? T.highlight : T.ink, fontWeight: 700, background: me ? T.highlightSoft : T.surface }}>{me ? "⭐ " : ""}{e.name}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{e.shifts}</td>
+                  {stats.pageIds.map((pid) => { const v = e.pages[pid] || 0; return <td key={pid} className="py-1.5 px-2 text-right tabular-nums" style={{ color: v ? T.ink : T.mutedSoft, fontWeight: v ? 700 : 400 }}>{v || "·"}</td>; })}
+                  <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight, fontWeight: 700 }}>{e.total}</td>
+                </tr>
+              ); })}
+              <tr style={{ borderTop: `2px solid ${T.borderStrong}`, color: T.ink, fontWeight: 700 }}>
+                <td className="py-1.5 px-2 sticky left-0" style={{ background: T.surface }}>Нийт</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">{stats.emps.reduce((s, e) => s + e.shifts, 0)}</td>
+                {stats.pageIds.map((pid) => <td key={pid} className="py-1.5 px-2 text-right tabular-nums">{stats.pageTot[pid]}</td>)}
+                <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight }}>{stats.emps.reduce((s, e) => s + e.total, 0)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 🕐 Операторын ӨӨРИЙН ээлжийн хуваарь (зөвхөн харах) — долоо хоног, өглөө/орой ээлж, page-үүд
 function MyShiftScheduleView({ profile }) {
   const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = x.getDay() === 0 ? 6 : x.getDay() - 1; x.setDate(x.getDate() - day); return x; };
@@ -34594,6 +34695,8 @@ function MyShiftScheduleView({ profile }) {
           )}
         </div>
       )}
+      {/* 📊 Page хуваарилалтын тоо — зөвхөн харах */}
+      <PageAssignStatsPanel highlightId={profile.id} />
     </div>
   );
 }
