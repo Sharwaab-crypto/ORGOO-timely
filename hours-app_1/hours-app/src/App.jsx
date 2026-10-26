@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-driver-light";
+const BUILD_VERSION = "v2026.10.27-driver-light3";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -41794,6 +41794,10 @@ function DriverRequestsView({ profile }) {
   const [isReturn, setIsReturn] = useState(false);
   const [surplusMode, setSurplusMode] = useState(false); // ⚡ Илүү бараа горим
   const [activeRequest, setActiveRequest] = useState(null); // detail modal-руу нээх хүсэлт
+  const REQ_PAGE_SIZE = 30;
+  const [reqPage, setReqPage] = useState(1);
+  const [reqTotal, setReqTotal] = useState(0);
+  const reqTotalPages = Math.max(1, Math.ceil(reqTotal / REQ_PAGE_SIZE));
 
   const loadAll = async () => {
     setLoading(true);
@@ -41806,7 +41810,7 @@ function DriverRequestsView({ profile }) {
       // Хүсэлтүүдийг татах:
       // 1. Driver өөрөө үүсгэсэн (requester_id = profile.id)
       // 2. Driver-ийн агуулахтай холбогдсон (admin-аас үүссэн)
-      let reqQuery = supabase.from("inv_transfer_requests").select("*");
+      let reqQuery = supabase.from("inv_transfer_requests").select("*", { count: "exact" });
       if (myWh) {
         reqQuery = reqQuery.or(
           `requester_id.eq.${profile.id},from_warehouse_id.eq.${myWh.id},to_warehouse_id.eq.${myWh.id}`
@@ -41814,11 +41818,12 @@ function DriverRequestsView({ profile }) {
       } else {
         reqQuery = reqQuery.eq("requester_id", profile.id);
       }
-      
-      const [{ data: reqData, error: reqErr }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
-        reqQuery.order("created_at", { ascending: false }),
+      // ⚡ Серверийн хуудаслалт — нэг хуудсанд 30 хүсэлт (бүх цаг үеийн түүхийг нэг дор татдаггүй)
+      const from = (reqPage - 1) * REQ_PAGE_SIZE;
+      const [{ data: reqData, error: reqErr, count: reqCount }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
+        reqQuery.order("created_at", { ascending: false }).range(from, from + REQ_PAGE_SIZE - 1),
         supabase.from("inv_products").select("id, name, sku, image_url, sale_price, category_id").eq("is_active", true),
-        fetchAllRows(supabase.from("inv_stock").select("*")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
+        fetchAllRows(supabase.from("inv_stock").select("product_id, warehouse_id, quantity")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй, зөвхөн хэрэгтэй багана
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
       if (prdErr) console.error("Product fetch error:", prdErr);
@@ -41830,6 +41835,7 @@ function DriverRequestsView({ profile }) {
         stock: stkData?.length,
       });
       setRequests(reqData || []);
+      setReqTotal(reqCount || 0);
       setWarehouses(whData || []);
       setProducts(prdData || []);
       setStock(stkData || []);
@@ -41851,19 +41857,22 @@ function DriverRequestsView({ profile }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [reqPage]);
 
-  // Realtime — admin хүсэлт үүсгэхэд driver шууд харах
+  // Realtime — admin хүсэлт үүсгэхэд driver шууд харах (⚡ 4с debounce — олон өөрчлөлтөд нэг л удаа ачаална)
+  const loadAllRef = useRef(loadAll);
+  loadAllRef.current = loadAll;
   useEffect(() => {
+    let t = null;
     const channel = supabase
       .channel("driver-transfer-requests-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "inv_transfer_requests" },
-        () => { loadAll(); }
+        () => { if (t) clearTimeout(t); t = setTimeout(() => { t = null; loadAllRef.current(); }, 4000); }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { if (t) clearTimeout(t); supabase.removeChannel(channel); };
   }, []);
 
 
@@ -42099,6 +42108,23 @@ function DriverRequestsView({ profile }) {
               </div>
             );
           })}
+          {reqTotalPages > 1 && (
+            <div className="glass rounded-2xl p-2 flex items-center justify-between">
+              <button onClick={() => setReqPage((p) => Math.max(1, p - 1))} disabled={reqPage <= 1 || loading}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ background: T.surfaceAlt, color: reqPage <= 1 ? T.muted : T.ink, border: `1px solid ${T.border}`, fontFamily: FS, opacity: reqPage <= 1 ? 0.5 : 1 }}>
+                ‹ Өмнөх
+              </button>
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">
+                {reqPage} / {reqTotalPages} · нийт {reqTotal}
+              </div>
+              <button onClick={() => setReqPage((p) => Math.min(reqTotalPages, p + 1))} disabled={reqPage >= reqTotalPages || loading}
+                className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ background: T.surfaceAlt, color: reqPage >= reqTotalPages ? T.muted : T.ink, border: `1px solid ${T.border}`, fontFamily: FS, opacity: reqPage >= reqTotalPages ? 0.5 : 1 }}>
+                Дараах ›
+              </button>
+            </div>
+          )}
         </div>
       )}
       
