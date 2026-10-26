@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-sales-rpc";
+const BUILD_VERSION = "v2026.10.27-stock-rpc";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -253,6 +253,20 @@ async function fetchAllRows(queryBuilder) {
     if (from > 100000) break; // safety: 100K row хүртэл
   }
   return all;
+}
+
+
+// 📦 Бүх агуулахын нийлбэр үлдэгдэл — RPC inv_stock_totals (1 хүсэлт, ~600 мөр).
+//    RPC байхгүй бол 13 хуудас зэрэгцээ татаж клиент дээр нэгтгэнэ. Буцаалт: [{product_id, quantity}]
+async function fetchStockTotals() {
+  try {
+    const { data, error } = await supabase.rpc("inv_stock_totals");
+    if (error) throw error;
+    return (data || []).map((r) => ({ product_id: r.product_id, quantity: Number(r.quantity || 0) }));
+  } catch (e) {
+    console.warn("[inv_stock_totals rpc → fallback]", e?.message);
+    return fetchAllRowsParallel(() => supabase.from("inv_stock").select("product_id, quantity").gt("quantity", 0));
+  }
 }
 
 // 🧩 Хэт олон ID-тай .in() query-г chunk-аар асууна
@@ -14853,7 +14867,7 @@ function LowStockAlertBanner() {
         supabase.from("inv_products")
           .select("id, name, sku, min_stock, image_url")
           .gt("min_stock", 0),
-        fetchAllRows(supabase.from("inv_stock").select("product_id, quantity")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй
+        fetchStockTotals().then((d) => ({ data: d })), // ⚡ RPC нийлбэр (1 хүсэлт)
       ]);
 
       // 🆕 ЖИНХЭНЭ нөөц — inv_stock нийлбэр (inv_products.stock хуучирсан тул ашиглахгүй).
@@ -19145,7 +19159,7 @@ function MarketingView({ profile }) {
         supabase.from("mkt_reach_targets").select("*"),
         supabase.from("mkt_daily_stats").select("*").order("stat_date", { ascending: false }).limit(400),
         // 📦 Бодит үлдэгдэл — Бараа нөөцтэй ижил эх сурвалж (inv_stock, бүх агуулахын нийлбэр); inv_products.stock хуучирдаг
-        fetchAllRows(supabase.from("inv_stock").select("product_id, quantity")).catch(() => null),
+        fetchStockTotals().catch(() => null), // ⚡ RPC нийлбэр (1 хүсэлт)
       ]);
       setAllProfiles(profs.data || []);
       setCategories(cats.data || []);
@@ -26121,9 +26135,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        const stockRows = await fetchAllRows(
-          supabase.from("inv_stock").select("product_id, quantity")
-        );
+        const stockRows = await fetchStockTotals();
         if (cancelled) return;
         const stockMap = {};
         (stockRows || []).forEach((s) => {
