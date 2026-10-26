@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.19-op-page-stats";
+const BUILD_VERSION = "v2026.10.26-rename-sync-wh";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2235,6 +2235,22 @@ function AdminDashboard({ profile }) {
 
       const { error } = await supabase.from("profiles").update(profileData).eq("id", existingId);
       if (error) throw error;
+
+      // 🔄 Нэр солигдвол тухайн ажилтны (жолоочийн) агуулахын нэрийг ч шинэчилнэ —
+      //    бараа хүсэлт, хөдөлгөөн, тооцоонд хуучин нэрээр харагдахгүй
+      try {
+        const prevName = (employees.find((e) => e.id === existingId) || {}).name;
+        const newName = String(formData.name || "").trim();
+        if (prevName && newName && prevName !== newName) {
+          const { data: whs } = await supabase.from("inv_warehouses").select("id, name").eq("driver_id", existingId);
+          for (const wh of whs || []) {
+            const nn = String(wh.name || "").includes(prevName) ? String(wh.name).split(prevName).join(newName) : newName;
+            if (nn !== wh.name) await supabase.from("inv_warehouses").update({ name: nn }).eq("id", wh.id);
+          }
+          // Тооцооны snapshot нэр (нээлттэй тооцоо л) — хаагдсаныг хөндөхгүй
+          await supabase.from("biz_settlements").update({ driver_name: newName }).eq("driver_id", existingId).eq("status", "open");
+        }
+      } catch (we) { console.warn("[rename → warehouse sync]", we?.message); }
 
       // 🔄 Manager → бусад role-руу солигдоход manager_employees-аас холбоосыг арилгах
       if (formData.role !== "manager") {
