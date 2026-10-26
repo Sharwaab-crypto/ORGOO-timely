@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-img-thumb";
+const BUILD_VERSION = "v2026.10.27-img-thumb2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -41857,7 +41857,7 @@ function DriverRequestsView({ profile }) {
       const [{ data: reqData, error: reqErr, count: reqCount }, { data: prdData, error: prdErr }, { data: stkData, error: stkErr }] = await Promise.all([
         reqQuery.order("created_at", { ascending: false }).range(from, from + REQ_PAGE_SIZE - 1),
         supabase.from("inv_products").select("id, name, sku, image_url, sale_price, category_id").eq("is_active", true),
-        fetchAllRows(supabase.from("inv_stock").select("product_id, warehouse_id, quantity")).then((d) => ({ data: d })), // ⚡ 1000-мөрийн таазгүй, зөвхөн хэрэгтэй багана
+        fetchAllRowsParallel(() => supabase.from("inv_stock").select("product_id, warehouse_id, quantity").gt("quantity", 0)).then((d) => ({ data: d })), // ⚡ зэрэгцээ хуудаслалт + зөвхөн үлдэгдэлтэй мөр
       ]);
       if (reqErr) console.error("Request fetch error:", reqErr);
       if (prdErr) console.error("Product fetch error:", prdErr);
