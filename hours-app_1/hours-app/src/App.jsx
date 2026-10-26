@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-sales-light";
+const BUILD_VERSION = "v2026.10.27-sales-rpc";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21643,8 +21643,7 @@ function ProfitCalcView({ profile }) {
 function SalesDashboardView({ profile, allowedPageIds = null }) {
   // allowedPageIds: null = бүх page (admin), массив = зөвхөн тэр page-ууд (merchant)
   const isMerchant = Array.isArray(allowedPageIds);
-  const [calls, setCalls] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [report, setReport] = useState([]); // ⚡ sales_fb_report RPC — page бүрийн нэгтгэл (сервер талд)
   const [items, setItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [fbPages, setFbPages] = useState([]);
@@ -21730,19 +21729,15 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
           if (segNoPage) return pageFilterIds.length ? q.or(`fb_page_id.is.null,fb_page_id.in.(${pageFilterIds.join(",")})`) : q.is("fb_page_id", null);
           return pageFilterIds.length ? q.in("fb_page_id", pageFilterIds) : q.in("fb_page_id", ["00000000-0000-0000-0000-000000000000"]);
         };
-        const callCols = "id, phone, call_status, created_at, fb_page_id, created_by, customer_name";
-        const makeCallQ = () => {
-          let q = supabase.from("biz_calls").select(callCols);
-          if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
-          return applyPage(q);
+        // ⚡ 2026-10-27: 30,000+ захиалга/дуудлага татахын оронд page бүрийн нэгтгэлийг СЕРВЕР талд (RPC sales_fb_report)
+        //    нэг хүсэлтээр авна. Захиалгын жагсаалт popup нээхэд л (sales_fb_orders) татагдана.
+        const rpcArgs = {
+          p_start: isAllPeriod ? null : pStart, p_end: isAllPeriod ? null : pEnd,
+          p_page_ids: pageFilterIds ? (pageFilterIds.length ? pageFilterIds : ["00000000-0000-0000-0000-000000000000"]) : null,
+          p_include_null: !!(pageFilterIds && segNoPage),
         };
-        // ⚡ 2026-10-27: select("*") → зөвхөн самбарт хэрэглэгддэг багана (345KB → ~80KB / 1000 мөр, 30 хуудас)
-        const ordCols = "id, order_number, status, total_amount, paid_amount, prepaid_amount, delivery_fee, customer_phone, customer_name, notes, fb_page_id, created_at, cancelled_at, delivered_at";
-        const makeOrdQ = () => {
-          let q = supabase.from("biz_orders").select(ordCols);
-          if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
-          return applyPage(q);
-        };
+        setRpcArgsState(rpcArgs);
+        const makeReportQ = () => supabase.rpc("sales_fb_report", rpcArgs).then((r) => { if (r.error) throw r.error; return r.data || []; });
         // 🚀 2026-09-17: biz_order_items-ийг бүхэлд нь (100К+ мөр, 10 MB) татахаа больж,
         //    топ-10 барааг сервер талд нэгтгэдэг RPC-ээр (нэг хүсэлт) авна.
         const makeItmQ = () => supabase.rpc("sales_top_products", {
@@ -21754,21 +21749,19 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
         if (isMerchant) {
           if (allowedPageIds.length === 0) {
             // Page оноогоогүй merchant → хоосон
-            setCalls([]); setOrders([]); setItems([]); setProducts([]); setFbPages([]);
+            setReport([]); setItems([]); setProducts([]); setFbPages([]);
             setLoading(false);
             return;
           }
           fbQ = supabase.from("biz_fb_pages").select("*").in("id", allowedPageIds);
         }
-        const [callData, ordData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
-          fetchAllRowsParallel(makeCallQ),
-          fetchAllRowsParallel(makeOrdQ),
+        const [repData, itmData, { data: prodData }, { data: fbData }] = await Promise.all([
+          makeReportQ(),
           makeItmQ().then((r) => { if (r.error) throw r.error; return r.data || []; }),
           supabase.from("inv_products").select("id, name, image_url, sku"),
           fbQ,
         ]);
-        setCalls(callData || []);
-        setOrders(ordData || []);
+        setReport(repData || []);
         setItems(itmData || []);
         setProducts(prodData || []);
         setFbPages(fbData || []);
@@ -21781,123 +21774,43 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
     })();
   }, [refreshKey, isMerchant ? allowedPageIds.join(",") : segment, periodRange.start.getTime(), periodRange.end.getTime()]);
 
-  // Period-ээр шүүх
-  const filteredCalls = useMemo(() => calls.filter((c) => {
-    const d = new Date(c.created_at);
-    return d >= periodRange.start && d < periodRange.end;
-  }), [calls, periodRange]);
+  const [rpcArgsState, setRpcArgsState] = useState(null);
 
-  const filteredOrders = useMemo(() => orders.filter((o) => {
-    const d = new Date(o.created_at);
-    return d >= periodRange.start && d < periodRange.end;
-  }), [orders, periodRange]);
-
-  // FB page-аар групплэх
+  // FB page-аар — серверийн нэгтгэлийг page мэдээлэлтэй холбоно
   const fbReport = useMemo(() => {
-    const map = {};
-
-    // FB page бүрд default
-    fbPages.forEach((p) => {
-      map[p.id] = {
-        id: p.id,
-        name: p.name,
-        url: p.url,
-        is_active: p.is_active,
-        uniquePhones: 0, // Бүх дуудлагын тоо
-        totalCalls: 0,
-        phoneSet: new Set(), // өвөрмөц утас тоолох
-        totalOrders: 0,
-        delivered: 0,
-        cancelled: 0,
-        pending: 0,
-        revenue: 0,
-        deliveredOrderIds: new Set(),
-        deliveredOrders: [],
-        pendingOrders: [],
-        cancelledOrders: [],
-      };
+    const byKey = {};
+    (report || []).forEach((r) => { byKey[r.fb_page_id || "__null__"] = r; });
+    const mk = (p, r) => ({
+      id: p.id, name: p.name, url: p.url, is_active: p.is_active,
+      uniquePhones: Number(r?.unique_phones || 0),
+      totalCalls: Number(r?.total_calls || 0),
+      totalOrders: Number(r?.total_orders || 0),
+      delivered: Number(r?.delivered || 0),
+      cancelled: Number(r?.cancelled || 0),
+      pending: Number(r?.pending || 0),
+      revenue: Number(r?.revenue || 0),
     });
-
-    // FB page-гүй (NULL)
-    map["__null__"] = {
-      id: null,
-      name: "Тодорхойгүй",
-      url: null,
-      is_active: true,
-      uniquePhones: 0,
-      totalCalls: 0,
-      phoneSet: new Set(),
-      totalOrders: 0,
-      delivered: 0,
-      cancelled: 0,
-      pending: 0,
-      revenue: 0,
-      deliveredOrderIds: new Set(),
-      deliveredOrders: [],
-      pendingOrders: [],
-      cancelledOrders: [],
-    };
-
-    // 🔗 Утас бүрийг ХАМГИЙН АНХ бүртгэсэн page тодорхойлох (давхцалгүй)
-    const phoneFirstPage = {};
-    filteredCalls
-      .filter((c) => c.phone && (c.call_status === "pending" || c.call_status === "ordered" || c.call_status === "cancelled" || !c.call_status))
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      .forEach((c) => {
-        const k = c.fb_page_id || "__null__";
-        if (!phoneFirstPage[c.phone]) phoneFirstPage[c.phone] = k;
-      });
-
-    // Дуудлагууд — "Дугаар" = анх бүртгэсэн page, "Залгалт" = бодит залгалт
-    filteredCalls.forEach((c) => {
-      const key = c.fb_page_id || "__null__";
-      if (!map[key]) return;
-      // 🆕 "Бүртгэсэн дугаар" — зөвхөн ХАМГИЙН АНХ бүртгэсэн page тоолно
-      if (c.phone && phoneFirstPage[c.phone] === key) {
-        map[key].phoneSet.add(c.phone);
-      }
-      // ☎ "Нийт залгалт" — оператор ҮНЭХЭЭР залгасан (pending = зүгээр бүртгэсэн, хасна)
-      //    (Дуудлагын самбартай ижил логик)
-      if (c.call_status === "no_answer" || c.call_status === "unreachable" ||
-          c.call_status === "callback" || c.call_status === "ordered" ||
-          c.call_status === "cancelled") {
-        map[key].totalCalls++;
-      }
-    });
-
-    // Захиалгууд — Захиалгын өөрийн fb_page_id-ийг эхлээд ашиглах
-    // Хэрэв захиалга өөрөө таглагдаагүй бол утсаар хайх (fallback)
-    const phoneToFbPage = {};
-    filteredCalls.forEach((c) => {
-      if (c.fb_page_id) phoneToFbPage[c.phone] = c.fb_page_id;
-    });
-
-    filteredOrders.forEach((o) => {
-      // 🎯 ЗӨВ ЛОГИК: эхлээд захиалгын өөрийн fb_page_id, дараа нь утсаар
-      const fbPageId = o.fb_page_id || phoneToFbPage[o.customer_phone] || "__null__";
-      const key = fbPageId;
-      if (!map[key]) return;
-      // "Захиалга" = цуцлагдаагүй (идэвхтэй + хүргэсэн), цуцлагдсаныг тусад нь
-      if (o.status !== "cancelled") map[key].totalOrders++;
-      if (o.status === "delivered") {
-        map[key].delivered++;
-        map[key].revenue += Number(o.total_amount || 0);
-        map[key].deliveredOrderIds.add(o.id);
-        map[key].deliveredOrders.push(o);
-      } else if (o.status === "cancelled") {
-        map[key].cancelled++;
-        map[key].cancelledOrders.push(o);
-      } else {
-        map[key].pending++;
-        map[key].pendingOrders.push(o);
-      }
-    });
-
-    return Object.values(map)
-      .map((p) => ({ ...p, uniquePhones: p.phoneSet ? p.phoneSet.size : p.uniquePhones }))
+    const rows = fbPages.map((p) => mk(p, byKey[p.id]));
+    rows.push(mk({ id: null, name: "Тодорхойгүй", url: null, is_active: true }, byKey["__null__"]));
+    return rows
       .filter((p) => p.totalCalls > 0 || p.totalOrders > 0)
       .sort((a, b) => b.revenue - a.revenue);
-  }, [filteredCalls, filteredOrders, fbPages]);
+  }, [report, fbPages]);
+
+  // 📋 Popup-ийн захиалгын жагсаалт — дарахад л татна (sales_fb_orders RPC)
+  const openOrdersPopup = async (page, status) => {
+    setOrdersPopup({ page, status, orders: [], loading: true });
+    try {
+      const { data, error } = await supabase.rpc("sales_fb_orders", {
+        ...(rpcArgsState || {}), p_page: page.id || null, p_status: status, p_limit: 3000,
+      });
+      if (error) throw error;
+      setOrdersPopup((prev) => prev && prev.page === page && prev.status === status ? { ...prev, orders: data || [], loading: false } : prev);
+    } catch (e) {
+      alert("Захиалга татахад алдаа: " + e.message);
+      setOrdersPopup((prev) => prev ? { ...prev, loading: false } : prev);
+    }
+  };
 
   // Top бараа (хүргэгдсэн захиалгуудаас)
   const topProducts = useMemo(() => {
@@ -21917,18 +21830,17 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 
   // Нийт стат
   const totals = useMemo(() => {
-    const deliveredOrders = filteredOrders.filter((o) => o.status === "delivered");
-    const revenue = deliveredOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
-    const delivered = deliveredOrders.length;
-    const cancelled = filteredOrders.filter((o) => o.status === "cancelled").length; // 🆕 Цуцалсан тоо
-    const totalOrders = filteredOrders.length;
+    const revenue = fbReport.reduce((s, p) => s + p.revenue, 0);
+    const delivered = fbReport.reduce((s, p) => s + p.delivered, 0);
+    const cancelled = fbReport.reduce((s, p) => s + p.cancelled, 0); // 🆕 Цуцалсан тоо
+    const totalOrders = fbReport.reduce((s, p) => s + p.delivered + p.pending + p.cancelled, 0);
     const avgOrder = delivered > 0 ? revenue / delivered : 0;
     // 🆕 Бүх page-ээс нийт: дугаар бүртгэсэн, залгалт, захиалга бүртгэсэн
     const totalPhones = fbReport.reduce((s, p) => s + (p.uniquePhones || 0), 0);
     const totalCalls = fbReport.reduce((s, p) => s + (p.totalCalls || 0), 0);
     const totalRegOrders = fbReport.reduce((s, p) => s + (p.totalOrders || 0), 0);
     return { revenue, delivered, cancelled, totalOrders, avgOrder, totalPhones, totalCalls, totalRegOrders };
-  }, [filteredOrders, fbReport]);
+  }, [fbReport]);
 
   // 🆕 Барааны задаргаа popup — захиалгын статусаар (delivered/cancelled/all) барааг нэгтгэнэ
   const [breakdownModal, setBreakdownModal] = useState(null); // { title, statusFilter } | null
@@ -22347,7 +22259,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                             {p.totalOrders}
                           </div>
                         </div>
-                        <button onClick={() => setOrdersPopup({ page: p, status: "delivered", orders: p.deliveredOrders })}
+                        <button onClick={() => openOrdersPopup(p, "delivered")}
                           style={{ background: "rgba(16,185,129,0.1)" }}
                           className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✓</div>
@@ -22355,7 +22267,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                             {p.delivered}
                           </div>
                         </button>
-                        <button onClick={() => setOrdersPopup({ page: p, status: "pending", orders: p.pendingOrders })}
+                        <button onClick={() => openOrdersPopup(p, "pending")}
                           style={{ background: T.warnSoft }}
                           className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">⏳</div>
@@ -22363,7 +22275,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                             {p.pending}
                           </div>
                         </button>
-                        <button onClick={() => setOrdersPopup({ page: p, status: "cancelled", orders: p.cancelledOrders })}
+                        <button onClick={() => openOrdersPopup(p, "cancelled")}
                           style={{ background: T.errSoft }}
                           className="press-btn rounded-lg p-2 text-center">
                           <div style={{ color: T.muted, fontFamily: FM }} className="text-[8px] uppercase">✕</div>
@@ -22521,7 +22433,9 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
 
             {/* Body */}
             <div className="p-4">
-              {ordersPopup.orders.length === 0 ? (
+              {ordersPopup.loading ? (
+                <div className="text-center py-8"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+              ) : ordersPopup.orders.length === 0 ? (
                 <div className="text-center py-8 rounded-lg" style={{ background: T.surfaceAlt }}>
                   <div className="text-4xl mb-2">📭</div>
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
@@ -22571,7 +22485,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                             {!isMerchant && (
                             <button onClick={(e) => {
                               e.stopPropagation();
-                              setReassignModal({ orderId: o.id, currentPageId: o.fb_page_id });
+                              setReassignModal({ orderId: o.id, currentPageId: o.fb_page_id, order: o });
                             }}
                               className="press-btn rounded-full flex items-center justify-center flex-shrink-0"
                               style={{
@@ -22670,7 +22584,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                 <button onClick={async () => {
                   try {
                     // Захиалгын мэдээлэл олох
-                    const order = orders.find((o) => o.id === reassignModal.orderId);
+                    const order = reassignModal.order;
                     // 1. Захиалгын fb_page_id шинэчлэх
                     const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: null }).eq("id", reassignModal.orderId);
                     if (orderErr) throw orderErr;
@@ -22702,7 +22616,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                     onClick={async () => {
                       try {
                         // Захиалгын мэдээлэл олох
-                        const order = orders.find((o) => o.id === reassignModal.orderId);
+                        const order = reassignModal.order;
                         // 1. Захиалгын fb_page_id шинэчлэх
                         const { error: orderErr } = await supabase.from("biz_orders").update({ fb_page_id: p.id }).eq("id", reassignModal.orderId);
                         if (orderErr) throw orderErr;
