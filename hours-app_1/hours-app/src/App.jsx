@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.26-rename-sync-wh";
+const BUILD_VERSION = "v2026.10.27-driver-light";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2242,13 +2242,19 @@ function AdminDashboard({ profile }) {
         const prevName = (employees.find((e) => e.id === existingId) || {}).name;
         const newName = String(formData.name || "").trim();
         if (prevName && newName && prevName !== newName) {
+          const changes = [];
           const { data: whs } = await supabase.from("inv_warehouses").select("id, name").eq("driver_id", existingId);
           for (const wh of whs || []) {
             const nn = String(wh.name || "").includes(prevName) ? String(wh.name).split(prevName).join(newName) : newName;
-            if (nn !== wh.name) await supabase.from("inv_warehouses").update({ name: nn }).eq("id", wh.id);
+            if (nn !== wh.name) { await supabase.from("inv_warehouses").update({ name: nn }).eq("id", wh.id); changes.push(`📦 Агуулах: «${wh.name}» → «${nn}»`); }
           }
           // Тооцооны snapshot нэр (нээлттэй тооцоо л) — хаагдсаныг хөндөхгүй
-          await supabase.from("biz_settlements").update({ driver_name: newName }).eq("driver_id", existingId).eq("status", "open");
+          const { data: st } = await supabase.from("biz_settlements").update({ driver_name: newName }).eq("driver_id", existingId).eq("status", "open").select("id");
+          if ((st || []).length) changes.push(`🧾 Нээлттэй тооцоо (${st.length}): «${prevName}» → «${newName}»`);
+          try {
+            await supabase.from("biz_order_history").insert({ order_id: null, action: "edited", field_name: "employee_name", old_value: prevName, new_value: newName, notes: changes.join(" | ") || "Холбоотой нэр өөрчлөгдөөгүй", changed_by: profile.id, changed_at: new Date().toISOString() });
+          } catch {}
+          alert(`✓ Ажилтны нэр: «${prevName}» → «${newName}»` + (changes.length ? "\n\nДагаж солигдсон:\n• " + changes.join("\n• ") : "\n\nХолбоотой агуулах/тооцоо байхгүй."));
         }
       } catch (we) { console.warn("[rename → warehouse sync]", we?.message); }
 
@@ -43614,9 +43620,12 @@ function DriverDashboard({ profile }) {
     setLoading(true);
     try {
       const [ownOrders, newOrders, unknownOrders, { data: driversData }] = await Promise.all([
+        // ⚡ Өөрийн захиалга: зөвхөн идэвхтэй + тооцоо хаагдаагүй (settlement_id null) хүргэсэн/цуцалсан.
+        //    Хаагдсан тооцооны түүх (мянга мянган мөр) дэлгэцэнд хэрэггүй → ачаалал/гацалт багасна.
         fetchAllRows(
           supabase.from("biz_orders").select("*")
             .eq("driver_id", profile.id)
+            .or("status.not.in.(delivered,cancelled),settlement_id.is.null")
             .order("created_at", { ascending: false })
         ),
         fetchAllRows(
