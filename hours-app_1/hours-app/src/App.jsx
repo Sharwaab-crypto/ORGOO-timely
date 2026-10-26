@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-driver-light3";
+const BUILD_VERSION = "v2026.10.27-img-thumb";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -188,6 +188,39 @@ const isDev = (() => {
   catch { return false; }
 })();
 const logDev = (...args) => { if (isDev) console.log(...args); };
+
+// 🖼 Зургийн thumbnail — Supabase Storage image transform (Pro): 2MB оригиналын оронд ~20KB хувилбар татна.
+//    Render endpoint ажиллахгүй бол (transform идэвхгүй) доорх error listener оригинал руу буцаана.
+// 📉 Зураг upload-ын өмнө шахах: хамгийн урт тал 1200px, JPEG 0.82 → 2MB → ~150KB
+async function compressImageFile(file, maxSide = 1200, quality = 0.82) {
+  try {
+    if (!file || !/^image\//.test(file.type) || file.type === "image/gif") return file;
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size < 400 * 1024) return file;
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h); ctx.drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch { return file; }
+}
+
+const thumb = (url, w = 320) => {
+  if (!url || typeof url !== "string") return url;
+  if (!url.includes("/storage/v1/object/public/")) return url;
+  return url.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/") + (url.includes("?") ? "&" : "?") + `width=${w}&quality=75&resize=contain`;
+};
+if (typeof document !== "undefined" && !window.__thumbErrHooked) {
+  window.__thumbErrHooked = true;
+  document.addEventListener("error", (e) => {
+    const el = e.target;
+    if (el && el.tagName === "IMG" && typeof el.src === "string" && el.src.includes("/storage/v1/render/image/public/")) {
+      el.src = el.src.replace("/storage/v1/render/image/public/", "/storage/v1/object/public/").split("?")[0];
+    }
+  }, true);
+}
 const logErr = (...args) => {
   console.error(...args);
   // 🛡️ Sentry-руу алдаа илгээх (production-д)
@@ -9340,7 +9373,7 @@ function SupplierOrdersView({ profile }) {
                 <div className="flex items-start gap-3">
                   {/* Image */}
                   {order.product_image ? (
-                    <img src={order.product_image} alt=""
+                    <img src={thumb(order.product_image)} alt=""
                       className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-16 h-16 rounded-lg flex items-center justify-center text-2xl flex-shrink-0"
@@ -9557,7 +9590,7 @@ function SupplierOrderFormModal({ order, products, profile, onClose }) {
             {selectedProduct ? (
               <div className="rounded-lg p-2 flex items-center gap-2" style={{ background: T.okSoft, border: `1px solid ${T.ok}` }}>
                 {selectedProduct.image_url ? (
-                  <img src={selectedProduct.image_url} alt="" className="w-12 h-12 rounded object-cover" />
+                  <img src={thumb(selectedProduct.image_url, 800)} alt="" className="w-12 h-12 rounded object-cover" />
                 ) : (
                   <div className="w-12 h-12 rounded flex items-center justify-center text-xl"
                     style={{ background: T.surface }}>📦</div>
@@ -9588,7 +9621,7 @@ function SupplierOrderFormModal({ order, products, profile, onClose }) {
                       className="press-btn w-full flex items-center gap-2 p-1.5 rounded text-left"
                       style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
                       {p.image_url ? (
-                        <img src={p.image_url} alt="" className="w-8 h-8 rounded object-cover" />
+                        <img src={thumb(p.image_url)} alt="" className="w-8 h-8 rounded object-cover" />
                       ) : (
                         <div className="w-8 h-8 rounded flex items-center justify-center"
                           style={{ background: T.surface }}>📦</div>
@@ -10007,7 +10040,7 @@ function InventoryView({ profile, isAdmin = false }) {
                       borderRadius: 8, overflow: "hidden",
                       background: T.surfaceAlt, marginBottom: 10,
                     }}>
-                      <img src={p.image_url} alt={p.name}
+                      <img src={thumb(p.image_url)} alt={p.name}
                         style={{ width: "100%", height: "100%", objectFit: "cover" }}
                         onError={(e) => { e.target.style.display = "none"; }} />
                     </div>
@@ -10778,7 +10811,7 @@ function WarehousesView({ profile }) {
               .map((s) => (
                 <div key={s.id} className="glass rounded-xl p-2.5 flex items-center gap-3">
                   {s.product.image_url && (
-                    <img src={s.product.image_url} alt=""
+                    <img src={thumb(s.product.image_url)} alt=""
                       style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
                   )}
                   <div className="flex-1 min-w-0">
@@ -11142,7 +11175,7 @@ function WarehousesView({ profile }) {
                       <div key={it.product_id} className="rounded-lg p-2 flex items-center gap-2"
                         style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
                         {it.product_image && (
-                          <img src={it.product_image} alt=""
+                          <img src={thumb(it.product_image)} alt=""
                             className="w-9 h-9 rounded object-cover flex-shrink-0"
                             onError={(e) => { e.target.style.display = "none"; }} />
                         )}
@@ -11266,7 +11299,7 @@ function WarehousesView({ profile }) {
                             border: `1px solid ${alreadyAdded ? T.ok : T.border}`,
                           }}>
                           {p.image_url && (
-                            <img src={p.image_url} alt=""
+                            <img src={thumb(p.image_url)} alt=""
                               className="w-9 h-9 rounded object-cover flex-shrink-0"
                               onError={(e) => { e.target.style.display = "none"; }} />
                           )}
@@ -11517,7 +11550,7 @@ function BundlesView({ profile }) {
                 <div className="space-y-1">
                   {b.items.map((it) => { const p = prodById(it.product_id); return (
                     <div key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: T.surfaceAlt }}>
-                      {p?.image_url ? <img src={p.image_url} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0" style={{ background: T.surface }}>📦</span>}
+                      {p?.image_url ? <img src={thumb(p.image_url)} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0" style={{ background: T.surface }}>📦</span>}
                       <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p?.name || "—"} <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p?.sku || ""}</span></span>
                       <span style={{ color: T.ink, fontFamily: FD, fontWeight: 700 }} className="text-xs tabular-nums">×{it.quantity}</span>
                     </div>); })}
@@ -11549,7 +11582,7 @@ function BundlesView({ profile }) {
               <div className="space-y-1 mb-2">
                 {form.items.map((it) => { const p = prodById(it.product_id); return (
                   <div key={it.product_id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: T.surfaceAlt }}>
-                    {p?.image_url ? <img src={p.image_url} alt="" className="w-7 h-7 rounded object-cover" /> : <span className="w-7 h-7 rounded flex items-center justify-center" style={{ background: T.surface }}>📦</span>}
+                    {p?.image_url ? <img src={thumb(p.image_url)} alt="" className="w-7 h-7 rounded object-cover" /> : <span className="w-7 h-7 rounded flex items-center justify-center" style={{ background: T.surface }}>📦</span>}
                     <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p?.name} <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p?.sku} · {Number(p?.sale_price || 0).toLocaleString()}₮</span></span>
                     <div className="flex items-center gap-1">
                       <button onClick={() => setForm({ ...form, items: form.items.map((x) => x.product_id === it.product_id ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x) })} className="w-6 h-6 rounded" style={{ background: T.surface, color: T.ink }}>−</button>
@@ -11563,7 +11596,7 @@ function BundlesView({ profile }) {
               <div className="max-h-44 overflow-y-auto space-y-0.5">
                 {pickable.map((p) => (
                   <button key={p.id} onClick={() => setForm({ ...form, items: [...form.items, { product_id: p.id, quantity: 1 }] })} className="w-full flex items-center gap-2 rounded-lg px-2 py-1 text-left hover:opacity-80" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                    {p.image_url ? <img src={p.image_url} alt="" className="w-6 h-6 rounded object-cover" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: T.surfaceAlt }}>📦</span>}
+                    {p.image_url ? <img src={thumb(p.image_url)} alt="" className="w-6 h-6 rounded object-cover" /> : <span className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: T.surfaceAlt }}>📦</span>}
                     <span style={{ color: T.ink, fontFamily: FS }} className="text-xs flex-1 truncate">{p.name}</span>
                     <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{p.sku} · {Number(p.sale_price || 0).toLocaleString()}₮</span>
                     <Plus size={12} style={{ color: T.highlight }} />
@@ -11875,7 +11908,7 @@ function StockPrepView({ profile }) {
               {/* Зүүн: барааны мэдээлэл */}
               <div className="sm:w-72 flex-shrink-0 flex gap-2.5">
                 {r.image_url ? (
-                  <img src={r.image_url} alt="" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" style={{ border: `1px solid ${T.borderStrong}` }} />
+                  <img src={thumb(r.image_url)} alt="" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" style={{ border: `1px solid ${T.borderStrong}` }} />
                 ) : (
                   <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: T.surfaceAlt, border: `1px solid ${T.borderSoft}` }}>📦</div>
                 )}
@@ -12397,7 +12430,7 @@ function MovementsView({ profile }) {
                   {/* MIDDLE — Product info */}
                   <div className="flex items-start gap-3 p-3">
                     {p?.image_url ? (
-                      <img src={p.image_url} alt=""
+                      <img src={thumb(p.image_url)} alt=""
                         style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                     ) : (
                       <div style={{
@@ -12808,7 +12841,7 @@ function TransferRequestsView({ profile }) {
                 <div key={it.id} className="flex items-center gap-2.5 p-2 rounded-lg"
                   style={{ background: T.surfaceAlt }}>
                   {prod?.image_url && (
-                    <img src={prod.image_url} alt=""
+                    <img src={thumb(prod.image_url)} alt=""
                       style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
                   )}
                   <div className="flex-1 min-w-0">
@@ -13748,7 +13781,7 @@ function StockCountDetail({ countId, products, profile, onClose }) {
             <div key={item.id} className="glass rounded-xl p-3">
               <div className="flex items-center gap-3 mb-2">
                 {p.image_url && (
-                  <img src={p.image_url} alt={p.name}
+                  <img src={thumb(p.image_url)} alt={p.name}
                     style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6 }} />
                 )}
                 <div className="flex-1 min-w-0">
@@ -13999,12 +14032,13 @@ function ProductFormModal({ product, categories, profile, onSave, onAddCategory,
     if (!imageFile) return imageUrl;
     setUploading(true);
     try {
-      const ext = imageFile.name.split(".").pop().toLowerCase();
+      const upFile = await compressImageFile(imageFile);
+      const ext = upFile.name.split(".").pop().toLowerCase();
       const fileName = `${profile.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage
         .from("inv-products")
-        .upload(fileName, imageFile, {
-          contentType: imageFile.type,
+        .upload(fileName, upFile, {
+          contentType: upFile.type,
           upsert: false,
         });
       if (error) throw error;
@@ -14903,7 +14937,7 @@ function LowStockAlertBanner() {
             <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
               style={{ background: T.surfaceAlt }}>
               {p.image_url ? (
-                <img src={p.image_url} alt={p.name}
+                <img src={thumb(p.image_url)} alt={p.name}
                   style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
               ) : (
                 <div style={{ background: T.surface, width: 32, height: 32, borderRadius: 6 }}
@@ -17716,7 +17750,7 @@ function CallCenterView({ profile }) {
                                 </div>
                                 <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
                                   {p.image_url ? (
-                                    <img src={p.image_url} alt={p.name}
+                                    <img src={thumb(p.image_url)} alt={p.name}
                                       style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                                   ) : (
                                     <div style={{
@@ -18381,7 +18415,7 @@ function CallCenterView({ profile }) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   {productNotePopup.product.image_url ? (
-                    <img src={productNotePopup.product.image_url} alt=""
+                    <img src={thumb(productNotePopup.product.image_url, 800)} alt=""
                       style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                   ) : (
                     <div style={{
@@ -22206,7 +22240,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                           </div>
                         </div>
                         {p.image_url ? (
-                          <img src={p.image_url} alt={p.name} className="w-full h-28 object-cover" />
+                          <img src={thumb(p.image_url)} alt={p.name} className="w-full h-28 object-cover" />
                         ) : (
                           <div className="w-full h-28 flex items-center justify-center text-3xl" style={{ background: T.highlightSoft }}>📦</div>
                         )}
@@ -22374,7 +22408,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                       {idx + 1}
                     </div>
                     {prod.image && (
-                      <img src={prod.image} alt=""
+                      <img src={thumb(prod.image)} alt=""
                         style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
                     )}
                     <div className="flex-1 min-w-0">
@@ -22557,7 +22591,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                               {orderItems.map((it) => (
                                 <div key={it.id} className="flex items-center gap-2 p-1.5 rounded" style={{ background: T.surfaceAlt }}>
                                   {it.product_image && (
-                                    <img src={it.product_image} alt=""
+                                    <img src={thumb(it.product_image)} alt=""
                                       style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
                                   )}
                                   <div className="flex-1 min-w-0">
@@ -22794,7 +22828,7 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
                         </div>
                         <div style={{ width: "100%", aspectRatio: "16/10", background: T.surfaceAlt }}>
                           {p.image ? (
-                            <img src={p.image} alt={p.name}
+                            <img src={thumb(p.image)} alt={p.name}
                               style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                           ) : (
                             <div style={{
@@ -23677,7 +23711,7 @@ function DriverSettlementView({ profile }) {
                         <div key={it._tempId} className="rounded-lg p-2 flex items-center gap-2"
                           style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
                           {it.product_image && (
-                            <img src={it.product_image} alt="" 
+                            <img src={thumb(it.product_image)} alt="" 
                               className="w-9 h-9 rounded object-cover flex-shrink-0"
                               onError={(e) => { e.target.style.display = "none"; }} />
                           )}
@@ -24142,7 +24176,7 @@ function DriverSettlementView({ profile }) {
                         className="press-btn w-full p-2 rounded-lg flex items-center gap-2 text-left"
                         style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
                         {p.image_url && (
-                          <img src={p.image_url} alt="" 
+                          <img src={thumb(p.image_url)} alt="" 
                             className="w-10 h-10 rounded object-cover flex-shrink-0"
                             onError={(e) => { e.target.style.display = "none"; }} />
                         )}
@@ -26678,7 +26712,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                               className="press-btn w-full block">
                               <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
                                 {p.image_url ? (
-                                  <img src={p.image_url} alt={p.name}
+                                  <img src={thumb(p.image_url)} alt={p.name}
                                     style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                                 ) : (
                                   <div style={{
@@ -26770,7 +26804,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
                           <td style={{ padding: "10px 8px", color: T.ink, fontFamily: FM }}>{idx + 1}</td>
                           <td style={{ padding: "8px" }}>
                             {p.image_url ? (
-                              <img src={p.image_url} alt={p.name}
+                              <img src={thumb(p.image_url)} alt={p.name}
                                 style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4 }} />
                             ) : (
                               <div style={{
@@ -26844,7 +26878,7 @@ function SimpleCallModal({ products = [], profile, onSave, onClose }) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   {activeProduct.image_url ? (
-                    <img src={activeProduct.image_url} alt=""
+                    <img src={thumb(activeProduct.image_url, 800)} alt=""
                       style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                   ) : (
                     <div style={{
@@ -27747,7 +27781,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
                       <div className="flex gap-3 items-start mb-2">
                         {p.image_url ? (
-                          <img src={p.image_url} alt={p.name}
+                          <img src={thumb(p.image_url)} alt={p.name}
                             style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8 }} />
                         ) : (
                           <div style={{
@@ -27850,7 +27884,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                           className="press-btn w-full block">
                           <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt, position: "relative" }}>
                             {p.image_url ? (
-                              <img src={p.image_url} alt={p.name}
+                              <img src={thumb(p.image_url)} alt={p.name}
                                 style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                             ) : (
                               <div style={{
@@ -28002,7 +28036,7 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     {activeProductDetail.image_url ? (
-                      <img src={activeProductDetail.image_url} alt=""
+                      <img src={thumb(activeProductDetail.image_url, 800)} alt=""
                         style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                     ) : (
                       <div style={{
@@ -28949,7 +28983,7 @@ function OrderCard({ order, items = [], compact = false, index = 0, onClick, onE
                   return (
                     <div key={it.id || idx} className="relative flex-shrink-0">
                       {it.product_image ? (
-                        <img src={it.product_image} alt=""
+                        <img src={thumb(it.product_image)} alt=""
                           style={{
                             width: 38, height: 54, objectFit: "cover", borderRadius: 6,
                             border: isMerchantItem ? `2px solid #0284c7` : "none",
@@ -31562,7 +31596,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               {/* Image */}
               {it.product_image && (
                 <div className="relative">
-                  <img src={it.product_image} alt=""
+                  <img src={thumb(it.product_image)} alt=""
                     style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8 }} />
                 </div>
               )}
@@ -31698,7 +31732,7 @@ function OrderDetail({ order, items, onClose, onUpdateStatus, onAssignDriver, is
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   {itemNotePopup.item.product_image ? (
-                    <img src={itemNotePopup.item.product_image} alt=""
+                    <img src={thumb(itemNotePopup.item.product_image, 800)} alt=""
                       style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
                   ) : (
                     <div style={{
@@ -32454,7 +32488,7 @@ function CustomerDetail({ customer, orders, calls = [], customerIndex = 1, onClo
                   </div>
                   <div style={{ width: "100%", aspectRatio: "1", background: T.surfaceAlt }}>
                     {p.image_url ? (
-                      <img src={p.image_url} alt={p.name}
+                      <img src={thumb(p.image_url)} alt={p.name}
                         style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     ) : (
                       <div style={{
@@ -38929,7 +38963,7 @@ function MerchantOverview({ allowedPageIds, fbPages }) {
             <div key={p.product_id || i} className="md-row" style={{ animation: `md-up .45s ${(0.4 + i * 0.05).toFixed(2)}s ease both` }}>
               <span style={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: i < 3 ? MC.amber : MC.n400 }}>{i + 1}</span>
               {p.image_url
-                ? <img src={p.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
+                ? <img src={thumb(p.image_url)} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
                 : <span style={{ width: 40, height: 40, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center" }}><Package size={18} style={{ color: MC.a300 }} /></span>}
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
@@ -40872,7 +40906,7 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
                 <div key={m.id} className="md-row md-row2" style={{ gridTemplateColumns: "4px 40px minmax(0,1fr) auto", animation: i < 20 ? `md-up .4s ${(0.2 + i * 0.03).toFixed(2)}s ease both` : "none" }}>
                   <span style={{ width: 4, height: 32, borderRadius: 999, background: color }} />
                   {p.image_url
-                    ? <img src={p.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
+                    ? <img src={thumb(p.image_url)} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}` }} />
                     : <span style={{ width: 40, height: 40, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center" }}><Package size={18} style={{ color: MC.a300 }} /></span>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
@@ -40983,7 +41017,7 @@ function MerchantStockView({ allowedPageIds }) {
             <div key={p.id} className="md-kpi" style={{ border: `1px solid ${MC.divider}`, gap: 8, animation: i < 30 ? `md-up .45s ${(0.25 + i * 0.03).toFixed(2)}s ease both` : "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 {p.image_url
-                  ? <img src={p.image_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}`, flex: "none" }} />
+                  ? <img src={thumb(p.image_url)} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", border: `1px solid ${MC.divider}`, flex: "none" }} />
                   : <span style={{ width: 44, height: 44, borderRadius: 8, background: MC.a900, border: `1px solid ${MC.divider}`, display: "grid", placeItems: "center", flex: "none" }}><Package size={20} style={{ color: MC.a300 }} /></span>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</span>
@@ -41749,7 +41783,7 @@ function DriverWarehouseView({ profile }) {
             .map((s) => (
               <div key={s.id} className="glass rounded-xl p-2.5 flex items-center gap-3">
                 {s.product.image_url && (
-                  <img src={s.product.image_url} alt=""
+                  <img src={thumb(s.product.image_url)} alt=""
                     style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 6 }} />
                 )}
                 <div className="flex-1 min-w-0">
@@ -42006,7 +42040,7 @@ function DriverRequestsView({ profile }) {
                         style={{ background: T.surface, border: `1px solid ${T.border}`, width: 90 }}>
                         <div style={{ width: "100%", aspectRatio: "1/1", background: T.surfaceAlt }}>
                           {imgUrl ? (
-                            <img src={imgUrl} alt={it.product_name}
+                            <img src={thumb(imgUrl)} alt={it.product_name}
                               style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                           ) : (
                             <div style={{
@@ -42210,7 +42244,7 @@ function DriverRequestsView({ profile }) {
                         <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0"
                           style={{ background: T.bg }}>
                           {imgUrl ? (
-                            <img src={imgUrl} alt={it.product_name}
+                            <img src={thumb(imgUrl)} alt={it.product_name}
                               style={{ width: "100%", height: "100%", objectFit: "contain" }}
                               onError={(e) => { e.target.style.display = "none"; }} />
                           ) : (
@@ -42763,7 +42797,7 @@ function NewTransferRequestModal({ isReturn, surplusOnly = false, myWarehouse, w
                         opacity: noStock && !selected ? 0.5 : 1,
                       }}>
                       {p.image_url ? (
-                        <img src={p.image_url} alt=""
+                        <img src={thumb(p.image_url)} alt=""
                           style={{
                             width: 48, height: 48, objectFit: "cover", borderRadius: 8,
                             filter: noStock ? "grayscale(100%)" : "none",
@@ -42892,7 +42926,7 @@ function NewTransferRequestModal({ isReturn, surplusOnly = false, myWarehouse, w
                   <div key={it.product_id} className="flex items-center gap-1.5 p-1.5 rounded-lg"
                     style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                     {it.product_image && (
-                      <img src={it.product_image} alt=""
+                      <img src={thumb(it.product_image)} alt=""
                         style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
                     )}
                     <div className="flex-1 min-w-0">
@@ -42957,7 +42991,7 @@ function NewTransferRequestModal({ isReturn, surplusOnly = false, myWarehouse, w
                     <div key={it.product_id} className="flex items-center gap-1.5 p-1.5 rounded-lg"
                       style={{ background: T.surfaceAlt }}>
                       {it.product_image && (
-                        <img src={it.product_image} alt=""
+                        <img src={thumb(it.product_image)} alt=""
                           style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }} />
                       )}
                       <div className="flex-1 min-w-0">
@@ -44597,7 +44631,7 @@ function DriverDashboard({ profile }) {
                       <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0"
                         style={{ background: T.surfaceAlt }}>
                         {it.product_image && (
-                          <img src={it.product_image} alt=""
+                          <img src={thumb(it.product_image)} alt=""
                             style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }} />
                         )}
                         <span style={{ color: T.ink, fontFamily: FM, fontWeight: 500 }} className="text-[10px]">
