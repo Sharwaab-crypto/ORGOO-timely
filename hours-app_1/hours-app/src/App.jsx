@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-img-thumb2";
+const BUILD_VERSION = "v2026.10.27-cc-light";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -15475,6 +15475,8 @@ function CallCenterView({ profile }) {
       //     ирдэг тул үндсэн дуудлагын жагсаалтад хэрэггүй. Энэ нь 356kB → ~60kB болгоно.)
       const calls60Days = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
       const callCols = "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url";
+      // ⚡ Бараа: урт текст (description/usage_guide/cautions) хасна — popup нээхэд тусдаа татдаг. 236KB → ~90KB
+      const CC_PROD_COLS = "id, name, sku, barcode, category_id, unit, cost_price, sale_price, stock, min_stock, image_url, fb_page_id, is_active, is_locked, created_at";
       const callsQuery = isMerchant && allowedPageIds.length > 0
         ? supabase.from("biz_calls").select(callCols).in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000)
         : supabase.from("biz_calls").select(callCols).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(3000);
@@ -15482,8 +15484,8 @@ function CallCenterView({ profile }) {
         ? supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, fb_page_id, taken_by").in("fb_page_id", allowedPageIds).gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000)
         : supabase.from("biz_orders").select("id, customer_phone, status, total_amount, created_at, cancelled_at, order_number, taken_by").gte("created_at", calls60Days).order("created_at", { ascending: false }).limit(5000);
       const productsQuery = isMerchant && allowedPageIds.length > 0
-        ? fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")).then((d) => ({ data: d }))
-        : fetchAllRows(supabase.from("inv_products").select("*").eq("is_active", true).order("name")).then((d) => ({ data: d }));
+        ? fetchAllRows(supabase.from("inv_products").select(CC_PROD_COLS).eq("is_active", true).in("fb_page_id", allowedPageIds).order("name")).then((d) => ({ data: d }))
+        : fetchAllRows(supabase.from("inv_products").select(CC_PROD_COLS).eq("is_active", true).order("name")).then((d) => ({ data: d }));
 
       const [callRes, { data: prodData }, { data: custData }, { data: profData }, { data: fbData }, ordRes] = await Promise.all([
         callsQuery,
@@ -15752,6 +15754,7 @@ function CallCenterView({ profile }) {
             callingPhones.forEach((ph) => { const c = CC_MEM.hist.get(ph); if (c && nowH - c.at < CC_MEM.TTL) cmap[ph] = c.rows; else needH.push(ph); });
             if (Object.keys(cmap).length > 0) setCallsByPhoneAll({ ...cmap });
             if (needH.length > 0) {
+              needH.forEach((ph) => fullHistReq.current.add(ph)); // ⚡ ensureHistories давхар татахгүй (2× cc_phone_history засвар)
               ccFetchHistory(needH, histSince, "id, phone, call_status, created_at, created_by, fb_page_id, notes, customer_name, customer_id, duration, record_url").then((allCallsForPhones) => {
                 const by = {};
                 (allCallsForPhones || []).forEach((c) => { (by[c.phone] = by[c.phone] || []).push(c); });
@@ -15760,7 +15763,7 @@ function CallCenterView({ profile }) {
                 setCallsByPhoneAll({ ...cmap });
                 // Картын бүрэн түүхийг ч эндээс бөглөнө (ensureHistories дахин татахгүй)
                 setFullHist((prev) => { const nx = { ...prev }; needH.forEach((ph) => { nx[ph] = by[ph] || []; fullHistReq.current.add(ph); }); return nx; });
-              }).catch((e) => console.error("[history calls fetch]", e));
+              }).catch((e) => { console.error("[history calls fetch]", e); needH.forEach((ph) => fullHistReq.current.delete(ph)); });
             }
           }
         } catch (e) { console.error("[history calls fetch]", e); }
