@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-cc-light";
+const BUILD_VERSION = "v2026.10.27-sales-light";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21736,8 +21736,10 @@ function SalesDashboardView({ profile, allowedPageIds = null }) {
           if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
           return applyPage(q);
         };
+        // ⚡ 2026-10-27: select("*") → зөвхөн самбарт хэрэглэгддэг багана (345KB → ~80KB / 1000 мөр, 30 хуудас)
+        const ordCols = "id, order_number, status, total_amount, paid_amount, prepaid_amount, delivery_fee, customer_phone, customer_name, notes, fb_page_id, created_at, cancelled_at, delivered_at";
         const makeOrdQ = () => {
-          let q = supabase.from("biz_orders").select("*");
+          let q = supabase.from("biz_orders").select(ordCols);
           if (!isAllPeriod) q = q.gte("created_at", pStart).lt("created_at", pEnd);
           return applyPage(q);
         };
