@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.27-stock-rpc";
+const BUILD_VERSION = "v2026.10.28-saved-phones";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -2867,6 +2867,7 @@ function AdminDashboard({ profile }) {
               )}
               <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
               <SidebarTab active={view === "op-cancelled"} onClick={() => { setView("op-cancelled"); setSidebarOpen(false); }} icon={Phone}>Цуцалсан дугаарууд</SidebarTab>
+              <SidebarTab active={view === "saved-phones"} onClick={() => { setView("saved-phones"); setSidebarOpen(false); }} icon={Phone}>💾 Хадгалсан дугаарууд</SidebarTab>
               <SidebarTab active={view === "sales"} onClick={() => { setView("sales"); setSidebarOpen(false); }} icon={BarChart3}>Борлуулалт</SidebarTab>
               <SidebarTab active={view === "fbpages"} onClick={() => { setView("fbpages"); setSidebarOpen(false); }} icon={Send}>FB Pages</SidebarTab>
             </SidebarSection>
@@ -3017,6 +3018,7 @@ function AdminDashboard({ profile }) {
                 {view === "operator-kpi" && "Ажилчдын үзүүлэлт"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
+                {view === "saved-phones" && "Хадгалсан дугаарууд"}
                 {view === "worklog" && "Хийгдсэн ажил"}
                 {view === "mgr-tasks" && (profile.role === "admin" ? "Даалгавар өгөх" : "Даалгавар")}
                 {view === "suggestions" && "Санал асуулга"}
@@ -3322,6 +3324,9 @@ function AdminDashboard({ profile }) {
 
         {view === "op-cancelled" && (
           <CancelledNumbersView profile={profile} />
+        )}
+        {view === "saved-phones" && (
+          <SavedPhonesView profile={profile} />
         )}
 
         {view === "operator-kpi" && (
@@ -16083,6 +16088,35 @@ function CallCenterView({ profile }) {
   const [showChannelChart, setShowChannelChart] = useState(false); // 💬/📞 захиалгын суваг ажилтнаар (admin/manager)
   const canSeeChannel = profile?.role === "admin" || profile?.role === "manager";
   const [callLocks, setCallLocks] = useState([]);
+  // 💾 Хадгалсан дугаарууд — "Залгах дугаар"-аас түр гаргасан (cc_saved_phones). Бүгдэд нэг жагсаалт.
+  const [savedPhones, setSavedPhones] = useState([]);
+  const savedSet = useMemo(() => new Set((savedPhones || []).map((r) => r.phone)), [savedPhones]);
+  const loadSavedPhones = async () => {
+    try {
+      const { data } = await supabase.from("cc_saved_phones").select("phone, note, saved_by, saved_at");
+      setSavedPhones(data || []);
+    } catch (e) { console.error("[saved phones]", e); }
+  };
+  useEffect(() => {
+    loadSavedPhones();
+    const ch = supabase.channel("cc-saved-phones-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cc_saved_phones" }, () => loadSavedPhones())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const savePhone = async (phone, customerName, fbPageId, productsSnap) => {
+    const note = prompt(`${phone} — Хадгалсан дугаарууд руу шилжүүлэх.\nТэмдэглэл (заавал биш):`, "");
+    if (note === null) return;
+    try {
+      const { error } = await supabase.from("cc_saved_phones").upsert({
+        phone, note: (note || "").trim() || null, saved_by: profile.id, saved_at: new Date().toISOString(),
+        customer_name: customerName || null, fb_page_id: fbPageId || null,
+        products: (productsSnap || []).map((p) => ({ name: p.name || p.product_name || "", qty: Number(p.totalQty || p.qty || 1) })),
+      }, { onConflict: "phone" });
+      if (error) throw error;
+      setSavedPhones((prev) => [...prev.filter((r) => r.phone !== phone), { phone, note, saved_by: profile.id, saved_at: new Date().toISOString() }]);
+    } catch (e) { alert("Хадгалахад алдаа: " + e.message); }
+  };
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem("orgoo-call-tab") || "calling"; } catch { return "calling"; }
   });
@@ -16291,6 +16325,7 @@ function CallCenterView({ profile }) {
               const hasOrdered = cycleCalls.some((c) => c.call_status === "ordered");
               const hasCancelled = cycleCalls.some((c) => c.call_status === "cancelled");
               if (hasOrdered || hasCancelled) return; // захиалга болсон/цуцалсан — calling биш
+              if (savedSet.has(phone)) return; // 💾 хадгалсан — Залгах дугаарт харагдахгүй
               counts.calling++;
             });
           }
@@ -16358,7 +16393,7 @@ function CallCenterView({ profile }) {
             counts.cancelled = canC;
           }
           return { filteredByPeriod, phoneGrouped, phoneGroupedAll, counts, productById, customerByPhone, orderInfoByPhone };
-  }, [recentCalls, activeFbPageId, periodRange, period, orders, products, customers]);
+  }, [recentCalls, activeFbPageId, periodRange, period, orders, products, customers, savedSet]);
 
   return (
     <div className="space-y-3">
@@ -17208,6 +17243,7 @@ function CallCenterView({ profile }) {
                   //    Өмнөх cycle-д ordered/cancelled байсан ч ХАМААРАХГҮЙ —
                   //    cancelled-ийн дараа дугаар ДАХИН бүртгэгдсэн бол шинэ cycle = дахин залгах ёстой.
                   if (cy.status !== "calling") return false;
+                  if (savedSet.has(cy.phone)) return false; // 💾 хадгалсан дугаар
                   // 🛡 2026-09-23: "ordered" дуудлагын мөр байхгүй (өөр page-д бүртгэгдсэн / хуучин) ч
                   //    ЭНЭ cycle-ээс ХОЙШ үүссэн цуцлагдаагүй ЗАХИАЛГА байвал = захиалга болсон → залгах дугаарт оруулахгүй
                   {
@@ -17547,6 +17583,13 @@ function CallCenterView({ profile }) {
                           </span>
                         );
                       })()}
+                      {activeTab === "calling" && (
+                        <button onClick={() => savePhone(phone, customer?.name, latestCall.fb_page_id, allProducts)}
+                          style={{ background: "rgba(59,130,246,0.12)", color: "#2563eb", border: "1px solid rgba(59,130,246,0.3)" }}
+                          className="press-btn px-3 py-1 rounded-md text-xs flex items-center gap-1">
+                          💾 Хадгалах
+                        </button>
+                      )}
                       <button onClick={async () => {
                         if (!confirm(`${phone} - устгагдсан хэсэгт шилжүүлэх үү?\n\n• Бүх дуудлагууд хэвээр үлдэнэ\n• "Устгагдсан" tab-аас харах боломжтой`)) return;
                         try {
@@ -37344,6 +37387,101 @@ function SuggestionsAdminView({ profile }) {
 //  CANCELLED NUMBERS — ❌ Цуцалсан дугаарууд: сонгосон өдөр цуцлагдсан бүх дугаар,
 //  цуцлалтын шалтгаан + тэр дугаарын бүх дуудлагын сэтгэгдэл (түүх)
 // ═══════════════════════════════════════════════════════════════════════════
+// 💾 Хадгалсан дугаарууд — Залгах дугаараас түр гаргасан дугаарууд; буцаах товчоор дахин Залгах дугаарт орно
+function SavedPhonesView({ profile }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [profilesMap, setProfilesMap] = useState({});
+  const [pagesMap, setPagesMap] = useState({});
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(null);
+  const load = async () => {
+    try {
+      const [{ data }, { data: profs }, { data: pages }] = await Promise.all([
+        supabase.from("cc_saved_phones").select("*").order("saved_at", { ascending: false }),
+        supabase.from("profiles").select("id, name"),
+        supabase.from("biz_fb_pages").select("id, name"),
+      ]);
+      setRows(data || []);
+      const pm = {}; (profs || []).forEach((p) => { pm[p.id] = p.name; }); setProfilesMap(pm);
+      const gm = {}; (pages || []).forEach((p) => { gm[p.id] = p.name; }); setPagesMap(gm);
+    } catch (e) { console.error("[saved phones view]", e); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("cc-saved-phones-view-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cc_saved_phones" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const restore = async (r) => {
+    if (!confirm(`${r.phone} — Залгах дугаар руу буцаах уу?`)) return;
+    setBusy(r.phone);
+    try {
+      const { error } = await supabase.from("cc_saved_phones").delete().eq("phone", r.phone);
+      if (error) throw error;
+      setRows((prev) => prev.filter((x) => x.phone !== r.phone));
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(null); }
+  };
+  const q = search.trim().toLowerCase();
+  const list = rows.filter((r) => !q || (r.phone || "").includes(q) || (r.customer_name || "").toLowerCase().includes(q) || (r.note || "").toLowerCase().includes(q));
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-2xl p-3 flex flex-wrap items-center gap-2">
+        <div style={{ fontFamily: FS, fontWeight: 700, color: T.ink }} className="text-sm">💾 Хадгалсан дугаарууд</div>
+        <span style={{ background: "rgba(59,130,246,0.12)", color: "#2563eb", fontFamily: FM }} className="text-[11px] px-2 py-0.5 rounded-full">{rows.length}</span>
+        <div className="flex-1" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Дугаар / нэр / тэмдэглэл"
+          style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.ink, fontFamily: FS }}
+          className="px-3 py-1.5 rounded-lg text-sm w-full sm:w-64" />
+      </div>
+      {loading ? (
+        <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+      ) : list.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center">
+          <div className="text-4xl mb-2">💾</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">Хадгалсан дугаар алга</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {list.map((r) => (
+            <div key={r.phone} className="glass rounded-xl p-3" style={{ borderLeft: "3px solid #2563eb" }}>
+              <div className="flex flex-wrap items-center gap-2">
+                <a href={`tel:${r.phone}`} style={{ fontFamily: FD, fontWeight: 700, color: T.ink }} className="text-base">📞 {r.phone}</a>
+                {r.customer_name && <span style={{ color: T.ink, fontFamily: FS }} className="text-sm">{r.customer_name}</span>}
+                {r.fb_page_id && pagesMap[r.fb_page_id] && (
+                  <span style={{ background: "rgba(168,85,247,0.15)", color: "#9333ea", fontFamily: FS, fontWeight: 600 }} className="text-[10px] px-2 py-0.5 rounded-md">🔗 {pagesMap[r.fb_page_id]}</span>
+                )}
+                <div className="flex-1" />
+                <button onClick={() => restore(r)} disabled={busy === r.phone}
+                  style={{ background: T.ok, color: "white", fontFamily: FS, opacity: busy === r.phone ? 0.6 : 1 }}
+                  className="press-btn px-3 py-1.5 rounded-lg text-xs font-semibold">
+                  📞 Залгах дугаар руу буцаах
+                </button>
+              </div>
+              {Array.isArray(r.products) && r.products.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {r.products.map((p, i) => (
+                    <span key={i} style={{ background: T.surfaceAlt, color: T.ink, fontFamily: FS, border: `1px solid ${T.border}` }} className="text-[11px] px-2 py-0.5 rounded-md">
+                      {p.name}{p.qty > 1 ? ` ×${p.qty}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {r.note && <div style={{ color: T.ink, fontFamily: FS, background: T.surfaceAlt }} className="text-xs mt-2 px-2 py-1.5 rounded-md">📝 {r.note}</div>}
+              <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px] mt-2">
+                Хадгалсан: {profilesMap[r.saved_by] || "—"} · {r.saved_at ? new Date(r.saved_at).toLocaleString("mn-MN") : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CancelledNumbersView({ profile }) {
   const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const [date, setDate] = useState(todayIso());
@@ -41030,6 +41168,7 @@ function OperatorDashboard({ profile }) {
             <SidebarTab active={view === "orders"} onClick={() => { setView("orders"); setSidebarOpen(false); }} icon={ShoppingBag}>Захиалга</SidebarTab>
             <SidebarTab active={view === "report"} onClick={() => { setView("report"); setSidebarOpen(false); }} icon={BarChart3}>Тайлан</SidebarTab>
             <SidebarTab active={view === "cancelled"} onClick={() => { setView("cancelled"); setSidebarOpen(false); }} icon={Phone}>❌ Цуцалсан дугаарууд</SidebarTab>
+            <SidebarTab active={view === "saved-phones"} onClick={() => { setView("saved-phones"); setSidebarOpen(false); }} icon={Phone}>💾 Хадгалсан дугаарууд</SidebarTab>
             <SidebarTab active={view === "suggest"} onClick={() => { setView("suggest"); setSidebarOpen(false); }} icon={Send}>💡 Санал өгөх</SidebarTab>
           </SidebarSection>
         </nav>
@@ -41075,6 +41214,7 @@ function OperatorDashboard({ profile }) {
               {view === "orders" && "🛍 Захиалга"}
               {view === "report" && "📊 Ээлжийн тайлан"}
               {view === "cancelled" && "❌ Цуцалсан дугаарууд"}
+              {view === "saved-phones" && "💾 Хадгалсан дугаарууд"}
               {view === "suggest" && "💡 Санал өгөх"}
             </h1>
           </div>
@@ -41090,6 +41230,7 @@ function OperatorDashboard({ profile }) {
           {view === "orders" && <OrdersView profile={profile} />}
           {view === "report" && <OperatorShiftReportView profile={profile} />}
           {view === "cancelled" && <CancelledNumbersView profile={profile} />}
+          {view === "saved-phones" && <SavedPhonesView profile={profile} />}
           {view === "suggest" && <SuggestionBoxView profile={profile} />}
         </div>
       </main>
@@ -45786,6 +45927,7 @@ function ManagerDashboard({ profile }) {
               <SidebarTab active={view === "ledger"} onClick={() => { setView("ledger"); setSidebarOpen(false); }} icon={Calendar}>Тэмдэглэл</SidebarTab>
               <SidebarTab active={view === "op-shift-report"} onClick={() => { setView("op-shift-report"); setSidebarOpen(false); }} icon={BarChart3}>Ээлжийн тайлан</SidebarTab>
               <SidebarTab active={view === "op-cancelled"} onClick={() => { setView("op-cancelled"); setSidebarOpen(false); }} icon={Phone}>Цуцалсан дугаарууд</SidebarTab>
+              <SidebarTab active={view === "saved-phones"} onClick={() => { setView("saved-phones"); setSidebarOpen(false); }} icon={Phone}>💾 Хадгалсан дугаарууд</SidebarTab>
               <SidebarTab active={view === "suggestions"} onClick={() => { setView("suggestions"); setSidebarOpen(false); }} icon={Inbox}>💡 Санал асуулга</SidebarTab>
             </SidebarSection>
           </nav>
@@ -45838,6 +45980,7 @@ function ManagerDashboard({ profile }) {
                 {view === "ledger" && "Тэмдэглэл"}
                 {view === "op-shift-report" && "Ээлжийн тайлан"}
                 {view === "op-cancelled" && "Цуцалсан дугаарууд"}
+                {view === "saved-phones" && "Хадгалсан дугаарууд"}
                 {view === "suggestions" && "Санал асуулга"}
               </h1>
               <p style={{ color: T.muted }} className="text-sm">
@@ -45916,6 +46059,9 @@ function ManagerDashboard({ profile }) {
 
         {view === "op-cancelled" && (
           <CancelledNumbersView profile={profile} />
+        )}
+        {view === "saved-phones" && (
+          <SavedPhonesView profile={profile} />
         )}
         {view === "suggestions" && (
           <SuggestionsAdminView profile={profile} />
