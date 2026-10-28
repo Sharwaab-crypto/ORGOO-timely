@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.28-saved-phones";
+const BUILD_VERSION = "v2026.10.28-mv-more";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -40877,6 +40877,8 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
   const [typeF, setTypeF] = useState(onlyIn ? "in" : "all");
   const [q, setQ] = useState("");
   const [range, setRange] = useState(days);
+  const [shown, setShown] = useState(200); // 📜 Цааш харах — 200-гаар нэмэгдэнэ (өмнө 500-д тасардаг байсан)
+  useEffect(() => { setShown(200); }, [typeF, q, range]);
   const TYPE_MN = { in: "📥 Орлого", out: "📤 Зарлага", transfer: "🔀 Шилжүүлэг", adjust: "🛠 Залруулга", adjustment: "🛠 Залруулга" };
   const REASON_MN = { delivery: "Хүргэлт", supplier: "Нийлүүлэгч", purchase: "Худалдан авалт", return: "Буцаалт", order_cancelled: "Захиалга цуцлагдсан", order_edit_return: "Захиалгын засвар", adjustment: "Залруулга", count: "Тооллого", stock_count: "Тооллого" };
 
@@ -40916,7 +40918,7 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
     { label: "Зарлага", v: sums.out || 0, c: MC.red, Icon: TrendingDown },
     { label: "Шилжүүлэг", v: sums.transfer || 0, c: "#7c5cff", Icon: RefreshCw },
   ];
-  const list = visible.slice(0, 500);
+  const list = visible.slice(0, shown);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 8 : 14, fontFamily: FS }}>
       {/* Шүүлт */}
@@ -40959,7 +40961,7 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
         {!compact && (
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: "11px 14px" }}>
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>Хөдөлгөөний түүх</h2>
-            <span style={{ fontSize: 12, color: MC.n300 }}>сүүлийн {range} хоног{visible.length > 500 ? " · эхний 500" : ""}</span>
+            <span style={{ fontSize: 12, color: MC.n300 }}>сүүлийн {range} хоног · {Math.min(shown, visible.length)}/{visible.length}</span>
           </div>
         )}
         {list.length === 0 ? (
@@ -40992,6 +40994,13 @@ function MerchantMovementsView({ allowedPageIds, onlyIn = false, days = 60, comp
                 </div>
               );
             })}
+            {visible.length > shown && (
+              <div style={{ padding: 12, textAlign: "center", borderTop: `1px solid ${MC.divider}` }}>
+                <button onClick={() => setShown((n) => n + 200)} className="md-btn" style={{ fontFamily: FS }}>
+                  ⬇ Цааш харах ({visible.length - shown} үлдсэн)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>
