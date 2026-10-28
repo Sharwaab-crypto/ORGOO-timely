@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.28-mv-wh";
+const BUILD_VERSION = "v2026.10.28-mv-wh2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -12212,7 +12212,7 @@ function MovementsView({ profile }) {
   const exportCsv = async () => {
     // Бүх ТААРАХ мөрийг (хуудаслалтгүй) татаж экспортлоно
     let eq = supabase.from("inv_movements")
-      .select("product_id, warehouse_id, movement_type, quantity, reason, notes, created_at, created_by")
+      .select("product_id, warehouse_id, to_warehouse_id, movement_type, quantity, reason, notes, created_at, created_by")
       .order("created_at", { ascending: false });
     eq = applyFilters(eq);
     const allRows = await fetchAllRows(eq);
@@ -12221,13 +12221,14 @@ function MovementsView({ profile }) {
       ...(allRows || []).map((m) => {
         const p = productMap[m.product_id];
         const w = whMap[m.warehouse_id];
+        const w2 = m.to_warehouse_id ? whMap[m.to_warehouse_id] : null;
         const u = profileMap[m.created_by];
         return [
           formatDate(m.created_at),
           typeLabel(m.movement_type),
           p?.name || "—",
           p?.sku || "",
-          w?.name || "—",
+          (w?.name || "—") + (w2 ? ` → ${w2.name}` : ""),
           m.quantity,
           m.reason || "",
           (m.notes || "").replace(/[\n,]/g, " "),
