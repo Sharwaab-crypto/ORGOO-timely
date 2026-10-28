@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.28-mv-more";
+const BUILD_VERSION = "v2026.10.28-mv-wh";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -12086,7 +12086,9 @@ function MovementsView({ profile }) {
   // Серверийн шүүлтийг query-д хэрэглэх (хайлт: бараа/агуулах/ажилтны нэр → id, + notes/reason)
   const applyFilters = (q) => {
     if (filterType !== "all") q = q.eq("movement_type", filterType);
-    if (filterWarehouse !== "all") q = q.eq("warehouse_id", filterWarehouse);
+    // 🛠 2026-10-28: агуулахаар шүүхэд тэр агуулах РУУ орж ирсэн шилжүүлэг (to_warehouse_id) ч хамаарна —
+    //    өмнө зөвхөн warehouse_id шалгадаг байсан тул жолоочийн агуулахын түүх "орлого"-гүй, шууд борлуулалтаас эхэлдэг байв.
+    if (filterWarehouse !== "all") q = q.or(`warehouse_id.eq.${filterWarehouse},to_warehouse_id.eq.${filterWarehouse}`);
     if (filterProduct !== "all") q = q.eq("product_id", filterProduct);
     if (filterUser !== "all") {
       // Жолооч сонговол: тухайн хүний үүсгэсэн ЭСВЭЛ түүний агуулах руу/аас хийсэн
