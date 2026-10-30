@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.30-addr-pct";
+const BUILD_VERSION = "v2026.10.30-notes-btn";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -27789,9 +27789,19 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                             className="text-sm mb-1 line-clamp-2">
                             {p.name}
                           </div>
-                          {(p.description || p.usage_guide || p.cautions || it.itemNotes) && (
+                          {(p.description === undefined || p.description || p.usage_guide || p.cautions || it.itemNotes) && (
                             <button
-                              onClick={() => setNotesPopup({ product: p, itemNotes: it.itemNotes })}
+                              onClick={async () => {
+                                // ⚡ Дуудлагын самбарын барааны жагсаалтад урт текст ирдэггүй (хөнгөлсөн) — дарахад татна
+                                let prod = p;
+                                if (p.description === undefined && p.id) {
+                                  try {
+                                    const { data } = await supabase.from("inv_products").select("description, usage_guide, cautions").eq("id", p.id).maybeSingle();
+                                    prod = { ...p, description: data?.description || null, usage_guide: data?.usage_guide || null, cautions: data?.cautions || null };
+                                  } catch {}
+                                }
+                                setNotesPopup({ product: prod, itemNotes: it.itemNotes });
+                              }}
                               style={{ background: T.highlightSoft, color: T.highlight, fontFamily: FS }}
                               className="text-[10px] px-2 py-0.5 rounded-full mb-2 inline-flex items-center gap-1 press-btn">
                               📝 Тайлбар харах
