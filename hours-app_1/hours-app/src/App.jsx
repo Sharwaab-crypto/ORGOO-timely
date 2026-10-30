@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.28-mv-wh2";
+const BUILD_VERSION = "v2026.10.30-addr-pct";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -5954,10 +5954,14 @@ function AddressReportView({ profile }) {
   }, [data, profMap]);
   const pct = (v) => `${v.toFixed(1)}%`;
   const PERIODS = [["today", "Өнөөдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["custom", "Гараар"]];
-  const Tile = ({ label, s, color }) => (
+  const share = (part, whole) => whole ? `${((part / whole) * 100).toFixed(1)}%` : "0%";
+  const Tile = ({ label, s, color, of }) => (
     <div className="glass rounded-2xl p-3" style={{ borderTop: `3px solid ${color}` }}>
       <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{label}</div>
-      <div style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-2xl tabular-nums">{s.t.toLocaleString()}</div>
+      <div style={{ color: T.ink, fontFamily: FD, fontWeight: 800 }} className="text-2xl tabular-nums">
+        {s.t.toLocaleString()}
+        {of != null && <span style={{ color, fontFamily: FM, fontWeight: 700 }} className="text-sm ml-2">{share(s.t, of)}</span>}
+      </div>
       <div className="flex gap-3 mt-1 text-[11px] tabular-nums" style={{ fontFamily: FM }}>
         <span style={{ color: T.ok, fontWeight: 700 }}>📍 {s.y} · {pct(s.py)}</span>
         <span style={{ color: T.err, fontWeight: 700 }}>🚫 {s.n} · {pct(s.pn)}</span>
@@ -5969,7 +5973,7 @@ function AddressReportView({ profile }) {
     </div>
   );
   const exportXlsx = () => {
-    const ws = XLSX.utils.json_to_sheet(byOp.map((r) => ({ Оператор: r.name, "Нийт": r.t, "Хүргэсэн": r.delivered, "Цуцалсан": r.cancelled, "Хаягтай": r.y, "Хаягтай %": Number(r.py.toFixed(1)), "Хаяггүй": r.n, "Хаяггүй %": Number(r.pn.toFixed(1)), "Асуугаагүй": r.u })));
+    const ws = XLSX.utils.json_to_sheet(byOp.map((r) => ({ Оператор: r.name, "Нийт": r.t, "Хүргэсэн": r.delivered, "Хүргэсэн %": share(r.delivered, r.t), "Цуцалсан": r.cancelled, "Цуцалсан %": share(r.cancelled, r.t), "Хаягтай": r.y, "Хаягтай %": Number(r.py.toFixed(1)), "Хаяггүй": r.n, "Хаяггүй %": Number(r.pn.toFixed(1)), "Асуугаагүй": r.u })));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Хаягжилт"); XLSX.writeFile(wb, `hayagjilt_${range.label.replace(/\s|→/g, "_")}.xlsx`);
   };
 
@@ -5995,8 +5999,8 @@ function AddressReportView({ profile }) {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Tile label="Хүргэсэн + Цуцалсан" s={stat(rows)} color={T.highlight} />
-            <Tile label="✓ Хүргэсэн" s={SD} color={T.ok} />
-            <Tile label="✕ Цуцалсан" s={SC} color={T.err} />
+            <Tile label="✓ Хүргэсэн" s={SD} color={T.ok} of={(rows || []).length} />
+            <Tile label="✕ Цуцалсан" s={SC} color={T.err} of={(rows || []).length} />
           </div>
 
           <div className="glass rounded-2xl p-3">
@@ -6031,8 +6035,8 @@ function AddressReportView({ profile }) {
                       <tr key={r.id} style={{ borderTop: `1px solid ${T.borderSoft}` }}>
                         <td className="py-1.5 px-2" style={{ color: T.ink, fontWeight: 600 }}>{r.name}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ fontWeight: 700 }}>{r.t}</td>
-                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{r.delivered}</td>
-                        <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{r.cancelled}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.ok }}>{r.delivered} <span style={{ color: T.muted }}>({share(r.delivered, r.t)})</span></td>
+                        <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.err }}>{r.cancelled} <span style={{ color: T.muted }}>({share(r.cancelled, r.t)})</span></td>
                         <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok, fontWeight: 700 }}>{r.y} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.py)})</span></td>
                         <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.err, fontWeight: 700 }}>
                           {r.n} <span style={{ color: T.muted, fontWeight: 500 }}>({pct(r.pn)})</span>
@@ -6045,8 +6049,8 @@ function AddressReportView({ profile }) {
                     <tr style={{ borderTop: `2px solid ${T.borderStrong}`, color: T.ink, fontWeight: 700 }}>
                       <td className="py-1.5 px-2">Нийт</td>
                       <td className="py-1.5 px-2 text-right tabular-nums">{S.t}</td>
-                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{data.filter((o) => o.status === "delivered").length}</td>
-                      <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{data.filter((o) => o.status === "cancelled").length}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.ok }}>{data.filter((o) => o.status === "delivered").length} ({share(data.filter((o) => o.status === "delivered").length, S.t)})</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap" style={{ color: T.err }}>{data.filter((o) => o.status === "cancelled").length} ({share(data.filter((o) => o.status === "cancelled").length, S.t)})</td>
                       <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.ok }}>{S.y} ({pct(S.py)})</td>
                       <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.err }}>{S.n} ({pct(S.pn)})</td>
                       <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{S.u}</td>
