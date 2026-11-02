@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.02-mkt-alerts";
+const BUILD_VERSION = "v2026.11.02-zone-guard";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -177,6 +177,29 @@ function isPointInPolygon(point, polygon) {
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+// 🗺 Хүргэлтийн бүсийн шалгалт — pin идэвхтэй бүсэд орсон эсэх (5 мин кэш). Орон нутгийн (УБ биш) захиалгад хамаарахгүй.
+const ZONE_CACHE = { at: 0, zones: [] };
+async function getActiveZones() {
+  if (Date.now() - ZONE_CACHE.at < 5 * 60 * 1000 && ZONE_CACHE.zones.length) return ZONE_CACHE.zones;
+  const { data, error } = await supabase.from("biz_zones").select("id, name, polygon, driver_id").eq("is_active", true);
+  if (error) throw error;
+  ZONE_CACHE.zones = (data || []).filter((z) => Array.isArray(z.polygon) && z.polygon.length >= 3);
+  ZONE_CACHE.at = Date.now();
+  return ZONE_CACHE.zones;
+}
+const isUbCity = (city) => !city || /^улаанбаатар/i.test(String(city).trim());
+// Буцаана: { ok: true, zone } | { ok: false, reason }
+async function checkDeliveryZone(lat, lng, city) {
+  if (!isUbCity(city)) return { ok: true, zone: null };
+  if (!lat || !lng) return { ok: false, reason: "📍 Хүргэх байршлын pin заавал зоох ёстой." };
+  let zones = [];
+  try { zones = await getActiveZones(); } catch (e) { return { ok: false, reason: "Бүсийн мэдээлэл татаж чадсангүй: " + e.message }; }
+  if (zones.length === 0) return { ok: true, zone: null };
+  const z = zones.find((zz) => isPointInPolygon([Number(lat), Number(lng)], zz.polygon));
+  if (!z) return { ok: false, reason: "⚠ Pin хүргэлтийн аль ч бүсэд ороогүй байна.\n\nБайршлаа хүргэлтийн бүс дотор зөв зоогоод дахин хадгална уу. (Орон нутгийн захиалга бол хот/аймгаа сонгоно уу.)" };
+  return { ok: true, zone: z };
 }
 
 // 🚀 Supabase 1000-н row hard limit-ийг bypass хийх pagination helper
@@ -28488,6 +28511,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                 alert("⚠ Хороог заавал сонгоно уу!");
                 return;
               }
+              // 🗺 Оператор: pin хүргэлтийн бүсэд ороогүй бол захиалга шивэх/засах боломжгүй (орон нутаг хамаарахгүй)
+              if (String(profile?.role || "").toLowerCase().includes("operator")) {
+                const zc = await checkDeliveryZone(pinLat, pinLng, selectedCity);
+                if (!zc.ok) { alert(zc.reason); return; }
+              }
 
               // ⚡ ШИНЭ ДЭЭР ЗАХИАЛГА ШАЛГАХ — Хэрэв шинэ статустай захиалга бий бол (directMode-д алгасна)
               if (!isEditMode && !directMode) {
@@ -30603,6 +30631,11 @@ function OrdersView({ profile }) {
           order={mapOrder}
           onSave={async (lat, lng) => {
             try {
+              // 🗺 Жолооч/оператор: pin хүргэлтийн бүсэд ороогүй бол хадгалахгүй
+              if (/operator|driver/.test(String(profile?.role || "").toLowerCase())) {
+                const zc = await checkDeliveryZone(lat, lng, mapOrder.delivery_city);
+                if (!zc.ok) { alert(zc.reason); return; }
+              }
               await supabase.from("biz_orders").update({
                 delivery_lat: lat,
                 delivery_lng: lng,
@@ -31285,6 +31318,11 @@ function OrderDetailMap({ order }) {
     if (!position) {
       alert("Эхлээд газрын зураг дээр pin хийгээрэй");
       return;
+    }
+    // 🗺 Pin хүргэлтийн бүсэд ороогүй бол хадгалахгүй (орон нутгийн захиалга хамаарахгүй)
+    {
+      const zc = await checkDeliveryZone(position.lat, position.lng, order.delivery_city);
+      if (!zc.ok) { alert(zc.reason); return; }
     }
     setBusy(true);
     try {
