@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.10.30-notes-btn";
+const BUILD_VERSION = "v2026.11.02-mkt-alerts";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19122,6 +19122,126 @@ function MktBoardView({ profile, employees: employeesProp = [] }) {
   );
 }
 
+// 🔔 Маркетингийн мэдэгдэл — төв агуулахын үлдэгдэл 30-аас доош орсон бараа (mkt_stock_alerts, DB trigger үүсгэнэ)
+//    "Boost унтраасан" дарахад → "Арга хэмжээ авсан" хэсэгт хэн/хэзээ гэсэн тэмдэглэгээтэй шилжинэ.
+function MktStockAlerts({ profile, products = [] }) {
+  const [alerts, setAlerts] = useState(null);
+  const [tab, setTab] = useState("open"); // open | handled
+  const [profMap, setProfMap] = useState({});
+  const [mainStock, setMainStock] = useState({});
+  const [busy, setBusy] = useState(null);
+  const prodById = useMemo(() => { const m = {}; products.forEach((p) => { m[p.id] = p; }); return m; }, [products]);
+  const load = async () => {
+    try {
+      const [{ data: al }, { data: profs }] = await Promise.all([
+        supabase.from("mkt_stock_alerts").select("*").order("triggered_at", { ascending: false }).limit(500),
+        supabase.from("profiles").select("id, name"),
+      ]);
+      setAlerts(al || []);
+      const pm = {}; (profs || []).forEach((x) => { pm[x.id] = x.name; }); setProfMap(pm);
+      const ids = [...new Set((al || []).map((a) => a.product_id))];
+      if (ids.length) {
+        const { data: whs } = await supabase.from("inv_warehouses").select("id").eq("type", "main");
+        const mainIds = (whs || []).map((w) => w.id);
+        if (mainIds.length) {
+          const st = await fetchInChunks("inv_stock", ids, { select: "product_id, quantity", filterColumn: "product_id", chunkSize: 200, extraFilter: (q) => q.in("warehouse_id", mainIds) });
+          const sm = {}; (st || []).forEach((r) => { sm[r.product_id] = (sm[r.product_id] || 0) + Number(r.quantity || 0); });
+          setMainStock(sm);
+        }
+      }
+    } catch (e) { console.error("[mkt alerts]", e); setAlerts([]); }
+  };
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("mkt-stock-alerts-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "mkt_stock_alerts" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const handle = async (a) => {
+    if (!confirm(`${prodById[a.product_id]?.name || "Бараа"} — Boost унтраасан гэж тэмдэглэх үү?`)) return;
+    setBusy(a.id);
+    try {
+      const { error } = await supabase.from("mkt_stock_alerts").update({ status: "handled", handled_by: profile.id, handled_at: new Date().toISOString(), action: "boost_off" }).eq("id", a.id);
+      if (error) throw error;
+      setAlerts((prev) => (prev || []).map((x) => x.id === a.id ? { ...x, status: "handled", handled_by: profile.id, handled_at: new Date().toISOString(), action: "boost_off" } : x));
+    } catch (e) { alert("Алдаа: " + e.message); }
+    finally { setBusy(null); }
+  };
+  const reopen = async (a) => {
+    if (!confirm("Буцааж \"Шинэ\" хэсэгт оруулах уу?")) return;
+    try {
+      const { error } = await supabase.from("mkt_stock_alerts").update({ status: "open", handled_by: null, handled_at: null, action: null }).eq("id", a.id);
+      if (error) throw error;
+      setAlerts((prev) => (prev || []).map((x) => x.id === a.id ? { ...x, status: "open", handled_by: null, handled_at: null, action: null } : x));
+    } catch (e) { alert("Алдаа: " + e.message); }
+  };
+  const open = (alerts || []).filter((a) => a.status === "open");
+  const handled = (alerts || []).filter((a) => a.status === "handled");
+  const list = tab === "open" ? open : handled;
+  const fmt = (t) => t ? new Date(t).toLocaleString("en-GB", { hour12: false }).replace(",", "") : "";
+  return (
+    <div className="glass rounded-2xl p-4" style={{ borderLeft: `3px solid ${open.length ? T.err : T.ok}` }}>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <span className="text-lg">🔔</span>
+        <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">Мэдэгдэл</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">төв агуулахын үлдэгдэл 30-аас доош</span>
+        <div className="flex-1" />
+        <div className="flex gap-1">
+          {[["open", `🆕 Шинэ (${open.length})`], ["handled", `✅ Арга хэмжээ авсан (${handled.length})`]].map(([id, lbl]) => (
+            <button key={id} onClick={() => setTab(id)} className="press-btn px-3 py-1.5 rounded-full text-xs"
+              style={{ background: tab === id ? (id === "open" ? T.err : T.ok) : T.surfaceAlt, color: tab === id ? "#fff" : T.ink, border: `1px solid ${tab === id ? "transparent" : T.borderStrong}`, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+          ))}
+        </div>
+      </div>
+      {alerts === null ? (
+        <div className="text-center py-6"><Loader2 className="spin mx-auto" size={18} style={{ color: T.muted }} /></div>
+      ) : list.length === 0 ? (
+        <div className="text-center py-6 rounded-xl" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }} >
+          {tab === "open" ? "✅ Шинэ мэдэгдэл алга" : "Арга хэмжээ авсан бараа алга"}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+          {list.map((a) => {
+            const p = prodById[a.product_id] || {};
+            const cur = mainStock[a.product_id];
+            return (
+              <div key={a.id} className="rounded-xl p-3 flex gap-3" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderLeft: `3px solid ${a.status === "open" ? T.err : T.ok}` }}>
+                <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: T.surface }}>
+                  {p.image_url ? <img src={thumb(p.image_url)} alt="" className="w-full h-full object-cover" /> : <span className="text-xl">📦</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm truncate">{p.name || "—"}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[11px]">{p.sku || ""}</div>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 text-[11px]" style={{ fontFamily: FM }}>
+                    <span style={{ background: T.errSoft, color: T.err, fontWeight: 700 }} className="px-2 py-0.5 rounded-md">Мэдэгдэх үед: {Number(a.stock_qty ?? 0)} ш</span>
+                    {cur != null && <span style={{ background: cur < 30 ? T.errSoft : T.okSoft, color: cur < 30 ? T.err : T.ok, fontWeight: 700 }} className="px-2 py-0.5 rounded-md">Одоо: {cur} ш</span>}
+                    <span style={{ color: T.muted }} className="px-1 py-0.5">🕐 {fmt(a.triggered_at)}</span>
+                  </div>
+                  {a.status === "handled" && (
+                    <div style={{ color: T.ok, fontFamily: FS }} className="text-[11px] mt-1.5">
+                      🔕 Boost унтраасан · <b>{profMap[a.handled_by] || "—"}</b> · {fmt(a.handled_at)}
+                    </div>
+                  )}
+                  <div className="flex gap-1.5 mt-2">
+                    {a.status === "open" ? (
+                      <button onClick={() => handle(a)} disabled={busy === a.id} className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: T.ok, color: "#fff", fontFamily: FS, fontWeight: 700, opacity: busy === a.id ? 0.6 : 1 }}>🔕 Boost унтраасан</button>
+                    ) : (
+                      <button onClick={() => reopen(a)} className="press-btn px-3 py-1.5 rounded-lg text-xs"
+                        style={{ background: T.surface, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>↩ Буцаах</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MarketingView({ profile }) {
   const [allProfiles, setAllProfiles] = useState([]);
   const [members, setMembers] = useState([]); // mkt_members
@@ -19201,7 +19321,7 @@ function MarketingView({ profile }) {
       const [profs, cats, prods, ec, mem, mp, rc, tg, ds, stockRows] = await Promise.all([
         supabase.from("profiles").select("id, name, role, job_title, is_active").order("name"),
         supabase.from("inv_categories").select("id, name, display_order").order("display_order"),
-        supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active").eq("is_active", true),
+        supabase.from("inv_products").select("id, name, sku, category_id, stock, is_active, image_url").eq("is_active", true),
         supabase.from("mkt_employee_categories").select("*"),
         supabase.from("mkt_members").select("*"),
         supabase.from("mkt_products").select("*").order("created_at", { ascending: false }),
@@ -19671,6 +19791,9 @@ function MarketingView({ profile }) {
 
   return (
     <div className="space-y-4">
+      {/* ====== 🔔 МЭДЭГДЭЛ — төв агуулахын үлдэгдэл < 30 ====== */}
+      <MktStockAlerts profile={profile} products={products} />
+
       {/* ====== 🛒 АЖИЛЛАХ БАРАА — нийтийн сан ====== */}
       <div className="glass rounded-2xl p-4 relative" style={{ zIndex: poolSearchLc ? 40 : "auto" }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
