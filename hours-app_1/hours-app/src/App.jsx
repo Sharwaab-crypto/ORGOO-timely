@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.03-page-shift-split2";
+const BUILD_VERSION = "v2026.11.03-page-shift-toggle";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34489,12 +34489,12 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
     const emps = Object.keys(m).map((id) => ({ id, name: empById[id]?.name || id.slice(0, 8), shifts: m[id].shifts, am: m[id].am, pm: m[id].pm, pages: m[id].pages, pagesAm: m[id].pagesAm, pagesPm: m[id].pagesPm, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0), totalAm: Object.values(m[id].pagesAm).reduce((s, v) => s + v, 0), totalPm: Object.values(m[id].pagesPm).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
     return { pageIds, emps, pageTot, pageTotAm, pageTotPm };
   }, [allRows, empById, statRange, statFrom, statTo, pageOrder]);
-  const StatCell = ({ v, am, pm, color, bold }) => (
-    <div className="flex flex-col items-end leading-tight">
-      <span className="tabular-nums" style={{ color: v ? (color || T.ink) : T.mutedSoft, fontWeight: v ? (bold ? 800 : 700) : 400 }}>{v || "·"}</span>
-      {v ? <span className="tabular-nums text-[9px] whitespace-nowrap" style={{ fontFamily: FM }}><span style={{ color: "#e08a00" }}>🌅{am || 0}</span> <span style={{ color: "#1c7fc4" }}>🌙{pm || 0}</span></span> : null}
-    </div>
-  );
+  const [statShift, setStatShift] = useState("all"); // all | am | pm — хүснэгтэд аль ээлжийн тоог харуулах
+  const StatCell = ({ v, am, pm, color, bold }) => {
+    const x = statShift === "am" ? (am || 0) : statShift === "pm" ? (pm || 0) : (v || 0);
+    const c = statShift === "am" ? "#e08a00" : statShift === "pm" ? "#1c7fc4" : (color || T.ink);
+    return <span className="tabular-nums" style={{ color: x ? c : T.mutedSoft, fontWeight: x ? (bold ? 800 : 700) : 400 }}>{x || "·"}</span>;
+  };
   const moveCol = (idx, dir) => { const arr = [...stats.pageIds]; const j = idx + dir; if (j < 0 || j >= arr.length) return; [arr[idx], arr[j]] = [arr[j], arr[idx]]; savePageOrder(arr); };
 
   const chip = (p, on, onClick) => (
@@ -34584,7 +34584,12 @@ function OperatorShiftScheduleView({ employees, departments = [] }) {
       <div className="glass rounded-2xl p-3">
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
-          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа · <span style={{ color: "#e08a00" }}>🌅 өглөө</span> / <span style={{ color: "#1c7fc4" }}>🌙 орой</span> · ◀▶ баганын байрыг солино</span>
+          <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа · ◀▶ баганын байрыг солино</span>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderStrong}` }}>
+            {[["all", "Бүгд", T.ink], ["am", "🌅 Өглөө", "#e08a00"], ["pm", "🌙 Орой", "#1c7fc4"]].map(([id, lbl, c]) => (
+              <button key={id} onClick={() => setStatShift(id)} className="press-btn px-2.5 py-1 text-[11px]" style={{ background: statShift === id ? c : T.surfaceAlt, color: statShift === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+            ))}
+          </div>
           {pageOrder.length > 0 && <button onClick={() => savePageOrder([])} className="press-btn px-2 py-0.5 rounded-md text-[10px]" style={{ background: T.surfaceAlt, color: T.muted, fontFamily: FS }}>↺ Анхны дараалал</button>}
           <div className="flex gap-1 ml-auto">
             {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
@@ -34737,17 +34742,22 @@ function PageAssignStatsPanel({ highlightId = null }) {
   }, [rows, nameById, range, from, to, order]);
   const inp = { background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM };
   // 🌅/🌙 Тоо + доор нь өглөө/оройн ээлжийн задаргаа
-  const Cell = ({ v, am, pm, color, bold }) => (
-    <div className="flex flex-col items-end leading-tight">
-      <span className="tabular-nums" style={{ color: v ? (color || T.ink) : T.mutedSoft, fontWeight: v ? (bold ? 800 : 700) : 400 }}>{v || "·"}</span>
-      {v ? <span className="tabular-nums text-[9px] whitespace-nowrap" style={{ fontFamily: FM }}><span style={{ color: "#e08a00" }}>🌅{am || 0}</span> <span style={{ color: "#1c7fc4" }}>🌙{pm || 0}</span></span> : null}
-    </div>
-  );
+  const [statShift, setStatShift] = useState("all"); // all | am | pm — хүснэгтэд аль ээлжийн тоог харуулах
+  const Cell = ({ v, am, pm, color, bold }) => {
+    const x = statShift === "am" ? (am || 0) : statShift === "pm" ? (pm || 0) : (v || 0);
+    const c = statShift === "am" ? "#e08a00" : statShift === "pm" ? "#1c7fc4" : (color || T.ink);
+    return <span className="tabular-nums" style={{ color: x ? c : T.mutedSoft, fontWeight: x ? (bold ? 800 : 700) : 400 }}>{x || "·"}</span>;
+  };
   return (
     <div className="glass rounded-2xl p-3">
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
-        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа · <span style={{ color: "#e08a00" }}>🌅 өглөө</span> / <span style={{ color: "#1c7fc4" }}>🌙 орой</span></span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
+        <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderStrong}` }}>
+          {[["all", "Бүгд", T.ink], ["am", "🌅 Өглөө", "#e08a00"], ["pm", "🌙 Орой", "#1c7fc4"]].map(([id, lbl, c]) => (
+            <button key={id} onClick={() => setStatShift(id)} className="press-btn px-2.5 py-1 text-[11px]" style={{ background: statShift === id ? c : T.surfaceAlt, color: statShift === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
+          ))}
+        </div>
         <div className="flex gap-1 ml-auto">
           {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
             <button key={id} onClick={() => setRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: range === id ? T.ink : T.surfaceAlt, color: range === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
