@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.02-zone-guard";
+const BUILD_VERSION = "v2026.11.03-page-shift-split";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -34705,25 +34705,39 @@ function PageAssignStatsPanel({ highlightId = null }) {
     return () => { dead = true; };
   }, [range, from, to]);
   const stats = useMemo(() => {
-    const m = {}; const pageTot = {};
+    const m = {}; const pageTot = {}; const pageTotAm = {}; const pageTotPm = {};
     (rows || []).forEach((r) => {
       if (range === "custom") { const d = new Date(`${r.week_start}T00:00:00`); d.setDate(d.getDate() + (Number(r.day_of_week || 1) - 1)); const ds = iso(d); if (ds < from || ds > to) return; }
-      const n = Math.max(1, opShiftsOf(r).length);
-      m[r.employee_id] = m[r.employee_id] || { shifts: 0, pages: {} };
-      m[r.employee_id].shifts += n;
-      (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => { m[r.employee_id].pages[pid] = (m[r.employee_id].pages[pid] || 0) + n; pageTot[pid] = (pageTot[pid] || 0) + n; });
+      const sh = opShiftsOf(r); const n = Math.max(1, sh.length);
+      const am = sh.includes("am") ? 1 : (sh.length === 0 ? 1 : 0), pm = sh.includes("pm") ? 1 : 0;
+      m[r.employee_id] = m[r.employee_id] || { shifts: 0, am: 0, pm: 0, pages: {}, pagesAm: {}, pagesPm: {} };
+      m[r.employee_id].shifts += n; m[r.employee_id].am += am; m[r.employee_id].pm += pm;
+      (Array.isArray(r.fb_page_ids) ? r.fb_page_ids : []).forEach((pid) => {
+        m[r.employee_id].pages[pid] = (m[r.employee_id].pages[pid] || 0) + n;
+        m[r.employee_id].pagesAm[pid] = (m[r.employee_id].pagesAm[pid] || 0) + am;
+        m[r.employee_id].pagesPm[pid] = (m[r.employee_id].pagesPm[pid] || 0) + pm;
+        pageTot[pid] = (pageTot[pid] || 0) + n;
+        pageTotAm[pid] = (pageTotAm[pid] || 0) + am; pageTotPm[pid] = (pageTotPm[pid] || 0) + pm;
+      });
     });
     const auto = Object.keys(pageTot).sort((a, b) => pageTot[b] - pageTot[a]);
     const pageIds = [...order.filter((id) => pageTot[id] !== undefined), ...auto.filter((id) => !order.includes(id))];
-    const emps = Object.keys(m).map((id) => ({ id, name: nameById[id] || id.slice(0, 8), shifts: m[id].shifts, pages: m[id].pages, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
-    return { pageIds, emps, pageTot };
+    const emps = Object.keys(m).map((id) => ({ id, name: nameById[id] || id.slice(0, 8), shifts: m[id].shifts, am: m[id].am, pm: m[id].pm, pages: m[id].pages, pagesAm: m[id].pagesAm, pagesPm: m[id].pagesPm, total: Object.values(m[id].pages).reduce((s, v) => s + v, 0), totalAm: Object.values(m[id].pagesAm).reduce((s, v) => s + v, 0), totalPm: Object.values(m[id].pagesPm).reduce((s, v) => s + v, 0) })).sort((a, b) => b.shifts - a.shifts);
+    return { pageIds, emps, pageTot, pageTotAm, pageTotPm };
   }, [rows, nameById, range, from, to, order]);
   const inp = { background: T.surfaceAlt, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM };
+  // 🌅/🌙 Тоо + доор нь өглөө/оройн ээлжийн задаргаа
+  const Cell = ({ v, am, pm, color, bold }) => (
+    <div className="flex flex-col items-end leading-tight">
+      <span className="tabular-nums" style={{ color: v ? (color || T.ink) : T.mutedSoft, fontWeight: v ? (bold ? 800 : 700) : 400 }}>{v || "·"}</span>
+      {v ? <span className="tabular-nums text-[9px] whitespace-nowrap" style={{ fontFamily: FM }}><span style={{ color: "#e08a00" }}>🌅{am || 0}</span> <span style={{ color: "#1c7fc4" }}>🌙{pm || 0}</span></span> : null}
+    </div>
+  );
   return (
     <div className="glass rounded-2xl p-3">
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <span style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📊 Page хуваарилалтын тоо</span>
-        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа</span>
+        <span style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">ээлж бүр = 1 удаа · <span style={{ color: "#e08a00" }}>🌅 өглөө</span> / <span style={{ color: "#1c7fc4" }}>🌙 орой</span></span>
         <div className="flex gap-1 ml-auto">
           {[["30", "30 хоног"], ["90", "90 хоног"], ["365", "1 жил"], ["custom", "📅 Гараар"]].map(([id, lbl]) => (
             <button key={id} onClick={() => setRange(id)} className="press-btn px-2.5 py-1 rounded-full text-[11px]" style={{ background: range === id ? T.ink : T.surfaceAlt, color: range === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>{lbl}</button>
@@ -34756,16 +34770,16 @@ function PageAssignStatsPanel({ highlightId = null }) {
               {stats.emps.map((e) => { const me = e.id === highlightId; return (
                 <tr key={e.id} style={{ borderTop: `1px solid ${T.borderSoft}`, background: me ? T.highlightSoft : "transparent" }}>
                   <td className="py-1.5 px-2 whitespace-nowrap sticky left-0" style={{ color: me ? T.highlight : T.ink, fontWeight: 700, background: me ? T.highlightSoft : T.surface }}>{me ? "⭐ " : ""}{e.name}</td>
-                  <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.muted }}>{e.shifts}</td>
-                  {stats.pageIds.map((pid) => { const v = e.pages[pid] || 0; return <td key={pid} className="py-1.5 px-2 text-right tabular-nums" style={{ color: v ? T.ink : T.mutedSoft, fontWeight: v ? 700 : 400 }}>{v || "·"}</td>; })}
-                  <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight, fontWeight: 700 }}>{e.total}</td>
+                  <td className="py-1.5 px-2 text-right"><Cell v={e.shifts} am={e.am} pm={e.pm} color={T.muted} /></td>
+                  {stats.pageIds.map((pid) => <td key={pid} className="py-1.5 px-2 text-right"><Cell v={e.pages[pid] || 0} am={e.pagesAm[pid]} pm={e.pagesPm[pid]} /></td>)}
+                  <td className="py-1.5 px-2 text-right"><Cell v={e.total} am={e.totalAm} pm={e.totalPm} color={T.highlight} /></td>
                 </tr>
               ); })}
               <tr style={{ borderTop: `2px solid ${T.borderStrong}`, color: T.ink, fontWeight: 700 }}>
                 <td className="py-1.5 px-2 sticky left-0" style={{ background: T.surface }}>Нийт</td>
-                <td className="py-1.5 px-2 text-right tabular-nums">{stats.emps.reduce((s, e) => s + e.shifts, 0)}</td>
-                {stats.pageIds.map((pid) => <td key={pid} className="py-1.5 px-2 text-right tabular-nums">{stats.pageTot[pid]}</td>)}
-                <td className="py-1.5 px-2 text-right tabular-nums" style={{ color: T.highlight }}>{stats.emps.reduce((s, e) => s + e.total, 0)}</td>
+                <td className="py-1.5 px-2 text-right"><Cell v={stats.emps.reduce((s, e) => s + e.shifts, 0)} am={stats.emps.reduce((s, e) => s + e.am, 0)} pm={stats.emps.reduce((s, e) => s + e.pm, 0)} bold /></td>
+                {stats.pageIds.map((pid) => <td key={pid} className="py-1.5 px-2 text-right"><Cell v={stats.pageTot[pid]} am={stats.pageTotAm[pid]} pm={stats.pageTotPm[pid]} bold /></td>)}
+                <td className="py-1.5 px-2 text-right"><Cell v={stats.emps.reduce((s, e) => s + e.total, 0)} am={stats.emps.reduce((s, e) => s + e.totalAm, 0)} pm={stats.emps.reduce((s, e) => s + e.totalPm, 0)} color={T.highlight} bold /></td>
               </tr>
             </tbody>
           </table>
