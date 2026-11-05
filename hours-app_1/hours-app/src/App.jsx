@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.03-page-shift-toggle";
+const BUILD_VERSION = "v2026.11.05-approve-guard";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -12685,7 +12685,24 @@ function TransferRequestsView({ profile }) {
       const fromWhId = req.from_warehouse_id;
       const toWhId = req.to_warehouse_id;
 
+      // 🛡 2026-11-05: Бичихээс ӨМНӨ гарах агуулахын үлдэгдлийг бүх бараанд шалгана.
+      //    Өмнө нь insert-ийн алдааг шалгадаггүй байсан тул үлдэгдэл хүрэлцэхгүй бараа чимээгүй алгасагдаж,
+      //    хүсэлт "completed" болдог байв (жолооч биетээр авсан ч системд ороогүй → "авах шаардлагатай" гэж гардаг).
+      const wanted = reqItems.map((it) => ({ it, qty: Number(editedQty[it.id] ?? it.quantity) })).filter((x) => x.qty > 0);
+      if (wanted.length) {
+        const { data: stRows } = await supabase.from("inv_stock").select("product_id, quantity").eq("warehouse_id", fromWhId).in("product_id", wanted.map((x) => x.it.product_id));
+        const have = {}; (stRows || []).forEach((r) => { have[r.product_id] = Number(r.quantity || 0); });
+        const short = wanted.filter((x) => (have[x.it.product_id] || 0) < x.qty);
+        if (short.length) {
+          const pn = (pid) => products.find((pp) => pp.id === pid)?.name || pid.slice(0, 8);
+          alert(`⚠ Гарах агуулахын үлдэгдэл хүрэлцэхгүй — хүсэлт зөвшөөрөгдсөнгүй:\n\n` + short.map((x) => `• ${pn(x.it.product_id)}: хэрэгтэй ${x.qty}, байгаа ${have[x.it.product_id] || 0}`).join("\n") + `\n\n💡 Эдгээр барааны тоог багасгах/0 болгох, эсвэл агуулахад нөөц нэмээд дахин зөвшөөрнө үү.`);
+          setApproving(false);
+          return;
+        }
+      }
+
       // Зөвхөн movement бичнэ — trigger автоматаар inv_stock шинэчилнэ
+      const done = []; const failed = [];
       for (const it of reqItems) {
         const finalQty = Number(editedQty[it.id] ?? it.quantity);
 
@@ -12697,7 +12714,7 @@ function TransferRequestsView({ profile }) {
 
         if (finalQty <= 0) continue; // 0 болгосон бараанд movement бичихгүй (нөөц орохгүй)
 
-        await supabase.from("inv_movements").insert({
+        const { error: mvErr } = await supabase.from("inv_movements").insert({
           product_id: it.product_id,
           movement_type: "transfer",
           quantity: finalQty,
@@ -12706,6 +12723,17 @@ function TransferRequestsView({ profile }) {
           notes: req.is_return ? "Буцаалт" : "Шилжүүлэг",
           created_by: profile.id,
         });
+        if (mvErr) failed.push({ it, qty: finalQty, msg: mvErr.message }); else done.push(it);
+      }
+      if (failed.length) {
+        // Хэсэгчлэн бичигдсэн — алдаатай барааг хүсэлтэд тэмдэглээд, статусыг pending үлдээнэ (дахин зөвшөөрөхөд зөвхөн үлдсэнийг бичихийн тулд 0 болгоно)
+        const pn = (pid) => products.find((pp) => pp.id === pid)?.name || pid.slice(0, 8);
+        for (const d of done) { await supabase.from("inv_transfer_items").update({ quantity: 0 }).eq("id", d.id); }
+        await supabase.from("inv_transfer_requests").update({ notes: `${req.notes ? req.notes + " | " : ""}⚠ ${done.length} бараа шилжсэн, ${failed.length} бараа алдаатай: ${failed.map((f) => pn(f.it.product_id)).join(", ")}` }).eq("id", req.id);
+        alert(`⚠ ${done.length} бараа шилжлээ, ${failed.length} бараа бичигдсэнгүй:\n\n` + failed.map((f) => `• ${pn(f.it.product_id)} ×${f.qty}: ${f.msg}`).join("\n") + `\n\nШилжсэн барааны тоо 0 болж, хүсэлт "хүлээгдэж буй" хэвээр үлдлээ — асуудлыг засаад дахин зөвшөөрнө үү.`);
+        setActiveReq(null);
+        await loadAll();
+        return;
       }
 
 
