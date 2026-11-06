@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.05-approve-guard";
+const BUILD_VERSION = "v2026.11.06-driver-all-search";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -44825,7 +44825,9 @@ function DriverDashboard({ profile }) {
             onDeliver={(o) => { setRatingAddr(o.has_address ?? null); setRatingValue(0); setRatingNote(""); setRatingOrder({ order: o, action: "delivered" }); }}
             onOrderClick={(o) => setActiveOrder(o)}
           />
-        ) : filtered.length === 0 ? (
+        ) : (isAllMode ? allLoading && allPageOrders.length === 0 : false) ? (
+          <div className="glass rounded-2xl p-8 text-center"><Loader2 className="spin mx-auto" size={20} style={{ color: T.muted }} /></div>
+        ) : displayOrders.length === 0 ? ( /* 🛠 2026-11-06: Бүх таб — серверийн хуудасны жагсаалтаар шалгана (өмнө local filtered → "Хоосон" гардаг байв) */
           <div className="glass rounded-2xl p-8 text-center">
             <div className="text-4xl mb-2">🚚</div>
             <div style={{ color: T.muted, fontFamily: FS }} className="text-sm">
