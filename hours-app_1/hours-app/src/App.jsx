@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-driver-tabs-grid";
+const BUILD_VERSION = "v2026.11.09-driver-no-timer";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -44659,10 +44659,7 @@ function DriverDashboard({ profile }) {
         </button>
       </header>
 
-      {/* ⏱ Цаг бүртгэх */}
-      <div className="px-3 pt-3 max-w-2xl mx-auto">
-        <TimeTracker profile={profile} />
-      </div>
+      {/* ⏱ Цаг бүртгэх — 2026-11-09: жолоочийн дэлгэцээс хассан (хүсэлтээр) */}
 
       {/* Bottom navigation tabs — 📱 3×2 торон (утсанд нэг мөрөнд 6 багтдаггүй) */}
       <div className="px-3 pt-3 max-w-2xl mx-auto">
