@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-driver-no-timer";
+const BUILD_VERSION = "v2026.11.09-ddash-corelink2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21361,16 +21361,21 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     try {
       const sIso = range.s.toISOString(), eIso = range.e.toISOString();
       const withDrv = (q) => (onlyDriverId ? q.eq("driver_id", onlyDriverId) : q.not("driver_id", "is", null));
+      // 🏪 Мерчантын захиалгыг хасна (мерчантын FB page + MR- дугаартай) — зөвхөн CoreLink-ийн захиалга
+      const { data: merchProfs } = await supabase.from("profiles").select("fb_page_ids").eq("role", "merchant");
+      const merchPages = new Set((merchProfs || []).flatMap((m) => Array.isArray(m.fb_page_ids) ? m.fb_page_ids : []));
+      // ⚠ Зөвхөн админ/ахлахын самбарт хасна — жолоочийн өөрийн "Самбар" (onlyDriverId) өөрчлөгдөхгүй
+      const notMerchant = (o) => onlyDriverId ? true : !(String(o.order_number || "").startsWith("MR-") || (o.fb_page_id && merchPages.has(o.fb_page_id)));
       const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
         (onlyDriverId ? supabase.from("profiles").select("id, name, job_title, is_active").eq("id", onlyDriverId) : supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name")),
-        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status").in("status", ["assigned", "pending"]))),
-        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso))),
-        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso))),
-        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at").eq("status", "delivered").is("settlement_id", null))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status, fb_page_id").in("status", ["assigned", "pending"]))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id, fb_page_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note, fb_page_id").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso))),
+        fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at, order_number, fb_page_id").eq("status", "delivered").is("settlement_id", null))),
         withDrv(supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000)),
       ]);
       setDrivers((drvRes.data || []).filter((d) => d.is_active !== false && (!onlyDriverId || d.id === onlyDriverId)));
-      setPending(pendRes || []); setDelivered(delRes || []); setCancelled(canRes || []); setUnsettled(unsRes || []);
+      setPending((pendRes || []).filter(notMerchant)); setDelivered((delRes || []).filter(notMerchant)); setCancelled((canRes || []).filter(notMerchant)); setUnsettled((unsRes || []).filter(notMerchant));
       setSettlements(stRes.data || []);
     } catch (e) { console.error("[delivery dashboard]", e); }
     finally { setLoading(false); }
@@ -21436,6 +21441,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     <div className="space-y-3">
       {/* Хугацаа + эрэмбэ */}
       <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
+        {!onlyDriverId && <span className="px-2 py-1 rounded-md text-[10px] uppercase tracking-wider" style={{ background: "rgba(14,156,142,0.12)", color: "#0a645c", fontFamily: FM, fontWeight: 700 }} title="Мерчантын захиалга ороогүй">🏢 Зөвхөн CoreLink</span>}
         {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setPeriod(k)} className="press-btn px-3 py-1.5 rounded-full text-xs"
             style={{ background: period === k ? T.highlight : T.surfaceAlt, color: period === k ? "#fff" : T.inkSoft, border: `1px solid ${period === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
