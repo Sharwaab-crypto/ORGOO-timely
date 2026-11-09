@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-mkt-zochil";
+const BUILD_VERSION = "v2026.11.09-driver-tabs-grid";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -44664,69 +44664,28 @@ function DriverDashboard({ profile }) {
         <TimeTracker profile={profile} />
       </div>
 
-      {/* Bottom navigation tabs */}
+      {/* Bottom navigation tabs — 📱 3×2 торон (утсанд нэг мөрөнд 6 багтдаггүй) */}
       <div className="px-3 pt-3 max-w-2xl mx-auto">
-        <div className="glass rounded-2xl p-1.5 flex gap-1">
-          <button onClick={() => setView("orders")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "orders" ? "#0ea5e9" : "transparent",
-              color: view === "orders" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <ShoppingBag size={13} />
-            Захиалга
-          </button>
-          <button onClick={() => setView("warehouse")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "warehouse" ? "#0ea5e9" : "transparent",
-              color: view === "warehouse" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <Package size={13} />
-            Агуулах
-          </button>
-          <button onClick={() => setView("requests")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "requests" ? "#0ea5e9" : "transparent",
-              color: view === "requests" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <Send size={13} />
-            Хүсэлт
-          </button>
-          <button onClick={() => setView("settlements")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "settlements" ? "#0ea5e9" : "transparent",
-              color: view === "settlements" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <ClipboardCheck size={13} />
-            Тооцоо
-          </button>
-          <button onClick={() => setView("board")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "board" ? "#0ea5e9" : "transparent",
-              color: view === "board" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <BarChart3 size={13} />
-            Самбар
-          </button>
-          <button onClick={() => setView("suggest")}
-            className="press-btn flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
-            style={{
-              background: view === "suggest" ? "#0ea5e9" : "transparent",
-              color: view === "suggest" ? "white" : T.ink,
-              fontFamily: FS, fontWeight: 600,
-            }}>
-            <Send size={13} />
-            Санал
-          </button>
+        <div className="glass rounded-2xl p-1.5 grid grid-cols-3 gap-1">
+          {[
+            ["orders", ShoppingBag, "Захиалга"],
+            ["warehouse", Package, "Агуулах"],
+            ["requests", Send, "Хүсэлт"],
+            ["settlements", ClipboardCheck, "Тооцоо"],
+            ["board", BarChart3, "Самбар"],
+            ["suggest", Send, "Санал"],
+          ].map(([id, Icon, label]) => (
+            <button key={id} onClick={() => setView(id)}
+              className="press-btn py-2 rounded-lg text-xs flex items-center justify-center gap-1.5"
+              style={{
+                background: view === id ? "#0ea5e9" : "transparent",
+                color: view === id ? "white" : T.ink,
+                fontFamily: FS, fontWeight: 600,
+              }}>
+              <Icon size={13} />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
