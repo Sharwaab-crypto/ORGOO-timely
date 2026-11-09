@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.06-driver-all-search";
+const BUILD_VERSION = "v2026.11.09-rural-driver";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -28990,6 +28990,90 @@ function LocBadge({ order, size = "sm" }) {
   );
 }
 
+// 🚌 Орон нутгийн унааны жолооч — аймаг/хот бүрт хадгалагдсан жолоочид (rural_drivers)
+const isRuralCity = (city) => !!city && !/^улаанбаатар/i.test(String(city).trim());
+const ruralDriverLine = (d) => `🚌 Унаа: ${d.plate}${d.phone ? " · " + d.phone : ""}`;
+function RuralDriverPicker({ city, value, onChange, byId }) {
+  const [list, setList] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [plate, setPlate] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    try {
+      const { data } = await supabase.from("rural_drivers").select("*").eq("city", city).order("last_used_at", { ascending: false, nullsFirst: false });
+      setList(data || []);
+    } catch { setList([]); }
+  };
+  useEffect(() => { setList(null); load(); }, [city]);
+  const add = async () => {
+    const pl = plate.trim().toUpperCase(), ph = phone.replace(/\D/g, "");
+    if (!pl) { alert("Машины дугаар бичнэ үү"); return; }
+    if (ph && ph.length !== 8) { alert("Утасны дугаар 8 оронтой байх ёстой"); return; }
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.from("rural_drivers").insert({ city, plate: pl, phone: ph || null, created_by: byId || null }).select().single();
+      if (error) throw error;
+      setList((prev) => [data, ...(prev || [])]);
+      onChange(data);
+      setAdding(false); setPlate(""); setPhone("");
+    } catch (e) { alert("Хадгалахад алдаа: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const remove = async (d) => {
+    if (!confirm(`${d.plate} жолоочийг ${city}-ийн жагсаалтаас устгах уу?`)) return;
+    await supabase.from("rural_drivers").delete().eq("id", d.id);
+    setList((prev) => (prev || []).filter((x) => x.id !== d.id));
+    if (value?.id === d.id) onChange(null);
+  };
+  return (
+    <div>
+      <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
+        🚌 Унаанд тавьсан жолооч — {city} <span style={{ color: T.err }}>*</span>
+      </label>
+      {list === null ? (
+        <div className="py-2"><Loader2 className="spin" size={16} style={{ color: T.muted }} /></div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {list.map((d) => {
+            const on = value?.id === d.id;
+            return (
+              <span key={d.id} className="inline-flex items-stretch rounded-lg overflow-hidden" style={{ border: `1px solid ${on ? T.highlight : T.borderStrong}` }}>
+                <button type="button" onClick={() => onChange(on ? null : d)} className="press-btn px-2.5 py-1.5 text-xs text-left"
+                  style={{ background: on ? T.highlight : T.surfaceAlt, color: on ? "#fff" : T.ink, fontFamily: FS, fontWeight: 600 }}>
+                  🚐 {d.plate}{d.phone ? <span style={{ opacity: 0.85, fontFamily: FM, fontWeight: 500 }}> · {d.phone}</span> : null}
+                </button>
+                <button type="button" onClick={() => remove(d)} title="Устгах" className="press-btn px-1.5 text-[10px]" style={{ background: T.surfaceAlt, color: T.muted, borderLeft: `1px solid ${T.border}` }}>✕</button>
+              </span>
+            );
+          })}
+          {!adding && (
+            <button type="button" onClick={() => setAdding(true)} className="press-btn px-2.5 py-1.5 rounded-lg text-xs" style={{ background: T.surface, color: T.highlight, border: `1px dashed ${T.highlight}`, fontFamily: FS, fontWeight: 700 }}>+ Жолооч нэмэх</button>
+          )}
+        </div>
+      )}
+      {adding && (
+        <div className="mt-2 p-2 rounded-xl grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-center" style={{ background: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+          <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Машины дугаар (1234 УБА)" className="px-2.5 py-1.5 rounded-lg text-sm w-full" style={{ background: T.surface, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Утас (8 орон)" inputMode="numeric" className="px-2.5 py-1.5 rounded-lg text-sm w-full" style={{ background: T.surface, border: `1px solid ${T.borderStrong}`, color: T.ink, fontFamily: FM }} />
+          <button type="button" onClick={add} disabled={busy} className="press-btn px-3 py-1.5 rounded-lg text-xs" style={{ background: T.ok, color: "#fff", fontFamily: FS, fontWeight: 700, opacity: busy ? 0.6 : 1 }}>Хадгалах</button>
+          <button type="button" onClick={() => { setAdding(false); setPlate(""); setPhone(""); }} className="press-btn px-2 py-1.5 rounded-lg text-xs" style={{ background: T.surface, color: T.muted, border: `1px solid ${T.border}`, fontFamily: FS }}>Болих</button>
+        </div>
+      )}
+      {value && (
+        <div style={{ color: T.ok, fontFamily: FS }} className="text-[11px] mt-1.5">✓ Хаягт нэмэгдэнэ: «{ruralDriverLine(value)}»</div>
+      )}
+    </div>
+  );
+}
+// Сонгосон жолоочийн мэдээллийг хаягт нэмж, ашиглалтын тоог нэмэгдүүлнэ
+async function applyRuralDriver(order, d) {
+  const line = ruralDriverLine(d);
+  const addr = String(order.delivery_address || "").replace(/\n?🚌 Унаа:[^\n]*/g, "").trimEnd();
+  try { await supabase.from("rural_drivers").update({ last_used_at: new Date().toISOString(), use_count: (Number(d.use_count) || 0) + 1 }).eq("id", d.id); } catch {}
+  return { delivery_address: addr ? `${addr}\n${line}` : line, rural_driver_plate: d.plate, rural_driver_phone: d.phone || null };
+}
+
 function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, onToNew, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
   const statusInfo = {
     new: { label: "Шинэ", color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
@@ -29733,6 +29817,8 @@ function OrdersView({ profile }) {
   const [totalCount, setTotalCount] = useState(0); // 📄 server-side pagination — нийт таарах мөр
   const [mapOrders, setMapOrders] = useState([]); // 🗺 газрын зураг — хуудаслалтгүй бүх таарах захиалга
   const [cancelTarget, setCancelTarget] = useState(null); // 🚫 цуцлах шалтгаан modal-д харуулах захиалга
+  const [ruralTarget, setRuralTarget] = useState(null); // 🚌 орон нутгийн захиалга хүргэгдэх — унааны жолооч сонгох modal
+  const [ruralPick, setRuralPick] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState(""); // 🔍 search debounce (серверт хайна)
   const loadSeq = useRef(0); // ⏱ зэрэг ачаалал — зөвхөн хамгийн сүүлийнх хүчинтэй
   const PAGE_SIZE = 100;
@@ -29972,13 +30058,19 @@ function OrdersView({ profile }) {
   const filtered = orders;
   const counts = tabCounts;
 
-  const updateStatus = async (orderId, newStatus) => {
+  const updateStatus = async (orderId, newStatus, extra = null) => {
     // 🚫 Цуцлах нь шалтгаан/тайлбартай modal-аар явна (шууд биш)
     if (newStatus === "cancelled") {
       setCancelTarget(orders.find((o) => o.id === orderId) || { id: orderId });
       return;
     }
-    const updates = { status: newStatus };
+    // 🚌 Орон нутгийн захиалга хүргэгдэхэд унааны жолоочийг заавал сонгуулна (modal)
+    if (newStatus === "delivered" && !extra?.ruralDone) {
+      const cur = orders.find((o) => o.id === orderId) || activeOrder
+        || (await supabase.from("biz_orders").select("*").eq("id", orderId).maybeSingle()).data;
+      if (cur && isRuralCity(cur.delivery_city)) { setRuralTarget(cur); return; }
+    }
+    const updates = { status: newStatus, ...(extra ? Object.fromEntries(Object.entries(extra).filter(([k]) => k !== "ruralDone")) : {}) };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "cancelled") updates.cancelled_at = new Date().toISOString();
 
@@ -30061,6 +30153,24 @@ function OrdersView({ profile }) {
           onUpdateStatus={(s) => updateStatus(activeOrder.id, s)}
           onAssignDriver={() => setAssignDriverOrder(activeOrder)}
         />
+{ruralTarget && (
+          <Modal onClose={() => { setRuralTarget(null); setRuralPick(null); }} staticBackdrop title="🏞 Орон нутгийн захиалга хүргэгдлээ" maxW="max-w-lg">
+            <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
+              #{ruralTarget.order_number || ruralTarget.id.slice(0, 8)} · {ruralTarget.customer_phone} · <b style={{ color: T.ink }}>{ruralTarget.delivery_city}</b>
+            </div>
+            <RuralDriverPicker city={String(ruralTarget.delivery_city).trim()} value={ruralPick} onChange={setRuralPick} byId={profile?.id} />
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { setRuralTarget(null); setRuralPick(null); }} className="press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>Болих</button>
+              <button onClick={async () => {
+                if (!ruralPick) { alert("🚌 Унаанд тавьсан жолоочийг сонгох эсвэл нэмнэ үү"); return; }
+                const t = ruralTarget; const d = ruralPick;
+                setRuralTarget(null); setRuralPick(null);
+                const upd = await applyRuralDriver(t, d);
+                await updateStatus(t.id, "delivered", { ...upd, ruralDone: true });
+              }} className="press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ background: T.ok, color: "#fff", fontFamily: FS, fontWeight: 700 }}>✓ Хүргэгдсэн болгох</button>
+            </div>
+          </Modal>
+        )}
         {cancelTarget && (
           <CancelReasonModal
             order={cancelTarget}
@@ -30544,6 +30654,24 @@ function OrdersView({ profile }) {
       })()}
 
       {/* Edit modal — CallReceiveModal-тай ижил */}
+      {ruralTarget && (
+        <Modal onClose={() => { setRuralTarget(null); setRuralPick(null); }} staticBackdrop title="🏞 Орон нутгийн захиалга хүргэгдлээ" maxW="max-w-lg">
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs mb-3">
+            #{ruralTarget.order_number || ruralTarget.id.slice(0, 8)} · {ruralTarget.customer_phone} · <b style={{ color: T.ink }}>{ruralTarget.delivery_city}</b>
+          </div>
+          <RuralDriverPicker city={String(ruralTarget.delivery_city).trim()} value={ruralPick} onChange={setRuralPick} byId={profile?.id} />
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => { setRuralTarget(null); setRuralPick(null); }} className="press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ background: T.surfaceAlt, color: T.ink, border: `1px solid ${T.border}`, fontFamily: FS }}>Болих</button>
+            <button onClick={async () => {
+              if (!ruralPick) { alert("🚌 Унаанд тавьсан жолоочийг сонгох эсвэл нэмнэ үү"); return; }
+              const t = ruralTarget; const d = ruralPick;
+              setRuralTarget(null); setRuralPick(null);
+              const upd = await applyRuralDriver(t, d);
+              await updateStatus(t.id, "delivered", { ...upd, ruralDone: true });
+            }} className="press-btn flex-1 py-2.5 rounded-xl text-sm" style={{ background: T.ok, color: "#fff", fontFamily: FS, fontWeight: 700 }}>✓ Хүргэгдсэн болгох</button>
+          </div>
+        </Modal>
+      )}
       {cancelTarget && (
         <CancelReasonModal
           order={cancelTarget}
@@ -43914,7 +44042,8 @@ function DriverDashboard({ profile }) {
   const [ratingOrder, setRatingOrder] = useState(null); // { order, action: 'delivered'|'cancelled' }
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingNote, setRatingNote] = useState("");
-  const [ratingAddr, setRatingAddr] = useState(null); // 📍 хүргэхэд хаягтай/хаяггүй — заавал
+  const [ratingAddr, setRatingAddr] = useState(null);
+  const [ratingRural, setRatingRural] = useState(null); // 🚌 орон нутгийн унааны жолооч // 📍 хүргэхэд хаягтай/хаяггүй — заавал
   const [pickupShort, setPickupShort] = useState(null); // ⚠ {types, total} — авах шаардлагатай бараа
   const [unknownTarget, setUnknownTarget] = useState(null); // ❓ Тодорхойгүй болгох popup-ийн захиалга
   // 💬 Өөрийн мэдэгдсэн асуудлууд
@@ -44822,7 +44951,7 @@ function DriverDashboard({ profile }) {
             drivers={[]}
             items={items}
             profileId={profile.id}
-            onDeliver={(o) => { setRatingAddr(o.has_address ?? null); setRatingValue(0); setRatingNote(""); setRatingOrder({ order: o, action: "delivered" }); }}
+            onDeliver={(o) => { setRatingAddr(o.has_address ?? null); setRatingValue(0); setRatingNote(""); setRatingRural(null); setRatingOrder({ order: o, action: "delivered" }); }}
             onOrderClick={(o) => setActiveOrder(o)}
           />
         ) : (isAllMode ? allLoading && allPageOrders.length === 0 : false) ? (
@@ -45061,7 +45190,7 @@ function DriverDashboard({ profile }) {
                     <div className="grid grid-cols-1 gap-2">
                       {/* "Тодорхойгүй" tab дотор бол → "Хүргэсэн" товч АЛГА */}
                       {filter !== "unknown" && (
-                        <button onClick={() => { setRatingAddr(o.has_address ?? null); setRatingOrder({ order: o, action: "delivered" }); }}
+                        <button onClick={() => { setRatingAddr(o.has_address ?? null); setRatingRural(null); setRatingOrder({ order: o, action: "delivered" }); }}
                           className="press-btn w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                           style={{ background: T.ok, color: "white", fontFamily: FS }}>
                           ✓ Хүргэсэн
@@ -45208,6 +45337,7 @@ function DriverDashboard({ profile }) {
                 if (s === "delivered") {
                   // Хүргэсэн → үнэлгээ popup нээх
                   setRatingAddr(activeOrder.has_address ?? null);
+                  setRatingRural(null);
                   setRatingOrder({ order: activeOrder, action: "delivered" });
                   setRatingValue(0);
                   setRatingNote("");
@@ -45329,6 +45459,11 @@ function DriverDashboard({ profile }) {
                   <AddressPick value={ratingAddr} onChange={setRatingAddr} />
                 </div>
               )}
+              {ratingOrder.action === "delivered" && isRuralCity(ratingOrder.order.delivery_city) && (
+                <div className="mb-4">
+                  <RuralDriverPicker city={String(ratingOrder.order.delivery_city).trim()} value={ratingRural} onChange={setRatingRural} byId={profile?.id} />
+                </div>
+              )}
               {/* Тэмдэглэл */}
               <div className="mb-4">
                 <label style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider mb-1 block">
@@ -45361,6 +45496,10 @@ function DriverDashboard({ profile }) {
                     alert("📍 Захиалга хаягтай эсвэл хаяггүй эсэхийг сонгоно уу");
                     return;
                   }
+                  if (ratingOrder.action === "delivered" && isRuralCity(ratingOrder.order.delivery_city) && !ratingRural) {
+                    alert("🚌 Унаанд тавьсан жолоочийг сонгох эсвэл нэмнэ үү");
+                    return;
+                  }
                   setRatingBusy(true);
                   try {
                     // Operator-ийг олох — энэ захиалгын утсаар operator байсан хүнийг
@@ -45391,6 +45530,7 @@ function DriverDashboard({ profile }) {
                     if (ratingOrder.action === "delivered") {
                       // Stock хасахын тулд updateStatus ажиллуулна
                       orderUpdates.has_address = ratingAddr; // 📍
+                      if (ratingRural) Object.assign(orderUpdates, await applyRuralDriver(ratingOrder.order, ratingRural)); // 🚌
                       await supabase.from("biz_orders").update(orderUpdates).eq("id", ratingOrder.order.id);
                       await updateStatus(ratingOrder.order.id, "delivered");
                     } else {
