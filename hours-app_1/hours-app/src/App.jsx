@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-mkt-goal-cost";
+const BUILD_VERSION = "v2026.11.09-mkt-goal-cost2";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -20292,16 +20292,13 @@ function MarketingView({ profile }) {
               <div style={{ height: 8, borderRadius: 4, background: T.border || "#E5E7EB", overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${Math.min(100, targetPct)}%`, background: targetColor, borderRadius: 4, transition: "width .3s" }} />
               </div>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)" }}>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">💸 Нийт Boost cost</div>
-                  <div style={{ color: "#B45309", fontFamily: FM, fontWeight: 800 }} className="text-base">${monthBoost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                </div>
-                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.25)" }}>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📊 1 хандалтын өртөг</div>
-                  <div style={{ color: "#1D4ED8", fontFamily: FM, fontWeight: 800 }} className="text-base">{monthReach > 0 ? `$${monthCpr.toFixed(4)}` : "—"}</div>
-                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{monthReach > 0 ? `1,000 хандалт = $${(monthCpr * 1000).toFixed(2)}` : "хандалт алга"}</div>
-                </div>
+              <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">💸 Нийт Boost cost</span>
+                <span style={{ color: "#B45309", fontFamily: FM, fontWeight: 700 }} className="text-sm">${monthBoost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">📊 1 хандалтын өртөг <span style={{ color: T.mutedSoft || T.muted }}>· 1,000 = ${monthReach > 0 ? (monthCpr * 1000).toFixed(2) : "—"}</span></span>
+                <span style={{ color: "#1D4ED8", fontFamily: FM, fontWeight: 700 }} className="text-sm">{monthReach > 0 ? `$${monthCpr.toFixed(4)}` : "—"}</span>
               </div>
             </div>
           </div>
