@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-ddash-segment";
+const BUILD_VERSION = "v2026.11.09-ddash-cancel-split";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21435,6 +21435,13 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
   }, [delivered, cancelled, range]);
 
   const fmtT = (n) => `${Math.round(Number(n || 0)).toLocaleString()}₮`;
+  // ❌ Цуцлалтыг 2 бүлэгт: "Систем/бараа" (Бараа дууссан/байхгүй · Давхар захиалга · Орон нутаг) ба "Бусад"
+  const isSysCancel = (o) => {
+    const rs = Array.isArray(o.cancel_reasons) ? o.cancel_reasons : (o.cancel_reasons ? [String(o.cancel_reasons)] : []);
+    return rs.some((r) => /бараа\s*дууссан|байхгүй|давхар\s*захиалга|орон\s*нутаг/i.test(String(r)));
+  };
+  const splitCancel = (list) => { const sys = list.filter(isSysCancel).length; return { sys, other: list.length - sys }; };
+  const cancelSplit = useMemo(() => splitCancel(cancelled), [cancelled]);
   const fmtD = (t) => t ? new Date(t).toLocaleDateString("en-GB") : "—";
   const daysAgo = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 86400000) : null;
 
@@ -21476,7 +21483,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
         {[
           ["⏳ Хүлээгдэж буй", tot.pending, fmtT(tot.pendingAmt), T.warn, "одоо гар дээр (бүх цаг)"],
           [`✅ Хүргэсэн · ${range.label}`, tot.delivered, fmtT(tot.deliveredAmt), T.ok, "амжилттай хүргэлт"],
-          [`❌ Цуцалсан · ${range.label}`, tot.cancelled, tot.delivered + tot.cancelled > 0 ? `${((tot.cancelled / (tot.delivered + tot.cancelled)) * 100).toFixed(1)}% (хүргэсэн+цуцалсанаас)` : "", T.err, "жолоочтой захиалгын цуцлалт"],
+          [`❌ Цуцалсан · ${range.label}`, tot.cancelled, <span key="c"><span style={{ color: T.err, fontWeight: 700 }}>Бусад {cancelSplit.other}</span> · <span style={{ color: "#9333ea", fontWeight: 700 }}>Бараа/давхар/орон нутаг {cancelSplit.sys}</span>{tot.delivered + tot.cancelled > 0 ? <span> · {((tot.cancelled / (tot.delivered + tot.cancelled)) * 100).toFixed(1)}%</span> : null}</span>, T.err, "Бараа дууссан/байхгүй · Давхар захиалга · Орон нутаг гэсэн шалтгааныг тусад нь"],
           ["📦 Тушаагаагүй", tot.unsettledN, fmtT(tot.owed), T.highlight, "хүргэсэн ч тооцоонд ороогүй (бүх цаг)"],
           ["🧾 Нээлттэй тооцоо", tot.openN, onlyDriverId ? (tot.openN ? "хаагдаагүй" : "алга") : `${stats.length} жолооч`, "#9333ea", "нээгдсэн, хаагдаагүй"],
         ].map(([lbl, n, sub, color, hint], i) => (
@@ -21542,7 +21549,14 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
                   <div className="grid grid-cols-3 gap-1.5 mt-2">
                     {boxBtn("pending", T.warnSoft || "#FEF3C7", T.warn, s.pending.length, "⏳ Хүлээгдэж", s.pendingAmt)}
                     {boxBtn("delivered", T.okSoft || "#DCFCE7", T.ok, s.deliveredN, "✅ Хүргэсэн", s.deliveredAmt)}
-                    {boxBtn("cancelled", T.errSoft || "#FEE2E2", T.err, s.cancelledN, "❌ Цуцалсан", s.cancelledAmt)}
+                    {(() => { const sp = splitCancel(s.cancelledList); return (
+                      <button onClick={() => setPopup({ s, kind: "cancelled" })} className="press-btn rounded-lg p-1.5 text-center w-full" style={{ background: T.errSoft || "#FEE2E2" }} title="Цуцалсан захиалгуудыг харах">
+                        <div className="tabular-nums text-base" style={{ fontFamily: FD, fontWeight: 800 }}>
+                          <span style={{ color: T.err }}>{sp.other}</span><span style={{ color: T.muted, fontWeight: 500 }}> / </span><span style={{ color: "#9333ea" }}>{sp.sys}</span>
+                        </div>
+                        <div style={{ color: T.muted, fontFamily: FM }} className="text-[9px] uppercase">❌ Бусад / бараа·давхар·о.нутаг · {fmtT(s.cancelledAmt)}</div>
+                      </button>
+                    ); })()}
                   </div>
                   {(() => {
                     const base = s.deliveredN + s.cancelledN;
