@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-ddash-cancel-pct";
+const BUILD_VERSION = "v2026.11.09-ddash-funnel";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21341,6 +21341,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
   const [cancelled, setCancelled] = useState([]);
   const [unsettled, setUnsettled] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  const [created, setCreated] = useState([]); // 📝 тухайн хугацаанд шивэгдсэн бүх захиалга (жолоочтой/жолоочгүй)
   const [popup, setPopup] = useState(null); // { s: жолоочийн stat, kind: "pending"|"delivered"|"cancelled" }
   const [sortBy, setSortBy] = useState("owed"); // owed | delivered | pending | name
   const [segment, setSegment] = useState("corelink"); // 🏢 corelink | all — мерчантын захиалгыг хасах/оруулах (зөвхөн админ самбар)
@@ -21367,14 +21368,16 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
       const merchPages = new Set((merchProfs || []).flatMap((m) => Array.isArray(m.fb_page_ids) ? m.fb_page_ids : []));
       // ⚠ Зөвхөн админ/ахлахын самбарт хасна — жолоочийн өөрийн "Самбар" (onlyDriverId) өөрчлөгдөхгүй
       const notMerchant = (o) => (onlyDriverId || segment === "all") ? true : !(String(o.order_number || "").startsWith("MR-") || (o.fb_page_id && merchPages.has(o.fb_page_id)));
-      const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
+      const [drvRes, pendRes, delRes, canRes, unsRes, stRes, crRes] = await Promise.all([
         (onlyDriverId ? supabase.from("profiles").select("id, name, job_title, is_active").eq("id", onlyDriverId) : supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name")),
         fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status, fb_page_id").in("status", ["assigned", "pending"]))),
         fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, paid_amount, prepaid_amount, delivered_at, settlement_id, fb_page_id").eq("status", "delivered").gte("delivered_at", sIso).lt("delivered_at", eIso))),
         fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, customer_phone, delivery_address, total_amount, cancelled_at, cancel_reasons, cancel_note, fb_page_id").eq("status", "cancelled").gte("cancelled_at", sIso).lt("cancelled_at", eIso))),
         fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, total_amount, paid_amount, prepaid_amount, delivered_at, order_number, fb_page_id").eq("status", "delivered").is("settlement_id", null))),
         withDrv(supabase.from("biz_settlements").select("id, driver_id, status, period_start, order_count, total_submitted, cash_amount, bank_amount, expense_amount, settled_at, created_at").order("created_at", { ascending: false }).limit(2000)),
+        onlyDriverId ? Promise.resolve([]) : fetchAllRows(supabase.from("biz_orders").select("id, status, driver_id, order_number, fb_page_id, created_at").gte("created_at", sIso).lt("created_at", eIso)),
       ]);
+      setCreated((crRes || []).filter(notMerchant));
       setDrivers((drvRes.data || []).filter((d) => d.is_active !== false && (!onlyDriverId || d.id === onlyDriverId)));
       setPending((pendRes || []).filter(notMerchant)); setDelivered((delRes || []).filter(notMerchant)); setCancelled((canRes || []).filter(notMerchant)); setUnsettled((unsRes || []).filter(notMerchant));
       setSettlements(stRes.data || []);
@@ -21434,6 +21437,16 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     });
   }, [delivered, cancelled, range]);
 
+  // 📝 Шивэгдсэн → хуваарилагдсан → төлөв (тухайн хугацаанд үүссэн захиалгаар)
+  const funnel = useMemo(() => {
+    const total = created.length;
+    const asg = created.filter((o) => o.driver_id);
+    const pend = asg.filter((o) => ["assigned", "pending", "new"].includes(o.status)).length;
+    const del = asg.filter((o) => o.status === "delivered").length;
+    const can = asg.filter((o) => o.status === "cancelled").length;
+    const pc = (n) => asg.length > 0 ? `${((n / asg.length) * 100).toFixed(1)}%` : "—";
+    return { total, assigned: asg.length, unassigned: total - asg.length, pend, del, can, pcPend: pc(pend), pcDel: pc(del), pcCan: pc(can), pcAsg: total > 0 ? `${((asg.length / total) * 100).toFixed(1)}%` : "—" };
+  }, [created]);
   const fmtT = (n) => `${Math.round(Number(n || 0)).toLocaleString()}₮`;
   // ❌ Цуцлалтыг 2 бүлэгт: "Систем/бараа" (Бараа дууссан/байхгүй · Давхар захиалга · Орон нутаг) ба "Бусад"
   const isSysCancel = (o) => {
@@ -21501,6 +21514,37 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
           </div>
         ))}
       </div>
+
+      {!onlyDriverId && (
+        <div className="glass rounded-2xl p-3">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm">📝 Шивэгдсэн → Хуваарилагдсан · {range.label}</div>
+            <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">тухайн хугацаанд үүссэн захиалгаар · хувь = хуваарилагдсанаас</div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {[
+              ["📝 Нийт шивэгдсэн", funnel.total, `${funnel.unassigned} жолоочгүй`, T.ink],
+              ["📦 Хуваарилагдсан", funnel.assigned, `${funnel.pcAsg} шивэгдсэнээс`, T.highlight],
+              ["⏳ Хүлээгдэж буй", funnel.pend, funnel.pcPend, T.warn],
+              ["✅ Хүргэгдсэн", funnel.del, funnel.pcDel, T.ok],
+              ["❌ Цуцалсан", funnel.can, funnel.pcCan, T.err],
+            ].map(([lbl, n, sub, color], i) => (
+              <div key={i} className="rounded-xl p-2.5" style={{ background: T.surfaceAlt, borderLeft: `3px solid ${color}` }}>
+                <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">{lbl}</div>
+                <div style={{ color, fontFamily: FD, fontWeight: 800 }} className="text-xl tabular-nums leading-tight">{n}</div>
+                <div style={{ color: T.inkSoft, fontFamily: FM, fontWeight: 600 }} className="text-[11px]">{sub}</div>
+              </div>
+            ))}
+          </div>
+          {funnel.assigned > 0 && (
+            <div className="flex rounded-full overflow-hidden mt-2" style={{ height: 8, background: T.border }} title="Хүлээгдэж буй / Хүргэгдсэн / Цуцалсан">
+              <div style={{ width: `${(funnel.pend / funnel.assigned) * 100}%`, background: T.warn }} />
+              <div style={{ width: `${(funnel.del / funnel.assigned) * 100}%`, background: T.ok }} />
+              <div style={{ width: `${(funnel.can / funnel.assigned) * 100}%`, background: T.err }} />
+            </div>
+          )}
+        </div>
+      )}
 
       {!loading && daily.length > 1 && (
         <div className="glass rounded-2xl p-3">
