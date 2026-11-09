@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-edit-keep-city";
+const BUILD_VERSION = "v2026.11.09-mkt-goal-cost";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19592,6 +19592,9 @@ function MarketingView({ profile }) {
 
   // 🎯 Сарын хандалтын зорилго
   const monthReach = useMemo(() => reach.filter((r) => (r.reach_date || "").slice(0, 7) === targetMonth).reduce((s, r) => s + Number(r.reach || 0), 0), [reach, targetMonth]);
+  // 💸 Тухайн сарын нийт Boost cost ($) + 1 хандалтын өртөг
+  const monthBoost = useMemo(() => reach.filter((r) => (r.reach_date || "").slice(0, 7) === targetMonth).reduce((s, r) => s + Number(r.boost_cost || 0), 0), [reach, targetMonth]);
+  const monthCpr = monthReach > 0 ? monthBoost / monthReach : 0;
   const monthTarget = Number(targets.find((t) => t.month === targetMonth)?.target || 0);
   const targetPct = monthTarget > 0 ? (monthReach / monthTarget) * 100 : 0;
   const targetColor = targetPct >= 100 ? "#10B981" : targetPct >= 50 ? "#F59E0B" : "#EF4444";
@@ -20256,7 +20259,7 @@ function MarketingView({ profile }) {
           </div>
         </div>
         {monthTarget <= 0 ? (
-          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-8">Энэ сард зорилго тавиагүй байна. {canEdit ? "Дээрээс зорилго оруулна уу." : ""} (Одоогийн хандалт: <b style={{ color: T.ink }}>{monthReach.toLocaleString()}</b>)</div>
+          <div style={{ color: T.muted, fontFamily: FS }} className="text-xs text-center py-8">Энэ сард зорилго тавиагүй байна. {canEdit ? "Дээрээс зорилго оруулна уу." : ""} (Одоогийн хандалт: <b style={{ color: T.ink }}>{monthReach.toLocaleString()}</b> · Boost: <b style={{ color: "#B45309" }}>${monthBoost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>{monthReach > 0 ? <> · 1 хандалт <b style={{ color: "#1D4ED8" }}>${monthCpr.toFixed(4)}</b></> : null})</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
             <div style={{ position: "relative" }}>
@@ -20288,6 +20291,17 @@ function MarketingView({ profile }) {
               </div>
               <div style={{ height: 8, borderRadius: 4, background: T.border || "#E5E7EB", overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${Math.min(100, targetPct)}%`, background: targetColor, borderRadius: 4, transition: "width .3s" }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">💸 Нийт Boost cost</div>
+                  <div style={{ color: "#B45309", fontFamily: FM, fontWeight: 800 }} className="text-base">${monthBoost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                </div>
+                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.25)" }}>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase tracking-wider">📊 1 хандалтын өртөг</div>
+                  <div style={{ color: "#1D4ED8", fontFamily: FM, fontWeight: 800 }} className="text-base">{monthReach > 0 ? `$${monthCpr.toFixed(4)}` : "—"}</div>
+                  <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px]">{monthReach > 0 ? `1,000 хандалт = $${(monthCpr * 1000).toFixed(2)}` : "хандалт алга"}</div>
+                </div>
               </div>
             </div>
           </div>
