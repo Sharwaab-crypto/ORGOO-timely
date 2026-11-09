@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-rural-driver";
+const BUILD_VERSION = "v2026.11.09-edit-keep-city";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -28466,6 +28466,11 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       alert("⚠ Хүргэх хаягийг заавал бөглөнө үү!");
                       return;
                     }
+                    // 📍 2026-11-09: Засварт хот/аймаг заавал (өмнө нь илгээдэггүй байсан тул хадгалахад хот/дүүрэг/хороо NULL болж арилдаг байв)
+                    if (!selectedCity) {
+                      alert("⚠ Хот/аймгийг заавал сонгоно уу!");
+                      return;
+                    }
                     setBusy(true);
                     await onSave({
                       action: "save_only",
@@ -28475,6 +28480,9 @@ function CallReceiveModal({ products, profile, initialPhone, initialName, initia
                       address: address.trim() || null,
                       delivery_lat: pinLat,
                       delivery_lng: pinLng,
+                      delivery_city: selectedCity || null,
+                      delivery_district: selectedDistrict || null,
+                      delivery_khoroo: selectedKhoroo || null,
                       notes: notes.trim() || null,
                       subtotal,
                       deliveryFee: fee,
@@ -28992,6 +29000,16 @@ function LocBadge({ order, size = "sm" }) {
 
 // 🚌 Орон нутгийн унааны жолооч — аймаг/хот бүрт хадгалагдсан жолоочид (rural_drivers)
 const isRuralCity = (city) => !!city && !/^улаанбаатар/i.test(String(city).trim());
+// Аймгийн нэрс — delivery_city хоосон үед хаягийн ЭХЛЭЛЭЭС таних fallback ("Өмнөговь Даланзадгад ..." → Өмнөговь)
+const RURAL_AIMAGS = ["Архангай", "Баян-Өлгий", "Баянхонгор", "Булган", "Говь-Алтай", "Говьсүмбэр", "Дархан-Уул", "Дархан", "Дорноговь", "Дорнод", "Дундговь", "Завхан", "Орхон", "Эрдэнэт", "Өвөрхангай", "Өмнөговь", "Сэлэнгэ", "Увс", "Ховд", "Хөвсгөл", "Хэнтий", "Сүхбаатар аймаг", "Төв аймаг"];
+const ruralCityOf = (o) => {
+  if (!o) return null;
+  if (o.delivery_city) return isRuralCity(o.delivery_city) ? String(o.delivery_city).trim() : null;
+  const a = String(o.delivery_address || "").trim().toLowerCase();
+  if (!a) return null;
+  const hit = RURAL_AIMAGS.find((n) => a.startsWith(n.toLowerCase()));
+  return hit ? hit.replace(/ аймаг$/, "") : null;
+};
 const ruralDriverLine = (d) => `🚌 Унаа: ${d.plate}${d.phone ? " · " + d.phone : ""}`;
 function RuralDriverPicker({ city, value, onChange, byId }) {
   const [list, setList] = useState(null);
@@ -29071,7 +29089,9 @@ async function applyRuralDriver(order, d) {
   const line = ruralDriverLine(d);
   const addr = String(order.delivery_address || "").replace(/\n?🚌 Унаа:[^\n]*/g, "").trimEnd();
   try { await supabase.from("rural_drivers").update({ last_used_at: new Date().toISOString(), use_count: (Number(d.use_count) || 0) + 1 }).eq("id", d.id); } catch {}
-  return { delivery_address: addr ? `${addr}\n${line}` : line, rural_driver_plate: d.plate, rural_driver_phone: d.phone || null };
+  const out = { delivery_address: addr ? `${addr}\n${line}` : line, rural_driver_plate: d.plate, rural_driver_phone: d.phone || null };
+  if (!order.delivery_city && d.city) out.delivery_city = d.city; // хот/аймаг хоосон байсан бол нөхнө
+  return out;
 }
 
 function OrderCard({ order, items = [], compact = false, index = 0, onClick, onEdit, onCancel, onMap, onAssignDriver, onToNew, drivers = [], fbPagesMap = {}, hideMenu = false, merchantPageIds = [] }) {
@@ -30068,7 +30088,7 @@ function OrdersView({ profile }) {
     if (newStatus === "delivered" && !extra?.ruralDone) {
       const cur = orders.find((o) => o.id === orderId) || activeOrder
         || (await supabase.from("biz_orders").select("*").eq("id", orderId).maybeSingle()).data;
-      if (cur && isRuralCity(cur.delivery_city)) { setRuralTarget(cur); return; }
+      if (cur && ruralCityOf(cur)) { setRuralTarget({ ...cur, delivery_city: ruralCityOf(cur) }); return; }
     }
     const updates = { status: newStatus, ...(extra ? Object.fromEntries(Object.entries(extra).filter(([k]) => k !== "ruralDone")) : {}) };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
@@ -45459,9 +45479,9 @@ function DriverDashboard({ profile }) {
                   <AddressPick value={ratingAddr} onChange={setRatingAddr} />
                 </div>
               )}
-              {ratingOrder.action === "delivered" && isRuralCity(ratingOrder.order.delivery_city) && (
+              {ratingOrder.action === "delivered" && ruralCityOf(ratingOrder.order) && (
                 <div className="mb-4">
-                  <RuralDriverPicker city={String(ratingOrder.order.delivery_city).trim()} value={ratingRural} onChange={setRatingRural} byId={profile?.id} />
+                  <RuralDriverPicker city={ruralCityOf(ratingOrder.order)} value={ratingRural} onChange={setRatingRural} byId={profile?.id} />
                 </div>
               )}
               {/* Тэмдэглэл */}
@@ -45496,7 +45516,7 @@ function DriverDashboard({ profile }) {
                     alert("📍 Захиалга хаягтай эсвэл хаяггүй эсэхийг сонгоно уу");
                     return;
                   }
-                  if (ratingOrder.action === "delivered" && isRuralCity(ratingOrder.order.delivery_city) && !ratingRural) {
+                  if (ratingOrder.action === "delivered" && ruralCityOf(ratingOrder.order) && !ratingRural) {
                     alert("🚌 Унаанд тавьсан жолоочийг сонгох эсвэл нэмнэ үү");
                     return;
                   }
