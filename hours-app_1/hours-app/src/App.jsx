@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-mkt-goal-cost2";
+const BUILD_VERSION = "v2026.11.09-mkt-zochil";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -19342,6 +19342,8 @@ function MarketingView({ profile }) {
   const [dsBoost, setDsBoost] = useState("");
   const [dsChat, setDsChat] = useState("");
   const [dsComment, setDsComment] = useState("");
+  const [dsZochil, setDsZochil] = useState(""); // 🛍 Zochil хандалт
+  const [dsTouchme, setDsTouchme] = useState(""); // 📱 TouchMe хандалт
   const [dsOrders, setDsOrders] = useState("");
   const [dsSaving, setDsSaving] = useState(false);
   const dsChartRef = useRef(null);
@@ -19685,9 +19687,9 @@ function MarketingView({ profile }) {
       .sort((a, b) => (a.stat_date < b.stat_date ? 1 : -1)),
   [dailyStats, fromDate, toDate]);
   const dsTotals = useMemo(() => {
-    const t = { boost: 0, chat: 0, comment: 0, orders: 0 };
-    dsInRange.forEach((d) => { t.boost += Number(d.boost || 0); t.chat += Number(d.chat || 0); t.comment += Number(d.comment || 0); t.orders += Number(d.orders || 0); });
-    const reachSum = t.chat + t.comment;
+    const t = { boost: 0, chat: 0, comment: 0, zochil: 0, touchme: 0, orders: 0 };
+    dsInRange.forEach((d) => { t.boost += Number(d.boost || 0); t.chat += Number(d.chat || 0); t.comment += Number(d.comment || 0); t.zochil += Number(d.zochil || 0); t.touchme += Number(d.touchme || 0); t.orders += Number(d.orders || 0); });
+    const reachSum = t.chat + t.comment + t.zochil + t.touchme; // 🛍📱 Zochil + TouchMe нийт хандалтад нэмэгдэнэ
     return { ...t, reach: reachSum, pcost: t.orders > 0 ? t.boost / t.orders : 0, success: reachSum > 0 ? t.orders / reachSum : 0 };
   }, [dsInRange]);
   // 🎨 Босго өнгө: P/cost ≥2.5 улаан · 2.0–2.5 шар · ≤2.0 ногоон; Амжилт <25% улаан · 25–30% шар · ≥30% ногоон
@@ -19695,10 +19697,10 @@ function MarketingView({ profile }) {
   const successColor = (pct) => (pct >= 30 ? T.ok : pct >= 25 ? "#F59E0B" : T.err);
 
   const saveDailyStat = async () => {
-    if ([dsBoost, dsChat, dsComment, dsOrders].every((v) => v === "")) { alert("Ядаж нэг утга оруулна уу"); return; }
+    if ([dsBoost, dsChat, dsComment, dsZochil, dsTouchme, dsOrders].every((v) => v === "")) { alert("Ядаж нэг утга оруулна уу"); return; }
     setDsSaving(true);
     try {
-      const payload = { stat_date: dsDate, boost: Number(dsBoost || 0), chat: Number(dsChat || 0), comment: Number(dsComment || 0), orders: Number(dsOrders || 0), created_by: profile.id, updated_at: new Date().toISOString() };
+      const payload = { stat_date: dsDate, boost: Number(dsBoost || 0), chat: Number(dsChat || 0), comment: Number(dsComment || 0), zochil: Number(dsZochil || 0), touchme: Number(dsTouchme || 0), orders: Number(dsOrders || 0), created_by: profile.id, updated_at: new Date().toISOString() };
       const existing = dailyStats.find((d) => d.stat_date === dsDate);
       if (existing) {
         const { data } = await supabase.from("mkt_daily_stats").update(payload).eq("id", existing.id).select().single();
@@ -19707,7 +19709,7 @@ function MarketingView({ profile }) {
         const { data } = await supabase.from("mkt_daily_stats").insert(payload).select().single();
         if (data) setDailyStats((p) => [data, ...p]);
       }
-      setDsBoost(""); setDsChat(""); setDsComment(""); setDsOrders("");
+      setDsBoost(""); setDsChat(""); setDsComment(""); setDsZochil(""); setDsTouchme(""); setDsOrders("");
     } catch (e) { alert("Алдаа: " + e.message); }
     finally { setDsSaving(false); }
   };
@@ -19716,6 +19718,8 @@ function MarketingView({ profile }) {
     setDsBoost(String(d.boost ?? ""));
     setDsChat(String(d.chat ?? ""));
     setDsComment(String(d.comment ?? ""));
+    setDsZochil(String(d.zochil ?? ""));
+    setDsTouchme(String(d.touchme ?? ""));
     setDsOrders(String(d.orders ?? ""));
   };
   const delDailyStat = async (id) => {
@@ -20297,7 +20301,7 @@ function MarketingView({ profile }) {
                 <span style={{ color: "#B45309", fontFamily: FM, fontWeight: 700 }} className="text-sm">${monthBoost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: T.surfaceAlt || "#F8FAFC" }}>
-                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">📊 1 хандалтын өртөг <span style={{ color: T.mutedSoft || T.muted }}>· 1,000 = ${monthReach > 0 ? (monthCpr * 1000).toFixed(2) : "—"}</span></span>
+                <span style={{ color: T.muted, fontFamily: FS }} className="text-xs">📊 1 хандалтын өртөг</span>
                 <span style={{ color: "#1D4ED8", fontFamily: FM, fontWeight: 700 }} className="text-sm">{monthReach > 0 ? `$${monthCpr.toFixed(4)}` : "—"}</span>
               </div>
             </div>
@@ -20465,14 +20469,14 @@ function MarketingView({ profile }) {
 
       {/* ====== 📊 Өдрийн статистик (Boost/Chat/Comment) ====== */}
       <div className="glass rounded-2xl p-4">
-        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">📊 Өдрийн статистик — Boost · Chat · Comment</div>
+        <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-3">📊 Өдрийн статистик — Boost · Chat · Comment · Zochil · TouchMe</div>
         {canEdit && (
           <div className="flex flex-wrap items-end gap-2 mb-3">
             <div>
               <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">Огноо</div>
               <input type="date" value={dsDate} onChange={(e) => setDsDate(e.target.value)} className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
             </div>
-            {[["Boost", dsBoost, setDsBoost], ["Chat", dsChat, setDsChat], ["Comment", dsComment, setDsComment], ["Нийт захиалга", dsOrders, setDsOrders]].map(([label, val, setter]) => (
+            {[["Boost", dsBoost, setDsBoost], ["Chat", dsChat, setDsChat], ["Comment", dsComment, setDsComment], ["Zochil", dsZochil, setDsZochil], ["TouchMe", dsTouchme, setDsTouchme], ["Нийт захиалга", dsOrders, setDsOrders]].map(([label, val, setter]) => (
               <div key={label}>
                 <div style={{ color: T.muted, fontFamily: FM }} className="text-[10px] uppercase mb-1">{label}</div>
                 <input type="number" value={val} onChange={(e) => setter(e.target.value)} placeholder="0" className="w-28 rounded-lg px-2 py-1.5 text-sm outline-none" style={{ background: T.surface || "#fff", color: T.ink, fontFamily: FM, border: `1px solid ${T.border || "#E5E7EB"}` }} />
@@ -20493,9 +20497,11 @@ function MarketingView({ profile }) {
               <ResponsiveContainer width="100%" height={235}>
                 <PieChart>
                   {/* Гадна цагираг — Хандалтын бүтэц (Chat + Comment) */}
-                  <Pie data={[{ name: "Chat", value: dsTotals.chat }, { name: "Comment", value: dsTotals.comment }]} dataKey="value" cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
+                  <Pie data={[{ name: "Chat", value: dsTotals.chat }, { name: "Comment", value: dsTotals.comment }, { name: "Zochil", value: dsTotals.zochil }, { name: "TouchMe", value: dsTotals.touchme }]} dataKey="value" cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
                     <Cell fill="#3B82F6" />
                     <Cell fill="#8B5CF6" />
+                    <Cell fill="#F59E0B" />
+                    <Cell fill="#EC4899" />
                   </Pie>
                   {/* Дотор цагираг — Захиалга vs үлдсэн хандалт */}
                   <Pie data={[{ name: "Захиалга", value: dsTotals.orders }, { name: "Хандалтын үлдсэн", value: Math.max(0, dsTotals.reach - dsTotals.orders) }]} dataKey="value" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} stroke={T.surface || "#fff"} strokeWidth={2}>
@@ -20515,6 +20521,8 @@ function MarketingView({ profile }) {
               {[
                 ["#3B82F6", "Chat", dsTotals.chat.toLocaleString()],
                 ["#8B5CF6", "Comment", dsTotals.comment.toLocaleString()],
+                ["#F59E0B", "Zochil", dsTotals.zochil.toLocaleString()],
+                ["#EC4899", "TouchMe", dsTotals.touchme.toLocaleString()],
                 [T.highlight, "Хандалт (нийт)", dsTotals.reach.toLocaleString()],
                 ["#10B981", "Захиалга", dsTotals.orders.toLocaleString()],
                 [pcostColor(dsTotals.pcost), "P/cost (Boost ÷ Захиалга)", dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"],
@@ -20532,20 +20540,20 @@ function MarketingView({ profile }) {
           </div>
         )}
         <div className="overflow-auto">
-          <table className="w-full" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 640 }}>
+          <table className="w-full" style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 780 }}>
             <thead>
               <tr>
-                {["Огноо", "Boost", "Chat", "Comment", "Хандалт", "Захиалга", "P/cost", "Амжилт %", ""].map((h, i) => (
+                {["Огноо", "Boost", "Chat", "Comment", "Zochil", "TouchMe", "Хандалт", "Захиалга", "P/cost", "Амжилт %", ""].map((h, i) => (
                   <th key={i} style={{ color: T.muted, fontFamily: FM, background: T.surfaceAlt || "#F8FAFC" }} className={`text-[10px] uppercase px-2 py-1.5 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {dsInRange.length === 0 && (
-                <tr><td colSpan={9} style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2 py-3">Энэ мужид бүртгэл алга.</td></tr>
+                <tr><td colSpan={11} style={{ color: T.muted, fontFamily: FS }} className="text-xs px-2 py-3">Энэ мужид бүртгэл алга.</td></tr>
               )}
               {dsInRange.map((d) => {
-                const reach = Number(d.chat || 0) + Number(d.comment || 0);
+                const reach = Number(d.chat || 0) + Number(d.comment || 0) + Number(d.zochil || 0) + Number(d.touchme || 0);
                 const pcost = Number(d.orders) > 0 ? Number(d.boost || 0) / Number(d.orders) : 0;
                 const succ = reach > 0 ? Number(d.orders || 0) / reach : 0;
                 return (
@@ -20554,6 +20562,8 @@ function MarketingView({ profile }) {
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.boost || 0).toLocaleString()}</td>
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.chat || 0).toLocaleString()}</td>
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.comment || 0).toLocaleString()}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.zochil || 0).toLocaleString()}</td>
+                    <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.touchme || 0).toLocaleString()}</td>
                     <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{reach.toLocaleString()}</td>
                     <td style={{ color: T.ink, fontFamily: FM, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{Number(d.orders || 0).toLocaleString()}</td>
                     <td style={{ color: pcostColor(pcost), fontFamily: FM, fontWeight: 700, borderBottom: `1px solid ${T.border || "#E5E7EB"}` }} className="text-[11px] px-2 py-1.5 text-right">{pcost ? pcost.toFixed(2) : "—"}</td>
@@ -20571,6 +20581,8 @@ function MarketingView({ profile }) {
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.boost.toLocaleString()}</td>
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.chat.toLocaleString()}</td>
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.comment.toLocaleString()}</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.zochil.toLocaleString()}</td>
+                  <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.touchme.toLocaleString()}</td>
                   <td style={{ color: T.highlight, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.reach.toLocaleString()}</td>
                   <td style={{ color: T.ink, fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.orders.toLocaleString()}</td>
                   <td style={{ color: pcostColor(dsTotals.pcost), fontFamily: FM, fontWeight: 800, background: T.surfaceAlt || "#F8FAFC" }} className="text-[11px] px-2 py-1.5 text-right">{dsTotals.pcost ? dsTotals.pcost.toFixed(2) : "—"}</td>
@@ -20581,7 +20593,7 @@ function MarketingView({ profile }) {
             </tbody>
           </table>
         </div>
-        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">Хандалт = Chat + Comment · P/cost = Boost ÷ Захиалга · Амжилт % = Захиалга ÷ Хандалт. Дээрх хугацааны шүүлтээр шүүгдэнэ; ижил огноонд хадгалбал шинэчилнэ.</div>
+        <div style={{ color: T.muted, fontFamily: FS }} className="text-[10px] mt-2">Хандалт = Chat + Comment + Zochil + TouchMe · P/cost = Boost ÷ Захиалга · Амжилт % = Захиалга ÷ Хандалт. Дээрх хугацааны шүүлтээр шүүгдэнэ; ижил огноонд хадгалбал шинэчилнэ.</div>
       </div>
 
       {/* ====== Хийгдсэн бараанууд (доод тусдаа цонх) ====== */}
