@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-ddash-corelink2";
+const BUILD_VERSION = "v2026.11.09-ddash-segment";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -21343,6 +21343,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
   const [settlements, setSettlements] = useState([]);
   const [popup, setPopup] = useState(null); // { s: жолоочийн stat, kind: "pending"|"delivered"|"cancelled" }
   const [sortBy, setSortBy] = useState("owed"); // owed | delivered | pending | name
+  const [segment, setSegment] = useState("corelink"); // 🏢 corelink | all — мерчантын захиалгыг хасах/оруулах (зөвхөн админ самбар)
 
   // Хугацааны муж (УБ-ын өдөр)
   const range = useMemo(() => {
@@ -21365,7 +21366,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
       const { data: merchProfs } = await supabase.from("profiles").select("fb_page_ids").eq("role", "merchant");
       const merchPages = new Set((merchProfs || []).flatMap((m) => Array.isArray(m.fb_page_ids) ? m.fb_page_ids : []));
       // ⚠ Зөвхөн админ/ахлахын самбарт хасна — жолоочийн өөрийн "Самбар" (onlyDriverId) өөрчлөгдөхгүй
-      const notMerchant = (o) => onlyDriverId ? true : !(String(o.order_number || "").startsWith("MR-") || (o.fb_page_id && merchPages.has(o.fb_page_id)));
+      const notMerchant = (o) => (onlyDriverId || segment === "all") ? true : !(String(o.order_number || "").startsWith("MR-") || (o.fb_page_id && merchPages.has(o.fb_page_id)));
       const [drvRes, pendRes, delRes, canRes, unsRes, stRes] = await Promise.all([
         (onlyDriverId ? supabase.from("profiles").select("id, name, job_title, is_active").eq("id", onlyDriverId) : supabase.from("profiles").select("id, name, job_title, is_active").eq("role", "driver").order("name")),
         fetchAllRows(withDrv(supabase.from("biz_orders").select("id, driver_id, order_number, total_amount, delivery_address, customer_phone, created_at, status, fb_page_id").in("status", ["assigned", "pending"]))),
@@ -21380,7 +21381,7 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     } catch (e) { console.error("[delivery dashboard]", e); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [range]);
+  useEffect(() => { load(); }, [range, segment]);
 
   // Жолооч бүрийн нэгтгэл
   const stats = useMemo(() => {
@@ -21441,7 +21442,14 @@ function DeliveryDashboardView({ profile, onlyDriverId = null }) {
     <div className="space-y-3">
       {/* Хугацаа + эрэмбэ */}
       <div className="glass rounded-2xl p-3 flex items-center gap-2 flex-wrap">
-        {!onlyDriverId && <span className="px-2 py-1 rounded-md text-[10px] uppercase tracking-wider" style={{ background: "rgba(14,156,142,0.12)", color: "#0a645c", fontFamily: FM, fontWeight: 700 }} title="Мерчантын захиалга ороогүй">🏢 Зөвхөн CoreLink</span>}
+        {!onlyDriverId && (
+          <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${T.borderStrong}` }} title="Мерчантын захиалгыг хасах / оруулах">
+            {[["corelink", "🏢 Зөвхөн CoreLink"], ["all", "🌐 Нийт"]].map(([id, lbl]) => (
+              <button key={id} onClick={() => setSegment(id)} className="press-btn px-2.5 py-1.5 text-[11px]"
+                style={{ background: segment === id ? (id === "corelink" ? "#0E9C8E" : T.ink) : T.surfaceAlt, color: segment === id ? "#fff" : T.ink, fontFamily: FS, fontWeight: 700 }}>{lbl}</button>
+            ))}
+          </div>
+        )}
         {[["today", "Өнөөдөр"], ["yesterday", "Өчигдөр"], ["7d", "7 хоног"], ["month", "Энэ сар"], ["custom", "📅 Гараар"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setPeriod(k)} className="press-btn px-3 py-1.5 rounded-full text-xs"
             style={{ background: period === k ? T.highlight : T.surfaceAlt, color: period === k ? "#fff" : T.inkSoft, border: `1px solid ${period === k ? "transparent" : T.borderStrong}`, fontFamily: FM, fontWeight: 700 }}>{lbl}</button>
