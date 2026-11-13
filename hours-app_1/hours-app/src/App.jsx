@@ -1,7 +1,7 @@
 // BUILD: v2026.08.24-gap-fix2 (sohor bus eremble + hamgaalaltiin log)
 // ⚠ ДҮРЭМ: deploy бүрд доорх BUILD_VERSION-ийг шинэчилнэ — F12 Console-оос аль build
 //   ажиллаж буйг ШУУД харна (bundle hash таахын оронд). Коммент minify-д устдаг тул string-д хадгална.
-const BUILD_VERSION = "v2026.11.09-ddash-funnel";
+const BUILD_VERSION = "v2026.11.13-shift-avg";
 console.info("🏗 CoreLink build:", BUILD_VERSION);
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -38437,6 +38437,9 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
               <div className="glass rounded-2xl p-4">
                 <div style={{ color: T.ink, fontFamily: FS, fontWeight: 700 }} className="text-sm mb-2">
                   🧮 Ажилчдын нэгтгэл · {archRange.label} · {archRows.length} ээлж
+                  {(() => { const tot = archSummary.reduce((a, w) => a + w.orders, 0); const sh = archSummary.reduce((a, w) => a + w.shifts, 0); return tot > 0 ? (
+                    <span className="ml-2 text-[11px]" style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }}>· нийт {tot} захиалга · <span style={{ color: "#1D4ED8" }}>⌀ {sh > 0 ? (tot / sh).toFixed(1) : "—"} захиалга / ажилтны ээлж</span></span>
+                  ) : null; })()}
                 </div>
                 {archSummary.length === 0 ? (
                   <div style={{ color: T.muted, fontFamily: FS }} className="text-xs">Энэ хугацаанд архивлагдсан ээлж алга</div>
@@ -38449,6 +38452,9 @@ function OperatorShiftReportView({ profile, canEdit = false }) {
                           <span className="text-xs flex-1 min-w-0 truncate" style={{ color: T.ink, fontFamily: FS, fontWeight: 600 }}>🎧 {w.name}</span>
                           <span className="text-[10px]" style={{ color: T.muted, fontFamily: FM, fontWeight: 600 }}>{w.shifts} ээлж</span>
                           <span className="text-xs" style={{ color: T.ok, fontFamily: FM, fontWeight: 700 }}>{w.orders} захиалга</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ background: "rgba(59,130,246,0.12)", color: "#1D4ED8", fontFamily: FM, fontWeight: 700 }} title="Нийт захиалга ÷ гарсан ээлж">
+                            ⌀ {w.shifts > 0 ? (w.orders / w.shifts).toFixed(1) : "—"}/ээлж
+                          </span>
                           <span className="text-xs w-14 text-right" style={{ color: col, fontFamily: FS, fontWeight: 800 }}>
                             {w.pct === null ? "—" : Math.round(w.pct) + "%"}
                           </span>
